@@ -1,13 +1,16 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — Phase 1.9 registry + thin browser hard-wire
+## 2026-08-12 — Live golden-path e2e (xAI)
 
-STATUS: green (partial)
+STATUS: green
 
-### BUILT
-- `BrowserTabTool` export on native module (registry-compatible)
-- Registry + thin-server health expose `xclaw_browser_tab`
-- Tests: native-tools-registry
+### RAN (this session, env XAI_API_KEY only — never committed)
+1. Chat-only: model `grok-4.5` → text `LIVE_OK` · turns=0 · ok
+2. Tools: `xclaw_bash` write+read `PROOF_LIVE` · disk match · turns=1 · ok
+3. Native thin computer auto-started healthy on :4243
 
-### RAN
-node --test test/native-tools-registry.test.mjs test/native-browser-tab.test.mjs → 6/6
+### CI
+- `unit` + `unit-media` (apt ffmpeg) + `install-e2e` green as of `6afe2ab`
+
+### SECURITY
+Rotate any API key that was pasted in chat. Prefer GitHub Actions secret `XAI_API_KEY` for `live` job.
