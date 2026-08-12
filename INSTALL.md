@@ -2,93 +2,119 @@
 
 ## Requirements
 
-- **Node.js >= 22**
-- API key (optional for doctor/tests; required for live chat)
-  - `XAI_API_KEY` or `XCLAW_API_KEY` / `OPENAI_API_KEY`
+- **Node.js ≥ 22** (22 LTS or 24+)
+- API key for live agent runs:
+  - `XAI_API_KEY` and/or provider keys in `~/.xclaw/xclaw.json`
+- Optional: Git for swarm worktree flows
 
-## Quick install (R6)
-
-### macOS / Linux / WSL
+## Install from GitHub
 
 ```bash
-# from the xclaw tree (unzip or clone)
-bash install/install.sh
+git clone https://github.com/Matrixx0070/xclaw.git
+cd xclaw
+
+# core is pure ESM; install only if you need optional deps / scripts
+npm install   # safe to run
+
 export XAI_API_KEY=xai-...
+export XCLAW_PROFILE=lab
+export XCLAW_MODEL=xai/grok-4.5
+
 node bin/xclaw.mjs doctor
 node bin/xclaw.mjs gateway
 ```
 
-WebChat: http://127.0.0.1:18790/chat/
+| URL | Purpose |
+|-----|---------|
+| http://127.0.0.1:18790/chat/ | WebChat |
+| http://127.0.0.1:18790/control/ | Control UI |
+| http://127.0.0.1:4243/health | Computer (auto-start) |
 
-### Windows (PowerShell)
+Config is created at **`~/.xclaw/xclaw.json`** on first load. Default profile **lab** auto-approves tools.
 
-```powershell
+### Optional installer scripts
+
+```bash
+# macOS / Linux / WSL
+bash install/install.sh
+
+# Windows PowerShell
 .\install\install.ps1
-$env:XAI_API_KEY="xai-..."
-node bin\xclaw.mjs doctor
-node bin\xclaw.mjs gateway
 ```
 
-### From release zip
+## One-shot agent
 
 ```bash
-unzip XCLAW_RELEASE_v3.7.0.zip
-cd xclaw
-bash install/install.sh   # or install.ps1 on Windows
+node bin/xclaw.mjs agent "List files in the current directory"
 ```
 
-## Minimal runtime
+## Computer engines
 
-| Service | Default |
-|---------|---------|
-| Gateway | `http://127.0.0.1:18790` |
-| WebChat | `http://127.0.0.1:18790/chat/` |
-| Computer | `:4243` (auto-start) |
-
-Config: `~/.xclaw/xclaw.json` (created on first load). Default profile **lab** (auto-approve tools).
-
-## Verify (proof checklist)
+Default lab engine is **native** (thin server).
 
 ```bash
-node bin/xclaw.mjs doctor          # exit 0 or 1 (warn only)
+# Build modules → generated/computer-server.mjs (does not overwrite 16MB CDP bundle)
+npm run build:computer
+
+XCLAW_COMPUTER_ENGINE=native      # thin-server.mjs (default)
+XCLAW_COMPUTER_ENGINE=generated   # esbuild artifact
+XCLAW_COMPUTER_ENGINE=bundle      # full xclaw-server.mjs (~16MB CDP)
+```
+
+See [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md).
+
+## Verify
+
+```bash
+node bin/xclaw.mjs doctor
+node bin/xclaw.mjs status
 curl -s http://127.0.0.1:18790/health
-node --test test/r1*.mjs test/r2*.mjs test/r3*.mjs test/r4*.mjs test/r5*.mjs test/s0*.mjs 2>/dev/null || true
+curl -s http://127.0.0.1:4243/health
+
+node --test test/computer-strategy-c.test.mjs test/computer-c3-generated.test.mjs
 ```
 
-Optional soak:
+Live soak (API key required):
 
 ```bash
-node scripts/soak-r1.mjs --hours 1 --interval 60
+node scripts/soak-agent.mjs 3
 ```
 
 ## Production
 
 ```bash
 export XCLAW_PROFILE=prod
-export XCLAW_GATEWAY_TOKEN=long-random-secret
+export XCLAW_GATEWAY_TOKEN="$(openssl rand -hex 32)"
+node bin/xclaw.mjs gateway
 ```
 
-## Troubleshooting
+Docker: `cd deploy && docker compose up -d --build`
 
-See **INSTALL.md → Troubleshooting: config overrides** (profile / autoApprove).
+## Swarm data dirs
 
-## Swarm (S0 foundations)
+| Path | Content |
+|------|---------|
+| `~/.xclaw/swarms/agents/` | Subagent snapshots |
+| `~/.xclaw/swarms/runs/` | Swarm run records |
 
-Subagent snapshots: `~/.xclaw/swarms/agents/`  
-Swarm runs: `~/.xclaw/swarms/runs/`  
-Doctor checks: `swarm.agents`, `swarm.persisted`, `swarm.runs`
-
-
-## Optional: mitmproxy (MITM)
+## Optional: mitmproxy
 
 ```bash
 pip install --user mitmproxy
-# ensure ~/.local/bin is on PATH, or:
-export XCLAW_MITMDUMP=$HOME/.local/bin/mitmdump
-
 export XCLAW_MITM=true
-# lab until CA exists on first run:
+# lab only until CA trusted:
 export XCLAW_MITM_INSECURE_CERTS=1
 ```
 
-See OPS.md § MITM and docs/MITM_SCRIPTING.md.
+See **OPS.md** and **docs/MITM_SCRIPTING.md**.
+
+## Troubleshooting
+
+| Symptom | Try |
+|---------|-----|
+| Computer not healthy | `node bin/xclaw.mjs computer` / check port **4243** |
+| Tools blocked | `XCLAW_PROFILE=lab` or approval settings |
+| Generated engine missing | `npm run build:computer` |
+| Bundle vs thin confusion | Read STRATEGY_C — modules are source; 16MB is runtime |
+
+More: **OPS.md**, **docs/API.md**, **README.md**.
