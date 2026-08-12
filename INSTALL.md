@@ -42,6 +42,44 @@ bash install/install.sh
 .\install\install.ps1
 ```
 
+## Docker (try-me)
+
+All-in-one image publishes **gateway (WebChat)** and computer:
+
+```bash
+cd deploy
+cp env.example .env
+# edit .env — set at least XAI_API_KEY
+
+docker compose up --build
+```
+
+Then open **http://127.0.0.1:18790/chat/**
+
+| Host port | Service |
+|-----------|---------|
+| **18790** | Gateway / WebChat / Control |
+| 4243 | Computer (optional direct access) |
+
+Notes:
+
+- Compose sets `XCLAW_GATEWAY_HOST=0.0.0.0` so published ports reach the process (profiles otherwise bind `127.0.0.1`).
+- Default profile is **lab**. For stricter mode:
+  ```bash
+  # in .env
+  XCLAW_PROFILE=prod
+  XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
+  ```
+- Sidecar layout (separate computer container):  
+  `docker compose -f docker-compose.sidecar.yml up --build`
+
+Image choices:
+
+| Dockerfile | Use |
+|------------|-----|
+| `deploy/Dockerfile` | Production-slim (compose default) |
+| root `Dockerfile` | Lab image with office/OCR tooling |
+
 ## One-shot agent
 
 ```bash
@@ -88,7 +126,7 @@ export XCLAW_GATEWAY_TOKEN="$(openssl rand -hex 32)"
 node bin/xclaw.mjs gateway
 ```
 
-Docker: `cd deploy && docker compose up -d --build`
+Docker prod sketch: set `XCLAW_PROFILE=prod` and `XCLAW_GATEWAY_TOKEN` in `deploy/.env`, then `docker compose up -d --build`.
 
 ## Swarm data dirs
 
@@ -116,5 +154,7 @@ See **OPS.md** and **docs/MITM_SCRIPTING.md**.
 | Tools blocked | `XCLAW_PROFILE=lab` or approval settings |
 | Generated engine missing | `npm run build:computer` |
 | Bundle vs thin confusion | Read STRATEGY_C — modules are source; 16MB is runtime |
+| Docker WebChat unreachable | Confirm port **18790** published; host must be `0.0.0.0` inside container |
+| Docker health failing | `curl -fsS http://127.0.0.1:18790/ready` inside container |
 
 More: **OPS.md**, **docs/API.md**, **README.md**.

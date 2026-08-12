@@ -202,6 +202,38 @@ export async function loadConfig(opts = {}) {
     cfg.computer = cfg.computer || {};
     cfg.computer.remoteUrl = process.env.XCLAW_COMPUTER_URL;
   }
+
+  // Docker / public bind: profiles default gateway.host=127.0.0.1 which breaks
+  // published container ports. Env wins last so compose can force 0.0.0.0.
+  if (process.env.XCLAW_GATEWAY_HOST) {
+    cfg.gateway = cfg.gateway || {};
+    const h = String(process.env.XCLAW_GATEWAY_HOST).trim();
+    if (h) cfg.gateway.host = h;
+  }
+  if (process.env.XCLAW_GATEWAY_PORT) {
+    const n = Number(process.env.XCLAW_GATEWAY_PORT);
+    if (Number.isFinite(n) && n >= 1 && n <= 65535) {
+      cfg.gateway = cfg.gateway || {};
+      cfg.gateway.port = Math.floor(n);
+    }
+  }
+  if (process.env.XCLAW_GATEWAY_TOKEN) {
+    cfg.gateway = cfg.gateway || {};
+    if (!cfg.gateway.token) cfg.gateway.token = process.env.XCLAW_GATEWAY_TOKEN;
+  }
+  if (process.env.XCLAW_COMPUTER_HOST) {
+    cfg.computer = cfg.computer || {};
+    const h = String(process.env.XCLAW_COMPUTER_HOST).trim();
+    if (h) cfg.computer.host = h;
+  }
+  if (process.env.XCLAW_COMPUTER_PORT || process.env.XCLAW_SERVER_PORT) {
+    const n = Number(process.env.XCLAW_COMPUTER_PORT || process.env.XCLAW_SERVER_PORT);
+    if (Number.isFinite(n) && n >= 1 && n <= 65535) {
+      cfg.computer = cfg.computer || {};
+      cfg.computer.port = Math.floor(n);
+    }
+  }
+
   return cfg;
 }
 

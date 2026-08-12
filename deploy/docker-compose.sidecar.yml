@@ -1,17 +1,28 @@
-# Optional: computer on separate host/service
+# Optional: computer on separate service
+# Usage: docker compose -f docker-compose.sidecar.yml up --build
+
 services:
   computer:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    command: ["node", "bin/xclaw.mjs", "computer", "start", "--bg"]
-    # Prefer foreground entry in real images; adjust as needed
+    command: ["node", "bin/xclaw.mjs", "computer"]
     environment:
-      PORT: "4243"
+      XCLAW_COMPUTER_HOST: "0.0.0.0"
+      XCLAW_COMPUTER_PORT: "4243"
+      XCLAW_SERVER_PORT: "4243"
+      XCLAW_HOME: /data
+      HOME: /data
     expose:
       - "4243"
     volumes:
       - xclaw-computer:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4243/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
     restart: unless-stopped
 
   gateway:
@@ -22,15 +33,25 @@ services:
       XAI_API_KEY: ${XAI_API_KEY:-}
       XCLAW_API_KEY: ${XCLAW_API_KEY:-}
       XCLAW_GATEWAY_TOKEN: ${XCLAW_GATEWAY_TOKEN:-}
-      XCLAW_PROFILE: prod
-      # Point at sidecar
+      XCLAW_PROFILE: ${XCLAW_PROFILE:-prod}
+      XCLAW_GATEWAY_HOST: "0.0.0.0"
+      XCLAW_GATEWAY_PORT: "18790"
+      # Point at sidecar (disables in-process computer autoStart path when set)
       XCLAW_COMPUTER_URL: http://computer:4243
+      XCLAW_HOME: /data
+      HOME: /data
     ports:
-      - "18790:18790"
+      - "${XCLAW_GATEWAY_PORT:-18790}:18790"
     depends_on:
       - computer
     volumes:
       - xclaw-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18790/ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
     restart: unless-stopped
 
 volumes:

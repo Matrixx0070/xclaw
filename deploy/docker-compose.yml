@@ -1,16 +1,49 @@
+# XClaw all-in-one — try-me / lab path
+#
+# Usage:
+#   cd deploy
+#   cp env.example .env    # set at least XAI_API_KEY
+#   docker compose up --build
+#   open http://127.0.0.1:18790/chat/
+#
+# Gateway must bind 0.0.0.0 inside the container so published ports work.
+# Default profile is lab (auto-approve). For prod set XCLAW_PROFILE=prod
+# and XCLAW_GATEWAY_TOKEN in .env.
+
 services:
   xclaw:
-    image: node:22-bookworm
-    working_dir: /app
-    volumes:
-      - ../:/app
-      - xclaw-data:/root/.xclaw
-    command: node bin/xclaw.mjs gateway
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     ports:
-      - "4243:4243"
+      - "${XCLAW_GATEWAY_PORT:-18790}:18790"
+      - "${XCLAW_COMPUTER_PORT:-4243}:4243"
+    env_file:
+      - path: .env
+        required: false
     environment:
-      XCLAW_SERVER_PORT: "4243"
+      NODE_ENV: production
+      # Required for Docker port publish (profiles default to 127.0.0.1)
+      XCLAW_GATEWAY_HOST: "0.0.0.0"
+      XCLAW_GATEWAY_PORT: "18790"
+      XCLAW_COMPUTER_HOST: "0.0.0.0"
+      XCLAW_COMPUTER_PORT: "4243"
+      XCLAW_HOME: /data
+      HOME: /data
+      XCLAW_PROFILE: ${XCLAW_PROFILE:-lab}
       XAI_API_KEY: ${XAI_API_KEY:-}
+      XCLAW_API_KEY: ${XCLAW_API_KEY:-}
+      XCLAW_MODEL: ${XCLAW_MODEL:-}
+      XCLAW_GATEWAY_TOKEN: ${XCLAW_GATEWAY_TOKEN:-}
+    volumes:
+      - xclaw-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18790/ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
     restart: unless-stopped
+
 volumes:
   xclaw-data:
