@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.80.0 — 16MB CDP bundle moved out of git into a release artifact
+
+- `src/computer/xclaw-server.mjs` (16.8MB, ~64% of repo size) is no longer tracked in git. It is published as the `computer-bundle` GitHub release asset and git-ignored. Only `XCLAW_COMPUTER_ENGINE=bundle` (opt-in full CDP) needs it; the default native/generated engines don't.
+- `npm run fetch:bundle` (`scripts/fetch-computer-bundle.mjs`) downloads it on demand, **sha256-verified** against the committed manifest `src/computer/bundle-artifact.json`; prefers `gh release download` (API-backed, private-repo friendly), falls back to the direct release URL; idempotent (skips when present + valid).
+- Starting with `engine=bundle` and no local copy auto-fetches (disable with `XCLAW_BUNDLE_AUTOFETCH=0`); otherwise a clear "run npm run fetch:bundle" error.
+- `build:computer` and `doctor` are now tolerant of the absent bundle (doctor `a.bundle` is informational unless the engine actually needs it); build stamp records `legacyBundlePresent`.
+- Tests: bundle-artifact manifest shape + sha256, the file is untracked in git (tripwire against re-adding it), build never creates the bundle whether present or absent. Verified end-to-end: build with bundle absent → OK; `fetch:bundle` → downloads 16839070B with matching sha256; re-run → idempotent skip.
+- NOTE: git *history* still contains the blob (a history rewrite is a separate, destructive op blocked by branch protection). This stops the repo carrying it forward and makes fresh shallow clones lean.
+
 ## 3.79.1 — SSRF: pin the connection to the validated IP (close DNS-rebind)
 
 - `safeFetch` previously validated via DNS, then handed the URL to `fetch`, which resolved DNS **again** — a rebind between the two lookups could still send the socket to a private target. Now each hop connects through `requestPinned` (`node:http`/`node:https` with a `lookup` override) that forces the socket to the exact IP that passed validation, while the URL keeps its real hostname so Host header, TLS SNI, and cert validation are unchanged. Zero new dependencies.

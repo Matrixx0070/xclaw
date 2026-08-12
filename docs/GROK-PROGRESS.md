@@ -246,3 +246,21 @@ identity, redirects re-validated per hop by safeFetch. Zero new deps.
 RAN: pinning proven deterministically (example.com pinned to 127.0.0.1 hits
 local server, Host preserved) · live web_fetch https://example.com → 200 via
 pinned path, metadata still blocked · full suite 1097/0 · eval:ci 0 · self-check OK.
+
+## 2026-08-12 — 3.80.0 16MB CDP bundle → release artifact (Claude)
+
+STATUS: green
+BUILT: src/computer/xclaw-server.mjs (16.8MB, ~64% of repo) untracked from git +
+gitignored; published as the `computer-bundle` GitHub release asset. New
+scripts/fetch-computer-bundle.mjs (sha256-verified vs src/computer/
+bundle-artifact.json manifest; gh release download preferred, direct-URL
+fallback; idempotent) + npm run fetch:bundle. Startup auto-fetches when
+engine=bundle and missing (XCLAW_BUNDLE_AUTOFETCH=0 to disable), else clear
+error. build:computer + doctor tolerant of absent bundle (doctor a.bundle
+informational unless engine needs it). Strategy C intact — default native/
+generated never need the bundle.
+RAN: build w/ bundle absent OK · fetch:bundle downloads 16839070B sha256-match ·
+idempotent skip on re-run · untracked-in-git tripwire test · full suite 1098/0 ·
+eval:ci 0 · self-check OK — all with the bundle ABSENT (CI condition).
+NOTE: git history still holds the blob; a history purge is a separate destructive
+op (blocked by branch protection) — this stops carrying it forward + leans shallow clones.

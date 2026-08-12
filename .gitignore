@@ -17,3 +17,6 @@ artifacts/
 *.pem
 dist/
 coverage/
+
+# Opt-in full-CDP computer runtime — fetched from release, not tracked (16MB)
+src/computer/xclaw-server.mjs

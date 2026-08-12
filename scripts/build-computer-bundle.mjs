@@ -52,9 +52,23 @@ if (!fs.existsSync(thinEntry)) {
 }
 if (missing) fail(`${missing} required file(s) missing`);
 
-if (!fs.existsSync(bundlePath)) fail(`CDP runtime missing: ${bundlePath}`);
-const legacyBytes = fs.statSync(bundlePath).size;
-ok(`legacy CDP runtime present (${legacyBytes} bytes) — will not overwrite`);
+// The 16MB CDP bundle is an opt-in release artifact, not tracked in git.
+// When absent, take its size from the committed manifest — this build never
+// touches the bundle regardless (it only emits the generated server).
+let legacyBytes = null;
+let legacyPresent = fs.existsSync(bundlePath);
+if (legacyPresent) {
+  legacyBytes = fs.statSync(bundlePath).size;
+  ok(`legacy CDP runtime present (${legacyBytes} bytes) — will not overwrite`);
+} else {
+  const manifestPath = path.join(computerDir, "bundle-artifact.json");
+  if (fs.existsSync(manifestPath)) {
+    legacyBytes = JSON.parse(fs.readFileSync(manifestPath, "utf8")).bytes ?? null;
+    ok(`legacy CDP runtime absent (release artifact; manifest bytes=${legacyBytes}) — npm run fetch:bundle to install`);
+  } else {
+    ok("legacy CDP runtime absent and no manifest — skipping bundle size record");
+  }
+}
 
 fs.mkdirSync(path.dirname(generatedPath), { recursive: true });
 const esbuildArgs = [
@@ -97,8 +111,9 @@ const stamp = {
   generatedBytes: genBytes,
   legacyBundlePath: "src/computer/xclaw-server.mjs",
   legacyBundleBytes: legacyBytes,
+  legacyBundlePresent: legacyPresent,
   legacyOverwritten: false,
-  note: "C3 emits modules-built server to generated/. 16MB CDP xclaw-server.mjs retained.",
+  note: "C3 emits modules-built server to generated/. 16MB CDP bundle is an opt-in release artifact (npm run fetch:bundle), untracked in git.",
   modulesChecked: extracted.map((e) => e.id),
   maintainedChecked: maintained.map((e) => e.id),
   policy: { handEditBundle: false, handEditGenerated: false },

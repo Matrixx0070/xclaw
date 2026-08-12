@@ -10,6 +10,7 @@
 - Tools use the `xclaw_*` prefix (`xclaw_bash`, `xclaw_file_read`, …).
 - **Strategy C:** edit `src/computer/modules/**`; do **not** hand-edit `xclaw-server.mjs` (~16MB runtime).
 - Build: `npm run build:computer` → `src/computer/generated/computer-server.mjs`.
+- The 16MB CDP bundle is an **opt-in release artifact** (not in git): `npm run fetch:bundle` (sha256-pinned in `src/computer/bundle-artifact.json`). Only `XCLAW_COMPUTER_ENGINE=bundle` needs it; native/generated don't.
 - Profiles: `lab` / `dev` / `prod` via `XCLAW_PROFILE`.
 
 ## Security (keep these true)

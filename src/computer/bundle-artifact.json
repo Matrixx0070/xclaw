@@ -1,0 +1,9 @@
+{
+  "description": "Opt-in full-CDP computer runtime (XCLAW_COMPUTER_ENGINE=bundle). Not tracked in git — 16MB build artifact. Fetch with: npm run fetch:bundle",
+  "file": "src/computer/xclaw-server.mjs",
+  "bytes": 16839070,
+  "sha256": "9d95d067d7e20229305ff87370705c77a29f96506f10ed6aa19dac976ab33a46",
+  "release": "computer-bundle",
+  "asset": "xclaw-server.mjs",
+  "url": "https://github.com/Matrixx0070/xclaw/releases/download/computer-bundle/xclaw-server.mjs"
+}

@@ -1138,7 +1138,20 @@ export async function runDoctor(opts = {}) {
           else push(id, "error", `bundle missing patch marker: ${needle}`);
         }
       } else {
-        push("a.bundle", "error", "xclaw-server.mjs not found");
+        // The bundle is an opt-in release artifact (default engine is native/
+        // generated). Absent is expected, not an error — only flag if the
+        // configured engine actually needs it.
+        const needsBundle =
+          (cfg.computer?.engine === "bundle" ||
+            cfg.computer?.nativeServer === false ||
+            process.env.XCLAW_COMPUTER_ENGINE === "bundle");
+        push(
+          "a.bundle",
+          needsBundle ? "error" : "ok",
+          needsBundle
+            ? "engine=bundle but xclaw-server.mjs not installed — run: npm run fetch:bundle"
+            : "opt-in CDP bundle not installed (native/generated default) — npm run fetch:bundle if needed"
+        );
       }
     } catch (e) {
       push("a.bundle", "warn", e.message || String(e));

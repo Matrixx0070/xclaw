@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.79.1",
+  "version": "3.80.0",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
@@ -47,7 +47,8 @@
     "live-e2e:cron": "node bin/xclaw.mjs live-e2e",
     "live-e2e:schedule": "node bin/xclaw.mjs live-e2e-schedule",
     "build:computer": "node scripts/build-computer-bundle.mjs",
-    "computer:build": "node scripts/build-computer-bundle.mjs"
+    "computer:build": "node scripts/build-computer-bundle.mjs",
+    "fetch:bundle": "node scripts/fetch-computer-bundle.mjs"
   },
   "files": [
     "bin/",

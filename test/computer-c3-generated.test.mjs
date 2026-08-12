@@ -12,10 +12,9 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("Strategy C3 generated computer", () => {
-  it("build:computer emits generated server without touching 16MB size class", () => {
-    const legacyBefore = fs.statSync(
-      path.join(root, "src/computer/xclaw-server.mjs")
-    ).size;
+  it("build:computer emits generated server and never creates the 16MB bundle", () => {
+    const bundle = path.join(root, "src/computer/xclaw-server.mjs");
+    const before = fs.existsSync(bundle) ? fs.statSync(bundle).size : null;
     const r = spawnSync(
       process.execPath,
       [path.join(root, "scripts/build-computer-bundle.mjs")],
@@ -25,10 +24,9 @@ describe("Strategy C3 generated computer", () => {
     const gen = path.join(root, "src/computer/generated/computer-server.mjs");
     assert.ok(fs.existsSync(gen));
     assert.ok(fs.statSync(gen).size > 1000);
-    const legacyAfter = fs.statSync(
-      path.join(root, "src/computer/xclaw-server.mjs")
-    ).size;
-    assert.equal(legacyAfter, legacyBefore);
+    // The build must never write the bundle: absent stays absent; present unchanged.
+    const after = fs.existsSync(bundle) ? fs.statSync(bundle).size : null;
+    assert.equal(after, before);
     const stamp = JSON.parse(
       fs.readFileSync(path.join(root, "src/computer/build-stamp.json"), "utf8")
     );

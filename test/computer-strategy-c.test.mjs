@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { resolveComputerEngine } from "../src/computer/engine.mjs";
@@ -17,10 +18,30 @@ describe("Strategy C computer policy", () => {
     assert.equal(sot.policy?.handEditBundle, false);
   });
 
-  it("runtime bundle artifact exists", () => {
-    const p = path.join(root, "src/computer/xclaw-server.mjs");
-    assert.ok(fs.existsSync(p));
-    assert.ok(fs.statSync(p).size > 1_000_000);
+  it("bundle artifact is manifested (opt-in release download, not in git)", () => {
+    // The 16MB CDP bundle lives in a GitHub release, not the repo. The
+    // committed manifest is the source of truth; the file is optional locally.
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(root, "src/computer/bundle-artifact.json"), "utf8")
+    );
+    assert.equal(manifest.file, "src/computer/xclaw-server.mjs");
+    assert.ok(manifest.bytes > 1_000_000, "manifest records a >1MB artifact");
+    assert.match(manifest.sha256, /^[a-f0-9]{64}$/, "manifest has a sha256");
+    assert.ok(manifest.url.includes("/releases/"), "manifest points at a release asset");
+    // If a local copy exists, it MUST match the manifest checksum.
+    const p = path.join(root, manifest.file);
+    if (fs.existsSync(p)) {
+      const got = crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+      assert.equal(got, manifest.sha256, "local bundle checksum matches manifest");
+    }
+  });
+
+  it("bundle artifact is not tracked in git", () => {
+    const r = spawnSync("git", ["ls-files", "--error-unmatch", "src/computer/xclaw-server.mjs"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.notEqual(r.status, 0, "xclaw-server.mjs must be untracked (release artifact)");
   });
 
   it("MODULE_MAP extracted modules exist", () => {

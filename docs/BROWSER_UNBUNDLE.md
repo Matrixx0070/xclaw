@@ -17,6 +17,16 @@ Do **not** hand-edit `src/computer/xclaw-server.mjs` (~16MB). Browser capability
 3. Bundle is **opt-in** (`XCLAW_COMPUTER_ENGINE=bundle`) for full CDP
 4. Philosophy filter: one default story (native/generated), not three products
 
+## The bundle is a release artifact, NOT tracked in git
+The 16MB `xclaw-server.mjs` was 64% of the repo. It now lives in the
+`computer-bundle` GitHub release and is **git-ignored**. Integrity is pinned by
+sha256 in `src/computer/bundle-artifact.json`.
+
+- Install it: `npm run fetch:bundle` (verifies sha256; prefers `gh release download`, falls back to the direct URL).
+- Auto-fetch: starting with `engine=bundle` and no local copy triggers a fetch (disable with `XCLAW_BUNDLE_AUTOFETCH=0`).
+- Updating the bundle: upload the new asset to the `computer-bundle` release, then update `bytes`/`sha256` in `bundle-artifact.json`.
+- The default `native`/`generated` engines never need it.
+
 ## Status
 - Extracted tool: `modules/browser-tab-tool.extracted.mjs` / `.mjs`
-- Full CDP remains in bundle until parity matrix is green (C4)
+- Full CDP remains in the release bundle until the parity matrix is green (C4)

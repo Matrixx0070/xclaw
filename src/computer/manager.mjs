@@ -1,7 +1,7 @@
 /**
  * Computer service manager — supervised start/stop with PID + log files.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mitmEnvFromConfig, isMitmEnabled } from "../browser/mitm.mjs";
 import path from "node:path";
 import http from "node:http";
@@ -320,9 +320,34 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
     };
   }
 
-  // bundle / full CDP fallback
+  // bundle / full CDP fallback — the bundle is an opt-in release artifact,
+  // not tracked in git. Fetch it on demand (optionally auto).
   if (!fs.existsSync(entry)) {
-    throw new Error(`Computer entry not found: ${entry}`);
+    const isDefaultBundle = entry.endsWith(path.join("computer", "xclaw-server.mjs"));
+    const autofetch =
+      isDefaultBundle &&
+      !["0", "false", "off"].includes(String(process.env.XCLAW_BUNDLE_AUTOFETCH || "").toLowerCase());
+    if (autofetch) {
+      console.log("[xclaw] Computer bundle missing — fetching from release (npm run fetch:bundle)…");
+      const fetchScript = path.join(workRoot, "scripts/fetch-computer-bundle.mjs");
+      const r = spawnSync(process.execPath, [fetchScript], {
+        cwd: workRoot,
+        encoding: "utf8",
+        stdio: "inherit",
+      });
+      if (r.status !== 0 || !fs.existsSync(entry)) {
+        throw new Error(
+          `Computer bundle missing and auto-fetch failed: ${entry}\n` +
+            `Run: npm run fetch:bundle  (set XCLAW_BUNDLE_AUTOFETCH=0 to disable auto-fetch)`
+        );
+      }
+    } else {
+      throw new Error(
+        `Computer bundle not found: ${entry}\n` +
+          `It is an opt-in 16MB release artifact (XCLAW_COMPUTER_ENGINE=bundle). ` +
+          `Install it with: npm run fetch:bundle`
+      );
+    }
   }
 
   const env = {
