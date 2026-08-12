@@ -1,9 +1,10 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — P0 docs polish
+## 2026-08-12 — P1 CLI / doctor polish
 
 STATUS: green
 
-- README: 15-minute start, secrets, profiles table, Strategy C, security knobs, slim docs map
-- XCLAW.md: aligned project memory (security + commands)
-- docs/README.md: index pointing back to root README
+- doctor: grouped Config · Security · Computer · Runtime; exit legend 0/1/2; --json includes groups
+- status: sessions + --json
+- help: doctor, status, stop-all, sessions-active, transcripts
+- first-run tip shortened + XCLAW_QUIET

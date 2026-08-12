@@ -1,6 +1,10 @@
+/**
+ * xclaw status — gateway + computer + active agent sessions
+ */
 import http from "http";
 import { loadConfig } from "../config/load.mjs";
 import { getComputerStatus, computerProbeHost } from "../computer/manager.mjs";
+import { listActiveSessions } from "../agent/session-control.mjs";
 
 function getJson(url) {
   return new Promise((resolve) => {
@@ -23,40 +27,112 @@ function getJson(url) {
   });
 }
 
-export async function printStatus() {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.json]
+ * @param {string} [opts.root]
+ */
+export async function printStatus(opts = {}) {
+  const json = Boolean(opts.json);
   const cfg = await loadConfig();
   const gwUrl = `http://${cfg.gateway.host}:${cfg.gateway.port}`;
   const compUrl = `http://${computerProbeHost(cfg)}:${cfg.computer.port}`;
 
+  const gw = await getJson(`${gwUrl}/health`);
+  const cst = await getComputerStatus(cfg);
+  const ch = await getJson(`${gwUrl}/channels/status`);
+  let sessions = [];
+  try {
+    sessions = listActiveSessions();
+  } catch {
+    sessions = [];
+  }
+
+  const report = {
+    ok: Boolean(gw.ok && gw.body?.status === "healthy"),
+    profile: cfg.profile || process.env.XCLAW_PROFILE || "lab",
+    configPath: cfg.paths?.configFile || null,
+    gateway: {
+      url: gwUrl,
+      up: Boolean(gw.ok && gw.body?.status === "healthy"),
+      health: gw.ok ? gw.body : { error: gw.error || gw.status },
+    },
+    computer: {
+      url: compUrl,
+      up: Boolean(cst.healthy),
+      pid: cst.pid ?? null,
+      pidAlive: cst.pidAlive,
+      logPath: cst.logPath,
+      health: cst.health || null,
+    },
+    sessions: {
+      active: sessions.length,
+      items: sessions,
+    },
+    channels: ch.ok ? ch.body : null,
+    at: new Date().toISOString(),
+  };
+
+  if (json) {
+    console.log(JSON.stringify(report, null, 2));
+    return report;
+  }
+
   console.log("XClaw Status");
   console.log("============");
-  console.log(`Config:   ${cfg.paths.configFile}`);
+  console.log(`Profile:  ${report.profile}`);
+  console.log(`Config:   ${report.configPath || "—"}`);
   console.log(`Gateway:  ${gwUrl}`);
   console.log(`Computer: ${compUrl}`);
   console.log("");
 
-  const gw = await getJson(`${gwUrl}/health`);
-  if (gw.ok && gw.body?.status === "healthy") {
-    console.log(`Gateway:  UP  (${gw.body.service} v${gw.body.version} phase ${gw.body.phase})`);
-    console.log(`          computer reported: ${gw.body.computer}`);
+  if (report.gateway.up) {
+    const b = report.gateway.health;
+    console.log(
+      `Gateway:  UP  (${b.service || "xclaw"} v${b.version || "?"} phase ${b.phase || "?"})`
+    );
+    if (b.computer != null) console.log(`          computer reported: ${b.computer}`);
   } else {
-    console.log(`Gateway:  DOWN  (${gw.error || gw.status || "unreachable"})`);
+    console.log(
+      `Gateway:  DOWN  (${report.gateway.health?.error || "unreachable"})`
+    );
   }
 
-  const cst = await getComputerStatus(cfg);
-  if (cst.healthy) {
-    console.log(`Computer: UP  pid=${cst.pid ?? "?"}  ${cst.health?.body ? JSON.stringify(cst.health.body) : ""}`);
-    console.log(`          log ${cst.logPath}`);
+  if (report.computer.up) {
+    console.log(
+      `Computer: UP  pid=${report.computer.pid ?? "?"}  ${
+        report.computer.health?.body
+          ? JSON.stringify(report.computer.health.body)
+          : ""
+      }`
+    );
+    console.log(`          log ${report.computer.logPath}`);
   } else {
-    console.log(`Computer: DOWN  (${cst.health?.error || "unreachable"})`);
-    console.log(`          pid=${cst.pid ?? "—"} alive=${cst.pidAlive} log=${cst.logPath}`);
+    console.log(
+      `Computer: DOWN  (${report.computer.health?.error || "unreachable"})`
+    );
+    console.log(
+      `          pid=${report.computer.pid ?? "—"} alive=${report.computer.pidAlive} log=${report.computer.logPath}`
+    );
   }
 
-  const ch = await getJson(`${gwUrl}/channels/status`);
+  console.log("");
+  console.log(
+    `Sessions: ${report.sessions.active} active  (xclaw sessions-active · xclaw stop-all)`
+  );
+  for (const s of sessions.slice(0, 8)) {
+    console.log(
+      `  · ${s.sessionId}  aborted=${s.aborted}  ${s.label || ""}`.trim()
+    );
+  }
+  if (sessions.length > 8) console.log(`  · … +${sessions.length - 8} more`);
+
   if (ch.ok && ch.body) {
     console.log("");
     console.log("Channels:");
-    console.log(`  webchat:  ${ch.body.webchat?.enabled ? "enabled" : "disabled"}`);
+    console.log(
+      `  webchat:  ${ch.body.webchat?.enabled ? "enabled" : "disabled"}`
+    );
     for (const m of ch.body.messaging || []) {
       const bits = [
         m.enabled ? "enabled" : "disabled",
@@ -67,4 +143,8 @@ export async function printStatus() {
       console.log(`  ${m.name}: ${bits.join(" · ")}`);
     }
   }
+
+  return report;
 }
+
+export default { printStatus };

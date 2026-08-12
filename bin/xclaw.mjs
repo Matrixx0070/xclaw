@@ -1363,7 +1363,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     }
     case "status": {
       const { printStatus } = await import("../src/cli/status.mjs");
-      await printStatus({ root });
+      await printStatus({ root, json: args.includes("--json") });
       break;
     }
     case "queue": {
@@ -1773,42 +1773,45 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     case "--help":
     default: {
       console.log(`
-XClaw — personal AI assistant gateway (Phase 7)
+XClaw — self-hosted multi-LLM agent gateway
 
 Usage:
   xclaw <command> [options]
 
 Commands:
-  gateway, start    Start Gateway (Computer + Agent + WebChat + Telegram/Discord)
-  computer          Start Computer server only
-  agent <message>   Run one agent turn (CLI)
-  run <message>     Stream via gateway (--ndjson, --resume)
-  status            Gateway + Computer health
-  eval              Run autonomy eval suite (--tag smoke|autonomy|grounding, --mock, --json)
-  job <goal>        Run one verified job in a temp workspace
-  tokens-bench      Benchmark token probe overhead
-  cost              Show accumulated xAI/API cost ledger
-  version           Print version
-  info              Version + ready + queue summary
-  wait-ready        Poll until ready (starts computer by default)
-  routes            List gateway routes
-  help              Show help
+  gateway, start       Start Gateway (Computer + Agent + WebChat + channels)
+  computer             Computer server only (start|status|stop|restart)
+  agent <message>      One agent turn (CLI)
+  run <message>        Stream via gateway (--ndjson, --resume)
+  status [--json]      Gateway + computer + active sessions
+  doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
+  stop-all             Abort agent sessions + stop computer
+  sessions-active      List in-process agent sessions
+  transcripts          list | show <sessionId>
+  eval                 Eval suite (--tag, --mock, --json)
+  job <goal>           Verified job in a temp workspace
+  version              Print version
+  info                 Version + ready + queue summary
+  wait-ready           Poll until ready
+  routes               List gateway routes
+  help                 Show help
 
 Examples:
+  xclaw doctor
+  xclaw status --json
+  xclaw agent "List files in /tmp"
   xclaw gateway
   # open http://127.0.0.1:18790/chat/
 
-  xclaw agent "List files in /tmp"
+  xclaw stop-all
   xclaw run --ndjson "List files in /tmp"
-  xclaw run --resume <streamId> --last-event-id <id>
-
-  curl -X POST http://127.0.0.1:18790/channel/webchat/message \\
-    -H 'Content-Type: application/json' \\
-    -d '{"message":"echo hello from webchat"}'
 
 Config: ~/.xclaw/xclaw.json
-Env:    OPENAI_API_KEY / XCLAW_API_KEY, XCLAW_MODEL, XCLAW_API_BASE
+Env:    XAI_API_KEY / OPENAI_API_KEY / XCLAW_API_KEY, XCLAW_MODEL, XCLAW_PROFILE
+        XCLAW_GATEWAY_TOKEN (prod), XCLAW_EGRESS, XCLAW_OS_SANDBOX
         TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN
+
+See README.md for the 15-minute start path.
 `);
       if (!["help", "-h", "--help"].includes(cmd)) process.exitCode = 1;
     }

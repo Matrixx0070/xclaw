@@ -1043,15 +1043,68 @@ export async function runDoctor(opts = {}) {
 
 }
 
+/** Map check id → display group */
+function doctorGroup(id) {
+  const s = String(id || "");
+  if (
+    s.startsWith("config") ||
+    s.startsWith("profile") ||
+    s === "node" ||
+    s.startsWith("paths")
+  )
+    return "Config";
+  if (
+    s.startsWith("security") ||
+    s.startsWith("owner") ||
+    s.startsWith("auth") ||
+    s.startsWith("sandbox") ||
+    s.startsWith("egress")
+  )
+    return "Security";
+  if (
+    s.startsWith("computer") ||
+    s.startsWith("browser") ||
+    s.startsWith("chrome") ||
+    s.startsWith("mitm") ||
+    s.startsWith("hooks") ||
+    s.startsWith("motor") ||
+    s.startsWith("a.")
+  )
+    return "Computer";
+  if (
+    s.startsWith("gateway") ||
+    s.startsWith("bind") ||
+    s.startsWith("retry") ||
+    s.startsWith("apiKey") ||
+    s.startsWith("swarm") ||
+    s.startsWith("git") ||
+    s.startsWith("ssh")
+  )
+    return "Runtime";
+  return "Other";
+}
+
 function finish(checks, opts) {
   const errors = checks.filter((c) => c.status === "error").length;
   const warns = checks.filter((c) => c.status === "warn").length;
   const exitCode = errors ? 2 : warns ? 1 : 0;
+  const grouped = {};
+  for (const c of checks) {
+    const g = doctorGroup(c.id);
+    (grouped[g] ||= []).push(c);
+  }
   const report = {
     ok: errors === 0,
     exitCode,
+    /** 0 = clean, 1 = warnings only, 2 = errors */
+    exitCodeMeaning: {
+      0: "ok",
+      1: "warnings_only",
+      2: "errors",
+    },
     errors,
     warnings: warns,
+    groups: grouped,
     checks,
     at: new Date().toISOString(),
   };
@@ -1060,11 +1113,24 @@ function finish(checks, opts) {
       console.log(JSON.stringify(report, null, 2));
     } else {
       console.log("XClaw doctor\n");
-      for (const c of checks) {
-        const tag = c.status === "ok" ? "OK  " : c.status === "warn" ? "WARN" : "ERR ";
-        console.log(`  [${tag}] ${c.id}: ${c.message}`);
+      const order = ["Config", "Security", "Computer", "Runtime", "Other"];
+      for (const g of order) {
+        const list = grouped[g];
+        if (!list?.length) continue;
+        console.log(`── ${g} ──`);
+        for (const c of list) {
+          const tag =
+            c.status === "ok" ? "OK  " : c.status === "warn" ? "WARN" : "ERR ";
+          console.log(`  [${tag}] ${c.id}: ${c.message}`);
+        }
+        console.log("");
       }
-      console.log(`\nSummary: ${errors} error(s), ${warns} warning(s) — exit ${exitCode}`);
+      console.log(
+        `Summary: ${errors} error(s), ${warns} warning(s) — exit ${exitCode}`
+      );
+      console.log(
+        "Exit codes: 0 = ok · 1 = warnings only · 2 = errors"
+      );
     }
   }
   return report;

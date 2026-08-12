@@ -20,7 +20,8 @@ export XCLAW_PROFILE=lab            # convenient defaults
 export XCLAW_MODEL=xai/grok-4.5
 
 # 2) Health
-node bin/xclaw.mjs doctor
+node bin/xclaw.mjs doctor          # exit 0=ok · 1=warnings · 2=errors
+node bin/xclaw.mjs status --json
 
 # 3) One-shot goal
 node bin/xclaw.mjs agent "Create /tmp/xclaw-hello.txt with text ok"
