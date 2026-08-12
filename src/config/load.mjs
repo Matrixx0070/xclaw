@@ -34,11 +34,37 @@ async function ensureDirsAndFile() {
   }
 }
 
+/**
+ * Deep-merge a patch into the ON-DISK user config and write it atomically.
+ * Only the raw user file is touched (never the profile/env-merged runtime cfg),
+ * so writing back never bakes derived defaults into the file. Shared by the CLI
+ * (`xclaw providers …`) and the gateway providers routes so both persist the
+ * same way. Returns the merged object written.
+ */
+export async function saveConfigPatch(patch) {
+  const file = getConfigPath();
+  let user = {};
+  try {
+    user = JSON.parse(await fs.readFile(file, "utf8"));
+  } catch {
+    user = {};
+  }
+  const next = deepMerge(user, patch || {});
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const tmp = file + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(next, null, 2) + "\n", "utf8");
+  await fs.rename(tmp, file);
+  return next;
+}
+
 function deepMerge(base, over) {
   if (!over || typeof over !== "object") return base;
   const out = { ...base };
   for (const [k, v] of Object.entries(over)) {
-    if (v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object" && !Array.isArray(base[k])) {
+    if (v === null) {
+      // explicit null clears the key (e.g. reset a per-provider baseUrl)
+      out[k] = null;
+    } else if (v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object" && !Array.isArray(base[k])) {
       out[k] = deepMerge(base[k], v);
     } else if (v !== undefined) {
       out[k] = v;

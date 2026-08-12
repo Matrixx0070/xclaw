@@ -93,7 +93,10 @@ export function createGatewayAuth(cfg = {}) {
         p === "/xclaw/jwks/cache" ||
         p === "/xclaw/jwks/epoch" ||
         p.startsWith("/swarm") ||
-        p.startsWith("/subagents")
+        p.startsWith("/subagents") ||
+        // provider management writes config + stores credentials; a base-url
+        // rewrite would aim the stored Bearer token at an attacker host
+        p.startsWith("/providers")
       );
     }
     // strict: protect API surface
@@ -121,7 +124,8 @@ export function createGatewayAuth(cfg = {}) {
       p === "/xclaw/jwks/cache" ||
       p === "/xclaw/jwks/epoch" ||
       p.startsWith("/swarm") ||
-      p.startsWith("/subagents")
+      p.startsWith("/subagents") ||
+      p.startsWith("/providers")
     );
   }
 

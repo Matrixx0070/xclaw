@@ -57,3 +57,22 @@ describe("live discovery", () => {
     assert.ok(r.discovery);
   });
 });
+
+describe("anthropic discovery auth headers", () => {
+  it("OAuth token → Bearer + oauth beta, no x-api-key", async () => {
+    const { buildDiscoveryRequest } = await import("../src/providers/discovery.mjs");
+    const req = buildDiscoveryRequest("anthropic", "https://api.anthropic.com/v1", "sk-ant-oat01-XXX");
+    assert.equal(req.headers.Authorization, "Bearer sk-ant-oat01-XXX");
+    assert.ok(req.headers["anthropic-beta"], "oauth beta header required");
+    assert.equal(req.headers["x-api-key"], undefined, "OAuth must not send x-api-key");
+    assert.match(req.url, /\/v1\/models$/);
+  });
+
+  it("plain API key → x-api-key, no oauth beta", async () => {
+    const { buildDiscoveryRequest } = await import("../src/providers/discovery.mjs");
+    const req = buildDiscoveryRequest("anthropic", "https://api.anthropic.com/v1", "sk-ant-api03-YYY");
+    assert.equal(req.headers["x-api-key"], "sk-ant-api03-YYY");
+    assert.equal(req.headers.Authorization, undefined);
+    assert.equal(req.headers["anthropic-beta"], undefined);
+  });
+});

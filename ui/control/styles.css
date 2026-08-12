@@ -268,3 +268,24 @@ textarea {
 .kv-grid .v.good { color: #6ee7a8; }
 .kv-grid .v.warn { color: #fbbf24; }
 #cardQueue .pill.warn, td.warn .pill { border-color: #92400e; color: #fbbf24; }
+
+/* Providers panel */
+#provTable input[type="text"],
+#provTable input[type="password"],
+#provTable select {
+  background: #0d131b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+  font-size: 0.82rem;
+  max-width: 100%;
+}
+#provTable input.prov-base { width: 15rem; }
+#provTable input.prov-key { width: 10rem; }
+#provTable select.prov-model { width: 11rem; }
+#provTable input.prov-model-custom { width: 8rem; }
+#provTable tr.prov-active { background: rgba(61, 214, 140, 0.07); }
+#provTable td { vertical-align: middle; }
+#provTable .btn { padding: 0.25rem 0.6rem; font-size: 0.8rem; }

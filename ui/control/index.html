@@ -377,6 +377,33 @@
       </div>
     </section>
 
+    <section class="card span2" id="cardProviders">
+      <h2>Providers</h2>
+      <p class="muted">
+        Paste an API key → the model list fills with the provider's <b>live</b> models → pick one → Use.
+        OAuth logins are CLI-side: <code>xclaw providers oauth --provider &lt;id&gt;</code>.
+        Changes apply to new agent runs.
+      </p>
+      <div class="row">
+        <button class="btn" id="btnProvRefresh">Refresh</button>
+        <span id="provStatus" class="muted"></span>
+      </div>
+      <div class="table-wrap" style="max-height: 420px; margin-top: 0.5rem;">
+        <table id="provTable">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Base URL</th>
+              <th>Credentials</th>
+              <th>Model</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="card span2" id="cardAgent">
       <h2>Quick agent run</h2>
       <textarea id="agentMsg" rows="3" placeholder="Message to agent…"></textarea>

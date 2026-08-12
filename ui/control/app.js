@@ -1401,3 +1401,195 @@ $("btnSwarmAbort")?.addEventListener("click", () => {
 
 loadSwarmRuns().catch(() => {});
 loadMerges().catch(() => {});
+
+// ── Providers panel ─────────────────────────────────────────────────────────
+// Spine: paste API key → POST key → auto-fetch the provider's LIVE model list
+// → dropdown fills with real models → pick → Use.
+const _provLiveModels = {}; // provider id -> [modelId] (live-fetched)
+
+// Escape untrusted values before HTML interpolation (model ids, base URLs,
+// provider names all come from config/remote APIs — never trust them in HTML).
+const esc = (v) =>
+  String(v ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+
+function provHeaders(jsonBody) {
+  const h = jsonBody ? { "Content-Type": "application/json" } : {};
+  try {
+    const t = localStorage.getItem("xclaw_token");
+    if (t) h["x-xclaw-token"] = t;
+  } catch {}
+  return h;
+}
+
+function provSetStatus(text, isErr) {
+  const el = $("provStatus");
+  if (!el) return;
+  el.textContent = text || "";
+  el.className = isErr ? "muted" : "muted";
+  if (isErr && /unauthorized|401/i.test(String(text))) {
+    el.textContent = "operator token required — set localStorage.xclaw_token";
+  }
+}
+
+async function provCall(path, method, body) {
+  const r = await fetch(path, {
+    method: method || "GET",
+    headers: provHeaders(Boolean(body)),
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await r.text();
+  let out;
+  try { out = JSON.parse(text); } catch { out = { raw: text }; }
+  if (!r.ok) throw new Error(out.error || r.statusText || String(r.status));
+  return out;
+}
+
+async function provFetchModels(id) {
+  provSetStatus(`fetching live models for ${id}…`);
+  const r = await provCall("/providers/manage/models", "POST", { provider: id });
+  if (r.ok && r.models && r.models.length) {
+    _provLiveModels[id] = r.models;
+    provSetStatus(`${id}: ${r.models.length} live models`);
+  } else {
+    provSetStatus(`${id}: live model fetch failed (${r.error || "empty"}) — using static list`, true);
+  }
+  return r;
+}
+
+function provModelOptions(row) {
+  const live = _provLiveModels[row.id];
+  const models = live && live.length ? live : row.models || [];
+  const current = row.isActive && window.__provActiveModel ? window.__provActiveModel : null;
+  const opts = models
+    .map((m) => `<option value="${esc(m)}"${m === current ? " selected" : ""}>${esc(m)}</option>`)
+    .join("");
+  const tag = live && live.length ? " (live)" : models.length ? " (static)" : "";
+  return { opts, tag, count: models.length };
+}
+
+function provRenderRow(row) {
+  const { opts, tag, count } = provModelOptions(row);
+  // One badge per stored credential (api-key and OAuth are SEPARATE profiles —
+  // "<id>:apikey" vs "<id>:default"); click a badge to prefer that credential.
+  const credBadges = (row.profiles || [])
+    .map((pr) => {
+      const kind = pr.mode === "oauth" ? "oauth" : "apikey";
+      const cls = pr.expired ? "pill warn" : "pill on";
+      const pref = pr.orderIndex === 0 ? " ★" : "";
+      const exp = pr.expired ? " (expired)" : "";
+      return `<span class="${cls} prov-cred" data-profile="${esc(pr.id)}" style="cursor:pointer"
+        title="profile ${esc(pr.id)} — click to prefer">${kind}${exp}${pref}</span>`;
+    })
+    .join(" ");
+  const envBadge = row.hasEnvKey
+    ? `<span class="pill on" title="env ${esc(row.envKey || "")}">env ✓</span>`
+    : "";
+  const noCred = !credBadges && !envBadge ? `<span class="pill">no credential</span>` : "";
+  const oauthHint = row.hasOAuth
+    ? ""
+    : `<span class="muted" title="configure via CLI">oauth: <code>xclaw providers oauth --provider ${esc(row.id)}</code></span>`;
+  const active = row.isActive ? ` <span class="pill on">active</span>` : "";
+  return `<tr data-prov="${esc(row.id)}" class="${row.isActive ? "prov-active" : ""}">
+    <td><b>${esc(row.name)}</b>${active}<br /><span class="muted">${esc(row.id)}</span></td>
+    <td>
+      <input type="text" class="prov-base" value="${row.baseUrlCustom ? esc(row.baseUrl) : ""}"
+        placeholder="${esc(row.baseUrlDefault || "https://…")}" />
+      <button class="btn prov-base-save" title="Save base URL (https, or http to loopback)">Save</button>
+      ${row.baseUrlCustom ? `<button class="btn ghost prov-base-reset" title="Reset to default">Reset</button>` : ""}
+    </td>
+    <td>
+      ${credBadges} ${envBadge} ${noCred}<br />
+      <input type="password" class="prov-key" placeholder="paste API key…" autocomplete="off" />
+      <button class="btn prov-key-save">Add</button><br />
+      ${oauthHint}
+    </td>
+    <td>
+      <select class="prov-model" title="${count} models${esc(tag)}">${opts}</select>
+      <input type="text" class="prov-model-custom" placeholder="custom model…" />
+      <button class="btn ghost prov-models-refresh" title="Fetch live model list">↻</button>
+    </td>
+    <td><button class="btn primary prov-use" ${row.configured ? "" : "disabled title='add a key first'"}>Use</button></td>
+  </tr>`;
+}
+
+async function loadProviders() {
+  const tbody = document.querySelector("#provTable tbody");
+  if (!tbody) return;
+  try {
+    const inv = await provCall("/providers/manage");
+    window.__provActiveModel = inv.active?.model || null;
+    tbody.innerHTML = inv.providers.map(provRenderRow).join("");
+    provSetStatus(
+      `active: ${inv.active?.provider || "—"} / ${inv.active?.model || "—"}`
+    );
+    provWireRows(inv);
+  } catch (e) {
+    provSetStatus(String(e.message || e), true);
+  }
+}
+
+function provWireRows(inv) {
+  document.querySelectorAll("#provTable tr[data-prov]").forEach((tr) => {
+    const id = tr.getAttribute("data-prov");
+
+    tr.querySelector(".prov-base-save")?.addEventListener("click", async () => {
+      const url = tr.querySelector(".prov-base").value.trim();
+      try {
+        await provCall("/providers/manage/base-url", "POST", { provider: id, url: url || null });
+        provSetStatus(`${id}: base URL ${url ? "set" : "cleared"}`);
+        loadProviders();
+      } catch (e) { provSetStatus(String(e.message || e), true); }
+    });
+    tr.querySelector(".prov-base-reset")?.addEventListener("click", async () => {
+      try {
+        await provCall("/providers/manage/base-url", "POST", { provider: id, url: null });
+        provSetStatus(`${id}: base URL reset to default`);
+        loadProviders();
+      } catch (e) { provSetStatus(String(e.message || e), true); }
+    });
+
+    tr.querySelector(".prov-key-save")?.addEventListener("click", async () => {
+      const input = tr.querySelector(".prov-key");
+      const apiKey = input.value.trim();
+      if (!apiKey) return provSetStatus(`${id}: paste a key first`, true);
+      try {
+        await provCall("/providers/manage/key", "POST", { provider: id, apiKey });
+        input.value = ""; // never keep the secret in the DOM
+        provSetStatus(`${id}: key stored — fetching live models…`);
+        await provFetchModels(id); // the spine: key → real models
+        loadProviders();
+      } catch (e) { provSetStatus(String(e.message || e), true); }
+    });
+
+    tr.querySelector(".prov-models-refresh")?.addEventListener("click", async () => {
+      try { await provFetchModels(id); loadProviders(); }
+      catch (e) { provSetStatus(String(e.message || e), true); }
+    });
+
+    tr.querySelectorAll(".prov-cred").forEach((badge) => {
+      badge.addEventListener("click", async () => {
+        const profileId = badge.getAttribute("data-profile");
+        try {
+          await provCall("/providers/manage/prefer", "POST", { provider: id, profileId });
+          provSetStatus(`${id}: preferring ${profileId}`);
+          loadProviders();
+        } catch (e) { provSetStatus(String(e.message || e), true); }
+      });
+    });
+
+    tr.querySelector(".prov-use")?.addEventListener("click", async () => {
+      const custom = tr.querySelector(".prov-model-custom").value.trim();
+      const model = custom || tr.querySelector(".prov-model").value || undefined;
+      try {
+        const r = await provCall("/providers/manage/use", "POST", { provider: id, model });
+        provSetStatus(`now using ${r.provider} / ${r.model} — ${r.note || ""}`);
+        loadProviders();
+      } catch (e) { provSetStatus(String(e.message || e), true); }
+    });
+  });
+}
+
+$("btnProvRefresh")?.addEventListener("click", () => loadProviders().catch(console.error));
+loadProviders().catch(() => {});

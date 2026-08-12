@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.86.0 — multi-provider management: per-provider key + OAuth + base URL, CLI wizard, TUI, web UI
+
+Configure every provider independently — its own API key, its own OAuth, its own base URL, all separate and switchable — and pick a model from the provider's LIVE model list after entering the credential.
+
+**Credential-first live model discovery.** After a key or OAuth token is stored for a provider, xclaw fetches that provider's real `/models` list using the credential and presents it for selection — no more guessing from a static list. Anthropic OAuth (`sk-ant-oat`) discovery fixed to use the Bearer + oauth-beta headers (the `x-api-key` path 401s for OAuth); API keys (`sk-ant-api`) still use `x-api-key`.
+
+**Separate credentials per provider.** API key and OAuth for the same provider are stored as distinct profiles (`<provider>:apikey` vs `<provider>:oauth`) so they coexist — keep both, switch which one resolves via auth-order. A stored key never clobbers an OAuth token.
+
+**CLI — `xclaw providers`** (`src/cli/providers-cli.mjs`):
+- `providers list` — table of every provider: endpoint (custom/default), key/oauth status, active model, per-credential badges.
+- `providers set --provider X [--base-url U] [--api-key K] [--reset-url]` — non-interactive.
+- `providers oauth --provider X` — provider-dispatched OAuth login (Anthropic/xAI/OpenAI PKCE flows).
+- `providers use [X] [model]` — direct, or a zero-dep readline TUI (provider → credential → live-model menus).
+- `providers setup` — sequential wizard walking every provider (skip / API key / OAuth / base URL / reset), then the active pick.
+
+**Web UI + gateway** (`routes/providers.mjs`, `ui/control` Providers panel): `GET /providers/manage` inventory (no secrets), `POST base-url` / `key` / `models` / `use` / `check` / `prefer`, `DELETE key`. The panel implements the same spine: paste key → dropdown fills with live models → pick → Use; editable base URL, per-credential badges, active highlight.
+
+**Security** (all verified live):
+- `/providers/manage/*` is operator-token gated in both auth branches — a base-URL rewrite (which redirects the stored Bearer token) can't be done unauthenticated. No token / wrong token → 401.
+- Base-URL writes are validated: `https://` any host, `http://` loopback only; `file:`, non-loopback `http:`, other schemes → 400.
+- Control-UI panel escapes every interpolated value (provider names, ids, URLs, model ids) against stored XSS.
+
+Shared core `src/providers/manage.mjs` (inventory / setBaseUrl / setActive / checkCredential) backs both transports; `saveConfigPatch` in config/load.mjs is the shared atomic deep-merge writer. Suite 1279/0.
+
 ## 3.85.2 — install-hardening: doctor cwd-independence, provider baseUrl scoping, env precedence
 
 Found while installing the CLI locally (`npm run install:local` + `npm link`) and driving a real end-to-end agent turn.

@@ -477,3 +477,30 @@ installed `xclaw agent` (Anthropic OAuth token, claude-sonnet-5) →
 "INSTALL-OK-CLAUDE", tokens in=99 out=17. Install is functionally live.
 NOTE: xclaw is now linked on PATH + an anthropic:default OAuth profile is
 stored in ~/.xclaw (8h expiry, refresh token present).
+
+## 2026-08-12 — 3.86.0 multi-provider management (Claude)
+
+STATUS: green
+CONTEXT: user wants every provider configurable independently (own API key +
+OAuth + base URL, all SEPARATE) and to pick a model from the provider's LIVE
+model list after entering the credential — via CLI TUI and web UI.
+BUILT: shared core src/providers/manage.mjs (providerInventory/setProviderBaseUrl/
+setActiveProvider/checkProviderCredential) + saveConfigPatch (atomic deep-merge
+writer) in config/load.mjs. CLI src/cli/providers-cli.mjs: list/set/oauth/use(TUI)/
+setup(sequential wizard) — credential-first: after key/OAuth stored →
+fetchLiveModels(force) → numbered live-model picker. Gateway routes/providers.mjs:
+GET /providers/manage + POST base-url|key|models|use|check|prefer + DELETE key;
+control-UI Providers panel (paste key→live model dropdown→Use). Separate creds:
+<provider>:apikey vs <provider>:oauth coexist (setAuthOrder picks active).
+REAL FIX: anthropic discovery used x-api-key which 401s for OAuth tokens — now
+sk-ant-oat→Bearer+oauth-beta, sk-ant-api→x-api-key (both live-fetch models).
+SECURITY (3 HIGH from review, all fixed+live-proven): /providers gated in both
+auth.mjs branches (no/wrong token→401); base-url validated (https any / http
+loopback only; evil http, file:→400); UI esc() on every interpolation (XSS).
+RAN: full suite 1279 total, 0 fail (1274 pass, 5 skip), NO hang · providers-cli
+12/12 · gateway-providers 9/9 · LIVE gateway (token set): auth 401/401/200,
+base-url 400/400/200/200, POST models anthropic→10 real models via OAuth,
+use route ok, inventory NO secret leak, /control/ 200, 10 esc() calls.
+CLI live: list renders real table, base-url + use roundtrips persist/restore.
+NOTE: xclaw installed on this host (v3.86.0 via npm link) + anthropic OAuth
+profile stored; agent turns work live (INSTALL-OK-CLAUDE earlier).

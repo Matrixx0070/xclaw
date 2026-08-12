@@ -16,6 +16,7 @@ import { tryHandleSessionsRoute } from "./routes/sessions.mjs";
 import { tryHandleSubagentsRoute } from "./routes/subagents.mjs";
 import { tryHandleMcpRoute } from "./routes/mcp.mjs";
 import { tryHandleMediaRoute } from "./routes/media.mjs";
+import { tryHandleProvidersRoute } from "./routes/providers.mjs";
 import { applyCors } from "./cors.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import fs from "node:fs/promises";
@@ -1076,6 +1077,7 @@ export async function startGateway({ root } = {}) {
       // Mechanical route groups live in ./routes/* (one tryHandle per module);
       // stream/SSE, WebChat/static, OAuth-callback, telegram, and /agent/run
       // handlers stay inline — they own writer/closure state.
+      if (await tryHandleProvidersRoute(routeArgs)) return;
       if (await tryHandleAlertsRoute({ ...routeArgs, channelManager })) return;
       if (await tryHandleOpsRoute({ ...routeArgs, root, webchatEnabled, channelManager, XCLAW_VERSION, XCLAW_PHASE })) return;
       if (await tryHandleEvalQueueRoute({ ...routeArgs, root })) return;

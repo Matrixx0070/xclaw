@@ -347,6 +347,11 @@ Enable with seats.enabled: true in config`);
       process.exit(1);
       break;
     }
+    case "providers": {
+      const { runProvidersCli } = await import("../src/cli/providers-cli.mjs");
+      await runProvidersCli(args.slice(1), { root });
+      break;
+    }
     case "models": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const cfg = await loadConfig();
@@ -1891,6 +1896,7 @@ Commands:
   doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
   stop-all             Abort agent sessions + stop computer
   automations          list|add|pause|resume|run|results|delete
+  providers            list | setup (wizard) | set | oauth | use [X] [model]
   sessions-active      List in-process agent sessions
   transcripts          list | show <sessionId>
   eval                 Eval suite (--tag, --mock, --json)

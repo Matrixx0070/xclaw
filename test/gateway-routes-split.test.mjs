@@ -17,6 +17,7 @@ const MODULES = [
   ["subagents", "tryHandleSubagentsRoute"],
   ["mcp", "tryHandleMcpRoute"],
   ["media", "tryHandleMediaRoute"],
+  ["providers", "tryHandleProvidersRoute"],
 ];
 
 describe("gateway routes modules (split)", () => {

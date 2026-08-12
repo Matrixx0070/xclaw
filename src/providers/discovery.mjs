@@ -137,7 +137,7 @@ function normalizeGeminiList(body) {
 /**
  * Build request for a provider.
  */
-function buildDiscoveryRequest(providerId, baseUrl, apiKey) {
+export function buildDiscoveryRequest(providerId, baseUrl, apiKey) {
   const p = String(providerId).toLowerCase();
   const base = baseUrl.replace(/\/$/, "");
 
@@ -156,16 +156,25 @@ function buildDiscoveryRequest(providerId, baseUrl, apiKey) {
 
   // Anthropic native
   if (p === "anthropic") {
-    // Anthropic may expose /v1/models with x-api-key
     const root = base.replace(/\/v1$/, "") + "/v1";
+    // OAuth access tokens (sk-ant-oat*) must use Bearer + the oauth beta header
+    // and NO x-api-key — the x-api-key path 401s for OAuth. Plain API keys
+    // (sk-ant-api*) use x-api-key.
+    const isOAuth = String(apiKey || "").startsWith("sk-ant-oat");
+    const auth = !apiKey
+      ? {}
+      : isOAuth
+        ? {
+            Authorization: `Bearer ${apiKey}`,
+            "anthropic-beta": process.env.ANTHROPIC_OAUTH_BETA || "oauth-2025-04-20",
+          }
+        : { "x-api-key": apiKey };
     return {
       url: `${root}/models`,
       headers: {
         Accept: "application/json",
         "anthropic-version": process.env.ANTHROPIC_VERSION || "2023-06-01",
-        ...(apiKey
-          ? { "x-api-key": apiKey, Authorization: `Bearer ${apiKey}` }
-          : {}),
+        ...auth,
       },
       fallbackUrl: null,
       parser: "openai",
