@@ -12,6 +12,7 @@ import {
   buildEnforcedBashSpawn,
   getSpawnEnforceMode,
 } from "../../security/spawn-enforce.mjs";
+import { wrapSpawnWithOsSandbox } from "../../security/os-sandbox.mjs";
 
 const DEFAULT_TIMEOUT_SECONDS = 30;
 
@@ -60,7 +61,7 @@ export async function executeBash(input = {}, ctx = {}) {
   const background = Boolean(input.background);
 
   const useEnforceSpawn = Boolean(check.enforced || plan);
-  const spec = useEnforceSpawn
+  let spec = useEnforceSpawn
     ? buildEnforcedBashSpawn({ plan, command, cwd, env: process.env })
     : {
         exe: "/bin/bash",
@@ -68,6 +69,23 @@ export async function executeBash(input = {}, ctx = {}) {
         cwd,
         env: process.env,
       };
+
+  const wrapped = wrapSpawnWithOsSandbox(spec, {
+    cfg: ctx.cfg || {},
+    workspace: ctx.workspace || ctx.cwd || cwd,
+  });
+  if (wrapped.deny) {
+    return {
+      ok: false,
+      stdout: "",
+      stderr: wrapped.error || "os sandbox denied",
+      exitCode: 126,
+      blocked: true,
+      reason: wrapped.reason || "os_sandbox",
+    };
+  }
+  spec = wrapped;
+  const osSandboxed = Boolean(wrapped.sandboxed);
 
   if (background) {
     const logDir = path.join(os.tmpdir(), "xclaw-bash-bg");
@@ -91,6 +109,7 @@ export async function executeBash(input = {}, ctx = {}) {
       timedOut: false,
       interrupted: false,
       spawnEnforced: Boolean(check.enforced),
+      osSandboxed,
     };
   }
 
@@ -148,6 +167,7 @@ export async function executeBash(input = {}, ctx = {}) {
         timedOut,
         interrupted,
         spawnEnforced: Boolean(check.enforced),
+        osSandboxed,
       });
     });
   });

@@ -35,3 +35,10 @@
 
 - `node bin/xclaw.mjs transcripts list`  
 - `node bin/xclaw.mjs transcripts show <sessionId>`
+
+## OS sandbox (bubblewrap)
+
+- `security.osSandbox`: `off` | `auto` | `bwrap` (default `auto` — use bwrap when installed)
+- Env: `XCLAW_OS_SANDBOX`, `XCLAW_BWRAP`, `XCLAW_OS_SANDBOX_NET=deny|allow`
+- When active, bash runs under `bwrap` (workspace RW, system RO, optional `--unshare-net` if egress deny)
+- Install: `apt install bubblewrap` (Linux)

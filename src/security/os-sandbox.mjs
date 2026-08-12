@@ -1,0 +1,224 @@
+/**
+ * OS-level sandbox for tool spawn (Linux bubblewrap).
+ *
+ * When available, wraps bash in bwrap with:
+ * - workspace RW bind
+ * - optional --unshare-net (when egress deny / unshareNet)
+ * - RO system paths for a usable shell
+ * - private /tmp
+ *
+ * Config:
+ *   security.osSandbox: "off" | "bwrap" | "auto"  (default auto)
+ *   security.osSandboxUnshareNet: boolean (default: true when egress mode deny)
+ *   security.osSandboxExtraRo: string[] extra RO binds
+ * Env:
+ *   XCLAW_OS_SANDBOX=off|bwrap|auto
+ *   XCLAW_BWRAP=/path/to/bwrap
+ */
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { getEgressPolicy } from "./egress.mjs";
+
+let _bwrapPath = undefined; // undefined=unprobed, null=missing, string=path
+
+/**
+ * Resolve bwrap binary path or null.
+ */
+export function findBwrap() {
+  if (_bwrapPath !== undefined) return _bwrapPath;
+  const env = process.env.XCLAW_BWRAP;
+  if (env && fs.existsSync(env)) {
+    _bwrapPath = env;
+    return _bwrapPath;
+  }
+  for (const c of ["bwrap", "/usr/bin/bwrap", "/bin/bwrap"]) {
+    try {
+      const r = spawnSync(c === "bwrap" ? "bwrap" : c, ["--version"], {
+        encoding: "utf8",
+        timeout: 3000,
+      });
+      if (r.status === 0) {
+        _bwrapPath = c === "bwrap" ? "bwrap" : c;
+        return _bwrapPath;
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  _bwrapPath = null;
+  return null;
+}
+
+/** Test helper — reset probe cache */
+export function resetBwrapCache() {
+  _bwrapPath = undefined;
+}
+
+/**
+ * @param {object} [cfg]
+ * @returns {"off"|"bwrap"|"auto"}
+ */
+export function getOsSandboxMode(cfg = {}) {
+  const env = String(process.env.XCLAW_OS_SANDBOX || "").toLowerCase();
+  if (env === "off" || env === "0" || env === "false") return "off";
+  if (env === "bwrap" || env === "on" || env === "1" || env === "true") return "bwrap";
+  if (env === "auto") return "auto";
+  const m = String(
+    cfg?.security?.osSandbox || cfg?.osSandbox || ""
+  ).toLowerCase();
+  if (m === "off" || m === "bwrap" || m === "auto") return m;
+  // prod → prefer bwrap when present; lab → auto (use if present)
+  return "auto";
+}
+
+function shouldUnshareNet(cfg) {
+  if (cfg?.security?.osSandboxUnshareNet === false) return false;
+  if (cfg?.security?.osSandboxUnshareNet === true) return true;
+  if (process.env.XCLAW_OS_SANDBOX_NET === "allow") return false;
+  if (process.env.XCLAW_OS_SANDBOX_NET === "deny") return true;
+  try {
+    const eg = getEgressPolicy(cfg);
+    return eg.mode === "deny";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Build bwrap argv prefix (not including the target command).
+ * @returns {{ ok: true, bwrap: string, argvPrefix: string[] } | { ok: false, reason: string, error?: string }}
+ */
+export function buildBwrapArgv({
+  cfg = {},
+  cwd,
+  workspace,
+} = {}) {
+  const mode = getOsSandboxMode(cfg);
+  if (mode === "off") {
+    return { ok: false, reason: "disabled" };
+  }
+  const bwrap = findBwrap();
+  if (!bwrap) {
+    if (mode === "bwrap") {
+      return {
+        ok: false,
+        reason: "bwrap_missing",
+        error:
+          "security.osSandbox=bwrap but bubblewrap is not installed (apt install bubblewrap)",
+      };
+    }
+    return { ok: false, reason: "bwrap_unavailable" };
+  }
+
+  const ws = path.resolve(workspace || cwd || process.cwd());
+  const runCwd = path.resolve(cwd || ws);
+
+  /** @type {string[]} */
+  const argv = [
+    "--die-with-parent",
+    "--new-session",
+    // minimal procs
+    "--proc",
+    "/proc",
+    "--dev",
+    "/dev",
+    "--tmpfs",
+    "/tmp",
+    // read-only base system (best-effort; skip missing)
+  ];
+
+  const roDirs = [
+    "/usr",
+    "/bin",
+    "/lib",
+    "/lib64",
+    "/sbin",
+    "/etc",
+    ...(cfg?.security?.osSandboxExtraRo || []),
+  ];
+  for (const d of roDirs) {
+    try {
+      if (fs.existsSync(d)) {
+        argv.push("--ro-bind", d, d);
+      }
+    } catch {
+      /* skip */
+    }
+  }
+
+  // Symlink-friendly: some distros use /bin -> /usr/bin already covered
+
+  // Workspace RW
+  argv.push("--bind", ws, ws);
+
+  // If cwd outside workspace, bind it RW too (still constrained to that path)
+  if (runCwd !== ws && !runCwd.startsWith(ws + path.sep)) {
+    try {
+      if (fs.existsSync(runCwd)) argv.push("--bind", runCwd, runCwd);
+    } catch {
+      /* skip */
+    }
+  }
+
+  argv.push("--chdir", runCwd);
+
+  if (shouldUnshareNet(cfg)) {
+    argv.push("--unshare-net");
+  }
+
+  // Drop ambient capabilities as much as bwrap allows by default in user ns
+  argv.push("--unshare-pid");
+
+  return { ok: true, bwrap, argvPrefix: argv, workspace: ws, cwd: runCwd };
+}
+
+/**
+ * Wrap a spawn spec { exe, argv, cwd, env } with bwrap when enabled.
+ * @returns {{ exe, argv, cwd, env, sandboxed: boolean, reason?: string }}
+ */
+export function wrapSpawnWithOsSandbox(spec, { cfg, workspace } = {}) {
+  const built = buildBwrapArgv({
+    cfg,
+    cwd: spec.cwd,
+    workspace: workspace || spec.cwd,
+  });
+  if (!built.ok) {
+    // Hard fail only when mode is forced bwrap and missing
+    if (built.reason === "bwrap_missing") {
+      return {
+        ...spec,
+        sandboxed: false,
+        deny: true,
+        reason: built.reason,
+        error: built.error,
+      };
+    }
+    return {
+      exe: spec.exe,
+      argv: spec.argv,
+      cwd: spec.cwd,
+      env: spec.env,
+      sandboxed: false,
+      reason: built.reason || "off",
+    };
+  }
+
+  return {
+    exe: built.bwrap,
+    argv: [...built.argvPrefix, "--", spec.exe, ...spec.argv],
+    cwd: spec.cwd, // bwrap --chdir handles inside
+    env: spec.env,
+    sandboxed: true,
+    reason: "bwrap",
+  };
+}
+
+export default {
+  findBwrap,
+  resetBwrapCache,
+  getOsSandboxMode,
+  buildBwrapArgv,
+  wrapSpawnWithOsSandbox,
+};

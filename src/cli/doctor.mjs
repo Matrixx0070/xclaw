@@ -138,6 +138,30 @@ export async function runDoctor(opts = {}) {
     push("security.killSwitch", "warn", e.message || String(e));
   }
 
+  try {
+    const { findBwrap, getOsSandboxMode } = await import("../security/os-sandbox.mjs");
+    const mode = getOsSandboxMode(cfg);
+    const bw = findBwrap();
+    const prof = cfg.profile || process.env.XCLAW_PROFILE || "lab";
+    if (mode === "bwrap" && !bw) {
+      push("security.osSandbox", "error", "osSandbox=bwrap but bubblewrap not installed");
+    } else if (prof === "prod" && !bw) {
+      push(
+        "security.osSandbox",
+        "warn",
+        `prod without bwrap (mode=${mode}) — install bubblewrap for OS isolation of bash`
+      );
+    } else {
+      push(
+        "security.osSandbox",
+        "ok",
+        `mode=${mode} bwrap=${bw || "not-found"}`
+      );
+    }
+  } catch (e) {
+    push("security.osSandbox", "warn", e.message || String(e));
+  }
+
   // R3 owner safety
   try {
     const prof = cfg.profile || "lab";

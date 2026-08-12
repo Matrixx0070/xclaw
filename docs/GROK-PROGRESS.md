@@ -1,15 +1,12 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — Spawn-time plan enforcement
+## 2026-08-12 — bwrap OS sandbox
 
 STATUS: green
 
-### BUILT
-- `src/security/spawn-enforce.mjs` — assertPlanAtSpawn + buildEnforcedBashSpawn (-c not -lc)
-- `bash-tool.mjs` — refuses command mutation when systemRunPlan present; non-login spawn
-- Agent loop attaches `auth.plan` as `args.systemRunPlan` before computer.callTool
-- Tests: test/spawn-enforce.test.mjs 6/6
+- `src/security/os-sandbox.mjs` — detect bwrap, build binds, unshare-net/pid
+- bash-tool wraps spawn via wrapSpawnWithOsSandbox
+- doctor: security.osSandbox
+- tests skip live bwrap when binary missing (this host)
 
-### LIMITS
-Still not a kernel sandbox: free-form bash can still do anything *inside* the frozen string.
-Binding = that string is exactly what was approved.
+Install bubblewrap on runners/hosts for full isolation.
