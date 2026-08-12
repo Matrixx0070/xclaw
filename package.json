@@ -4,7 +4,8 @@
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
-    "xclaw": "./bin/xclaw.mjs"
+    "xclaw": "./bin/xclaw.mjs",
+    "xclaw-init": "./src/cli/init.mjs"
   },
   "scripts": {
     "start": "node bin/xclaw.mjs gateway",
@@ -12,6 +13,8 @@
     "computer": "node bin/xclaw.mjs computer",
     "status": "node bin/xclaw.mjs status",
     "doctor": "node bin/xclaw.mjs doctor",
+    "init": "node src/cli/init.mjs",
+    "onboard": "node src/cli/init.mjs",
     "test": "node --test test/**/*.test.mjs",
     "self-test": "node bin/xclaw.mjs self-test",
     "eval": "node bin/xclaw.mjs eval",
@@ -65,7 +68,8 @@
     "eval/",
     "INSTALL.md",
     "CHANGELOG.md",
-    "deploy/"
+    "deploy/",
+    "install/"
   ],
   "engines": {
     "node": ">=22"
