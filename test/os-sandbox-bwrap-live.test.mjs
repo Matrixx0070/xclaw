@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   findBwrap,
   resetBwrapCache,
+  probeBwrapWorks,
   wrapSpawnWithOsSandbox,
 } from "../src/security/os-sandbox.mjs";
 import { executeBash } from "../src/computer/modules/bash-tool.mjs";
@@ -14,10 +15,15 @@ describe("os-sandbox bwrap live", () => {
       t.skip("bubblewrap not installed");
       return;
     }
+    if (!probeBwrapWorks()) {
+      t.skip(
+        `bwrap unusable on this host: ${probeBwrapWorks.lastError || "uid map?"}`
+      );
+      return;
+    }
     const prev = process.env.XCLAW_OS_SANDBOX;
-    const prevNet = process.env.XCLAW_OS_SANDBOX_NET;
     process.env.XCLAW_OS_SANDBOX = "bwrap";
-    process.env.XCLAW_OS_SANDBOX_NET = "allow"; // avoid GH Actions netns loopback restriction
+    process.env.XCLAW_OS_SANDBOX_NET = "allow";
     try {
       const r = await executeBash(
         { command: "echo BWRAP_LIVE_OK" },
@@ -30,21 +36,13 @@ describe("os-sandbox bwrap live", () => {
           },
         }
       );
-      assert.equal(
-        r.ok,
-        true,
-        `bash failed: ${r.stderr || ""} exit=${r.exitCode} ${JSON.stringify({
-          osSandboxed: r.osSandboxed,
-          blocked: r.blocked,
-        })}`
-      );
+      assert.equal(r.ok, true, `bash failed: ${r.stderr || ""}`);
       assert.match(String(r.stdout), /BWRAP_LIVE_OK/);
       assert.equal(r.osSandboxed, true);
     } finally {
       if (prev == null) delete process.env.XCLAW_OS_SANDBOX;
       else process.env.XCLAW_OS_SANDBOX = prev;
-      if (prevNet == null) delete process.env.XCLAW_OS_SANDBOX_NET;
-      else process.env.XCLAW_OS_SANDBOX_NET = prevNet;
+      delete process.env.XCLAW_OS_SANDBOX_NET;
       resetBwrapCache();
     }
   });
@@ -55,6 +53,11 @@ describe("os-sandbox bwrap live", () => {
       t.skip("bubblewrap not installed");
       return;
     }
+    // Only checks argv construction when probe works; if unusable, wrap falls back
+    if (!probeBwrapWorks()) {
+      t.skip("bwrap unusable — argv path not exercised");
+      return;
+    }
     const w = wrapSpawnWithOsSandbox(
       {
         exe: "/bin/bash",
@@ -63,9 +66,7 @@ describe("os-sandbox bwrap live", () => {
         env: process.env,
       },
       {
-        cfg: {
-          security: { osSandbox: "bwrap", osSandboxUnshareNet: true },
-        },
+        cfg: { security: { osSandbox: "bwrap", osSandboxUnshareNet: true } },
         workspace: process.cwd(),
       }
     );

@@ -54,6 +54,56 @@ export function findBwrap() {
 /** Test helper — reset probe cache */
 export function resetBwrapCache() {
   _bwrapPath = undefined;
+  _bwrapWorks = undefined;
+}
+
+let _bwrapWorks = undefined; // undefined=unprobed, true/false
+
+/**
+ * Can we actually enter a bwrap sandbox on this host?
+ * (GitHub Actions often denies uid map setup.)
+ */
+export function probeBwrapWorks() {
+  if (_bwrapWorks !== undefined) return _bwrapWorks;
+  const bwrap = findBwrap();
+  if (!bwrap) {
+    _bwrapWorks = false;
+    return false;
+  }
+  const cwd = process.cwd();
+  const args = [
+    "--die-with-parent",
+    "--ro-bind",
+    "/usr",
+    "/usr",
+    "--bind",
+    cwd,
+    cwd,
+    "--chdir",
+    cwd,
+    "--",
+    "/bin/true",
+  ];
+  // /bin may be needed on non-merged systems
+  try {
+    if (fs.existsSync("/bin") && fs.realpathSync("/bin") !== fs.realpathSync("/usr")) {
+      args.splice(1, 0, "--ro-bind", "/bin", "/bin");
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const r = spawnSync(bwrap, args, { encoding: "utf8", timeout: 5000 });
+    _bwrapWorks = r.status === 0;
+    if (!_bwrapWorks) {
+      // stash last error for doctor
+      probeBwrapWorks.lastError = String(r.stderr || r.stdout || r.error || "bwrap probe failed");
+    }
+  } catch (e) {
+    _bwrapWorks = false;
+    probeBwrapWorks.lastError = String(e?.message || e);
+  }
+  return _bwrapWorks;
 }
 
 /**
@@ -183,6 +233,30 @@ export function buildBwrapArgv({
  * @returns {{ exe, argv, cwd, env, sandboxed: boolean, reason?: string }}
  */
 export function wrapSpawnWithOsSandbox(spec, { cfg, workspace } = {}) {
+  const mode = getOsSandboxMode(cfg);
+  // Probe once: some CI hosts cannot set uid maps
+  if (mode !== "off" && findBwrap() && !probeBwrapWorks()) {
+    if (mode === "bwrap") {
+      return {
+        ...spec,
+        sandboxed: false,
+        deny: true,
+        reason: "bwrap_unusable",
+        error:
+          probeBwrapWorks.lastError ||
+          "bwrap installed but cannot create sandbox (uid map denied?)",
+      };
+    }
+    return {
+      exe: spec.exe,
+      argv: spec.argv,
+      cwd: spec.cwd,
+      env: spec.env,
+      sandboxed: false,
+      reason: "bwrap_unusable_fallback",
+    };
+  }
+
   const built = buildBwrapArgv({
     cfg,
     cwd: spec.cwd,
@@ -222,6 +296,7 @@ export function wrapSpawnWithOsSandbox(spec, { cfg, workspace } = {}) {
 export default {
   findBwrap,
   resetBwrapCache,
+  probeBwrapWorks,
   getOsSandboxMode,
   buildBwrapArgv,
   wrapSpawnWithOsSandbox,

@@ -75,7 +75,7 @@ describe("spawn enforce", () => {
     });
     const r = await executeBash(
       { command: "echo PWNED", systemRunPlan: built.plan },
-      { cwd: process.cwd(), cfg: { profile: "lab" } }
+      { cwd: process.cwd(), cfg: { profile: "lab", security: { osSandbox: "off" } } }
     );
     assert.equal(r.ok, false);
     assert.equal(r.blocked, true);
@@ -90,7 +90,7 @@ describe("spawn enforce", () => {
     });
     const r = await executeBash(
       { command: "echo SPAWN_OK", systemRunPlan: built.plan },
-      { cwd: process.cwd(), cfg: { profile: "lab" } }
+      { cwd: process.cwd(), cfg: { profile: "lab", security: { osSandbox: "off" } } }
     );
     assert.equal(r.ok, true);
     assert.match(r.stdout, /SPAWN_OK/);
