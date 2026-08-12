@@ -24,7 +24,7 @@ sha256 in `src/computer/bundle-artifact.json`.
 
 - Install it: `npm run fetch:bundle` (verifies sha256; prefers `gh release download`, falls back to the direct URL).
 - Auto-fetch: starting with `engine=bundle` and no local copy triggers a fetch (disable with `XCLAW_BUNDLE_AUTOFETCH=0`).
-- Updating the bundle: upload the new asset to the `computer-bundle` release, then update `bytes`/`sha256` in `bundle-artifact.json`.
+- Updating the bundle: `npm run publish:bundle [path]` does it atomically — uploads the asset, re-downloads to verify the checksum round-trips, then rewrites `bytes`/`sha256` in `bundle-artifact.json` (manifest is left untouched if the upload/verify fails). `--dry-run` previews. Commit the manifest afterward.
 - The default `native`/`generated` engines never need it.
 
 ## Status

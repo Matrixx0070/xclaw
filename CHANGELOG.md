@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.80.1 — atomic bundle publish helper (closes the manifest-drift footgun)
+
+- `npm run publish:bundle [path]` (`scripts/publish-bundle.mjs`) updates the release asset and the `bundle-artifact.json` manifest in one step, so the pinned sha256 can't drift from what `fetch:bundle` downloads. It hashes the bundle, `gh release upload --clobber`s it, **re-downloads and verifies the checksum round-trips**, and only then rewrites the manifest — if the upload or verify fails, the manifest is left untouched. Auto-derives the repo from the manifest URL; `--dry-run` previews.
+- Tests: dry-run hashes + derives repo without uploading; missing-bundle error; round-trip/no-op guards present; a canary asserting the committed manifest sha stays canonical. Verified live end-to-end: published an altered bundle (manifest → new sha), then republished the original (manifest restored), `fetch:bundle` re-verifies.
+
 ## 3.80.0 — 16MB CDP bundle moved out of git into a release artifact
 
 - `src/computer/xclaw-server.mjs` (16.8MB, ~64% of repo size) is no longer tracked in git. It is published as the `computer-bundle` GitHub release asset and git-ignored. Only `XCLAW_COMPUTER_ENGINE=bundle` (opt-in full CDP) needs it; the default native/generated engines don't.

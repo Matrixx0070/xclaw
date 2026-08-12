@@ -264,3 +264,16 @@ idempotent skip on re-run · untracked-in-git tripwire test · full suite 1098/0
 eval:ci 0 · self-check OK — all with the bundle ABSENT (CI condition).
 NOTE: git history still holds the blob; a history purge is a separate destructive
 op (blocked by branch protection) — this stops carrying it forward + leans shallow clones.
+
+## 2026-08-12 — 3.80.1 atomic bundle publish helper (Claude)
+
+STATUS: green
+BUILT: scripts/publish-bundle.mjs + npm run publish:bundle — updates the release
+asset AND bundle-artifact.json in one step (hash → gh release upload --clobber →
+re-download + verify round-trip → only then rewrite manifest; manifest untouched
+on failure). Closes the 3.80.0 footgun where uploading a new bundle but forgetting
+the manifest sha would make fetch:bundle reject. Auto-derives repo from manifest
+URL; --dry-run previews.
+RAN: 4 hermetic tests (dry-run/missing/guards/canary) · live end-to-end — published
+an altered bundle (manifest→new sha), republished the original (manifest restored to
+canonical 9d95d0…), fetch:bundle re-verifies · full suite + eval:ci + self-check.
