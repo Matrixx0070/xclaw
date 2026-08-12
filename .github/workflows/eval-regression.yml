@@ -48,12 +48,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # apt is more reliable than marketplace pin (7.1 was unavailable upstream)
-      - name: Install ffmpeg (apt)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          ffmpeg -version | head -2
+      # Cache .deb packages between runs (key bumps via version: when ffmpeg stack changes)
+      - name: Cache apt packages (ffmpeg)
+        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        with:
+          packages: ffmpeg
+          version: ffmpeg-ci-v1
+      - name: Verify ffmpeg
+        run: ffmpeg -version | head -2
       - name: P1 media tools (view_x_video + images)
         run: node --test test/p1-tools.test.mjs
 
