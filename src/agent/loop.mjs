@@ -686,7 +686,8 @@ export async function runAgentLoop(options) {
 
         const verdict = guard.detect(name, args);
         if (verdict.stuck && verdict.level === "critical") {
-          onEvent({ type: "guard", ...verdict });
+          // Progress-based soft-stop: do not throw — keep post-run pipeline (verify, metrics, receipts)
+          onEvent({ type: "guard", ...verdict, softStop: true });
           loopGuardStop = true;
           finalText = verdict.message;
           messages.push(
@@ -696,7 +697,7 @@ export async function runAgentLoop(options) {
               source: "guard",
             })
           );
-          throw new Error(verdict.message);
+          return "stop";
         }
         if (verdict.stuck && verdict.level === "warning") {
           onEvent({ type: "guard", ...verdict });

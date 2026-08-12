@@ -340,14 +340,209 @@ export function createAnthropicMessagesProvider(opts = {}) {
     });
   }
 
+
+  /**
+   * Anthropic Messages SSE stream.
+   * Emits onDelta({ text }) for text deltas; assembles full assistant message
+   * (including tool_use) for the return value.
+   */
+  async function chatStream(args = {}) {
+    const {
+      messages,
+      tools,
+      model,
+      temperature,
+      max_tokens,
+      signal,
+      onDelta,
+    } = args;
+
+    const converted = toAnthropicMessages(messages);
+    const body = {
+      model: model || defaultModel,
+      max_tokens: max_tokens ?? opts.cfg?.agent?.maxTokens ?? 4096,
+      stream: true,
+      messages: converted.messages,
+    };
+    if (temperature != null) body.temperature = temperature;
+
+    let system = converted.system || "";
+    if (oauth) {
+      if (!system.startsWith(OAUTH_ATTESTATION)) {
+        system = system
+          ? `${OAUTH_ATTESTATION}\n\n${system}`
+          : OAUTH_ATTESTATION;
+      }
+      body.system = system;
+      ensureOAuthSystemAttestation(body);
+    } else if (system) {
+      body.system = system;
+    }
+
+    const anthTools = toAnthropicTools(tools);
+    if (anthTools?.length) body.tools = anthTools;
+
+    const headers = {
+      ...authHeaders(apiKey),
+      accept: "text/event-stream",
+    };
+
+    const res = await fetch(`${baseUrl}/messages`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    });
+
+    if (!res.ok) {
+      let text = "";
+      try {
+        text = await res.text();
+      } catch {
+        /* */
+      }
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        /* */
+      }
+      const msg =
+        json?.error?.message || text.slice(0, 300) || `HTTP ${res.status}`;
+      const err = new Error(`Anthropic HTTP ${res.status}: ${msg}`);
+      err.status = res.status;
+      err.body = json;
+      throw err;
+    }
+
+    // Fallback if body is not a stream
+    if (!res.body || typeof res.body.getReader !== "function") {
+      return chat(args);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let textOut = "";
+    /** @type {Array<{id:string, name:string, input:object, _json:string}>} */
+    const toolBlocks = [];
+    let currentTool = null;
+    let stopReason = "stop";
+    let usage = undefined;
+
+    function handleEvent(evt, data) {
+      if (!data || data === "[DONE]") return;
+      let parsed;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        return;
+      }
+      const type = parsed.type || evt;
+
+      if (type === "content_block_start") {
+        const block = parsed.content_block;
+        if (block?.type === "tool_use") {
+          currentTool = {
+            id: block.id,
+            name: block.name,
+            input: {},
+            _json: "",
+          };
+          toolBlocks.push(currentTool);
+        }
+      } else if (type === "content_block_delta") {
+        const d = parsed.delta;
+        if (d?.type === "text_delta" && d.text) {
+          textOut += d.text;
+          onDelta?.({ text: d.text, type: "text" });
+        } else if (d?.type === "input_json_delta" && currentTool && d.partial_json) {
+          currentTool._json += d.partial_json;
+          onDelta?.({ type: "tool_json", partial: d.partial_json });
+        }
+      } else if (type === "content_block_stop") {
+        if (currentTool) {
+          try {
+            currentTool.input = currentTool._json
+              ? JSON.parse(currentTool._json)
+              : {};
+          } catch {
+            currentTool.input = { _raw: currentTool._json };
+          }
+          currentTool = null;
+        }
+      } else if (type === "message_delta") {
+        if (parsed.delta?.stop_reason) stopReason = parsed.delta.stop_reason;
+        if (parsed.usage) {
+          usage = {
+            prompt_tokens: parsed.usage.input_tokens,
+            completion_tokens: parsed.usage.output_tokens,
+            total_tokens:
+              (parsed.usage.input_tokens || 0) +
+              (parsed.usage.output_tokens || 0),
+          };
+        }
+      } else if (type === "message_start" && parsed.message?.usage) {
+        usage = {
+          prompt_tokens: parsed.message.usage.input_tokens,
+          completion_tokens: parsed.message.usage.output_tokens || 0,
+          total_tokens:
+            (parsed.message.usage.input_tokens || 0) +
+            (parsed.message.usage.output_tokens || 0),
+        };
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      // SSE frames separated by blank lines
+      for (;;) {
+        const idx = buf.indexOf("\n\n");
+        if (idx < 0) break;
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let eventName = "message";
+        const dataLines = [];
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event:")) eventName = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+        }
+        if (dataLines.length) handleEvent(eventName, dataLines.join("\n"));
+      }
+    }
+
+    const tool_calls = toolBlocks.map((tb) => ({
+      id: tb.id,
+      type: "function",
+      function: {
+        name: tb.name,
+        arguments: JSON.stringify(tb.input || {}),
+      },
+    }));
+
+    const assistant = {
+      role: "assistant",
+      content: textOut || null,
+    };
+    if (tool_calls.length) assistant.tool_calls = tool_calls;
+
+    return {
+      message: assistant,
+      finishReason: stopReason === "tool_use" ? "tool_calls" : stopReason || "stop",
+      usage,
+      raw: { streamed: true, stopReason },
+    };
+  }
+
   return {
     kind: "anthropic-messages",
     oauth,
     baseUrl,
     model: defaultModel,
     chat,
-    /** Stream not fully SSE-parsed yet — falls back to non-stream chat */
-    chatStream: async (args) => chat(args),
+    chatStream,
     OAUTH_ATTESTATION,
   };
 }

@@ -235,14 +235,39 @@ export function createOpenClawLoopDetector(userConfig = {}) {
     const currentHash = hashToolCall(toolName, params);
     const knownPollTool = isKnownPollToolCall(toolName, params);
 
-    // Global circuit breaker
+    // Global circuit breaker — progress-aware:
+    // Critical only when call count is high AND no-progress streak is elevated,
+    // or absolute hard ceiling (1.5x threshold) to still bound runaways.
     if (history.length >= resolvedConfig.globalCircuitBreakerThreshold) {
+      // Overall stall: same tool+args no-progress on the latest entry
+      const last = history[history.length - 1];
+      const streakInfo = last
+        ? getNoProgressStreak(history, last.toolName, last.argsHash)
+        : { count: 0 };
+      const noProg = Number(streakInfo?.count || 0);
+      const hardCeiling = Math.ceil(
+        resolvedConfig.globalCircuitBreakerThreshold * 1.5
+      );
+      const progressStalled =
+        noProg >= Math.max(3, resolvedConfig.warningThreshold || 3);
+      if (progressStalled || history.length >= hardCeiling) {
+        return {
+          stuck: true,
+          level: "critical",
+          detector: "global_circuit_breaker",
+          count: history.length,
+          noProgressStreak: noProg,
+          message: `CRITICAL: ${history.length} tool calls with insufficient progress (no-progress streak ${noProg}). Soft-stopping to prevent runaway loops.`,
+        };
+      }
+      // Still moving: warn but do not critical-stop yet
       return {
         stuck: true,
-        level: "critical",
-        detector: "global_circuit_breaker",
+        level: "warning",
+        detector: "global_circuit_breaker_soft",
         count: history.length,
-        message: `CRITICAL: ${history.length} tool calls without resolution. Session execution blocked to prevent runaway loops.`,
+        noProgressStreak: noProg,
+        message: `WARNING: ${history.length} tool calls (threshold ${resolvedConfig.globalCircuitBreakerThreshold}) but progress still detected. Prefer finishing soon.`,
       };
     }
 
