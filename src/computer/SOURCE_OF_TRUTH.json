@@ -1,7 +1,7 @@
 {
   "phase": "A5",
   "completedAt": "2026-08-10",
-  "verdict": "bundle_is_runtime_clean_module_is_edit_source",
+  "verdict": "bundle_is_runtime_modules_are_edit_source",
   "preBundleSourceInRepo": false,
   "computerEntryDefault": "src/computer/xclaw-server.mjs",
   "computerEntryConfigKey": "computer.entry",
@@ -40,7 +40,7 @@
     },
     {
       "hook": "beforeNavigate",
-      "site": "xclaw_browser_tab \u2192 Page.navigate",
+      "site": "xclaw_browser_tab → Page.navigate",
       "file": "src/computer/xclaw-server.mjs"
     },
     {
@@ -55,6 +55,7 @@
     }
   ],
   "notes": [
+    "Strategy C (2026-08-12): DO NOT hand-edit xclaw-server.mjs; modules are source; bundle is runtime build artifact.",
     "xclaw-server.mjs is esbuild-style bundled output with inlined dependencies.",
     "Horizon H0 flag patches were applied directly to the bundle.",
     "No BrowserService source module exists outside the bundle in this repository.",
@@ -110,5 +111,21 @@
     "bridge": "src/computer/chrome-args-bridge.mjs",
     "bundleWired": true,
     "cleanBrowserServiceWired": true
+  },
+  "strategy": "C",
+  "strategyPhase": "C1",
+  "policy": {
+    "handEditBundle": false,
+    "bundlePath": "src/computer/xclaw-server.mjs",
+    "editPaths": [
+      "src/computer/modules/**",
+      "src/computer/chrome-args.mjs",
+      "src/computer/hooks-bridge.mjs",
+      "src/computer/motor-bridge.mjs",
+      "src/computer/thin-server.mjs"
+    ],
+    "buildCommand": "npm run build:computer",
+    "transitionalDefaultEngine": "native",
+    "targetDefaultEngine": "bundle"
   }
 }

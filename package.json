@@ -45,7 +45,9 @@
     "release-gate:live": "node scripts/release-gate.mjs --live",
     "check-bundle-markers": "node -e \"const fs=require('fs');const p='src/computer/xclaw-server.mjs';const t=fs.readFileSync(p,'utf8');const m=['A2: driver hooks','A4: humanized CDP motor','A5: single Chrome argv'];const miss=m.filter(x=>!t.includes(x));if(miss.length){console.error('MISSING',miss);process.exit(2)};console.log('OK markers',m.join(', '));\"",
     "live-e2e:cron": "node bin/xclaw.mjs live-e2e",
-    "live-e2e:schedule": "node bin/xclaw.mjs live-e2e-schedule"
+    "live-e2e:schedule": "node bin/xclaw.mjs live-e2e-schedule",
+    "build:computer": "node scripts/build-computer-bundle.mjs",
+    "computer:build": "node scripts/build-computer-bundle.mjs"
   },
   "files": [
     "bin/",
