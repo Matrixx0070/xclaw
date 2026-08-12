@@ -290,3 +290,27 @@ README quickstart now shows the one-command path.
 RAN: npm run onboard -> exit 0, ~/.xclaw/xclaw.json created · npm run install:local
 -> exit 0 · check-bundle-markers SKIP with bundle absent · suite 1102/0 ·
 install-e2e CI green on clean bundle-less checkout.
+
+## 2026-08-12 — 3.81.0 P0/P1 close-out + first live LLM→MCP proof (Claude)
+
+STATUS: green
+BUILT: (1) native browser_tab SSRF guard — fetchUrl → safeFetch with per-hop
+DNS-validate + IP-pin, private/loopback blocked by default, NEW metadataFloor
+(cloud-metadata blocked in every mode incl. off/allowPrivate); manager forwards
+policy env to computer child. (2) swarm merge self-approve closed —
+approveMergeProposal principal gate: in-loop tool = agent → PRINCIPAL_DENIED,
+CLI/gateway = operator; lab-only swarm.allowAgentMergeApprove, never in prod.
+(3) worktreeDiff merge-base (committed subagent work no longer NOOPs) +
+checkOnly pure dry-run + trailing-newline PATCH_CORRUPT fix. (4) cron full
+5-field parser + durable job store. (5) provider-scoped credential fallback +
+failover half-open recovery. (6) constant-time token compare + 1MB body cap.
+(7) memory walk stops at git root (planted /tmp/XCLAW.md dead). (8) runAgentOnce
+passed messages[] the loop drops → content:undefined 400 on every automations
+one-shot; fixed + tripwire. (9) eval-regression '|| true' removed. (10) Docker
+env bind overrides recovered from fix/docker-onboard before branch cleanup.
+RAN: suite 1107 → 1149 total, 0 fail (1144 pass, 5 env-skipped) · eval:ci OK · LIVE: ollama glm-5.2:cloud through
+the real loop chose mcp__echo__echo("XCLAW-LIVE-42") and reported the tool
+response (last UNVERIFIED item closed) · browser_tab live: example.com 200,
+metadata + loopback SSRF_BLOCKED · env bind override live: host 0.0.0.0:19999.
+BOARD: 10 superseded remote branches deleted after per-branch git-cherry checks;
+only main remains.

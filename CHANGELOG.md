@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.81.0 — P0/P1 close-out: browser SSRF, merge self-approve, correctness batch
+
+Closes the remaining P0/P1 tier of the 2026-08-12 design review + Grok brief. Suite 1149/0 fail (1144 pass, 5 env-skipped; was 1107), live LLM→MCP loop verified end-to-end for the first time.
+
+**Security (P0)**
+
+- **Native `browser_tab` SSRF guard**: `fetchUrl` did raw `http/https.request` on any agent URL with blind redirect-follow — the 3.79.x guard was only wired to `web_fetch`. Now routed through `safeFetch` (scheme allowlist, DNS-validate + IP-pin every hop, private/loopback blocked by default, `XCLAW_SSRF_ALLOW_PRIVATE=1` lab bypass) plus a new **metadata floor**: cloud-metadata endpoints (169.254/16, `metadata.google.internal`, Alibaba 100.100.100.200, AWS IPv6) are blocked in EVERY mode, including `off`/`allowPrivate`. Manager forwards the SSRF policy env to the computer child; blocked navigations return structured `{ok:false, code:"SSRF_BLOCKED"}`.
+- **Swarm merge self-approval closed**: `xclaw_swarm_merge_approve` was model-callable with no principal check — the agent that proposed a patch could approve it next turn, even in prod. `approveMergeProposal` now takes `opts.principal`; CLI/gateway stay operator surfaces, the in-loop tool passes `agent` and is refused with `PRINCIPAL_DENIED` (lab-only override `swarm.allowAgentMergeApprove`, never honored in prod).
+
+**Correctness + hardening (P1)**
+
+- **Worktree merges**: `worktreeDiff` diffs from the merge-base with the main repo, so **committed** subagent work finally surfaces instead of silently NOOPing (`committedCount`/`base` fields; `dirty` includes committed-only). `checkOnly` is now a pure dry-run (the unguarded `fs.cp` and pre-return `fs.mkdir` are gone). Real latent bug fixed: patches were written `trim()`med, stripping the trailing newline `git apply` requires — tracked-diff merges ending in an addition failed `PATCH_CORRUPT`.
+- **Cron**: full 5-field matching (dom/month/dow, lists, ranges, steps, Vixie dom/dow OR-rule) — `0 0 * * 1` no longer fires daily. Durable job store (`~/.xclaw/cron-jobs.json`, atomic writes); `start()` restores + re-arms payload jobs after gateway restart.
+- **Providers**: credential fallback is provider-scoped — a missing key no longer ships another vendor's env credential to an arbitrary baseUrl (`XCLAW_API_KEY` stays as the explicit generic override). Failover router gains half-open recovery (`cooldownMs`, default 60s) instead of staying demoted forever.
+- **Gateway**: constant-time token comparison (HTTP + WS); request bodies capped at 1MB (413).
+- **Memory trust boundary**: the `XCLAW.md`/`AGENTS.md` upward walk stops at the workspace git root (never the filesystem root) — a planted `/tmp/XCLAW.md` can no longer inject instructions.
+- **`runAgentOnce` fixed**: passed a `messages` array the loop silently drops → every automations one-shot ran with `content:undefined` (Provider HTTP 400). Found during live verification; source-assertion tripwire added.
+- **CI honesty**: removed the `|| true` softening on the OAuth/vault pack in eval-regression.
+
+**Docker (recovered from `fix/docker-onboard` branch)**
+
+- Env bind overrides (`XCLAW_GATEWAY_HOST/PORT`, `XCLAW_COMPUTER_HOST/PORT`, token via env) so compose-published ports work; Docker try-me path documented in INSTALL/README. Composes with bind-guard: non-loopback binds still require a token.
+
+**Verified live**: real LLM (ollama `glm-5.2:cloud`) through the actual agent loop discovered the stdio MCP fixture, called `mcp__echo__echo("XCLAW-LIVE-42")`, and reported its response — the review's last UNVERIFIED item. Branch board cleaned: 10 superseded remote branches deleted after per-branch supersession checks.
+
 ## 3.80.2 — restore install/onboard npm shortcuts + bundle-safe marker check
 
 - Restored the `npm run install:local` / `onboard` / `init` / `prove:install` script aliases that were dropped from package.json in the 3.76.0 release commit (the underlying `install/install.sh`, `src/cli/init.mjs`, and `scripts/prove-install-e2e.mjs` were always present and `install-e2e` CI stayed green — only the ergonomic shortcuts were missing).
