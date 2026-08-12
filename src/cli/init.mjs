@@ -14,6 +14,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { pathToFileURL } from "node:url";
@@ -59,7 +60,28 @@ async function writeConfigPatch(patch) {
   }
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, JSON.stringify(next, null, 2) + "\n", "utf8");
+  // Config may hold tokens/keys — owner-only
+  try {
+    await fs.chmod(file, 0o600);
+  } catch {
+    /* non-POSIX */
+  }
   return file;
+}
+
+/**
+ * Prod must not run default-open: generate and store a gateway token when
+ * none is configured. Returns the token when one was generated, else null.
+ * @param {string} profile
+ * @param {object} cfg loaded config
+ * @param {object} patch config patch being written (mutated)
+ */
+export function ensureGatewayToken(profile, cfg, patch) {
+  if (profile !== "prod") return null;
+  if (cfg?.gateway?.token || process.env.XCLAW_GATEWAY_TOKEN) return null;
+  const token = crypto.randomBytes(32).toString("hex");
+  patch.gateway = { ...(patch.gateway || {}), token };
+  return token;
 }
 
 /**
@@ -162,6 +184,8 @@ export async function initMain(args = []) {
     } else if (provider) {
       patch.agent = { provider };
     }
+    const generatedToken = ensureGatewayToken(profile, cfg, patch);
+    if (generatedToken) result.gatewayTokenGenerated = true;
     result.configPath = await writeConfigPatch(patch);
   } catch (err) {
     result.ok = false;
@@ -221,8 +245,8 @@ export async function initMain(args = []) {
     apiKey || result.apiKeyStored
       ? null
       : `export XAI_API_KEY=xai-...   # or: npm run init -- --yes --api-key xai-...`,
-    profile === "prod" && !(cfg.gateway?.token || process.env.XCLAW_GATEWAY_TOKEN)
-      ? `export XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)`
+    result.gatewayTokenGenerated
+      ? `# gateway token generated and stored in ${result.configPath} (mode 600)`
       : null,
     `node bin/xclaw.mjs doctor`,
     `node bin/xclaw.mjs gateway`,

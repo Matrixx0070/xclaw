@@ -5,6 +5,7 @@
 import http from "node:http";
 import { createHttpServer } from "./tls.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
+import { assertBindSafety } from "./bind-guard.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { listArtifacts } from "../artifacts/browser.mjs";
@@ -2363,6 +2364,11 @@ export async function startGateway({ root } = {}) {
       }
     }
   });
+
+  const bindSafety = assertBindSafety(cfg);
+  if (!bindSafety.ok) {
+    throw new Error(`[xclaw] ${bindSafety.error}`);
+  }
 
   await new Promise((resolve, reject) => {
     server.listen(cfg.gateway.port, cfg.gateway.host, (err) =>

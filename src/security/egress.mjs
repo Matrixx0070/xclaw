@@ -119,6 +119,16 @@ export function checkShellEgress(cfg, command) {
 }
 
 /**
+ * True when the egress policy calls for OS-level network isolation of tool
+ * spawns (bwrap --unshare-net). The command-pattern screen above is a fast
+ * UX pre-check only — the network namespace is the actual boundary.
+ * @param {object} [cfg]
+ */
+export function egressWantsNetIsolation(cfg = {}) {
+  return getEgressPolicy(cfg).mode !== "allow";
+}
+
+/**
  * Guard tool call — currently bash/shell focused.
  */
 export function guardToolEgress(cfg, toolName, args = {}) {
@@ -131,4 +141,4 @@ export function guardToolEgress(cfg, toolName, args = {}) {
   return checkShellEgress(cfg, command);
 }
 
-export default { getEgressPolicy, checkShellEgress, guardToolEgress };
+export default { getEgressPolicy, checkShellEgress, guardToolEgress, egressWantsNetIsolation };

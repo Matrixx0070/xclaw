@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.76.1 — Security hardening: real egress boundary, env policy, bind guard
+
+- **Egress is now enforced by netns, not regex**: bwrap `--unshare-net` defaults ON whenever `security.egress.mode ≠ allow` (netns probe with honest `netnsDegraded` fallback; live-verified `curl` NET-BLOCKED under `--unshare-net`). The command-pattern screen stays as a fast pre-check only.
+- **Tool spawn env policy** (`src/security/env-policy.mjs`): bash subprocesses no longer inherit secrets. `security.bashEnv`: `strip-secrets` (default) / `allowlist` (prod default) / `inherit`; `envAllow`/`envDeny` escape hatches; `XCLAW_BASH_ENV` override.
+- **Non-login `-c` bash on every spawn path** (the no-plan path previously ran `-lc` with full env); `BASH_ENV`/`ENV` rc-injection cleared everywhere; `security.bashLogin: true` restores `-lc`.
+- **Gateway bind guard** (`src/gateway/bind-guard.mjs`): refuses non-loopback bind without a token (`XCLAW_GATEWAY_ALLOW_OPEN=1` opt-out). `xclaw init --profile prod` now generates + stores the token; config file chmod 600.
+- **Loop-guard fix**: global circuit breaker counts ALL calls (`totalCalls`) — it previously counted the sliding window, so `historySize < threshold` silently disabled it (broken in every profile's hard ceiling).
+- **Hermetic tests**: `findMitmCaCert` no longer falls back to the operator's `~/.mitmproxy` when a confdir is explicitly configured (2 host-leak failures fixed); build stamp gains `fullRebuild: false` (stamp test fixed). Suite: 1034 pass / 0 fail.
+- `docs/GROK-PROGRESS.md` reconstructed as an append-only ledger from git history.
+
 ## 3.76.0 — Security phase: egress, kill-switch, live e2e, media CI
 
 - **Egress policy** (`src/security/egress.mjs`): prod default deny network shell; allowlist hosts; `XCLAW_EGRESS`

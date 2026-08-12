@@ -13,6 +13,7 @@ import {
   getSpawnEnforceMode,
 } from "../../security/spawn-enforce.mjs";
 import { wrapSpawnWithOsSandbox } from "../../security/os-sandbox.mjs";
+import { buildToolEnv } from "../../security/env-policy.mjs";
 
 const DEFAULT_TIMEOUT_SECONDS = 30;
 
@@ -60,14 +61,24 @@ export async function executeBash(input = {}, ctx = {}) {
   const cwd = check.cwd || ctx.cwd || process.cwd();
   const background = Boolean(input.background);
 
+  // Secrets are not ambient: tool subprocesses get a policy-filtered env
+  // (strip-secrets by default, allowlist in prod, inherit via security.bashEnv).
+  const envPolicy = buildToolEnv(ctx.cfg || {});
+  const spawnEnv = { ...envPolicy.env };
+  // Non-interactive, no rc-file injection on any path
+  spawnEnv.BASH_ENV = "";
+  spawnEnv.ENV = "";
+
   const useEnforceSpawn = Boolean(check.enforced || plan);
+  // Non-login shell (-c) everywhere; security.bashLogin=true restores -lc
+  const loginShell = ctx.cfg?.security?.bashLogin === true;
   let spec = useEnforceSpawn
-    ? buildEnforcedBashSpawn({ plan, command, cwd, env: process.env })
+    ? buildEnforcedBashSpawn({ plan, command, cwd, env: spawnEnv })
     : {
         exe: "/bin/bash",
-        argv: ["-lc", command],
+        argv: [loginShell ? "-lc" : "-c", command],
         cwd,
-        env: process.env,
+        env: spawnEnv,
       };
 
   const wrapped = wrapSpawnWithOsSandbox(spec, {
@@ -110,6 +121,8 @@ export async function executeBash(input = {}, ctx = {}) {
       interrupted: false,
       spawnEnforced: Boolean(check.enforced),
       osSandboxed,
+      netIsolated: Boolean(wrapped.netIsolated),
+      envPolicy: envPolicy.mode,
     };
   }
 
@@ -168,6 +181,8 @@ export async function executeBash(input = {}, ctx = {}) {
         interrupted,
         spawnEnforced: Boolean(check.enforced),
         osSandboxed,
+        netIsolated: Boolean(wrapped.netIsolated),
+        envPolicy: envPolicy.mode,
       });
     });
   });

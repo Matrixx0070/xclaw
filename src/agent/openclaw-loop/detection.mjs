@@ -209,9 +209,14 @@ export function createOpenClawLoopDetector(userConfig = {}) {
   const resolvedConfig = resolveConfig(userConfig);
   /** @type {Array<object>} */
   const history = [];
+  // Total calls this run — the global circuit breaker must count ALL calls,
+  // not the sliding window (history is capped at historySize, so a window
+  // smaller than the threshold silently disabled the breaker).
+  let totalCalls = 0;
 
   function record(toolName, params, resultText, details = {}) {
     if (!resolvedConfig.enabled) return;
+    totalCalls += 1;
     const argsHash = hashToolCall(toolName, params);
     const outcome = hashToolOutcome(toolName, params, resultText, details);
     history.push({
@@ -238,7 +243,7 @@ export function createOpenClawLoopDetector(userConfig = {}) {
     // Global circuit breaker — progress-aware:
     // Critical only when call count is high AND no-progress streak is elevated,
     // or absolute hard ceiling (1.5x threshold) to still bound runaways.
-    if (history.length >= resolvedConfig.globalCircuitBreakerThreshold) {
+    if (totalCalls >= resolvedConfig.globalCircuitBreakerThreshold) {
       // Overall stall: same tool+args no-progress on the latest entry
       const last = history[history.length - 1];
       const streakInfo = last
@@ -250,14 +255,14 @@ export function createOpenClawLoopDetector(userConfig = {}) {
       );
       const progressStalled =
         noProg >= Math.max(3, resolvedConfig.warningThreshold || 3);
-      if (progressStalled || history.length >= hardCeiling) {
+      if (progressStalled || totalCalls >= hardCeiling) {
         return {
           stuck: true,
           level: "critical",
           detector: "global_circuit_breaker",
-          count: history.length,
+          count: totalCalls,
           noProgressStreak: noProg,
-          message: `CRITICAL: ${history.length} tool calls with insufficient progress (no-progress streak ${noProg}). Soft-stopping to prevent runaway loops.`,
+          message: `CRITICAL: ${totalCalls} tool calls with insufficient progress (no-progress streak ${noProg}). Soft-stopping to prevent runaway loops.`,
         };
       }
       // Still moving: warn but do not critical-stop yet
@@ -265,9 +270,9 @@ export function createOpenClawLoopDetector(userConfig = {}) {
         stuck: true,
         level: "warning",
         detector: "global_circuit_breaker_soft",
-        count: history.length,
+        count: totalCalls,
         noProgressStreak: noProg,
-        message: `WARNING: ${history.length} tool calls (threshold ${resolvedConfig.globalCircuitBreakerThreshold}) but progress still detected. Prefer finishing soon.`,
+        message: `WARNING: ${totalCalls} tool calls (threshold ${resolvedConfig.globalCircuitBreakerThreshold}) but progress still detected. Prefer finishing soon.`,
       };
     }
 

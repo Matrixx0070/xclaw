@@ -40,7 +40,7 @@
     },
     {
       "hook": "beforeNavigate",
-      "site": "xclaw_browser_tab \u2192 Page.navigate",
+      "site": "xclaw_browser_tab → Page.navigate",
       "file": "src/computer/xclaw-server.mjs"
     },
     {

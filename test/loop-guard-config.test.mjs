@@ -22,7 +22,8 @@ describe("loop guard config", () => {
 
   it("circuitBreaker alias maps to global threshold", () => {
     const d = createOpenClawLoopDetector({ circuitBreaker: 55, historySize: 10 });
-    // trip only after 55 records
+    // trips only after 55 records — counted across ALL calls, even though
+    // the sliding window (historySize 10) is smaller than the threshold
     for (let i = 0; i < 54; i++) {
       d.record("xclaw_bash", { command: `echo ${i}` }, "ok");
     }
@@ -31,7 +32,17 @@ describe("loop guard config", () => {
     d.record("xclaw_bash", { command: "echo 54" }, "ok");
     const late = d.detect("xclaw_bash", { command: "echo boom" });
     assert.equal(late.stuck, true);
-    assert.equal(late.detector, "global_circuit_breaker");
+    // progress-aware: distinct commands → soft warning at threshold
+    assert.ok(String(late.detector).startsWith("global_circuit_breaker"));
+    assert.equal(late.count, 55);
+    // absolute hard ceiling (1.5x) still critical-stops even with progress
+    for (let i = 55; i < 83; i++) {
+      d.record("xclaw_bash", { command: `echo ${i}` }, "ok");
+    }
+    const ceiling = d.detect("xclaw_bash", { command: "echo done" });
+    assert.equal(ceiling.stuck, true);
+    assert.equal(ceiling.level, "critical");
+    assert.equal(ceiling.detector, "global_circuit_breaker");
   });
 
   it("profiles expose loopGuard packs", () => {

@@ -443,11 +443,20 @@ export async function stopMitm(cfg = null, { log = console.log } = {}) {
  */
 export async function findMitmCaCert(cfg = null) {
   const confdir = mitmConfdir(cfg);
+  // An explicitly configured confdir is authoritative — never fall back to
+  // the operator's personal ~/.mitmproxy CA (host leakage, non-hermetic).
+  const explicit = Boolean(
+    process.env.XCLAW_MITM_CONFDIR || cfg?.browser?.mitm?.confdir
+  );
   const candidates = [
     path.join(confdir, "mitmproxy-ca-cert.pem"),
     path.join(confdir, "mitmproxy-ca.pem"),
-    path.join(HOME, ".mitmproxy", "mitmproxy-ca-cert.pem"),
-    path.join(HOME, ".mitmproxy", "mitmproxy-ca.pem"),
+    ...(explicit
+      ? []
+      : [
+          path.join(HOME, ".mitmproxy", "mitmproxy-ca-cert.pem"),
+          path.join(HOME, ".mitmproxy", "mitmproxy-ca.pem"),
+        ]),
   ];
   for (const c of candidates) {
     try {

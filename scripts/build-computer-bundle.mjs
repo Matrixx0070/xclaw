@@ -90,6 +90,8 @@ const stamp = {
   strategy: "C",
   phase: "C3",
   builtAt: new Date().toISOString(),
+  // The 16MB legacy CDP bundle is never rebuilt by this script
+  fullRebuild: false,
   generatedEmit: true,
   generatedPath: "src/computer/generated/computer-server.mjs",
   generatedBytes: genBytes,

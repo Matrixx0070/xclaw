@@ -2,34 +2,654 @@
 
 // src/computer/thin-server.mjs
 import http2 from "node:http";
-import crypto2 from "node:crypto";
+import crypto3 from "node:crypto";
 
 // src/computer/modules/bash-tool.mjs
 import { spawn } from "node:child_process";
-import fs from "node:fs/promises";
-import path from "node:path";
+import path3 from "node:path";
 import os from "node:os";
+import fs4 from "node:fs/promises";
+import crypto2 from "node:crypto";
+
+// src/security/spawn-enforce.mjs
+import fs2 from "node:fs";
+import path from "node:path";
+
+// src/security/system-run-plan.mjs
 import crypto from "node:crypto";
+import fs from "node:fs";
+var PLAN_VERSION = 1;
+function tryRealpath(value) {
+  if (!value || typeof value !== "string") return null;
+  try {
+    return fs.realpathSync.native ? fs.realpathSync.native(value) : fs.realpathSync(value);
+  } catch {
+    return null;
+  }
+}
+function tryContentHash(filePath) {
+  try {
+    const buf = fs.readFileSync(filePath);
+    return crypto.createHash("sha256").update(buf).digest("hex");
+  } catch {
+    return null;
+  }
+}
+function planFingerprint(plan) {
+  const payload = {
+    v: plan.version ?? PLAN_VERSION,
+    tool: plan.tool,
+    argv: plan.argv || [],
+    cwd: plan.cwd,
+    exe: plan.exe,
+    files: (plan.fileOperands || []).map((f) => ({
+      p: f.path,
+      h: f.hash
+    }))
+  };
+  return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 32);
+}
+function revalidatePlan(plan) {
+  if (!plan || plan.version !== PLAN_VERSION) {
+    return { ok: false, reason: "invalid_plan", message: "plan missing or version mismatch" };
+  }
+  const drift = {};
+  if (plan.cwd) {
+    const now = tryRealpath(plan.pins?.cwdResolved || plan.cwd) || plan.cwd;
+    if (now !== plan.cwd) {
+      drift.cwd = { expected: plan.cwd, actual: now };
+    }
+  }
+  if (plan.exe && plan.pins?.exeResolved) {
+    const now = tryRealpath(plan.pins.exeResolved);
+    if (now && plan.exe && now !== plan.exe) {
+      drift.exe = { expected: plan.exe, actual: now };
+    }
+  }
+  for (const f of plan.fileOperands || []) {
+    if (!f.hash) continue;
+    const nowHash = tryContentHash(f.path);
+    if (nowHash && nowHash !== f.hash) {
+      drift[`file:${f.key || f.path}`] = {
+        expected: f.hash,
+        actual: nowHash
+      };
+    }
+  }
+  if (Object.keys(drift).length > 0) {
+    return {
+      ok: false,
+      reason: "plan_drift",
+      message: "Execution environment drifted after approval (TOCTOU).",
+      drift
+    };
+  }
+  const current = planFingerprint(plan);
+  if (plan.fingerprint && current !== plan.fingerprint) {
+    return {
+      ok: false,
+      reason: "fingerprint_mismatch",
+      message: "Plan fingerprint no longer matches frozen plan."
+    };
+  }
+  return { ok: true };
+}
+
+// src/security/spawn-enforce.mjs
+function tryRealpath2(value) {
+  if (!value || typeof value !== "string") return null;
+  try {
+    return fs2.realpathSync.native ? fs2.realpathSync.native(value) : fs2.realpathSync(value);
+  } catch {
+    return null;
+  }
+}
+function getSpawnEnforceMode(cfg = {}) {
+  const env = String(process.env.XCLAW_SPAWN_ENFORCE || "").toLowerCase();
+  if (env === "off" || env === "0" || env === "false") return "off";
+  if (env === "strict" || env === "1" || env === "true") return "strict";
+  if (env === "check") return "check";
+  const m = String(cfg?.security?.spawnEnforce || cfg?.spawnEnforce || "").toLowerCase();
+  if (m === "off" || m === "check" || m === "strict") return m;
+  if ((cfg?.profile || process.env.XCLAW_PROFILE) === "prod") return "check";
+  return "check";
+}
+function assertPlanAtSpawn({ plan, command, cwd, mode = "check" } = {}) {
+  if (mode === "off") {
+    return {
+      ok: true,
+      command: String(command || ""),
+      cwd: cwd || process.cwd(),
+      enforced: false
+    };
+  }
+  if (!plan) {
+    if (mode === "strict") {
+      return {
+        ok: false,
+        reason: "missing_plan",
+        error: "spawn enforce strict: systemRunPlan required for exec"
+      };
+    }
+    return {
+      ok: true,
+      command: String(command || ""),
+      cwd: cwd || process.cwd(),
+      enforced: false
+    };
+  }
+  if (plan.version != null && plan.version !== PLAN_VERSION) {
+    return {
+      ok: false,
+      reason: "plan_version",
+      error: `spawn enforce: plan version mismatch (got ${plan.version})`
+    };
+  }
+  const rv = revalidatePlan(plan);
+  if (!rv.ok) {
+    return {
+      ok: false,
+      reason: rv.reason || "plan_drift",
+      error: `spawn enforce: ${rv.message || rv.reason}`,
+      drift: rv.drift
+    };
+  }
+  const frozenCmd = String(plan.command ?? "");
+  const liveCmd = String(command ?? "");
+  if (frozenCmd !== liveCmd) {
+    return {
+      ok: false,
+      reason: "command_mismatch",
+      error: "spawn enforce: live command does not match frozen plan.command (refusing mutated args)",
+      expected: frozenCmd.slice(0, 200),
+      actual: liveCmd.slice(0, 200)
+    };
+  }
+  const fp = planFingerprint(plan);
+  if (plan.fingerprint && fp !== plan.fingerprint) {
+    return {
+      ok: false,
+      reason: "fingerprint_mismatch",
+      error: "spawn enforce: plan fingerprint mismatch at spawn"
+    };
+  }
+  let runCwd = plan.cwd || cwd || process.cwd();
+  if (cwd && plan.cwd) {
+    const live = tryRealpath2(path.resolve(cwd)) || path.resolve(cwd);
+    const pin = tryRealpath2(plan.cwd) || plan.cwd;
+    if (live !== pin) {
+      return {
+        ok: false,
+        reason: "cwd_mismatch",
+        error: `spawn enforce: cwd drift at spawn (plan=${pin} live=${live})`
+      };
+    }
+    runCwd = pin;
+  }
+  return {
+    ok: true,
+    command: frozenCmd,
+    cwd: runCwd,
+    enforced: true,
+    planFingerprint: plan.fingerprint
+  };
+}
+function buildEnforcedBashSpawn({ plan, command, cwd, env } = {}) {
+  const bashCandidates = ["/bin/bash", "/usr/bin/bash"];
+  let bash = "/bin/bash";
+  for (const c of bashCandidates) {
+    const real = tryRealpath2(c);
+    if (real) {
+      bash = real;
+      break;
+    }
+  }
+  if (plan?.exe && /bash$/.test(String(plan.exe))) {
+    const real = tryRealpath2(plan.exe) || plan.exe;
+    bash = real;
+  }
+  const cmd = plan?.command != null ? String(plan.command) : String(command || "");
+  const runCwd = plan?.cwd || cwd || process.cwd();
+  const base = { ...env || process.env };
+  delete base.BASH_ENV;
+  delete base.ENV;
+  base.BASH_ENV = "";
+  base.ENV = "";
+  return {
+    exe: bash,
+    // -c only (NOT -lc): no login profile, PATH stays closer to spawn env
+    argv: ["-c", cmd],
+    cwd: runCwd,
+    env: base,
+    shell: false
+  };
+}
+
+// src/security/os-sandbox.mjs
+import { spawnSync } from "node:child_process";
+import fs3 from "node:fs";
+import path2 from "node:path";
+
+// src/security/egress.mjs
+function getEgressPolicy(cfg = {}) {
+  const eg = cfg?.security?.egress || cfg?.egress || {};
+  const envMode = process.env.XCLAW_EGRESS;
+  let mode = String(envMode || eg.mode || "").toLowerCase();
+  if (!mode) {
+    const profile = process.env.XCLAW_PROFILE || cfg?.profile || "lab";
+    mode = profile === "prod" ? "deny" : "allow";
+  }
+  if (!["allow", "deny", "allowlist"].includes(mode)) mode = "allow";
+  const allowHosts = (eg.allowHosts || []).map((h) => String(h).toLowerCase());
+  const denyExtra = (eg.denyCommands || []).map((s) => {
+    try {
+      return new RegExp(s, "i");
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+  return { mode, allowHosts, denyExtra };
+}
+
+// src/security/os-sandbox.mjs
+var _bwrapPath = void 0;
+function findBwrap() {
+  if (_bwrapPath !== void 0) return _bwrapPath;
+  const env = process.env.XCLAW_BWRAP;
+  if (env && fs3.existsSync(env)) {
+    _bwrapPath = env;
+    return _bwrapPath;
+  }
+  for (const c of ["bwrap", "/usr/bin/bwrap", "/bin/bwrap"]) {
+    try {
+      const r = spawnSync(c === "bwrap" ? "bwrap" : c, ["--version"], {
+        encoding: "utf8",
+        timeout: 3e3
+      });
+      if (r.status === 0) {
+        _bwrapPath = c === "bwrap" ? "bwrap" : c;
+        return _bwrapPath;
+      }
+    } catch {
+    }
+  }
+  _bwrapPath = null;
+  return null;
+}
+var _bwrapWorks = void 0;
+function probeBwrapWorks() {
+  if (_bwrapWorks !== void 0) return _bwrapWorks;
+  const bwrap = findBwrap();
+  if (!bwrap) {
+    _bwrapWorks = false;
+    return false;
+  }
+  const cwd = process.cwd();
+  const args = [
+    "--die-with-parent",
+    "--ro-bind",
+    "/usr",
+    "/usr",
+    "--bind",
+    cwd,
+    cwd,
+    "--chdir",
+    cwd,
+    "--",
+    "/bin/true"
+  ];
+  try {
+    if (fs3.existsSync("/bin") && fs3.realpathSync("/bin") !== fs3.realpathSync("/usr")) {
+      args.splice(1, 0, "--ro-bind", "/bin", "/bin");
+    }
+  } catch {
+  }
+  try {
+    const r = spawnSync(bwrap, args, { encoding: "utf8", timeout: 5e3 });
+    _bwrapWorks = r.status === 0;
+    if (!_bwrapWorks) {
+      probeBwrapWorks.lastError = String(r.stderr || r.stdout || r.error || "bwrap probe failed");
+    }
+  } catch (e) {
+    _bwrapWorks = false;
+    probeBwrapWorks.lastError = String(e?.message || e);
+  }
+  return _bwrapWorks;
+}
+function getOsSandboxMode(cfg = {}) {
+  const env = String(process.env.XCLAW_OS_SANDBOX || "").toLowerCase();
+  if (env === "off" || env === "0" || env === "false") return "off";
+  if (env === "bwrap" || env === "on" || env === "1" || env === "true") return "bwrap";
+  if (env === "auto") return "auto";
+  const m = String(
+    cfg?.security?.osSandbox || cfg?.osSandbox || ""
+  ).toLowerCase();
+  if (m === "off" || m === "bwrap" || m === "auto") return m;
+  return "auto";
+}
+var _bwrapNetnsWorks = void 0;
+function probeBwrapNetns() {
+  if (_bwrapNetnsWorks !== void 0) return _bwrapNetnsWorks;
+  const bwrap = findBwrap();
+  if (!bwrap || !probeBwrapWorks()) {
+    _bwrapNetnsWorks = false;
+    return false;
+  }
+  const cwd = process.cwd();
+  try {
+    const r = spawnSync(
+      bwrap,
+      [
+        "--die-with-parent",
+        "--unshare-net",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--bind",
+        cwd,
+        cwd,
+        "--chdir",
+        cwd,
+        "--",
+        "/bin/true"
+      ],
+      { encoding: "utf8", timeout: 5e3 }
+    );
+    _bwrapNetnsWorks = r.status === 0;
+    if (!_bwrapNetnsWorks) {
+      probeBwrapNetns.lastError = String(r.stderr || r.stdout || r.error || "bwrap netns probe failed");
+    }
+  } catch (e) {
+    _bwrapNetnsWorks = false;
+    probeBwrapNetns.lastError = String(e?.message || e);
+  }
+  return _bwrapNetnsWorks;
+}
+function shouldUnshareNet(cfg) {
+  if (cfg?.security?.osSandboxUnshareNet === false) return false;
+  if (cfg?.security?.osSandboxUnshareNet === true) return true;
+  if (process.env.XCLAW_OS_SANDBOX_NET === "allow") return false;
+  if (process.env.XCLAW_OS_SANDBOX_NET === "deny") return true;
+  return getEgressPolicy(cfg).mode !== "allow";
+}
+function buildBwrapArgv({
+  cfg = {},
+  cwd,
+  workspace
+} = {}) {
+  const mode = getOsSandboxMode(cfg);
+  if (mode === "off") {
+    return { ok: false, reason: "disabled" };
+  }
+  const bwrap = findBwrap();
+  if (!bwrap) {
+    if (mode === "bwrap") {
+      return {
+        ok: false,
+        reason: "bwrap_missing",
+        error: "security.osSandbox=bwrap but bubblewrap is not installed (apt install bubblewrap)"
+      };
+    }
+    return { ok: false, reason: "bwrap_unavailable" };
+  }
+  const ws = path2.resolve(workspace || cwd || process.cwd());
+  const runCwd = path2.resolve(cwd || ws);
+  const argv = [
+    "--die-with-parent",
+    "--proc",
+    "/proc",
+    "--dev",
+    "/dev",
+    "--tmpfs",
+    "/tmp"
+  ];
+  const roDirs = [
+    "/usr",
+    "/etc",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/lib32",
+    ...cfg?.security?.osSandboxExtraRo || []
+  ];
+  const bound = /* @__PURE__ */ new Set();
+  for (const d of roDirs) {
+    try {
+      if (!fs3.existsSync(d)) continue;
+      let real = d;
+      try {
+        real = fs3.realpathSync(d);
+      } catch {
+      }
+      if (bound.has(real)) continue;
+      argv.push("--ro-bind", d, d);
+      bound.add(real);
+      bound.add(d);
+    } catch {
+    }
+  }
+  argv.push("--bind", ws, ws);
+  if (runCwd !== ws && !runCwd.startsWith(ws + path2.sep)) {
+    try {
+      if (fs3.existsSync(runCwd)) argv.push("--bind", runCwd, runCwd);
+    } catch {
+    }
+  }
+  argv.push("--chdir", runCwd);
+  let netIsolated = false;
+  let netnsDegraded = false;
+  if (shouldUnshareNet(cfg)) {
+    if (probeBwrapNetns()) {
+      argv.push("--unshare-net");
+      netIsolated = true;
+    } else {
+      netnsDegraded = true;
+    }
+  }
+  argv.push("--unshare-pid");
+  return {
+    ok: true,
+    bwrap,
+    argvPrefix: argv,
+    workspace: ws,
+    cwd: runCwd,
+    netIsolated,
+    netnsDegraded
+  };
+}
+function wrapSpawnWithOsSandbox(spec, { cfg, workspace } = {}) {
+  const mode = getOsSandboxMode(cfg);
+  if (mode !== "off" && findBwrap() && !probeBwrapWorks()) {
+    if (mode === "bwrap") {
+      return {
+        ...spec,
+        sandboxed: false,
+        deny: true,
+        reason: "bwrap_unusable",
+        error: probeBwrapWorks.lastError || "bwrap installed but cannot create sandbox (uid map denied?)"
+      };
+    }
+    return {
+      exe: spec.exe,
+      argv: spec.argv,
+      cwd: spec.cwd,
+      env: spec.env,
+      sandboxed: false,
+      reason: "bwrap_unusable_fallback"
+    };
+  }
+  const built = buildBwrapArgv({
+    cfg,
+    cwd: spec.cwd,
+    workspace: workspace || spec.cwd
+  });
+  if (!built.ok) {
+    if (built.reason === "bwrap_missing") {
+      return {
+        ...spec,
+        sandboxed: false,
+        deny: true,
+        reason: built.reason,
+        error: built.error
+      };
+    }
+    return {
+      exe: spec.exe,
+      argv: spec.argv,
+      cwd: spec.cwd,
+      env: spec.env,
+      sandboxed: false,
+      reason: built.reason || "off"
+    };
+  }
+  return {
+    exe: built.bwrap,
+    argv: [...built.argvPrefix, "--", spec.exe, ...spec.argv],
+    cwd: spec.cwd,
+    // bwrap --chdir handles inside
+    env: spec.env,
+    sandboxed: true,
+    netIsolated: Boolean(built.netIsolated),
+    netnsDegraded: Boolean(built.netnsDegraded),
+    reason: "bwrap"
+  };
+}
+
+// src/security/env-policy.mjs
+var SECRET_NAME_RE = /(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_KEY|ACCESS_KEY|SESSION_?(ID|KEY)|COOKIE|_AUTH|AUTH_|WEBHOOK)/i;
+var BASE_ALLOW = /* @__PURE__ */ new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TERM",
+  "LANG",
+  "LANGUAGE",
+  "TZ",
+  "TMPDIR",
+  "PWD",
+  "COLUMNS",
+  "LINES",
+  "NODE_ENV",
+  "CI"
+]);
+var ALLOW_PREFIXES = ["LC_"];
+function getEnvPolicyMode(cfg = {}) {
+  const env = String(process.env.XCLAW_BASH_ENV || "").toLowerCase();
+  if (env === "inherit" || env === "allowlist" || env === "strip-secrets") return env;
+  const m = String(cfg?.security?.bashEnv || "").toLowerCase();
+  if (m === "inherit" || m === "allowlist" || m === "strip-secrets") return m;
+  return "strip-secrets";
+}
+function buildToolEnv(cfg = {}, sourceEnv = process.env) {
+  const mode = getEnvPolicyMode(cfg);
+  const allowExtra = new Set(
+    (cfg?.security?.envAllow || []).map((s) => String(s))
+  );
+  const denyExtra = new Set((cfg?.security?.envDeny || []).map((s) => String(s)));
+  const out = {};
+  const stripped = [];
+  for (const [k, v] of Object.entries(sourceEnv)) {
+    if (v == null) continue;
+    if (denyExtra.has(k)) {
+      stripped.push(k);
+      continue;
+    }
+    if (allowExtra.has(k)) {
+      out[k] = v;
+      continue;
+    }
+    if (mode === "inherit") {
+      out[k] = v;
+      continue;
+    }
+    if (mode === "allowlist") {
+      if (BASE_ALLOW.has(k) || ALLOW_PREFIXES.some((p) => k.startsWith(p))) {
+        out[k] = v;
+      } else {
+        stripped.push(k);
+      }
+      continue;
+    }
+    if (SECRET_NAME_RE.test(k)) {
+      stripped.push(k);
+    } else {
+      out[k] = v;
+    }
+  }
+  return { env: out, mode, stripped };
+}
+
+// src/computer/modules/bash-tool.mjs
 var DEFAULT_TIMEOUT_SECONDS = 30;
-async function runBash(input = {}, ctx = {}) {
-  const command = String(input.command || "");
+async function executeBash(input = {}, ctx = {}) {
+  let command = String(input.command || "");
   if (!command.trim()) {
     return { ok: false, stdout: "", stderr: "command is required", exitCode: 1 };
   }
+  const plan = input.systemRunPlan || input.plan || ctx.systemRunPlan || ctx.plan || null;
+  const mode = getSpawnEnforceMode(ctx.cfg || {});
+  const check = assertPlanAtSpawn({
+    plan,
+    command,
+    cwd: ctx.cwd || input.cwd,
+    mode: plan ? mode : mode === "strict" ? "strict" : "off"
+  });
+  if (!check.ok) {
+    return {
+      ok: false,
+      stdout: "",
+      stderr: check.error || "spawn enforce denied",
+      exitCode: 126,
+      blocked: true,
+      reason: check.reason || "spawn_enforce"
+    };
+  }
+  command = check.command || command;
   const timeoutSec = Number(input.timeout ?? DEFAULT_TIMEOUT_SECONDS);
   const timeoutMs = Math.min(12e4, Math.max(0, timeoutSec * 1e3));
-  const cwd = ctx.cwd || process.cwd();
+  const cwd = check.cwd || ctx.cwd || process.cwd();
   const background = Boolean(input.background);
+  const envPolicy = buildToolEnv(ctx.cfg || {});
+  const spawnEnv = { ...envPolicy.env };
+  spawnEnv.BASH_ENV = "";
+  spawnEnv.ENV = "";
+  const useEnforceSpawn = Boolean(check.enforced || plan);
+  const loginShell = ctx.cfg?.security?.bashLogin === true;
+  let spec = useEnforceSpawn ? buildEnforcedBashSpawn({ plan, command, cwd, env: spawnEnv }) : {
+    exe: "/bin/bash",
+    argv: [loginShell ? "-lc" : "-c", command],
+    cwd,
+    env: spawnEnv
+  };
+  const wrapped = wrapSpawnWithOsSandbox(spec, {
+    cfg: ctx.cfg || {},
+    workspace: ctx.workspace || ctx.cwd || cwd
+  });
+  if (wrapped.deny) {
+    return {
+      ok: false,
+      stdout: "",
+      stderr: wrapped.error || "os sandbox denied",
+      exitCode: 126,
+      blocked: true,
+      reason: wrapped.reason || "os_sandbox"
+    };
+  }
+  spec = wrapped;
+  const osSandboxed = Boolean(wrapped.sandboxed);
   if (background) {
-    const logDir = path.join(os.tmpdir(), "xclaw-bash-bg");
-    await fs.mkdir(logDir, { recursive: true });
-    const logFile = path.join(logDir, `${crypto.randomBytes(6).toString("hex")}.log`);
-    const logFd = await fs.open(logFile, "w");
-    const child = spawn("/bin/bash", ["-lc", command], {
-      cwd,
+    const logDir = path3.join(os.tmpdir(), "xclaw-bash-bg");
+    await fs4.mkdir(logDir, { recursive: true });
+    const logFile = path3.join(logDir, `${crypto2.randomBytes(6).toString("hex")}.log`);
+    const logFd = await fs4.open(logFile, "w");
+    const child = spawn(spec.exe, spec.argv, {
+      cwd: spec.cwd,
       detached: true,
       stdio: ["ignore", logFd.fd, logFd.fd],
-      env: process.env
+      env: spec.env
     });
     child.unref();
     await logFd.close();
@@ -40,13 +660,17 @@ async function runBash(input = {}, ctx = {}) {
       stdout: "",
       stderr: "",
       timedOut: false,
-      interrupted: false
+      interrupted: false,
+      spawnEnforced: Boolean(check.enforced),
+      osSandboxed,
+      netIsolated: Boolean(wrapped.netIsolated),
+      envPolicy: envPolicy.mode
     };
   }
   return new Promise((resolve) => {
-    const child = spawn("/bin/bash", ["-lc", command], {
-      cwd,
-      env: process.env,
+    const child = spawn(spec.exe, spec.argv, {
+      cwd: spec.cwd,
+      env: spec.env,
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stdout = "";
@@ -89,7 +713,11 @@ async function runBash(input = {}, ctx = {}) {
         stderr,
         exitCode: code ?? 1,
         timedOut,
-        interrupted
+        interrupted,
+        spawnEnforced: Boolean(check.enforced),
+        osSandboxed,
+        netIsolated: Boolean(wrapped.netIsolated),
+        envPolicy: envPolicy.mode
       });
     });
   });
@@ -100,29 +728,23 @@ var BashTool = {
   inputSchema: {
     type: "object",
     properties: {
-      command: { type: "string" },
-      timeout: { type: "number", description: "Seconds (max 120)" },
+      command: { type: "string", description: "Bash command to run" },
+      timeout: { type: "number", description: "Timeout seconds" },
       background: { type: "boolean" }
     },
     required: ["command"]
   },
-  isReadOnly: () => false,
-  async call(input, context = {}) {
-    const data = await runBash(input, {
-      cwd: context.cwd || context.workingDir || process.cwd(),
-      signal: context.signal || context.abortController?.signal
-    });
-    return { data };
-  }
+  execute: executeBash,
+  call: async (args, ctx) => executeBash(args, ctx)
 };
 
 // src/computer/modules/file-tools.mjs
-import fs2 from "node:fs/promises";
-import path2 from "node:path";
+import fs5 from "node:fs/promises";
+import path4 from "node:path";
 function resolveSafe(cwd, filePath) {
-  const root2 = path2.resolve(cwd || process.cwd());
-  const target = path2.resolve(root2, filePath);
-  if (!target.startsWith(root2 + path2.sep) && target !== root2) {
+  const root2 = path4.resolve(cwd || process.cwd());
+  const target = path4.resolve(root2, filePath);
+  if (!target.startsWith(root2 + path4.sep) && target !== root2) {
     const err = new Error(`Path escapes workspace: ${filePath}`);
     err.code = "E_SANDBOX";
     throw err;
@@ -132,7 +754,7 @@ function resolveSafe(cwd, filePath) {
 async function fileRead(input = {}, ctx = {}) {
   const cwd = ctx.cwd || process.cwd();
   const target = resolveSafe(cwd, input.path || input.file_path);
-  const content = await fs2.readFile(target, "utf8");
+  const content = await fs5.readFile(target, "utf8");
   const offset = Math.max(1, Number(input.offset) || 1);
   const limit = Number(input.limit) || 2e3;
   const lines = content.split("\n");
@@ -149,9 +771,9 @@ async function fileRead(input = {}, ctx = {}) {
 async function fileWrite(input = {}, ctx = {}) {
   const cwd = ctx.cwd || process.cwd();
   const target = resolveSafe(cwd, input.path || input.file_path);
-  await fs2.mkdir(path2.dirname(target), { recursive: true });
+  await fs5.mkdir(path4.dirname(target), { recursive: true });
   const content = input.content ?? "";
-  await fs2.writeFile(target, content, "utf8");
+  await fs5.writeFile(target, content, "utf8");
   return {
     ok: true,
     path: target,
@@ -161,7 +783,7 @@ async function fileWrite(input = {}, ctx = {}) {
 async function fileEdit(input = {}, ctx = {}) {
   const cwd = ctx.cwd || process.cwd();
   const target = resolveSafe(cwd, input.path || input.file_path);
-  let text = await fs2.readFile(target, "utf8");
+  let text = await fs5.readFile(target, "utf8");
   const oldStr = input.old_string ?? input.oldString ?? "";
   const newStr = input.new_string ?? input.newString ?? "";
   if (!oldStr) {
@@ -181,7 +803,7 @@ async function fileEdit(input = {}, ctx = {}) {
     }
     text = text.slice(0, idx) + newStr + text.slice(idx + oldStr.length);
   }
-  await fs2.writeFile(target, text, "utf8");
+  await fs5.writeFile(target, text, "utf8");
   return { ok: true, path: target };
 }
 var FileReadTool = {
@@ -246,7 +868,7 @@ function nextId() {
   seq += 1;
   return `tab_${seq}_${Date.now().toString(36)}`;
 }
-function fetchUrl(urlStr, timeoutMs = 15e3) {
+function fetchUrl(urlStr, timeoutMs = 15e3, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
     let u;
     try {
@@ -255,18 +877,36 @@ function fetchUrl(urlStr, timeoutMs = 15e3) {
       reject(e);
       return;
     }
+    if (u.protocol !== "http:" && u.protocol !== "https:") {
+      reject(new Error(`Unsupported protocol: ${u.protocol}`));
+      return;
+    }
     const lib = u.protocol === "https:" ? https : http;
     const req = lib.request(
       urlStr,
       {
         method: "GET",
         headers: {
-          "user-agent": "XClawNativeBrowser/3.70 (+https://xclaw; lightweight-fetch)",
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+          "user-agent": "XClawNativeBrowser/3.75 (+https://github.com/Matrixx0070/xclaw; native-fetch)",
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "accept-language": "en-US,en;q=0.9"
         },
         timeout: timeoutMs
       },
       (res) => {
+        const status = res.statusCode || 0;
+        if (redirectsLeft > 0 && status >= 300 && status < 400 && res.headers.location) {
+          res.resume();
+          let next;
+          try {
+            next = new URL2(res.headers.location, urlStr).href;
+          } catch (e) {
+            reject(e);
+            return;
+          }
+          fetchUrl(next, timeoutMs, redirectsLeft - 1).then(resolve, reject);
+          return;
+        }
         const chunks = [];
         let size = 0;
         const max = 2e6;
@@ -278,9 +918,10 @@ function fetchUrl(urlStr, timeoutMs = 15e3) {
         });
         res.on("end", () => {
           resolve({
-            status: res.statusCode,
+            status,
             headers: res.headers,
-            body: Buffer.concat(chunks).toString("utf8")
+            body: Buffer.concat(chunks).toString("utf8"),
+            finalUrl: urlStr
           });
         });
       }
@@ -297,95 +938,155 @@ function extractTitle(html) {
   const m = String(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   return m ? m[1].replace(/\s+/g, " ").trim().slice(0, 200) : "";
 }
+function extractMetaDescription(html) {
+  const m = String(html).match(
+    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i
+  ) || String(html).match(
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i
+  );
+  return m ? m[1].replace(/\s+/g, " ").trim().slice(0, 500) : "";
+}
 function htmlToText(html) {
-  return String(html).replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 12e3);
+  return String(html).replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<noscript[\s\S]*?<\/noscript>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 12e3);
+}
+function extractLinks(html, baseUrl, limit = 30) {
+  const links = [];
+  const re = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) && links.length < limit) {
+    let href = m[1];
+    const label = m[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
+    try {
+      href = new URL2(href, baseUrl).href;
+    } catch {
+      continue;
+    }
+    if (href.startsWith("http://") || href.startsWith("https://")) {
+      links.push({ href, label: label || null });
+    }
+  }
+  return links;
+}
+function listTabs() {
+  return [...tabs.values()].map((t) => ({
+    tabId: t.id,
+    url: t.url,
+    title: t.title,
+    status: t.status,
+    at: t.at
+  }));
 }
 async function runBrowserTab(input = {}) {
+  const action = String(input.action || "").toLowerCase();
   if (input.jsCode) {
     return {
       ok: false,
-      error: "jsCode requires CDP/BrowserService. Native lightweight browser_tab only supports url load/fetch. Set computer to full bundle or wire browser-service.",
-      tabId: input.tabId || null
+      error: "jsCode requires CDP/BrowserService. Use XCLAW_COMPUTER_ENGINE=bundle or wire browser-service. See docs/BROWSER_UNBUNDLE.md",
+      tabId: input.tabId || null,
+      engine: "native-fetch"
     };
   }
   if (input.screenshot) {
     return {
       ok: false,
-      error: "screenshot requires CDP/BrowserService. Native lightweight browser_tab does not capture images yet.",
-      tabId: input.tabId || null
-    };
-  }
-  let tab = input.tabId ? tabs.get(input.tabId) : null;
-  if (input.tabId && !tab) {
-    return {
-      ok: false,
-      error: `Unknown tabId: ${input.tabId}`,
-      tabId: input.tabId
-    };
-  }
-  if (input.url) {
-    const res = await fetchUrl(input.url);
-    const title = extractTitle(res.body);
-    const text = htmlToText(res.body);
-    const id = tab?.id || nextId();
-    tab = {
-      id,
-      url: input.url,
-      title,
-      text,
-      status: res.status,
-      at: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    tabs.set(id, tab);
-    return {
-      ok: true,
-      tabId: id,
-      url: tab.url,
-      title: tab.title,
-      status: tab.status,
-      textPreview: tab.text.slice(0, 4e3),
-      engine: "native-fetch",
-      networkSummaries: input.includeNetwork ? [
-        {
-          requestId: "nav1",
-          method: "GET",
-          url: input.url,
-          status: res.status
-        }
-      ] : void 0
-    };
-  }
-  if (tab) {
-    return {
-      ok: true,
-      tabId: tab.id,
-      url: tab.url,
-      title: tab.title,
-      textPreview: tab.text.slice(0, 4e3),
+      error: "screenshot requires CDP/BrowserService. Native browser_tab does not capture images. See docs/BROWSER_UNBUNDLE.md",
+      tabId: input.tabId || null,
       engine: "native-fetch"
     };
   }
+  if (action === "list" || !input.url && !input.tabId && action !== "read") {
+    return {
+      ok: true,
+      action: "list",
+      tabs: listTabs(),
+      count: tabs.size,
+      engine: "native-fetch"
+    };
+  }
+  if (action === "read" || input.tabId && !input.url) {
+    const tab2 = tabs.get(input.tabId);
+    if (!tab2) {
+      return { ok: false, error: `Unknown tabId: ${input.tabId}`, tabId: input.tabId };
+    }
+    return {
+      ok: true,
+      action: "read",
+      tabId: tab2.id,
+      url: tab2.url,
+      title: tab2.title,
+      description: tab2.description || "",
+      status: tab2.status,
+      textPreview: tab2.text.slice(0, 4e3),
+      links: tab2.links || [],
+      engine: "native-fetch"
+    };
+  }
+  if (!input.url) {
+    return {
+      ok: false,
+      error: "url required for navigate (or action=list|read with tabId)",
+      engine: "native-fetch"
+    };
+  }
+  const res = await fetchUrl(input.url);
+  const title = extractTitle(res.body);
+  const description = extractMetaDescription(res.body);
+  const text = htmlToText(res.body);
+  const links = extractLinks(res.body, res.finalUrl || input.url);
+  const id = input.tabId && tabs.has(input.tabId) ? input.tabId : nextId();
+  const tab = {
+    id,
+    url: res.finalUrl || input.url,
+    title,
+    description,
+    text,
+    links,
+    status: res.status,
+    at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  tabs.set(id, tab);
   return {
-    ok: false,
-    error: "Provide url to open a tab (native lightweight mode)"
+    ok: true,
+    action: "navigate",
+    tabId: id,
+    url: tab.url,
+    title: tab.title,
+    description: tab.description,
+    status: tab.status,
+    textPreview: tab.text.slice(0, 4e3),
+    links: links.slice(0, 20),
+    engine: "native-fetch",
+    networkSummaries: input.includeNetwork ? [
+      {
+        requestId: "nav1",
+        method: "GET",
+        url: tab.url,
+        status: tab.status
+      }
+    ] : void 0
   };
 }
 var BrowserTabTool = {
   name: "xclaw_browser_tab",
-  description: "Loads a URL into a lightweight native tab (fetch + text extract). Full JS/screenshot needs BrowserService/CDP.",
+  description: "Lightweight native browser: navigate/fetch URL, list/read tabs, extract title/text/links. jsCode and screenshot require CDP bundle (see docs/BROWSER_UNBUNDLE.md).",
   inputSchema: {
     type: "object",
     properties: {
+      action: {
+        type: "string",
+        description: "navigate | list | read (default: navigate if url set)"
+      },
       url: { type: "string" },
       tabId: { type: "string" },
       jsCode: { type: "string" },
-      includeNetwork: { type: "boolean" },
-      screenshot: { type: "string", description: "mobile|desktop|both (requires CDP)" }
+      screenshot: { type: "string" },
+      includeNetwork: { type: "boolean" }
     }
   },
-  isReadOnly: () => false,
-  async call(input, context = {}) {
-    return { data: await runBrowserTab(input, context) };
+  isReadOnly: () => true,
+  async call(input, _context = {}) {
+    const data = await runBrowserTab(input || {});
+    return { data };
   }
 };
 
@@ -430,13 +1131,13 @@ async function executeNativeTool(name, args = {}, ctx = {}) {
 }
 
 // src/computer/extraction-status.mjs
-import fs3 from "node:fs/promises";
-import path3 from "node:path";
+import fs6 from "node:fs/promises";
+import path5 from "node:path";
 import { fileURLToPath } from "node:url";
-var root = path3.resolve(path3.dirname(fileURLToPath(import.meta.url)), "../..");
+var root = path5.resolve(path5.dirname(fileURLToPath(import.meta.url)), "../..");
 async function loadModuleMap() {
-  const p = path3.join(root, "src/computer/MODULE_MAP.json");
-  const raw = await fs3.readFile(p, "utf8");
+  const p = path5.join(root, "src/computer/MODULE_MAP.json");
+  const raw = await fs6.readFile(p, "utf8");
   return JSON.parse(raw);
 }
 async function getExtractionStatus() {
@@ -555,7 +1256,7 @@ function createThinComputerServer(opts = {}) {
       }
       if (req.method === "POST" && url.pathname === "/xclaw/sessions/create") {
         const parsed = await readJson(req);
-        const id = `sess_${crypto2.randomBytes(8).toString("hex")}`;
+        const id = `sess_${crypto3.randomBytes(8).toString("hex")}`;
         const workingDir = parsed.workingDir || process.cwd();
         sessions.set(id, {
           id,

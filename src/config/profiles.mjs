@@ -59,6 +59,8 @@ export const PROFILES = {
       egress: { mode: "deny" },
       osSandbox: "auto",
       spawnEnforce: "check",
+      // Tool spawns see only a base env allowlist (+security.envAllow)
+      bashEnv: "allowlist",
       requireApproval: [
         "xclaw_bash",
         "bash",
