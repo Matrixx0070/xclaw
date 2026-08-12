@@ -316,6 +316,7 @@ async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} })
       cfg,
       workingDir: workingDir || process.cwd(),
       signal: controller.signal,
+      chatSessionId: body?.sessionId || body?.chatSessionId || body?.conversationId || null,
       history: Array.isArray(body?.history)
         ? body.history
         : Array.isArray(body?.messages)
@@ -1823,6 +1824,18 @@ export async function startGateway({ root } = {}) {
         return json(res, 200, run);
       }
 
+      // --- Transcripts (inspectable local conversation log) ---
+      if (p === "/transcripts" && req.method === "GET") {
+        const { listTranscripts } = await import("../sessions/transcript.mjs");
+        return json(res, 200, { transcripts: listTranscripts(cfg) });
+      }
+      if (p.startsWith("/transcripts/") && req.method === "GET") {
+        const { loadTranscriptHistory, transcriptPath } = await import("../sessions/transcript.mjs");
+        const id = decodeURIComponent(p.slice("/transcripts/".length).split("/")[0]);
+        const history = loadTranscriptHistory(cfg, id, Number(new URL(req.url, "http://local").searchParams.get("limit") || 200));
+        return json(res, 200, { sessionId: id, path: transcriptPath(cfg, id), history, count: history.length });
+      }
+
       // --- Agent: JSON (sync) ---
       if (p === "/agent/run" && req.method === "POST") {
         const body = await readBody(req);
@@ -1836,6 +1849,7 @@ export async function startGateway({ root } = {}) {
             userMessage: message,
             cfg,
             workingDir: body.workingDir || process.cwd(),
+            chatSessionId: body.sessionId || body.chatSessionId || body.conversationId || null,
             history: Array.isArray(body.history)
               ? body.history
               : Array.isArray(body.messages)

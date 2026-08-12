@@ -26,6 +26,10 @@ import {
 import { createLoopGuard } from "./loop-guards.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
 import { partitionToolCalls } from "./tool-concurrency.mjs";
+import {
+  appendTranscript,
+  loadTranscriptHistory,
+} from "../sessions/transcript.mjs";
 import { revalidatePlan, isExecTool } from "../security/system-run-plan.mjs";
 import { resolveProviderRoute, resolveProviderRouteAsync } from "../providers/router.mjs";
 import { createSpawnTool, spawnSubagent } from "../agents/spawn.mjs";
@@ -103,9 +107,13 @@ export async function runAgentLoop(options) {
     userId,
     channel,
     chatId,
+    /** Durable conversation id for transcript load/save */
+    chatSessionId = null,
     /** Prior conversation turns: [{role, content}, ...] — excludes system */
     history = [],
   } = options;
+  const transcriptId =
+    chatSessionId || options.conversationId || chatId || null;
 
   const eventLog = [];
   const onEvent = (e) => {
@@ -444,6 +452,27 @@ export async function runAgentLoop(options) {
   }
   // Cap history to avoid unbounded context (configurable)
   const maxHistory = cfg.agent?.maxHistoryMessages ?? 40;
+  // Durable transcript load when caller did not pass history
+  if (!prior.length && transcriptId && cfg.agent?.persistTranscript !== false) {
+    try {
+      const loaded = loadTranscriptHistory(cfg, transcriptId, maxHistory);
+      for (const m of loaded) prior.push(m);
+      if (loaded.length) {
+        onEvent({
+          type: "context",
+          phase: "transcript_load",
+          sessionId: transcriptId,
+          messages: loaded.length,
+        });
+      }
+    } catch (err) {
+      onEvent({
+        type: "context",
+        phase: "transcript_load_error",
+        message: String(err.message || err),
+      });
+    }
+  }
   const priorCapped = prior.length > maxHistory ? prior.slice(-maxHistory) : prior;
   let messages = [
     optimized.systemMessage,
@@ -1087,6 +1116,35 @@ export async function runAgentLoop(options) {
     }
   } finally {
     await computer.destroySession(sessionId).catch(() => {});
+
+    // Durable transcript (local-only)
+    if (transcriptId && cfg.agent?.persistTranscript !== false) {
+      try {
+        appendTranscript(cfg, transcriptId, {
+          role: "user",
+          content: String(userMessage || "").slice(0, 100_000),
+        });
+        if (finalText) {
+          appendTranscript(cfg, transcriptId, {
+            role: "assistant",
+            content: String(finalText).slice(0, 100_000),
+            turns,
+          });
+        }
+        onEvent({
+          type: "context",
+          phase: "transcript_save",
+          sessionId: transcriptId,
+        });
+      } catch (err) {
+        onEvent({
+          type: "context",
+          phase: "transcript_save_error",
+          message: String(err.message || err),
+        });
+      }
+    }
+
     onEvent({ type: "lifecycle", phase: "end", turns, sessionId });
   }
 
