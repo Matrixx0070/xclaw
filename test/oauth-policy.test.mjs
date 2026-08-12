@@ -13,10 +13,11 @@ describe("oauth policy", () => {
     const r = canStartOAuth("xai", { XCLAW_XAI_OAUTH_CLIENT_ID: "cid" });
     assert.equal(r.ok, true);
   });
-  it("anthropic has no oauth", () => {
+  it("anthropic oauth is claude_pkce", () => {
     const r = canStartOAuth("anthropic", {});
-    assert.equal(r.ok, false);
+    assert.equal(r.ok, true);
     assert.equal(getAuthPolicy("anthropic").recommended, "api_key");
+    assert.equal(getAuthPolicy("anthropic").oauth.kind, "claude_pkce");
   });
   it("openai codex allowed to start", () => {
     const r = canStartOAuth("openai", {});

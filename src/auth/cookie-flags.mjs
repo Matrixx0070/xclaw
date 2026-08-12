@@ -123,8 +123,8 @@ export function parseCookieInput(input) {
   const s = String(input || "").trim();
   if (!s) return [];
 
-  // Multiple Set-Cookie style (newline separated)
-  if (/httponly|samesite|secure/i.test(s) || s.includes("\n")) {
+  // Set-Cookie style (attrs or newline-separated lines)
+  if (/httponly|samesite|secure|\bdomain\s*=|\bpath\s*=|\bmax-age\s*=/i.test(s) || s.includes("\n")) {
     const lines = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const cookies = [];
     for (const line of lines) {

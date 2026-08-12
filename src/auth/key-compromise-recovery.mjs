@@ -143,6 +143,25 @@ export async function isRevoked(cfg, { kid, generation } = {}) {
   return false;
 }
 
+/** Retain public JWKs for revoked kids (verify attribution after dual-window close). */
+export async function rememberRevokedPublicKeys(cfg = {}, entries = []) {
+  const rec = await readRecovery(cfg);
+  const pubs = Array.isArray(rec.revokedPublicKeys) ? [...rec.revokedPublicKeys] : [];
+  for (const e of entries || []) {
+    if (!e?.publicJwk || !e?.kid) continue;
+    if (pubs.some((p) => p.kid === e.kid)) continue;
+    pubs.push({
+      kid: e.kid,
+      generation: e.generation,
+      publicJwk: e.publicJwk,
+    });
+  }
+  rec.revokedPublicKeys = pubs;
+  await writeRecovery(cfg, rec);
+  return { ok: true, count: pubs.length };
+}
+
+
 /**
  * Full recovery playbook:
  *  1. quarantine
@@ -176,6 +195,22 @@ export async function recoverFromCompromise(cfg = {}, opts = {}) {
     reason,
   });
   steps.push({ step: "revoke", ...rev });
+  {
+    const rec2 = await readRecovery(cfg);
+    const pubs = Array.isArray(rec2.revokedPublicKeys) ? [...rec2.revokedPublicKeys] : [];
+    if (before?.publicJwk && before?.kid) {
+      pubs.push({
+        kid: before.kid,
+        generation: before.generation,
+        publicJwk: before.publicJwk,
+      });
+    }
+    if (before?.dualWindow?.previousKid) {
+      // previous slot if present on store
+    }
+    rec2.revokedPublicKeys = pubs;
+    await writeRecovery(cfg, rec2);
+  }
 
   // 3. Emergency rotate — force new key material
   const rotated = await rotateKeys(cfg, {
@@ -234,16 +269,44 @@ export async function verifyWithRecovery(cfg, data, signature, opts = {}) {
   }
 
   const result = await verifyWithRotatedKeys(cfg, data, signature, opts);
-  if (!result.ok) return result;
+  if (result.ok) {
+    if (await isRevoked(cfg, { kid: result.kid, generation: result.generation })) {
+      return {
+        ok: false,
+        error: "signature key has been revoked (compromise recovery)",
+        code: "KEY_REVOKED",
+        kid: result.kid,
+        generation: result.generation,
+      };
+    }
+    return result;
+  }
 
-  if (await isRevoked(cfg, { kid: result.kid, generation: result.generation })) {
-    return {
-      ok: false,
-      error: "signature key has been revoked (compromise recovery)",
-      code: "KEY_REVOKED",
-      kid: result.kid,
-      generation: result.generation,
-    };
+  const rec = await readRecovery(cfg);
+  const dataBuf = Buffer.from(data);
+  const sigBuf = Buffer.from(signature);
+  for (const entry of rec.revokedPublicKeys || []) {
+    if (!entry?.publicJwk) continue;
+    try {
+      const pub = crypto.createPublicKey({ key: entry.publicJwk, format: "jwk" });
+      const ok = crypto.verify(
+        "sha256",
+        dataBuf,
+        { key: pub, dsaEncoding: "ieee-p1363" },
+        sigBuf
+      );
+      if (ok) {
+        return {
+          ok: false,
+          error: "signature key has been revoked (compromise recovery)",
+          code: "KEY_REVOKED",
+          kid: entry.kid,
+          generation: entry.generation,
+        };
+      }
+    } catch {
+      /* next */
+    }
   }
   return result;
 }

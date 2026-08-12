@@ -92,10 +92,11 @@ export async function enqueueJob(cfg, item) {
     maxWaitMs: maxWaitMsCfg(cfg),
   });
   const queuedNow = (await listQueue(cfg, { limit: 500 })).filter((i) => i.status === "queued").length;
+  // Pause stops the worker from *running* jobs; enqueue still admits to disk.
   const decision = adm.tryAdmit({
     queued: queuedNow,
     running: worker?.running || 0,
-    paused: Boolean(worker?.paused),
+    paused: false,
   });
   if (!decision.admit) {
     const err = new Error(

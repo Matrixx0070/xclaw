@@ -50,6 +50,7 @@ describe("account linking L2 pairing", () => {
       cfg,
       channel: "slack",
       userId: "U02BBB",
+      isDm: true,
     });
     assert.equal(a.handled, true);
     const m = a.reply.match(/XCLAW-[A-Z0-9]{4}/);
@@ -60,6 +61,7 @@ describe("account linking L2 pairing", () => {
       cfg,
       channel: "telegram",
       userId: "888",
+      isDm: true,
     });
     assert.equal(b.handled, true);
     assert.match(b.reply, /linked/i);

@@ -49,7 +49,7 @@ function canonicalPairKey(a, b) {
 }
 
 function resolveConfig(user = {}) {
-  return {
+  const merged = {
     ...DEFAULT_LOOP_DETECTION_CONFIG,
     ...user,
     detectors: {
@@ -57,6 +57,35 @@ function resolveConfig(user = {}) {
       ...(user.detectors || {}),
     },
   };
+  // Alias: config historically used circuitBreaker
+  if (
+    user.globalCircuitBreakerThreshold == null &&
+    user.circuitBreaker != null
+  ) {
+    merged.globalCircuitBreakerThreshold = Number(user.circuitBreaker);
+  }
+  // Env overrides (ops)
+  const envGlobal = process.env.XCLAW_LOOP_GUARD_GLOBAL;
+  const envCrit = process.env.XCLAW_LOOP_GUARD_CRITICAL;
+  const envWarn = process.env.XCLAW_LOOP_GUARD_WARNING;
+  const envOff = process.env.XCLAW_LOOP_GUARD;
+  if (envOff === "0" || envOff === "false" || envOff === "off") {
+    merged.enabled = false;
+  }
+  if (envGlobal != null && envGlobal !== "") {
+    merged.globalCircuitBreakerThreshold = Number(envGlobal);
+  }
+  if (envCrit != null && envCrit !== "") {
+    merged.criticalThreshold = Number(envCrit);
+  }
+  if (envWarn != null && envWarn !== "") {
+    merged.warningThreshold = Number(envWarn);
+  }
+  // Keep history at least as large as the global breaker window
+  if (merged.historySize < merged.globalCircuitBreakerThreshold) {
+    merged.historySize = merged.globalCircuitBreakerThreshold;
+  }
+  return merged;
 }
 
 function getPingPongStreak(history, currentSignature) {

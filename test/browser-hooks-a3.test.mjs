@@ -33,6 +33,7 @@ describe("Phase A3 fabric on more paths", () => {
     const r = await beforeInput({
       tabId: "t99",
       role: "actor",
+      roleTrusted: true,
       agentId: "agent-x",
       action: "evaluate",
     });
@@ -46,6 +47,7 @@ describe("Phase A3 fabric on more paths", () => {
     const r = await beforeInput({
       tabId: "t1",
       role: "actor",
+      roleTrusted: true,
       agentId: "agent-a",
       action: "evaluate",
     });
@@ -58,6 +60,7 @@ describe("Phase A3 fabric on more paths", () => {
     const r = await beforeInput({
       tabId: "t2",
       role: "actor",
+      roleTrusted: true,
       agentId: "agent-b",
       action: "evaluate",
     });
@@ -91,6 +94,7 @@ describe("Phase A3 fabric on more paths", () => {
     const r = await beforeInput({
       tabId: "t-auto",
       role: "actor",
+      roleTrusted: true,
       agentId: "agent-auto",
       action: "evaluate",
     });
@@ -105,6 +109,7 @@ describe("Phase A3 fabric on more paths", () => {
     const r = await beforeNavigate({
       url: "https://bank.example/transfer",
       role: "actor",
+      roleTrusted: true,
       agentId: "a1",
     });
     assert.equal(r.ok, false);
