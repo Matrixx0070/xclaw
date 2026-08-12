@@ -76,3 +76,27 @@ describe("anthropic discovery auth headers", () => {
     assert.equal(req.headers["anthropic-beta"], undefined);
   });
 });
+
+describe("discovery resolveApiKey provider-scoping (3.86.2 leak fix)", () => {
+  it("does not use the active provider's cached key for a different provider", async () => {
+    const { resolveApiKey } = await import("../src/providers/discovery.mjs");
+    // loadConfig caches the ACTIVE (anthropic) key into agent.apiKey
+    const cfg = { agent: { provider: "anthropic", apiKey: "sk-ant-oat01-ACTIVE" } };
+    const xaiDef = { envKey: "XAI_API_KEY" };
+    const saved = { ...process.env };
+    try {
+      for (const k of ["XAI_API_KEY", "XCLAW_API_KEY"]) delete process.env[k];
+      const key = await resolveApiKey(cfg, "xai", xaiDef);
+      assert.notEqual(key, "sk-ant-oat01-ACTIVE", "xai model-discovery must not use the anthropic active key");
+    } finally {
+      process.env = saved;
+    }
+  });
+
+  it("uses the active key for the matching provider", async () => {
+    const { resolveApiKey } = await import("../src/providers/discovery.mjs");
+    const cfg = { agent: { provider: "anthropic", apiKey: "sk-ant-oat01-ACTIVE" } };
+    const key = await resolveApiKey(cfg, "anthropic", { envKey: "ANTHROPIC_API_KEY" });
+    assert.equal(key, "sk-ant-oat01-ACTIVE");
+  });
+});

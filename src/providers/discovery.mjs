@@ -42,12 +42,17 @@ export function isChatModelId(id) {
   return !NON_CHAT_RE.test(String(id));
 }
 
-async function resolveApiKey(cfg, providerId, def) {
+export async function resolveApiKey(cfg, providerId, def) {
+  // cfg.agent.apiKey is the ACTIVE provider's cached credential (loadConfig
+  // fills it) — using it for a DIFFERENT provider ships one vendor's token to
+  // another's /models endpoint (e.g. an Anthropic key hitting api.x.ai → HTTP
+  // 400). Only honor it when it belongs to this provider. Mirrors the guard in
+  // registry.resolveProviderRouteAsync (3.86.1 cross-provider leak fix).
+  const agentKeyApplies = !cfg.agent?.provider || cfg.agent.provider === providerId;
   let apiKey =
-    cfg.agent?.apiKey ||
+    (agentKeyApplies ? cfg.agent?.apiKey : null) ||
     cfg.providers?.[providerId]?.apiKey ||
     process.env[def.envKey] ||
-    process.env.XCLAW_API_KEY ||
     "";
   if (!apiKey) {
     try {
@@ -57,7 +62,8 @@ async function resolveApiKey(cfg, providerId, def) {
       /* */
     }
   }
-  return apiKey || "";
+  // XCLAW_API_KEY is the explicit generic override — last resort, any provider.
+  return apiKey || process.env.XCLAW_API_KEY || "";
 }
 
 async function readCache(fp, ttlMs) {

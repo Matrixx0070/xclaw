@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.86.2 — fix cross-provider credential leak in model discovery (third site)
+
+Found while verifying live-model discovery for all four configured credentials (xAI apikey+oauth, Anthropic apikey+oauth) through the web-UI panel: xAI's model-fetch returned HTTP 400 because `discovery.mjs`'s own `resolveApiKey` still used `cfg.agent.apiKey` (the ACTIVE provider's cached key — Anthropic's) for *any* provider. So `fetchLiveModels("xai")` sent the Anthropic key to `api.x.ai/models`.
+
+`resolveApiKey` now applies the same provider-scoping guard shipped in 3.86.1 for `registry`/`profiles`: the cached `cfg.agent.apiKey` is used only when it belongs to the requested provider (or none is configured); `XCLAW_API_KEY` remains the explicit generic last-resort. Exported + regression-tested.
+
+Verified live: all four credentials fetch their real model lists (xAI → 7 grok models via both apikey and the SuperGrok-seat oauth; Anthropic → 10 claude models via both oauth and the no-credit apikey — model listing needs no credit). Both the CLI (`xclaw providers list`) and the web-UI `/providers/manage/models` route serve them. Suite 1280/0.
+
 ## 3.86.1 — fix cross-provider credential leak (active provider's key sent to other providers)
 
 Found while setting up a second provider (xAI) alongside Anthropic. With one provider's credential active, resolving a *different* provider returned the ACTIVE provider's token — so an agent run on xAI was sent your Anthropic OAuth token (and, because the token shape forced the Anthropic adapter, produced `Anthropic HTTP 404: model grok-*`). This is both a correctness bug and a credential-exposure bug (one vendor's token reaching another vendor's endpoint).

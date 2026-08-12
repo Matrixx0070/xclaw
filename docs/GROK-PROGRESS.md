@@ -527,3 +527,20 @@ no regression · resolveProviderToken(xai)=profile:xai:apikey,
 NOTE: xAI API key setup COMPLETE + live-verified for the user; xai OAuth still
 pending (device/pkce 403 — no public xAI OAuth app; needs `grok login --oauth`
 then import-grok).
+
+## 2026-08-12 — 3.86.2 cross-provider leak in model discovery (Claude)
+
+STATUS: green
+CONTEXT: verifying all 4 configured creds (xai apikey+oauth, anthropic apikey+
+oauth) fetch live models via CLI list + web-UI. xAI model-fetch → HTTP 400
+because discovery.mjs resolveApiKey (a 3rd resolution path, missed in 3.86.1)
+used cfg.agent.apiKey (active=anthropic's cached key) for xai → anthropic key
+sent to api.x.ai/models.
+FIXED: resolveApiKey provider-scoping guard (same as registry/profiles 3.86.1);
+XCLAW_API_KEY stays generic last-resort. Exported + 2 regression tests.
+RAN: suite 1280/0 · LIVE gateway: /providers/manage/models xai→7 grok models,
+anthropic→10 claude models (both fixed, 400→success). All 4 creds fetch live
+models (CLI + UI): xai:apikey/xai:oauth→7, anthropic:oauth/anthropic:apikey→10
+(model listing needs no credit — the anthropic apikey has none but lists fine).
+STATE: 4 creds all separate + verified: xai:apikey★ xai:oauth, anthropic:oauth★
+anthropic:apikey (renamed from anthropic:default). Parity complete.
