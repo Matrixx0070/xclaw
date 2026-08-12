@@ -12,7 +12,10 @@ import { tryHandleAlertsRoute } from "./routes/alerts.mjs";
 import { tryHandleOpsRoute } from "./routes/ops.mjs";
 import { tryHandleEvalQueueRoute } from "./routes/eval-queue.mjs";
 import { tryHandleTokensRoute } from "./routes/tokens.mjs";
-import { tryHandleApiRoute } from "./routes/api.mjs";
+import { tryHandleSessionsRoute } from "./routes/sessions.mjs";
+import { tryHandleSubagentsRoute } from "./routes/subagents.mjs";
+import { tryHandleMcpRoute } from "./routes/mcp.mjs";
+import { tryHandleMediaRoute } from "./routes/media.mjs";
 import { applyCors } from "./cors.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import fs from "node:fs/promises";
@@ -1078,7 +1081,10 @@ export async function startGateway({ root } = {}) {
       if (await tryHandleEvalQueueRoute({ ...routeArgs, root })) return;
       if (await tryHandleJwksRoute(routeArgs)) return;
       if (await tryHandleTokensRoute(routeArgs)) return;
-      if (await tryHandleApiRoute({ ...routeArgs, mcpClient, mcpServer })) return;
+      if (await tryHandleSessionsRoute(routeArgs)) return;
+      if (await tryHandleSubagentsRoute(routeArgs)) return;
+      if (await tryHandleMcpRoute({ ...routeArgs, mcpClient, mcpServer })) return;
+      if (await tryHandleMediaRoute(routeArgs)) return;
 
 
 

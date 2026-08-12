@@ -445,3 +445,14 @@ pre-split (dropped in an earlier Grok refactor — /mcp, /mcp/tools, /mcp/call
 are the surviving surface).
 BOARD: the 2026-08-12 design review + Grok brief are now FULLY closed —
 nothing parked, nothing deferred.
+
+## 2026-08-12 — 3.85.1 routes/api.mjs split into per-plane modules (Claude)
+
+STATUS: green
+BUILT: the 3.85.0 catch-all routes/api.mjs (5 planes in one file) split into
+routes/sessions.mjs (+transcripts/checkpoints), subagents.mjs, mcp.mjs,
+media.mjs; /skills · /memory · /providers/route one-off reads moved to
+ops.mjs. Pure mechanical move, behavior byte-identical; api.mjs deleted.
+RAN: suite 1255 total, 0 fail · LIVE smoke: sessions/transcripts/subagents/
+mcp/tools/media/providers/skills/memory/providers/route/checkpoints +
+/v1/sessions all 200.

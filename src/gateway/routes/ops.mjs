@@ -203,6 +203,44 @@ export async function tryHandleOpsRoute({
     return true;
   }
 
+
+  // --- One-off context reads (moved from routes/api.mjs) ---
+  if (p === "/skills" && method === "GET") {
+    const { loadAllSkills } = await import("../../skills/loader.mjs");
+    const skills = await loadAllSkills({
+      configDir: cfg.paths?.configDir,
+      cwd: process.cwd(),
+    });
+    json(res, 200, {
+      skills: skills.map((s) => ({
+        name: s.name,
+        description: s.description,
+        path: s.path,
+      })),
+    });
+    return true;
+  }
+  if (p === "/memory" && method === "GET") {
+    const { loadMemoryFiles } = await import("../../skills/loader.mjs");
+    const cwd = new URL(req.url, "http://x").searchParams.get("cwd") || process.cwd();
+    const files = await loadMemoryFiles(cwd);
+    json(res, 200, {
+      files: files.map((f) => ({
+        name: f.name,
+        path: f.path,
+        chars: f.body.length,
+        preview: f.body.slice(0, 200),
+      })),
+    });
+    return true;
+  }
+  if (p === "/providers/route" && method === "GET") {
+    const { resolveProviderRoute } = await import("../../providers/router.mjs");
+    const model = url.searchParams.get("model") || undefined;
+    json(res, 200, resolveProviderRoute(cfg, { model }));
+    return true;
+  }
+
   return false;
 }
 

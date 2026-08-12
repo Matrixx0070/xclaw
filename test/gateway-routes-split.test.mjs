@@ -13,7 +13,10 @@ const MODULES = [
   ["ops", "tryHandleOpsRoute"],
   ["eval-queue", "tryHandleEvalQueueRoute"],
   ["tokens", "tryHandleTokensRoute"],
-  ["api", "tryHandleApiRoute"],
+  ["sessions", "tryHandleSessionsRoute"],
+  ["subagents", "tryHandleSubagentsRoute"],
+  ["mcp", "tryHandleMcpRoute"],
+  ["media", "tryHandleMediaRoute"],
 ];
 
 describe("gateway routes modules (split)", () => {
