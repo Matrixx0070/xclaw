@@ -105,6 +105,40 @@ export async function runDoctor(opts = {}) {
     push("profile", "warn", e.message || String(e));
   }
 
+  // SSRF guard on agent-controlled fetches (web_fetch)
+  try {
+    const { getSsrfPolicy } = await import("../security/ssrf.mjs");
+    const sp = getSsrfPolicy(cfg);
+    if (sp.mode === "off") {
+      push("security.ssrf", "warn", "SSRF guard OFF — web_fetch can reach loopback/metadata/private IPs");
+    } else if (sp.allowPrivate) {
+      push("security.ssrf", "warn", "SSRF guard on but allowPrivate=true (lab dev) — private/loopback permitted");
+    } else {
+      push(
+        "security.ssrf",
+        "ok",
+        `SSRF guard=block (allowHosts=${sp.allowHosts.length}, maxRedirects=${sp.maxRedirects})`
+      );
+    }
+  } catch (e) {
+    push("security.ssrf", "warn", e.message || String(e));
+  }
+
+  // WebSocket upgrade auth
+  try {
+    const prof = cfg.profile || process.env.XCLAW_PROFILE || "lab";
+    const token = cfg.gateway?.token || process.env.XCLAW_GATEWAY_TOKEN || null;
+    const requireAuth =
+      cfg.gateway?.requireAuth === true || prof === "prod";
+    if (token || requireAuth) {
+      push("security.wsAuth", "ok", "WS /ws/events requires token (upgrade authorized before 101)");
+    } else {
+      push("security.wsAuth", "ok", `WS open (no token, profile=${prof}) — loopback lab default`);
+    }
+  } catch (e) {
+    push("security.wsAuth", "warn", e.message || String(e));
+  }
+
   // Egress + kill-switch (philosophy: privacy + always killable)
   try {
     const { getEgressPolicy } = await import("../security/egress.mjs");

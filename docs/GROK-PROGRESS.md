@@ -217,3 +217,19 @@ RAN: 7/7 unit tests · live check vs HEAD~3 OK · replay against Grok's historic
 overwrite commit b9cfa08 correctly exits 1 ("shrank 1469 -> 759 bytes")
 NOTE: from this commit on, overwriting this ledger fails CI — append entries at
 the bottom only.
+
+## 2026-08-12 — 3.79.0 SSRF guard + WebSocket upgrade auth (Claude)
+
+STATUS: green
+BUILT: src/security/ssrf.mjs — web_fetch now http/https-only, DNS-resolves host
+and blocks any loopback/private/link-local/ULA/CGNAT/metadata IP (169.254.169.254),
+canonicalizes decimal/hex encodings, follows redirects MANUALLY re-validating each
+hop. WS /ws/events upgrade now runs an authorize gate BEFORE 101: 401 unless a
+valid token (query / x-xclaw-token / xclaw.token.<t> subprotocol) when token set
+or requireAuth; control UI carries localStorage.xclaw_token. doctor security.ssrf
++ security.wsAuth.
+RAN: 18 new tests (SSRF classifier + live redirect-hop-into-metadata block; WS
+handshake auth over a real socket) · full suite 1094/0 · both closed the last two
+UNVERIFIED items from the 2026-08-12 review.
+SCOPE: browser-tab navigation fetch NOT covered here (separate role-binding hooks);
+finance/search/openai fetches hit hardcoded hosts — future work if agent-parameterized.

@@ -146,5 +146,55 @@ export function createGatewayAuth(cfg = {}) {
     return { ok: false, mode: "token", error: "unauthorized" };
   }
 
-  return { check, isProtectedPath, required, requireAuth, protectMetrics, strict };
+  /**
+   * Authorize a WebSocket upgrade. Browsers can't set Authorization on a WS
+   * handshake, so a token may arrive via `?token=`, the `x-xclaw-token` header,
+   * or a `Sec-WebSocket-Protocol: xclaw.token.<token>` subprotocol entry.
+   * Enforced whenever a token is set OR requireAuth (prod); otherwise open.
+   * @returns {{ ok: true, mode: string, protocol?: string } | { ok: false, error: string }}
+   */
+  function authorizeWebSocket(req) {
+    if (!required && !requireAuth) return { ok: true, mode: "open" };
+    if (!token) {
+      // requireAuth with no token = fail closed
+      return { ok: false, error: "auth_required_no_token_configured" };
+    }
+    const hdr = req.headers?.authorization || req.headers?.Authorization || "";
+    const bearer = hdr.startsWith("Bearer ") ? hdr.slice(7).trim() : "";
+    const x = req.headers?.["x-xclaw-token"] || req.headers?.["x-api-key"];
+    let q = null;
+    try {
+      q = new URL(req.url || "/", "http://local").searchParams.get("token");
+    } catch {
+      /* */
+    }
+    // Subprotocol carrier: "xclaw.token.<token>" (browsers can set this)
+    let sub = null;
+    let matchedProto = null;
+    const protoHdr = req.headers?.["sec-websocket-protocol"];
+    if (protoHdr) {
+      for (const p of String(protoHdr).split(",").map((s) => s.trim())) {
+        if (p.startsWith("xclaw.token.")) {
+          sub = p.slice("xclaw.token.".length);
+          matchedProto = p;
+          break;
+        }
+      }
+    }
+    const got = bearer || x || q || sub || "";
+    if (got && got === token) {
+      return { ok: true, mode: "token", protocol: matchedProto || undefined };
+    }
+    return { ok: false, error: "unauthorized" };
+  }
+
+  return {
+    check,
+    authorizeWebSocket,
+    isProtectedPath,
+    required,
+    requireAuth,
+    protectMetrics,
+    strict,
+  };
 }

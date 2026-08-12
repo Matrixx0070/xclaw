@@ -863,7 +863,13 @@ function connectEventsWs() {
       try { _eventsWs.close(); } catch {}
       _eventsWs = null;
     }
-    const ws = new WebSocket(eventsWsUrl());
+    // Carry an operator token (if set) via the WS subprotocol carrier so the
+    // upgrade is authorized when the gateway requires a token.
+    let _tok = null;
+    try { _tok = localStorage.getItem("xclaw_token"); } catch {}
+    const ws = _tok
+      ? new WebSocket(eventsWsUrl(), ["xclaw.token." + _tok])
+      : new WebSocket(eventsWsUrl());
     _eventsWs = ws;
     if (status) status.textContent = _eventsAttempt ? "ws reconnect…" : "ws connecting…";
 

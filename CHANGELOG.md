@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.79.0 — SSRF guard + WebSocket upgrade auth
+
+- **SSRF guard** (`src/security/ssrf.mjs`) on `web_fetch` — the agent-controlled server-side fetch was the review's open SSRF vector. Now: http/https only; DNS-resolve the host and block if ANY address is loopback/private/link-local/ULA/CGNAT/**cloud-metadata (169.254.169.254)** (getaddrinfo canonicalizes decimal/hex host encodings, so `http://2130706433/` → 127.0.0.1 is caught); **redirects followed manually and re-validated per hop** (a public host 302-ing to metadata is blocked). Config `security.ssrf`: `mode` block|off, `allowPrivate` (lab dev), `allowHosts`, `maxRedirects`; `XCLAW_SSRF` env.
+- **WebSocket upgrade auth** (`src/gateway/ws-hub.mjs` + `auth.mjs`): the `/ws/events` upgrade previously wrote `101` with zero auth. Now an `authorize` gate runs BEFORE the handshake — rejects with `401` whenever a token is set or `requireAuth`/prod. Token accepted via `?token=`, `x-xclaw-token`, or `Sec-WebSocket-Protocol: xclaw.token.<token>` (the browser-settable carrier, echoed back on accept). Control UI passes an operator token from `localStorage.xclaw_token`.
+- Doctor: `security.ssrf` + `security.wsAuth` checks.
+- Tests: SSRF IP classifier (v4/v6/mapped/metadata/garbage), URL/scheme/decimal-encoding blocks, **live redirect-hop-into-metadata block**; WS handshake auth over a real socket (open when tokenless, 401 on missing/wrong token, 101 via query/header/subprotocol, fail-closed on requireAuth-without-token). 18 new tests.
+
 ## 3.78.0 — Tool planes + bundled skills (Grok) · MCP-in-loop regression fix (Claude)
 
 - **Tool planes T0–T4** (Grok): plane map + ToolCall contract (`src/tools/planes.mjs`), Tool Router single dispatch path (`src/tools/router.mjs`), `runToolBatches` plane concurrency with maxParallel + abort, computer-only plane for bash/files/browser (heavy tools never run in-process), allowlisted `web_search` plane (Brave/DDG, HTTP only — never shell).

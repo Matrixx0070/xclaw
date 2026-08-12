@@ -2382,6 +2382,8 @@ export async function startGateway({ root } = {}) {
   const wsHub = attachWebSocketHub(server, {
     path: cfg.gateway?.wsPath || "/ws/events",
     heartbeatMs: cfg.gateway?.wsHeartbeatMs || 25_000,
+    // Reject unauthorized upgrades whenever a token is set or requireAuth (prod)
+    authorize: (req) => gatewayAuth.authorizeWebSocket(req),
   });
   // global broadcast for optional callers
   globalThis.__xclawWsBroadcast = wsBroadcast;

@@ -124,6 +124,8 @@ function sendClose(socket, code = 1000) {
 export function attachWebSocketHub(server, opts = {}) {
   const path = opts.path || "/ws/events";
   const heartbeatMs = Math.max(1000, Number(opts.heartbeatMs) || 25_000);
+  /** @type {(req) => {ok:boolean, protocol?:string, error?:string}} */
+  const authorize = typeof opts.authorize === "function" ? opts.authorize : null;
   const missThreshold = Math.max(1, Number(opts.missThreshold) || 2);
   const stats = {
     pingsSent: 0,
@@ -168,12 +170,36 @@ export function attachWebSocketHub(server, opts = {}) {
         socket.destroy();
         return;
       }
+      // Auth gate BEFORE the 101 handshake — reject unauthorized upgrades.
+      let authProtocol;
+      if (authorize) {
+        let verdict;
+        try {
+          verdict = authorize(req);
+        } catch (err) {
+          verdict = { ok: false, error: err?.message || "authorize error" };
+        }
+        if (!verdict?.ok) {
+          stats.rejected = (stats.rejected || 0) + 1;
+          socket.write(
+            "HTTP/1.1 401 Unauthorized\r\n" +
+              "Connection: close\r\n" +
+              "Content-Length: 0\r\n" +
+              "\r\n"
+          );
+          socket.destroy();
+          return;
+        }
+        authProtocol = verdict.protocol;
+      }
       const accept = acceptKey(String(key).trim());
       socket.write(
         "HTTP/1.1 101 Switching Protocols\r\n" +
           "Upgrade: websocket\r\n" +
           "Connection: Upgrade\r\n" +
           `Sec-WebSocket-Accept: ${accept}\r\n` +
+          // Echo the token subprotocol so browser clients complete the handshake
+          (authProtocol ? `Sec-WebSocket-Protocol: ${authProtocol}\r\n` : "") +
           "\r\n"
       );
 
