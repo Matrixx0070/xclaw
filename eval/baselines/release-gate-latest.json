@@ -1,0 +1,68 @@
+{
+  "at": "2026-08-06T16:01:24.903Z",
+  "quick": true,
+  "strict": false,
+  "steps": [
+    {
+      "name": "unit tests",
+      "ok": true,
+      "required": true,
+      "ms": 25018,
+      "detail": "ℹ tests 158 | ℹ pass 158 | ℹ fail 0",
+      "code": 0
+    },
+    {
+      "name": "security-audit",
+      "ok": true,
+      "required": true,
+      "ms": 85,
+      "detail": {
+        "at": "2026-08-06T16:01:24.897Z",
+        "ok": true,
+        "errors": 0,
+        "warnings": 1,
+        "findings": [
+          {
+            "id": "gateway.bind",
+            "level": "ok",
+            "message": "Gateway local bind 127.0.0.1",
+            "fix": null
+          },
+          {
+            "id": "gateway.token",
+            "level": "info",
+            "message": "No XCLAW_GATEWAY_TOKEN / gateway.token",
+            "fix": "Export XCLAW_GATEWAY_TOKEN for any non-local or multi-user deploy"
+          },
+          {
+            "id": "security.autoApprove",
+            "level": "ok",
+            "message": "autoApprove off",
+            "fix": null
+          },
+          {
+            "id": "sandbox",
+            "level": "ok",
+            "message": "sandbox enabled (default)",
+            "fix": null
+          },
+          {
+            "id": "computer.remoteAuth",
+            "level": "info",
+            "message": "local computer without auth token (ok for localhost)",
+            "fix": null
+          },
+          {
+            "id": "apiKey",
+            "level": "warn",
+            "message": "no model API key in env/config",
+            "fix": null
+          }
+        ]
+      },
+      "code": 0
+    }
+  ],
+  "ok": true,
+  "requiredFailed": []
+}

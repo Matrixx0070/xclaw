@@ -1,0 +1,34 @@
+[
+  {
+    "id": "fs-write-readme",
+    "name": "Create README with exact title",
+    "tags": ["smoke", "fs", "autonomy"],
+    "timeoutMs": 120000,
+    "maxTurns": 6,
+    "fixture": "empty",
+    "prompt": "In the current working directory, create a file named README.md whose first line is exactly: # Eval Project\nDo not create any other files. When done, stop.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "README.md" },
+        { "type": "file_contains", "path": "README.md", "text": "# Eval Project" }
+      ],
+      "budgets": { "maxTurns": 6, "maxToolCalls": 8 }
+    }
+  },
+  {
+    "id": "fs-write-hello",
+    "name": "Write hello.txt",
+    "tags": ["smoke", "fs"],
+    "timeoutMs": 90000,
+    "maxTurns": 5,
+    "fixture": "empty",
+    "prompt": "Write a file hello.txt containing exactly: hello xclaw\nThen stop.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "hello.txt" },
+        { "type": "file_contains", "path": "hello.txt", "text": "hello xclaw" }
+      ],
+      "budgets": { "maxTurns": 5, "maxToolCalls": 6 }
+    }
+  }
+]

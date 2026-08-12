@@ -1,0 +1,38 @@
+# Optional: computer on separate host/service
+services:
+  computer:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["node", "bin/xclaw.mjs", "computer", "start", "--bg"]
+    # Prefer foreground entry in real images; adjust as needed
+    environment:
+      PORT: "4243"
+    expose:
+      - "4243"
+    volumes:
+      - xclaw-computer:/data
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment:
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      XCLAW_API_KEY: ${XCLAW_API_KEY:-}
+      XCLAW_GATEWAY_TOKEN: ${XCLAW_GATEWAY_TOKEN:-}
+      XCLAW_PROFILE: prod
+      # Point at sidecar
+      XCLAW_COMPUTER_URL: http://computer:4243
+    ports:
+      - "18790:18790"
+    depends_on:
+      - computer
+    volumes:
+      - xclaw-data:/data
+    restart: unless-stopped
+
+volumes:
+  xclaw-data:
+  xclaw-computer:

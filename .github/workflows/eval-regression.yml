@@ -1,0 +1,44 @@
+name: eval-regression
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Unit regression pack
+        run: node scripts/eval-regression.mjs
+      - name: OAuth + P5/P6 packs
+        run: |
+          node --test \
+            test/oauth-retry.test.mjs \
+            test/oauth-errors.test.mjs \
+            test/token-refresh.test.mjs \
+            test/token-refresh-mock.test.mjs \
+            test/oauth-browser.test.mjs \
+            test/vault.test.mjs
+
+  live:
+    if: ${{ secrets.XAI_API_KEY != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Live eval-ci
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          EVAL_LIVE: "1"
+        run: node scripts/eval-regression.mjs

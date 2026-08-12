@@ -1,0 +1,159 @@
+{
+  "passRate": 1.0,
+  "total": 21,
+  "passed": 21,
+  "failed": 0,
+  "meanTurns": 2.789473684210526,
+  "meanWallMs": 6382.263157894737,
+  "model": "grok-4.3",
+  "results": [
+    {
+      "id": "fs-write-hello",
+      "pass": true,
+      "turns": 1,
+      "toolCalls": 1,
+      "wallMs": 3484
+    },
+    {
+      "id": "fs-write-readme",
+      "pass": true,
+      "turns": 1,
+      "toolCalls": 1,
+      "wallMs": 12001
+    },
+    {
+      "id": "ground-missing-file",
+      "pass": true,
+      "turns": 1,
+      "toolCalls": 1,
+      "wallMs": 3041
+    },
+    {
+      "id": "recovery-retry-once",
+      "pass": true,
+      "turns": 2,
+      "toolCalls": 2,
+      "wallMs": 5434
+    },
+    {
+      "id": "auto-fix-script",
+      "pass": true,
+      "turns": 3,
+      "toolCalls": 3,
+      "wallMs": 4785
+    },
+    {
+      "id": "memo-three-files",
+      "pass": true,
+      "turns": 2,
+      "toolCalls": 4,
+      "wallMs": 5260
+    },
+    {
+      "id": "refactor-rename-greet",
+      "pass": true,
+      "turns": 4,
+      "toolCalls": 6,
+      "wallMs": 7636
+    },
+    {
+      "id": "workflow-publish-post",
+      "pass": true,
+      "turns": 3,
+      "toolCalls": 4,
+      "wallMs": 5225
+    },
+    {
+      "id": "project-add-multiply",
+      "pass": true,
+      "turns": 4,
+      "toolCalls": 6,
+      "wallMs": 7593
+    },
+    {
+      "id": "stress-weekly-report",
+      "pass": true,
+      "turns": 3,
+      "toolCalls": 6,
+      "wallMs": 7138
+    },
+    {
+      "id": "hard-fix-sum",
+      "pass": true,
+      "turns": 4,
+      "toolCalls": 4,
+      "wallMs": 6642
+    },
+    {
+      "id": "hard-pipeline-merge",
+      "pass": true,
+      "turns": 2,
+      "toolCalls": 3,
+      "wallMs": 5409
+    },
+    {
+      "id": "hard-config-toggle",
+      "pass": true,
+      "turns": 3,
+      "toolCalls": 3,
+      "wallMs": 4410
+    },
+    {
+      "id": "hard-todo-complete",
+      "pass": true,
+      "turns": 5,
+      "toolCalls": 9,
+      "wallMs": 9304
+    },
+    {
+      "id": "hard-ground-no-invent",
+      "pass": true,
+      "turns": 1,
+      "toolCalls": 1,
+      "wallMs": 3886
+    },
+    {
+      "id": "long-fix-app",
+      "pass": true,
+      "turns": 5,
+      "toolCalls": 8,
+      "wallMs": 8585
+    },
+    {
+      "id": "long-docs-pack",
+      "pass": true,
+      "turns": 3,
+      "toolCalls": 7,
+      "wallMs": 7275
+    },
+    {
+      "id": "long-data-etl",
+      "pass": true,
+      "turns": 4,
+      "toolCalls": 5,
+      "wallMs": 9121
+    },
+    {
+      "id": "long-grounded-report",
+      "pass": true,
+      "turns": 2,
+      "toolCalls": 2,
+      "wallMs": 5034
+    },
+    {
+      "id": "campaign-svc-admin",
+      "pass": true,
+      "turns": 7,
+      "toolCalls": 11,
+      "wallMs": 13592
+    },
+    {
+      "id": "campaign-static-site",
+      "pass": true,
+      "turns": 4,
+      "toolCalls": 7,
+      "wallMs": 9495
+    }
+  ],
+  "note": "Phase H campaign"
+}

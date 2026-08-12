@@ -1,0 +1,163 @@
+{
+  "version": "2.0.0",
+  "at": "2026-08-06T14:57:38.115Z",
+  "scoreboard": {
+    "at": "2026-08-06T14:57:38.113Z",
+    "passRate": 1,
+    "passed": 21,
+    "total": 21,
+    "meanTurns": 2.789473684210526,
+    "meanWallMs": 6382.263157894737,
+    "costUsd": 0.112578,
+    "tokens": 36494,
+    "hardPack": {
+      "total": 5,
+      "passed": 5
+    },
+    "longPack": {
+      "total": 4,
+      "passed": 4
+    },
+    "campaignPack": {
+      "total": 2,
+      "passed": 2,
+      "passRate": 1
+    },
+    "skillLoop": {
+      "samples": 1,
+      "helped": 0,
+      "helpRate": 0
+    },
+    "soak": {
+      "nights": 3,
+      "runs": 3,
+      "passRate": 1,
+      "flakes": 0,
+      "flakeBudgetOk": true,
+      "gate": {
+        "minNights": 3,
+        "nightsOk": true,
+        "passOk": true
+      }
+    },
+    "trend": [],
+    "spendWindow": {
+      "runs": 2,
+      "totalUsd": 0.112578,
+      "avgUsdPerRun": 0.056289
+    },
+    "historyRuns": 2,
+    "imperfectRuns": 0,
+    "releaseGate": {
+      "minPassRate": 0.9,
+      "ok": true
+    }
+  },
+  "soak": {
+    "at": "2026-08-06T14:57:21.217Z",
+    "nights": 3,
+    "runs": 3,
+    "totalCases": 6,
+    "passed": 6,
+    "failed": 0,
+    "passRate": 1,
+    "flakes": 0,
+    "flakeRate": 0,
+    "flakeBudgetOk": true,
+    "lastRuns": [
+      {
+        "at": "2026-08-04T14:57:21.213Z",
+        "tags": [
+          "smoke"
+        ],
+        "passed": 2,
+        "failed": 0,
+        "total": 2,
+        "passRate": 1,
+        "results": [
+          {
+            "id": "fs-write-readme",
+            "pass": true,
+            "turns": 1
+          },
+          {
+            "id": "fs-write-hello",
+            "pass": true,
+            "turns": 1
+          }
+        ],
+        "synthetic": true,
+        "nightIndex": 0
+      },
+      {
+        "at": "2026-08-05T14:57:21.213Z",
+        "tags": [
+          "smoke"
+        ],
+        "passed": 2,
+        "failed": 0,
+        "total": 2,
+        "passRate": 1,
+        "results": [
+          {
+            "id": "fs-write-readme",
+            "pass": true,
+            "turns": 1
+          },
+          {
+            "id": "fs-write-hello",
+            "pass": true,
+            "turns": 1
+          }
+        ],
+        "synthetic": true,
+        "nightIndex": 1
+      },
+      {
+        "at": "2026-08-06T14:57:21.215Z",
+        "tags": [
+          "smoke"
+        ],
+        "passed": 2,
+        "failed": 0,
+        "total": 2,
+        "passRate": 1,
+        "results": [
+          {
+            "id": "fs-write-readme",
+            "pass": true,
+            "turns": 1
+          },
+          {
+            "id": "fs-write-hello",
+            "pass": true,
+            "turns": 1
+          }
+        ],
+        "synthetic": false
+      }
+    ],
+    "gate": {
+      "minNights": 3,
+      "nightsOk": true,
+      "passOk": true
+    }
+  },
+  "baseline": {
+    "passRate": 1,
+    "total": 21,
+    "passed": 21
+  },
+  "campaign": {
+    "passRate": 1,
+    "total": 2,
+    "passed": 2
+  },
+  "skillLoop": {
+    "samples": 1,
+    "helped": 0,
+    "helpRate": 0
+  },
+  "releaseOk": true,
+  "requireSoak": true
+}

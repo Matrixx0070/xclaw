@@ -1,0 +1,22 @@
+[
+  {
+    "id": "stress-weekly-report",
+    "name": "Build weekly report from CSV + notes",
+    "tags": ["autonomy", "hard", "stress"],
+    "timeoutMs": 180000,
+    "maxTurns": 16,
+    "fixture": "stress-report",
+    "prompt": "Read data/sales.csv and data/notes.txt.\nWrite out/report.md with:\n# Weekly Report\n## Total revenue\n(a line with the integer total of all revenue values)\n## Best day\n(the day name with highest revenue)\n## Note\n(one sentence based on notes.txt — do not invent metrics)\nThen write out/done.txt containing exactly: DONE\nStop when both files are correct.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "out/report.md" },
+        { "type": "file_exists", "path": "out/done.txt" },
+        { "type": "file_contains", "path": "out/report.md", "text": "# Weekly Report" },
+        { "type": "file_contains", "path": "out/report.md", "text": "590" },
+        { "type": "file_contains", "path": "out/report.md", "text": "thu", "caseInsensitive": true },
+        { "type": "file_contains", "path": "out/done.txt", "text": "DONE" }
+      ],
+      "budgets": { "maxTurns": 16, "maxToolCalls": 28 }
+    }
+  }
+]

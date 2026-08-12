@@ -1,0 +1,181 @@
+[
+  {
+    "id": "long-fix-app",
+    "name": "Multi-file app: fix math + greet then all tests pass",
+    "tags": [
+      "long",
+      "hard",
+      "autonomy",
+      "code"
+    ],
+    "timeoutMs": 300000,
+    "maxTurns": 24,
+    "fixture": "long-app",
+    "groundHard": true,
+    "prompt": "This project has failing tests. Read README and test/run.mjs. Fix src/math.js and src/greet.js so `node test/run.mjs` prints ALL_PASS and exits 0. Do not change the test file. When done, state which files you changed and cite tools used.",
+    "expect": {
+      "success": [
+        {
+          "type": "file_contains",
+          "path": "src/math.js",
+          "text": "a + b"
+        },
+        {
+          "type": "file_contains",
+          "path": "src/greet.js",
+          "text": "Hello,"
+        },
+        {
+          "type": "command",
+          "cmd": "node test/run.mjs",
+          "exitCode": 0
+        },
+        {
+          "type": "command",
+          "cmd": "node test/run.mjs",
+          "stdoutContains": "ALL_PASS"
+        }
+      ],
+      "budgets": {
+        "maxTurns": 24,
+        "maxToolCalls": 36
+      },
+      "claimsRequireEvidence": true,
+      "requireStructuredClaims": true
+    }
+  },
+  {
+    "id": "long-docs-pack",
+    "name": "Write full docs set from outline",
+    "tags": [
+      "long",
+      "autonomy",
+      "workflow"
+    ],
+    "timeoutMs": 240000,
+    "maxTurns": 20,
+    "fixture": "long-docs",
+    "prompt": "Read outline.md. Create docs/intro.md, docs/install.md, docs/usage.md, docs/faq.md each with a clear # heading matching the section. Create docs/INDEX.md linking all four. Stop when the tree is complete.",
+    "expect": {
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "docs/intro.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "docs/install.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "docs/usage.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "docs/faq.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "docs/INDEX.md"
+        },
+        {
+          "type": "file_contains",
+          "path": "docs/INDEX.md",
+          "text": "intro"
+        },
+        {
+          "type": "file_contains",
+          "path": "docs/install.md",
+          "regex": "^#\\s*Install",
+          "flags": "im"
+        }
+      ],
+      "budgets": {
+        "maxTurns": 20,
+        "maxToolCalls": 30
+      }
+    }
+  },
+  {
+    "id": "long-data-etl",
+    "name": "CSV filter active users to JSON + summary",
+    "tags": [
+      "long",
+      "autonomy",
+      "data"
+    ],
+    "timeoutMs": 240000,
+    "maxTurns": 18,
+    "fixture": "long-data",
+    "prompt": "Read raw/users.csv. Write out/active.json as a JSON array of active users with id and name only. Write out/summary.txt with line `active=N` where N is the count. Validate JSON parses.",
+    "expect": {
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "out/active.json"
+        },
+        {
+          "type": "file_exists",
+          "path": "out/summary.txt"
+        },
+        {
+          "type": "file_contains",
+          "path": "out/summary.txt",
+          "text": "active=2"
+        },
+        {
+          "type": "file_contains",
+          "path": "out/active.json",
+          "text": "Ann"
+        },
+        {
+          "type": "file_contains",
+          "path": "out/active.json",
+          "text": "Cyd"
+        },
+        {
+          "type": "command",
+          "cmd": "node -e \"const j=require('./out/active.json'); if(!Array.isArray(j)||j.length!==2) process.exit(1)\"",
+          "exitCode": 0
+        }
+      ],
+      "budgets": {
+        "maxTurns": 18,
+        "maxToolCalls": 28
+      }
+    }
+  },
+  {
+    "id": "long-grounded-report",
+    "name": "Report only from tools; no invented metrics",
+    "tags": [
+      "long",
+      "grounding"
+    ],
+    "timeoutMs": 180000,
+    "maxTurns": 12,
+    "fixture": "long-data",
+    "groundHard": true,
+    "prompt": "Count lines in raw/users.csv using tools. Reply with exactly: LINES=<n> based on tool output. Do not invent. If you cannot read the file, say LINES=UNKNOWN.",
+    "expect": {
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "raw/users.csv"
+        }
+      ],
+      "replyContains": [
+        "LINES="
+      ],
+      "replyNotContains": [
+        "LINES=999"
+      ],
+      "budgets": {
+        "maxTurns": 12,
+        "maxToolCalls": 12
+      },
+      "claimsRequireEvidence": true,
+      "requireStructuredClaims": true
+    }
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "auto-fix-script",
+    "name": "Fix broken shell script until it runs",
+    "tags": ["autonomy", "bash"],
+    "timeoutMs": 180000,
+    "maxTurns": 10,
+    "fixture": "broken-script",
+    "prompt": "There is a script run.sh in the current directory that is broken. Fix it so that bash run.sh exits 0 and prints OK. Do not remove the script. Stop when fixed.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "run.sh" },
+        { "type": "command", "cmd": "bash run.sh", "exitCode": 0 }
+      ],
+      "budgets": { "maxTurns": 10, "maxToolCalls": 15 }
+    }
+  }
+]

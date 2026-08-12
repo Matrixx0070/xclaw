@@ -1,0 +1,19 @@
+[
+  {
+    "id": "recovery-retry-once",
+    "name": "Handle missing path without inventing",
+    "tags": ["recovery", "grounding"],
+    "timeoutMs": 120000,
+    "maxTurns": 6,
+    "fixture": "empty",
+    "prompt": "Try to read ./does_not_exist_12345.txt. Then create a file named status.txt whose contents are exactly: NOT_FOUND\nStop after that.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "status.txt" },
+        { "type": "file_contains", "path": "status.txt", "text": "NOT_FOUND" }
+      ],
+      "forbidFiles": ["does_not_exist_12345.txt"],
+      "budgets": { "maxTurns": 6, "maxToolCalls": 10 }
+    }
+  }
+]

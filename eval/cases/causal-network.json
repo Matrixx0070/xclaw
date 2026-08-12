@@ -1,0 +1,18 @@
+[
+  {
+    "id": "causal-network-smoke",
+    "name": "Causal correctness expects network shape (offline-scorable)",
+    "tags": ["causal", "horizon5", "network"],
+    "timeoutMs": 60000,
+    "maxTurns": 4,
+    "prompt": "This case scores network causal expectations when traces are present. In mock mode it validates scorer wiring.",
+    "expect": {
+      "budgets": { "maxTurns": 4, "maxToolCalls": 8 },
+      "causal": {
+        "minFlows": 0,
+        "requireBindings": false,
+        "network": []
+      }
+    }
+  }
+]

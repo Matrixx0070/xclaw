@@ -1,0 +1,19 @@
+[
+  {
+    "id": "project-add-multiply",
+    "name": "Add multiply function and test",
+    "tags": ["autonomy", "hard", "code", "project"],
+    "timeoutMs": 180000,
+    "maxTurns": 14,
+    "fixture": "project-lib",
+    "prompt": "This is a small JS library.\n1) Add export function multiply(a, b) { return a * b; } to src/math.js (keep existing add).\n2) Extend test/math.test.js to also assert multiply(4, 5) === 20 (keep existing add test).\n3) Run: node test/math.test.js and ensure exit 0.\nStop when tests pass.",
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "src/math.js", "text": "multiply" },
+        { "type": "file_contains", "path": "test/math.test.js", "text": "multiply" },
+        { "type": "command", "cmd": "node test/math.test.js", "exitCode": 0 }
+      ],
+      "budgets": { "maxTurns": 14, "maxToolCalls": 24 }
+    }
+  }
+]

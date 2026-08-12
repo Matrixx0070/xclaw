@@ -1,0 +1,65 @@
+# Alerts that prefer pre-aggregated recording rules (lower eval cost).
+# Requires xclaw-stream-recording-rules.yaml to be loaded first.
+
+groups:
+  - name: xclaw-stream-alerts
+    rules:
+      - alert: XClawStreamResumeFailures
+        expr: xclaw:stream_resume_failed:increase15m:sum > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: xclaw
+        annotations:
+          summary: XClaw stream resume failures elevated
+          description: "{{ $value }} resume_failed events in 15m (threshold 5)."
+
+      - alert: XClawStreamNotFoundSpike
+        expr: xclaw:stream_not_found:increase15m:sum > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: xclaw
+        annotations:
+          summary: XClaw STREAM_NOT_FOUND spike
+          description: "{{ $value }} not-found errors in 15m — clients may be using expired streamIds."
+
+      - alert: XClawStreamFatalErrors
+        expr: xclaw:stream_errors_fatal:increase15m:sum > 3
+        for: 5m
+        labels:
+          severity: critical
+          service: xclaw
+        annotations:
+          summary: XClaw fatal stream errors
+          description: "{{ $value }} fatal stream errors in 15m."
+
+      - alert: XClawStreamHighFailureRatio
+        expr: xclaw:stream_resume_failure_ratio:rate15m > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          service: xclaw
+        annotations:
+          summary: XClaw resume failure ratio high
+          description: "Failure ratio {{ $value | humanizePercentage }} over 15m rate window."
+
+      - alert: XClawStreamBufferPressure
+        expr: xclaw:stream_log_events_buffered > 2000 and xclaw:stream_logs:live > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: xclaw
+        annotations:
+          summary: XClaw stream buffer pressure
+          description: "Buffered events {{ $value }} with many live streams."
+
+      - alert: XClawStreamReconnectChurn
+        expr: xclaw:stream_backoff_per_end:rate15m > 5
+        for: 10m
+        labels:
+          severity: warning
+          service: xclaw
+        annotations:
+          summary: XClaw stream reconnect churn
+          description: "Backoff/end ratio {{ $value }} — clients flapping."

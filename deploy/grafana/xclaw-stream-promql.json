@@ -1,0 +1,80 @@
+{
+  "title": "XClaw stream PromQL library",
+  "queries": [
+    {
+      "name": "Error rate by kind/code",
+      "expr": "sum by (kind, code) (rate(xclaw_stream_errors_total[5m]))",
+      "type": "timeseries"
+    },
+    {
+      "name": "Fatal error rate",
+      "expr": "sum by (kind) (rate(xclaw_stream_errors_fatal_total[5m]))",
+      "type": "timeseries"
+    },
+    {
+      "name": "Retryable error rate",
+      "expr": "sum by (kind) (rate(xclaw_stream_errors_retryable_total[5m]))",
+      "type": "timeseries"
+    },
+    {
+      "name": "Resume events rate",
+      "expr": "sum by (kind, event) (rate(xclaw_stream_resume_events_total[5m]))",
+      "type": "timeseries"
+    },
+    {
+      "name": "Resume failures 15m",
+      "expr": "sum(increase(xclaw_stream_resume_events_total{event=\"resume_failed\"}[15m]))",
+      "type": "stat"
+    },
+    {
+      "name": "STREAM_NOT_FOUND 15m",
+      "expr": "sum(increase(xclaw_stream_errors_total{code=\"STREAM_NOT_FOUND\"}[15m]))",
+      "type": "stat"
+    },
+    {
+      "name": "Live stream logs",
+      "expr": "xclaw_stream_logs{status=\"live\"}",
+      "type": "stat"
+    },
+    {
+      "name": "Buffered events",
+      "expr": "xclaw_stream_log_events_buffered",
+      "type": "stat"
+    },
+    {
+      "name": "Subscribers",
+      "expr": "xclaw_stream_log_subscribers",
+      "type": "stat"
+    },
+    {
+      "name": "Top error codes 1h",
+      "expr": "topk(5, sum by (code) (increase(xclaw_stream_errors_total[1h])))",
+      "type": "table"
+    },
+    {
+      "name": "Failure ratio",
+      "expr": "sum(rate(xclaw_stream_resume_events_total{event=\"resume_failed\"}[15m])) / clamp_min(sum(rate(xclaw_stream_resume_events_total{event=~\"resume_failed|resume_ended\"}[15m])), 1e-9)",
+      "type": "gauge"
+    },
+    {
+      "name": "Agent errors only",
+      "expr": "sum by (code) (rate(xclaw_stream_errors_total{kind=\"agent\"}[5m]))",
+      "type": "timeseries"
+    },
+    {
+      "name": "Alert: resume storm",
+      "expr": "sum(increase(xclaw_stream_resume_events_total{event=\"resume_failed\"}[15m])) > 5",
+      "type": "alert"
+    },
+    {
+      "name": "Alert: not-found spike",
+      "expr": "sum(increase(xclaw_stream_errors_total{code=\"STREAM_NOT_FOUND\"}[15m])) > 10",
+      "type": "alert"
+    },
+    {
+      "name": "Alert: fatal errors",
+      "expr": "sum(increase(xclaw_stream_errors_fatal_total[15m])) > 3",
+      "type": "alert"
+    }
+  ]
+}

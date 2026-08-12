@@ -1,0 +1,34 @@
+[Unit]
+Description=XClaw AI Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xclaw
+Group=xclaw
+WorkingDirectory=/opt/xclaw
+EnvironmentFile=-/etc/xclaw/env
+Environment=NODE_ENV=production
+Environment=XCLAW_HOME=/var/lib/xclaw
+Environment=HOME=/var/lib/xclaw
+ExecStart=/usr/bin/node /opt/xclaw/bin/xclaw.mjs gateway
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+# Graceful SIGTERM drain
+KillSignal=SIGTERM
+LimitNOFILE=65535
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/xclaw /var/log/xclaw
+
+StandardOutput=append:/var/log/xclaw/gateway.log
+StandardError=append:/var/log/xclaw/gateway.log
+
+[Install]
+WantedBy=multi-user.target

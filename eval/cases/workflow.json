@@ -1,0 +1,22 @@
+[
+  {
+    "id": "workflow-publish-post",
+    "name": "Assemble blog post from drafts and publish checklist",
+    "tags": ["autonomy", "hard", "workflow"],
+    "timeoutMs": 180000,
+    "maxTurns": 14,
+    "fixture": "workflow-blog",
+    "prompt": "You are publishing a short internal post.\n1) Read drafts/intro.md and drafts/body.md.\n2) Write out/post.md that starts with '# XClaw Update' and includes content from both drafts (do not invent product claims).\n3) Write out/checklist.md with exactly three lines:\n- [x] drafts read\n- [x] post written\n- [x] ready to publish\nStop when both files exist.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "out/post.md" },
+        { "type": "file_exists", "path": "out/checklist.md" },
+        { "type": "file_contains", "path": "out/post.md", "text": "# XClaw Update" },
+        { "type": "file_contains", "path": "out/post.md", "text": "sandbox", "caseInsensitive": true },
+        { "type": "file_contains", "path": "out/post.md", "text": "eval", "caseInsensitive": true },
+        { "type": "file_contains", "path": "out/checklist.md", "text": "ready to publish" }
+      ],
+      "budgets": { "maxTurns": 14, "maxToolCalls": 24 }
+    }
+  }
+]

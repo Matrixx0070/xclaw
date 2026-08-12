@@ -1,0 +1,197 @@
+[
+  {
+    "id": "campaign-svc-admin",
+    "name": "Multi-module service: admin role + API",
+    "tags": [
+      "campaign",
+      "long",
+      "hard",
+      "autonomy"
+    ],
+    "timeoutMs": 360000,
+    "maxTurns": 36,
+    "fixture": "campaign-svc",
+    "groundHard": true,
+    "prompt": "Read README and tests. Make node test/run.mjs print CAMPAIGN_PASS. User 1 must be admin. Prefer minimal fixes. End with a structured block:\n```json\n{\"claims\":[...],\"evidence_ids\":[...]}\n```",
+    "expect": {
+      "success": [
+        {
+          "type": "command",
+          "cmd": "node test/run.mjs",
+          "exitCode": 0,
+          "stdoutContains": "CAMPAIGN_PASS"
+        }
+      ],
+      "budgets": {
+        "maxTurns": 36,
+        "maxToolCalls": 48
+      },
+      "claimsRequireEvidence": true,
+      "requireStructuredClaims": true
+    }
+  },
+  {
+    "id": "campaign-static-site",
+    "name": "Build static site from brief",
+    "tags": [
+      "campaign",
+      "long",
+      "autonomy"
+    ],
+    "timeoutMs": 300000,
+    "maxTurns": 28,
+    "fixture": "campaign-site",
+    "prompt": "Read BRIEF.md and implement all files under public/. Then confirm files exist with tools.",
+    "expect": {
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "public/index.html"
+        },
+        {
+          "type": "file_exists",
+          "path": "public/about.html"
+        },
+        {
+          "type": "file_exists",
+          "path": "public/style.css"
+        },
+        {
+          "type": "file_exists",
+          "path": "public/app.js"
+        },
+        {
+          "type": "file_contains",
+          "path": "public/index.html",
+          "text": "Acme"
+        },
+        {
+          "type": "file_contains",
+          "path": "public/index.html",
+          "text": "style.css"
+        },
+        {
+          "type": "file_contains",
+          "path": "public/app.js",
+          "text": "ready"
+        },
+        {
+          "type": "file_contains",
+          "path": "public/style.css",
+          "text": "system-ui"
+        }
+      ],
+      "budgets": {
+        "maxTurns": 28,
+        "maxToolCalls": 40
+      }
+    }
+  },
+  {
+    "id": "campaign-chaos-calc",
+    "name": "Fix real bug; ignore decoys",
+    "tags": [
+      "campaign",
+      "campaign-v2",
+      "hard",
+      "long"
+    ],
+    "timeoutMs": 300000,
+    "maxTurns": 28,
+    "fixture": "campaign-chaos",
+    "groundHard": true,
+    "prompt": "Read README carefully. Fix the real bug only. Ignore decoy/ and NOTES.old.md. node src/run.js must print RESULT=4.",
+    "expect": {
+      "success": [
+        {
+          "type": "command",
+          "cmd": "node src/run.js",
+          "exitCode": 0,
+          "stdoutContains": "RESULT=4"
+        },
+        {
+          "type": "file_contains",
+          "path": "src/calc.js",
+          "regex": "\\/",
+          "flags": ""
+        }
+      ],
+      "budgets": {
+        "maxTurns": 28,
+        "maxToolCalls": 36
+      },
+      "requireStructuredClaims": true
+    }
+  },
+  {
+    "id": "campaign-api-health",
+    "name": "Dev health without token",
+    "tags": [
+      "campaign",
+      "campaign-v2",
+      "long"
+    ],
+    "timeoutMs": 240000,
+    "maxTurns": 24,
+    "fixture": "campaign-api",
+    "prompt": "Read README. Make node server.mjs print API_OK with minimal change.",
+    "expect": {
+      "success": [
+        {
+          "type": "command",
+          "cmd": "node server.mjs",
+          "exitCode": 0,
+          "stdoutContains": "API_OK"
+        }
+      ],
+      "budgets": {
+        "maxTurns": 24,
+        "maxToolCalls": 32
+      }
+    }
+  },
+  {
+    "id": "campaign-migrate-v2",
+    "name": "Migrate JSON schema active users",
+    "tags": [
+      "campaign",
+      "campaign-v2",
+      "long"
+    ],
+    "timeoutMs": 240000,
+    "maxTurns": 22,
+    "fixture": "campaign-migrate",
+    "prompt": "Read SPEC.md and implement the migration exactly.",
+    "expect": {
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "out/v2.json"
+        },
+        {
+          "type": "file_exists",
+          "path": "out/META.txt"
+        },
+        {
+          "type": "file_contains",
+          "path": "out/META.txt",
+          "text": "count=1"
+        },
+        {
+          "type": "file_contains",
+          "path": "out/v2.json",
+          "text": "Ann"
+        },
+        {
+          "type": "command",
+          "cmd": "node -e \"const j=require('./out/v2.json'); if(!Array.isArray(j)||j.length!==1||j[0].name!=='Ann') process.exit(1)\"",
+          "exitCode": 0
+        }
+      ],
+      "budgets": {
+        "maxTurns": 22,
+        "maxToolCalls": 30
+      }
+    }
+  }
+]

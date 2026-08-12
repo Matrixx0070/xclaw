@@ -1,0 +1,182 @@
+# XClaw stream · optimized Prometheus recording rules
+#
+# Design goals:
+#   - Pre-aggregate high-use dashboard/alert queries
+#   - Keep label cardinality low (prefer kind/code/event, drop phase when not needed)
+#   - Two intervals: 15s (fast ops) and 1m (SLO / long-range dashboards)
+#   - Names follow Prometheus style: level:metric:operations
+#
+# Load via prometheus.yml:
+#   rule_files:
+#     - /etc/prometheus/xclaw-stream-recording-rules.yaml
+#
+# Verify:
+#   promtool check rules xclaw-stream-recording-rules.yaml
+
+groups:
+  # ── Fast path: dashboard rates (matches scrape ~15s) ─────────────────────
+  - name: xclaw-stream-rates-fast
+    interval: 15s
+    rules:
+      # Core error rate — primary dashboard series
+      - record: xclaw:stream_errors:rate5m
+        expr: sum by (kind, code) (rate(xclaw_stream_errors_total[5m]))
+        labels:
+          service: xclaw
+
+      # Phase split only when debugging client vs server (higher cardinality — keep separate)
+      - record: xclaw:stream_errors_by_phase:rate5m
+        expr: sum by (kind, code, phase) (rate(xclaw_stream_errors_total[5m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_errors_fatal:rate5m
+        expr: sum by (kind) (rate(xclaw_stream_errors_fatal_total[5m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_errors_retryable:rate5m
+        expr: sum by (kind) (rate(xclaw_stream_errors_retryable_total[5m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_resume_events:rate5m
+        expr: sum by (kind, event) (rate(xclaw_stream_resume_events_total[5m]))
+        labels:
+          service: xclaw
+
+      # Single-series totals for cheap stat panels / alerts
+      - record: xclaw:stream_errors:rate5m:sum
+        expr: sum(rate(xclaw_stream_errors_total[5m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_resume_failed:rate5m:sum
+        expr: sum(rate(xclaw_stream_resume_events_total{event="resume_failed"}[5m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_not_found:rate5m:sum
+        expr: sum(rate(xclaw_stream_errors_total{code="STREAM_NOT_FOUND"}[5m]))
+        labels:
+          service: xclaw
+
+  # ── Medium window: alert-friendly increases ──────────────────────────────
+  - name: xclaw-stream-increases
+    interval: 30s
+    rules:
+      - record: xclaw:stream_errors:increase15m
+        expr: sum by (kind, code) (increase(xclaw_stream_errors_total[15m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_errors_fatal:increase15m
+        expr: sum by (kind) (increase(xclaw_stream_errors_fatal_total[15m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_resume_failed:increase15m
+        expr: sum by (kind) (increase(xclaw_stream_resume_events_total{event="resume_failed"}[15m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_not_found:increase15m
+        expr: sum by (kind) (increase(xclaw_stream_errors_total{code="STREAM_NOT_FOUND"}[15m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_resume_failed:increase15m:sum
+        expr: sum(increase(xclaw_stream_resume_events_total{event="resume_failed"}[15m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_not_found:increase15m:sum
+        expr: sum(increase(xclaw_stream_errors_total{code="STREAM_NOT_FOUND"}[15m]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_errors_fatal:increase15m:sum
+        expr: sum(increase(xclaw_stream_errors_fatal_total[15m]))
+        labels:
+          service: xclaw
+
+  # ── SLO / ratios (1m is enough; avoid 15s churn) ─────────────────────────
+  - name: xclaw-stream-slo
+    interval: 1m
+    rules:
+      # Failures / (failures + clean ends)
+      - record: xclaw:stream_resume_failure_ratio:rate15m
+        expr: |
+          sum(rate(xclaw_stream_resume_events_total{event="resume_failed"}[15m]))
+          /
+          clamp_min(
+            sum(rate(xclaw_stream_resume_events_total{event=~"resume_failed|resume_ended"}[15m])),
+            1e-9
+          )
+        labels:
+          service: xclaw
+
+      # Fatal share of all stream errors
+      - record: xclaw:stream_fatal_ratio:rate15m
+        expr: |
+          sum(rate(xclaw_stream_errors_fatal_total[15m]))
+          /
+          clamp_min(sum(rate(xclaw_stream_errors_total[15m])), 1e-9)
+        labels:
+          service: xclaw
+
+      # Reconnect pressure: backoffs per successful end
+      - record: xclaw:stream_backoff_per_end:rate15m
+        expr: |
+          sum(rate(xclaw_stream_resume_events_total{event="resume_backoff"}[15m]))
+          /
+          clamp_min(
+            sum(rate(xclaw_stream_resume_events_total{event="resume_ended"}[15m])),
+            1e-9
+          )
+        labels:
+          service: xclaw
+
+      # Hourly rollups for slow dashboards / capacity
+      - record: xclaw:stream_errors:rate1h
+        expr: sum by (kind, code) (rate(xclaw_stream_errors_total[1h]))
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_errors:increase1h:sum
+        expr: sum(increase(xclaw_stream_errors_total[1h]))
+        labels:
+          service: xclaw
+
+  # ── Registry gauges (copy-through for consistent naming in Grafana) ──────
+  - name: xclaw-stream-registry
+    interval: 15s
+    rules:
+      - record: xclaw:stream_logs:live
+        expr: xclaw_stream_logs{status="live"}
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_logs:ended
+        expr: xclaw_stream_logs{status="ended"}
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_log_events_buffered
+        expr: xclaw_stream_log_events_buffered
+        labels:
+          service: xclaw
+
+      - record: xclaw:stream_log_subscribers
+        expr: xclaw_stream_log_subscribers
+        labels:
+          service: xclaw
+
+      # Events per live stream (buffer pressure proxy)
+      - record: xclaw:stream_events_per_live_log
+        expr: |
+          xclaw_stream_log_events_buffered
+          /
+          clamp_min(xclaw_stream_logs{status="live"}, 1)
+        labels:
+          service: xclaw

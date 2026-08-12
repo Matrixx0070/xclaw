@@ -1,0 +1,10 @@
+/var/log/xclaw/*.log
+/var/lib/xclaw/logs/*.log {
+  daily
+  rotate 14
+  compress
+  delaycompress
+  missingok
+  notifempty
+  copytruncate
+}

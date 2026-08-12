@@ -1,0 +1,125 @@
+# Grafana unified alerting rule group (provisioning)
+# Place under grafana provisioning/alerting or import as YAML.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: xclaw-slack-ws
+    folder: XClaw
+    interval: 1m
+    rules:
+      - uid: xclaw-slack-idle
+        title: XClaw Slack WS idle high
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: xclaw_slack_ws_idle_ms > 90000
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          summary: Slack Socket Mode idle exceeds 90s
+          description: No WebSocket frame for {{ $value }}ms — heartbeat may reconnect or connection is stuck.
+        labels:
+          severity: warning
+          service: xclaw
+
+      - uid: xclaw-slack-reconnect-storm
+        title: XClaw Slack reconnect storm
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(xclaw_slack_ws_reconnects_total[15m]) > 10
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Slack Socket Mode reconnecting too often
+          description: More than 10 reconnects in 15 minutes (value={{ $value }}).
+        labels:
+          severity: warning
+          service: xclaw
+
+      - uid: xclaw-slack-heartbeat-timeouts
+        title: XClaw Slack heartbeat timeouts
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: increase(xclaw_slack_ws_heartbeat_timeouts_total[15m]) > 3
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Slack heartbeat timeouts elevated
+          description: Heartbeat forced reconnects in 15m={{ $value }}
+        labels:
+          severity: warning
+          service: xclaw
+
+      - uid: xclaw-computer-down
+        title: XClaw computer server down
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: xclaw_computer_up == 0
+              instant: true
+              refId: A
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          summary: XClaw computer process not healthy
+        labels:
+          severity: critical
+          service: xclaw
+
+# Stream / resume (XClaw gateway /metrics)
+  - name: xclaw-stream
+    rules:
+      - alert: XClawStreamResumeFailures
+        expr: sum(increase(xclaw_stream_resume_events_total{event="resume_failed"}[15m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: xclaw
+        annotations:
+          summary: XClaw stream resume failures elevated
+          description: More than 5 resume_failed events in 15m.
+
+      - alert: XClawStreamNotFoundSpike
+        expr: sum(increase(xclaw_stream_errors_total{code="STREAM_NOT_FOUND"}[15m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: xclaw
+        annotations:
+          summary: XClaw STREAM_NOT_FOUND spike
+          description: Clients are resuming expired or unknown streamIds.
+
+      - alert: XClawStreamFatalErrors
+        expr: sum(increase(xclaw_stream_errors_fatal_total[15m])) > 3
+        for: 5m
+        labels:
+          severity: critical
+          service: xclaw
+        annotations:
+          summary: XClaw fatal stream errors
+          description: Non-retryable stream errors exceeded threshold.
+

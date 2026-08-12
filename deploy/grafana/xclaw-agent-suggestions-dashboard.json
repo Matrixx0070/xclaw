@@ -1,0 +1,177 @@
+{
+  "annotations": { "list": [] },
+  "description": "XClaw agent toolTrace, turn phase, and suggestion chip metrics",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "row",
+      "title": "Agent turns & phase",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "collapsed": false
+    },
+    {
+      "id": 2,
+      "title": "Agent turns",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "xclaw_agent_turns_total",
+          "legendFormat": "turns",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Suggestion tap rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "expr": "xclaw_suggestion_tap_rate",
+          "legendFormat": "in-process",
+          "refId": "A"
+        },
+        {
+          "expr": "xclaw_suggestion_feedback_tap_rate",
+          "legendFormat": "durable",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1 }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Closure closed vs open",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "expr": "xclaw_turn_closure_total{state=\"closed\"}",
+          "legendFormat": "closed",
+          "refId": "A"
+        },
+        {
+          "expr": "xclaw_turn_closure_total{state=\"open\"}",
+          "legendFormat": "open",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Chips suppressed",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        {
+          "expr": "xclaw_suggestions_suppressed_total",
+          "legendFormat": "suppressed",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Turn phase",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "expr": "xclaw_turn_phase_total",
+          "legendFormat": "{{phase}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Tool status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "targets": [
+        {
+          "expr": "xclaw_tool_status_total",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Suggestion chips",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 20,
+      "collapsed": false
+    },
+    {
+      "id": 21,
+      "title": "Shown vs tapped (in-process)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "xclaw_suggestions_shown_total",
+          "legendFormat": "shown",
+          "refId": "A"
+        },
+        {
+          "expr": "xclaw_suggestions_tapped_total",
+          "legendFormat": "tapped",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "Durable feedback",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        {
+          "expr": "xclaw_suggestion_feedback_shown",
+          "legendFormat": "shown",
+          "refId": "A"
+        },
+        {
+          "expr": "xclaw_suggestion_feedback_tapped",
+          "legendFormat": "tapped",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "Tool outcomes",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "expr": "xclaw_tool_outcome_total",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["xclaw", "agent", "suggestions"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "XClaw Agent & Suggestions",
+  "uid": "xclaw-agent-suggestions",
+  "version": 1
+}

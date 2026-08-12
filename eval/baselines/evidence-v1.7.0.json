@@ -1,0 +1,85 @@
+{
+  "version": "1.7.0",
+  "at": "2026-08-06T14:47:12.804Z",
+  "scoreboard": {
+    "at": "2026-08-06T14:47:12.803Z",
+    "passRate": 1,
+    "passed": 21,
+    "total": 21,
+    "meanTurns": 2.789473684210526,
+    "meanWallMs": 6382.263157894737,
+    "costUsd": 0.268179,
+    "tokens": 86505,
+    "hardPack": {
+      "total": 5,
+      "passed": 5
+    },
+    "longPack": {
+      "total": 4,
+      "passed": 4
+    },
+    "campaignPack": {
+      "total": 2,
+      "passed": 2,
+      "passRate": 1
+    },
+    "skillLoop": {
+      "samples": 0,
+      "helped": 0,
+      "helpRate": null
+    },
+    "soak": {
+      "nights": 0,
+      "runs": 0,
+      "passRate": null,
+      "flakes": 0,
+      "flakeBudgetOk": true,
+      "gate": {
+        "minNights": 3,
+        "nightsOk": false,
+        "passOk": null
+      }
+    },
+    "trend": [],
+    "spendWindow": {
+      "runs": 3,
+      "totalUsd": 0.268179,
+      "avgUsdPerRun": 0.089393
+    },
+    "historyRuns": 3,
+    "imperfectRuns": 0,
+    "releaseGate": {
+      "minPassRate": 0.9,
+      "ok": true
+    }
+  },
+  "soak": {
+    "at": "2026-08-06T14:47:12.802Z",
+    "nights": 0,
+    "runs": 0,
+    "totalCases": 0,
+    "passed": 0,
+    "failed": 0,
+    "passRate": null,
+    "flakes": 0,
+    "flakeRate": null,
+    "flakeBudgetOk": true,
+    "lastRuns": [],
+    "gate": {
+      "minNights": 3,
+      "nightsOk": false,
+      "passOk": null
+    }
+  },
+  "baseline": {
+    "passRate": 1,
+    "total": 21,
+    "passed": 21
+  },
+  "campaign": {
+    "passRate": 1,
+    "total": 2,
+    "passed": 2
+  },
+  "releaseOk": true
+}

@@ -1,0 +1,4 @@
+[
+  { "goal": "Create /tmp/xclaw-batch-a.txt with text A", "priority": 1 },
+  { "goal": "Create /tmp/xclaw-batch-b.txt with text B", "priority": 0 }
+]

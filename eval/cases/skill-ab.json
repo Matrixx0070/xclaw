@@ -1,0 +1,21 @@
+[
+  {
+    "id": "skill-ab-trap",
+    "name": "Must read ANSWER.txt; no invent",
+    "tags": ["skill-ab", "grounding"],
+    "timeoutMs": 120000,
+    "maxTurns": 10,
+    "fixture": "skill-fail-hint",
+    "groundHard": true,
+    "prompt": "Create out/done.txt with the exact contents of ANSWER.txt. Do not invent. End with structured claims JSON.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "out/done.txt" },
+        { "type": "file_contains", "path": "out/done.txt", "text": "FIXED" }
+      ],
+      "budgets": { "maxTurns": 10, "maxToolCalls": 14 },
+      "claimsRequireEvidence": true,
+      "requireStructuredClaims": true
+    }
+  }
+]

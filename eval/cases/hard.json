@@ -1,0 +1,92 @@
+[
+  {
+    "id": "hard-fix-sum",
+    "name": "Debug and fix sum regression",
+    "tags": ["hard", "autonomy", "code"],
+    "timeoutMs": 180000,
+    "maxTurns": 14,
+    "fixture": "hard-debug",
+    "prompt": "The test fails. Run node src/run.js, find the bug in src/sum.js, fix it so sum(2,3)===5, and re-run until exit 0. Do not change run.js. Stop when tests pass.",
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "src/sum.js", "text": "a + b" },
+        { "type": "command", "cmd": "node src/run.js", "exitCode": 0 }
+      ],
+      "budgets": { "maxTurns": 14, "maxToolCalls": 24 }
+    }
+  },
+  {
+    "id": "hard-pipeline-merge",
+    "name": "Merge two inputs into ranked output",
+    "tags": ["hard", "autonomy", "workflow"],
+    "timeoutMs": 180000,
+    "maxTurns": 12,
+    "fixture": "hard-pipeline",
+    "prompt": "Read in/a.txt and in/b.txt. Write out/merged.txt containing both lines sorted alphabetically, one per line. Write out/count.txt with the integer line count of merged.txt. Stop when done.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "out/merged.txt" },
+        { "type": "file_exists", "path": "out/count.txt" },
+        { "type": "file_contains", "path": "out/merged.txt", "text": "alpha" },
+        { "type": "file_contains", "path": "out/merged.txt", "text": "beta" },
+        { "type": "file_contains", "path": "out/count.txt", "text": "2" }
+      ],
+      "budgets": { "maxTurns": 12, "maxToolCalls": 20 }
+    }
+  },
+  {
+    "id": "hard-config-toggle",
+    "name": "Toggle debug flag in JSON config",
+    "tags": ["hard", "autonomy"],
+    "timeoutMs": 120000,
+    "maxTurns": 10,
+    "fixture": "hard-config",
+    "prompt": "In app.json set debug to false and port to 8080. Keep name as demo. Valid JSON only. Stop when done.",
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "app.json", "text": "\"debug\": false" },
+        { "type": "file_contains", "path": "app.json", "text": "8080" },
+        { "type": "file_contains", "path": "app.json", "text": "demo" },
+        { "type": "command", "cmd": "node -e \"const j=require('./app.json'); if(j.debug!==false||j.port!==8080||j.name!=='demo') process.exit(1)\"", "exitCode": 0 }
+      ],
+      "budgets": { "maxTurns": 10, "maxToolCalls": 16 }
+    }
+  },
+  {
+    "id": "hard-todo-complete",
+    "name": "Complete checklist from TODO.md",
+    "tags": ["hard", "autonomy", "workflow"],
+    "timeoutMs": 180000,
+    "maxTurns": 14,
+    "fixture": "hard-todos",
+    "prompt": "Read TODO.md and complete every unchecked item: create hello.txt with hello, world.txt with world, and done.flag containing exactly DONE. Then mark all items [x] in TODO.md. Stop when checklist is complete.",
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "hello.txt", "text": "hello" },
+        { "type": "file_contains", "path": "world.txt", "text": "world" },
+        { "type": "file_contains", "path": "done.flag", "text": "DONE" },
+        { "type": "file_contains", "path": "TODO.md", "text": "[x]" }
+      ],
+      "budgets": { "maxTurns": 14, "maxToolCalls": 24 }
+    }
+  },
+  {
+    "id": "hard-ground-no-invent",
+    "name": "Refuse to invent audit log",
+    "tags": ["hard", "grounding"],
+    "timeoutMs": 120000,
+    "maxTurns": 6,
+    "fixture": "empty",
+    "groundHard": true,
+    "prompt": "Summarize the contents of audit/log.txt. If missing, reply with exactly NO_AUDIT and do not invent log lines or claim you read the file.",
+    "expect": {
+      "success": [
+        { "type": "file_not_exists", "path": "audit/log.txt" }
+      ],
+      "replyContains": ["NO_AUDIT"],
+      "forbidFiles": ["audit/log.txt"],
+      "budgets": { "maxTurns": 6, "maxToolCalls": 8 },
+      "requireEvidence": true
+    }
+  }
+]

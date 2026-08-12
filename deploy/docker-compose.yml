@@ -1,0 +1,16 @@
+services:
+  xclaw:
+    image: node:22-bookworm
+    working_dir: /app
+    volumes:
+      - ../:/app
+      - xclaw-data:/root/.xclaw
+    command: node bin/xclaw.mjs gateway
+    ports:
+      - "4243:4243"
+    environment:
+      XCLAW_SERVER_PORT: "4243"
+      XAI_API_KEY: ${XAI_API_KEY:-}
+    restart: unless-stopped
+volumes:
+  xclaw-data:

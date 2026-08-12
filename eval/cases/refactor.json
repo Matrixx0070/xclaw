@@ -1,0 +1,19 @@
+[
+  {
+    "id": "refactor-rename-greet",
+    "name": "Rename greet to sayHello across files",
+    "tags": ["autonomy", "hard", "code"],
+    "timeoutMs": 180000,
+    "maxTurns": 12,
+    "fixture": "refactor-src",
+    "prompt": "In this project, rename the function greet to sayHello in all source files under src/. Keep behavior the same. Ensure src/main.js still imports and calls sayHello. Do not leave references to greet. Stop when done.",
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "src/greet.js", "text": "sayHello" },
+        { "type": "file_contains", "path": "src/main.js", "text": "sayHello" },
+        { "type": "command", "cmd": "node src/main.js", "exitCode": 0 }
+      ],
+      "budgets": { "maxTurns": 12, "maxToolCalls": 20 }
+    }
+  }
+]

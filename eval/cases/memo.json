@@ -1,0 +1,54 @@
+[
+  {
+    "id": "memo-three-files",
+    "name": "Build memo from three source notes",
+    "tags": [
+      "autonomy",
+      "hard",
+      "memo"
+    ],
+    "timeoutMs": 180000,
+    "maxTurns": 12,
+    "fixture": "memo-src",
+    "prompt": "Read notes/a.md, notes/b.md, and notes/c.md. Write memo.md with exactly these sections in order:\n## Summary\n## Risks\n## Next steps\nEach section must include at least one concrete fact from the notes (do not invent). Stop when memo.md is written.",
+    "expect": {
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "memo.md"
+        },
+        {
+          "type": "file_contains",
+          "path": "memo.md",
+          "text": "## Summary"
+        },
+        {
+          "type": "file_contains",
+          "path": "memo.md",
+          "text": "## Risks"
+        },
+        {
+          "type": "file_contains",
+          "path": "memo.md",
+          "text": "## Next steps"
+        },
+        {
+          "type": "file_contains",
+          "path": "memo.md",
+          "regex": "latency",
+          "caseInsensitive": true
+        },
+        {
+          "type": "file_contains",
+          "path": "memo.md",
+          "regex": "auth",
+          "caseInsensitive": true
+        }
+      ],
+      "budgets": {
+        "maxTurns": 12,
+        "maxToolCalls": 20
+      }
+    }
+  }
+]
