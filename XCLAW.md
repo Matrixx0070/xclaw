@@ -21,6 +21,14 @@
 - **Kill:** `node bin/xclaw.mjs stop-all` · `sessions-active`.
 - **Prod:** set `XCLAW_GATEWAY_TOKEN`; do not run exposed gateway with lab auto-approve.
 
+## MCP (agent-loop native)
+
+- `mcp.servers` in config → tools join **every** `runAgentLoop` as `mcp__<server>__<tool>`, dispatched through the same sandbox/egress/approval path as built-ins.
+- Server shapes: `{ "name": "gh", "command": "npx", "args": ["-y","@modelcontextprotocol/server-github"], "env": {...} }` (stdio) or `{ "name": "web", "url": "http://127.0.0.1:8931/mcp", "apiKey": "..." }` (HTTP JSON-RPC).
+- Discovery is fail-open per server (bad server = event + no tools, run continues); `tools/list` cached (`mcp.listTtlMs`, default 5m); stdio children killed at loop end.
+- Inspect: `GET /mcp/status`, `GET /mcp/tools?refresh=1`, `xclaw doctor` (`mcp` check).
+- Knobs: `mcp.enabled=false` kill-switch · `mcp.listTimeoutMs` (8s) · `mcp.requestTimeoutMs` (30s).
+
 ## Commands
 
 - One-shot: `node bin/xclaw.mjs agent "goal"`

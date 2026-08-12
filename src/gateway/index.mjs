@@ -2220,8 +2220,13 @@ export async function startGateway({ root } = {}) {
         return json(res, 200, out);
       }
       if (p === "/mcp/tools" && req.method === "GET") {
-        const tools = await mcpClient.listTools();
+        const tools = await mcpClient.listTools({
+          refresh: url.searchParams.get("refresh") === "1",
+        });
         return json(res, 200, { tools });
+      }
+      if (p === "/mcp/status" && req.method === "GET") {
+        return json(res, 200, { servers: mcpClient.status() });
       }
       if (p === "/mcp/call" && req.method === "POST") {
         const body = await readBody(req);

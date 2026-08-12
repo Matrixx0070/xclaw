@@ -66,6 +66,7 @@ import { truncateToolResult, truncationOptsFromConfig } from "./truncate.mjs";
 import { guardToolPaths } from "../security/sandbox.mjs";
 import { guardToolEgress } from "../security/egress.mjs";
 import { registerSession, unregisterSession } from "./session-control.mjs";
+import { createAgentMcpTools } from "./mcp-tools.mjs";
 import { makeToolMessage, freezeRankSize } from "../tokens/rank-size.mjs";
 import { createAllLocalTools, localToolsAsOpenAI, executeLocalTool, localToolNames } from "../tools/registry.mjs";
 import { afterBrowserToolTruth } from "../browser/truth.mjs";
@@ -446,12 +447,21 @@ export async function runAgentLoop(options) {
         },
       });
     }
+    // MCP servers (cfg.mcp.servers) — discovered tools join the loop and are
+    // dispatched through the same security path as every other tool
+    var mcpTools = await createAgentMcpTools({ cfg, onEvent });
+    tools.push(...mcpTools.toolDefs);
     onEvent({
       type: "tools",
       count: tools.length,
       names: tools.map((t) => t.function.name),
     });
   } catch (err) {
+    try {
+      mcpTools?.close?.();
+    } catch {
+      /* ignore */
+    }
     await computer.destroySession(sessionId).catch(() => {});
     throw new Error(`Failed to list computer tools: ${err.message}`);
   }
@@ -1011,6 +1021,8 @@ export async function runAgentLoop(options) {
           } else if (localToolNames(localTools).includes(name)) {
             result = await executeLocalTool(localTools, name, args);
             if (result == null) throw new Error(`Unknown local tool: ${name}`);
+          } else if (mcpTools?.names?.has(name)) {
+            result = await mcpTools.callTool(name, args);
           } else {
             // A3 gateway belt: fabric hooks for browser tab tools
             if (name === "xclaw_browser_tab" || name === "browser_tab") {
@@ -1179,6 +1191,11 @@ export async function runAgentLoop(options) {
   } finally {
     try {
       unregisterSession(sessionKey);
+    } catch {
+      /* ignore */
+    }
+    try {
+      mcpTools?.close?.();
     } catch {
       /* ignore */
     }

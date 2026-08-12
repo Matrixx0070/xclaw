@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.77.0 — MCP reaches the agent loop
+
+- **Agent-loop MCP** (closes the review's worst gap — memory/MCP 3/10): tools from `mcp.servers` are discovered at loop start and join the tool list as `mcp__<server>__<tool>`, dispatched through the SAME sandbox/egress/approval path as built-in tools. New `src/agent/mcp-tools.mjs` adapter; stdio clients closed in the loop's `finally`.
+- **stdio transport** (`src/mcp/stdio-client.mjs`): spawn `command`+`args`, newline-delimited JSON-RPC out, accepts newline AND Content-Length frames in (interops with spec servers and our own stdio server); request correlation, per-request timeouts, fail-all on child exit.
+- **Client manager rework** (`src/mcp/client.mjs`): per-server transports (http/stdio), MCP `initialize` handshake (tolerates minimal servers), `tools/list` cache with TTL + `refresh`, `status()`, `close()`; namespaced + provider-safe tool names.
+- **Fail-open discovery**: a dead/misconfigured server emits an `mcp` event and contributes zero tools — the run never dies because of MCP.
+- Gateway: `GET /mcp/status`, `GET /mcp/tools?refresh=1`. Doctor: `mcp` check. XCLAW.md section.
+- Tests (MCP had ZERO): stdio round-trip against a real spawned fixture server, http mock with cache-hit assertions, dead-server tolerance, adapter defs/dispatch, loop wiring. 9 new tests.
+- Strategy C respected: no changes to `xclaw-server.mjs` (16MB bundle) or computer modules — MCP is agent-side.
+
 ## 3.76.1 — Security hardening: real egress boundary, env policy, bind guard
 
 - **Egress is now enforced by netns, not regex**: bwrap `--unshare-net` defaults ON whenever `security.egress.mode ≠ allow` (netns probe with honest `netnsDegraded` fallback; live-verified `curl` NET-BLOCKED under `--unshare-net`). The command-pattern screen stays as a fast pre-check only.
