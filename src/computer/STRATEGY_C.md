@@ -47,3 +47,11 @@ XCLAW_COMPUTER_ENGINE=native  # or omit
 - Commit hand-edits to the blob without a MODULE_MAP note
 
 See also: `SOURCE_OF_TRUTH.json`, `MODULE_MAP.json`.
+
+## C2 (done)
+
+- `modules/registry.mjs` — maintained tool registry
+- `bundle-entry.mjs` — future esbuild entry stub
+- `native-tools.mjs` → registry
+- `*.extracted.mjs` = reference only
+- `npm run build:computer` checks maintained + extracted

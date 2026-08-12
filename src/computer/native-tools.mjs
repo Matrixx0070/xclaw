@@ -1,49 +1,32 @@
 /**
- * Native computer tool pack — CLEAN modules preferred over bundle references.
- * Used when cfg.computer.nativeTools === true or as fallback inventory for extraction status.
+ * Native computer tool pack — Strategy C2 via modules/registry.mjs.
  */
 
-import { BashTool, runBash } from "./modules/bash-tool.mjs";
 import {
-  FileReadTool,
-  FileWriteTool,
-  FileEditTool,
-} from "./modules/file-tools.mjs";
-import { BrowserTabTool } from "./modules/browser-tab-tool.mjs";
-
-export const NATIVE_TOOLS = [
+  MAINTAINED_TOOLS,
+  listMaintainedTools,
+  executeMaintainedTool,
+  runBash,
   BashTool,
   FileReadTool,
   FileWriteTool,
   FileEditTool,
   BrowserTabTool,
-];
+} from "./modules/registry.mjs";
+
+export const NATIVE_TOOLS = MAINTAINED_TOOLS;
 
 export function listNativeTools() {
-  return NATIVE_TOOLS.map((t) => ({
-    name: t.name,
-    description:
-      typeof t.description === "function" ? t.description() : t.description,
-    parameters: t.inputSchema,
+  return listMaintainedTools().map((t) => ({
+    ...t,
     source: "native-clean",
   }));
 }
 
-/**
- * Execute by tool name.
- */
 export async function executeNativeTool(name, args = {}, ctx = {}) {
-  const tool = NATIVE_TOOLS.find((t) => t.name === name);
-  if (!tool) {
-    return { ok: false, error: `Unknown native tool: ${name}` };
-  }
-  const out = await tool.call(args, ctx);
-  return out?.data ?? out;
+  return executeMaintainedTool(name, args, ctx);
 }
 
-/**
- * OpenAI function-tool shapes for agent loop (optional local path).
- */
 export function nativeToolsAsOpenAI() {
   return NATIVE_TOOLS.map((t) => ({
     type: "function",
@@ -56,7 +39,7 @@ export function nativeToolsAsOpenAI() {
   }));
 }
 
-export { runBash, BashTool, FileReadTool, FileWriteTool, FileEditTool };
+export { runBash, BashTool, FileReadTool, FileWriteTool, FileEditTool, BrowserTabTool };
 
 export default {
   listNativeTools,

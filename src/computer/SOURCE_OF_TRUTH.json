@@ -40,7 +40,7 @@
     },
     {
       "hook": "beforeNavigate",
-      "site": "xclaw_browser_tab → Page.navigate",
+      "site": "xclaw_browser_tab \u2192 Page.navigate",
       "file": "src/computer/xclaw-server.mjs"
     },
     {
@@ -113,7 +113,7 @@
     "cleanBrowserServiceWired": true
   },
   "strategy": "C",
-  "strategyPhase": "C1",
+  "strategyPhase": "C2",
   "policy": {
     "handEditBundle": false,
     "bundlePath": "src/computer/xclaw-server.mjs",
@@ -127,5 +127,16 @@
     "buildCommand": "npm run build:computer",
     "transitionalDefaultEngine": "native",
     "targetDefaultEngine": "bundle"
+  },
+  "c2": {
+    "registry": "src/computer/modules/registry.mjs",
+    "bundleEntryStub": "src/computer/bundle-entry.mjs",
+    "maintainedTools": [
+      "xclaw_bash",
+      "xclaw_file_read",
+      "xclaw_file_write",
+      "xclaw_file_edit",
+      "xclaw_browser_tab"
+    ]
   }
 }

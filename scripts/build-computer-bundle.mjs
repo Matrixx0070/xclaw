@@ -44,30 +44,25 @@ let missing = 0;
 for (const e of extracted) {
   const p = path.join(root, e.path);
   if (!fs.existsSync(p)) {
-    console.error(`[build:computer] missing module: ${e.path}`);
+    console.error(`[build:computer] missing extracted ref: ${e.path}`);
     missing += 1;
   } else {
-    ok(`module ok: ${e.id} (${e.path})`);
+    ok(`extracted ref ok: ${e.id}`);
+  }
+}
+const maintained = Array.isArray(map.maintained) ? map.maintained : [];
+for (const e of maintained) {
+  const p = path.join(root, e.path);
+  if (!fs.existsSync(p)) {
+    console.error(`[build:computer] missing maintained source: ${e.path}`);
+    missing += 1;
+  } else {
+    ok(`maintained ok: ${e.id} (${e.path})`);
   }
 }
 if (missing) fail(`${missing} module file(s) missing`);
 
-// Maintained (non-extracted) siblings when present
-const maintained = [
-  "modules/bash-tool.mjs",
-  "modules/file-tools.mjs",
-  "modules/browser-tab-tool.mjs",
-  "thin-server.mjs",
-  "chrome-args.mjs",
-  "hooks-bridge.mjs",
-  "motor-bridge.mjs",
-];
-for (const rel of maintained) {
-  const p = path.join(computerDir, rel);
-  if (fs.existsSync(p)) ok(`source ok: ${rel}`);
-  else console.warn(`[build:computer] optional source missing: ${rel}`);
-}
-
+// --- Bundle
 // --- Bundle artifact ---
 if (!fs.existsSync(bundlePath)) {
   fail(`runtime bundle missing: ${bundlePath} (required artifact; do not delete)`);
@@ -89,13 +84,14 @@ if (sot.strategy !== "C" && sot.verdict !== "bundle_is_runtime_clean_module_is_e
 // C1 does not rewrite the 16MB file — stamp only
 const stamp = {
   strategy: "C",
-  phase: "C1",
+  phase: process.env.XCLAW_COMPUTER_BUILD_PHASE || "C2",
   builtAt: new Date().toISOString(),
   fullRebuild: false,
   note:
-    "C1 validates modules + keeps xclaw-server.mjs as runtime artifact. Full regenerate lands in C3.",
+    "C2: maintained registry + extracted refs validated; xclaw-server.mjs still runtime artifact (no full emit yet).",
   bundleBytes: st.size,
   modulesChecked: extracted.map((e) => e.id),
+  maintainedChecked: maintained.map((e) => e.id),
   policy: {
     handEditBundle: false,
     editSource: "src/computer/modules/** and bridges",
@@ -104,7 +100,7 @@ const stamp = {
 
 fs.writeFileSync(stampPath, JSON.stringify(stamp, null, 2) + "\n");
 ok(`wrote ${path.relative(root, stampPath)}`);
-ok("C1 complete — modules OK; bundle retained as runtime (not hand-edited by this script)");
+ok("C2 complete — maintained + extracted OK; bundle retained as runtime");
 console.log(
   "\nNext (C3): implement esbuild entry that emits xclaw-server.mjs from modules.\n"
 );

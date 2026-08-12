@@ -153,5 +153,34 @@
       "xclaw_file_edit",
       "xclaw_browser_tab"
     ]
-  }
+  },
+  "strategy": "C",
+  "phase": "C2",
+  "maintained": [
+    {
+      "id": "registry",
+      "path": "src/computer/modules/registry.mjs"
+    },
+    {
+      "id": "bash-tool",
+      "path": "src/computer/modules/bash-tool.mjs"
+    },
+    {
+      "id": "file-tools",
+      "path": "src/computer/modules/file-tools.mjs"
+    },
+    {
+      "id": "browser-tab-tool",
+      "path": "src/computer/modules/browser-tab-tool.mjs"
+    },
+    {
+      "id": "native-tools",
+      "path": "src/computer/native-tools.mjs"
+    },
+    {
+      "id": "bundle-entry",
+      "path": "src/computer/bundle-entry.mjs"
+    }
+  ],
+  "extractedAreReferenceOnly": true
 }
