@@ -1,14 +1,13 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — Docs + multi-step soak
+## 2026-08-12 — Doctor + CI security pack
 
 STATUS: green
 
-### RAN
-Multi-step live (xAI grok-4.5): step1 + step2 + concat out.txt → STEP1STEP2 · ok · 1 turn
+### BUILT
+- doctor checks: security.egress, security.killSwitch
+- CI security pack: egress + session-control + session-kill-loop tests
 
-### DOCS
-XCLAW.md — egress, kill-switch, transcripts
-
-### STACK
-Live e2e · egress · kill-switch wired · multi-step soak · CI media
+### VERIFY
+doctor shows egress mode + kill-switch ready
+11/11 unit tests pass

@@ -105,6 +105,39 @@ export async function runDoctor(opts = {}) {
     push("profile", "warn", e.message || String(e));
   }
 
+  // Egress + kill-switch (philosophy: privacy + always killable)
+  try {
+    const { getEgressPolicy } = await import("../security/egress.mjs");
+    const eg = getEgressPolicy(cfg);
+    const prof = cfg.profile || process.env.XCLAW_PROFILE || "lab";
+    if (prof === "prod" && eg.mode === "allow") {
+      push(
+        "security.egress",
+        "warn",
+        'prod profile with egress mode=allow — outbound shell network is open; set security.egress.mode=deny or allowlist'
+      );
+    } else {
+      push(
+        "security.egress",
+        "ok",
+        `egress mode=${eg.mode} allowHosts=${(eg.allowHosts || []).length}`
+      );
+    }
+  } catch (e) {
+    push("security.egress", "warn", e.message || String(e));
+  }
+  try {
+    const { listActiveSessions } = await import("../agent/session-control.mjs");
+    const n = listActiveSessions().length;
+    push(
+      "security.killSwitch",
+      "ok",
+      `session kill-switch ready (activeSessions=${n}); use: xclaw stop-all`
+    );
+  } catch (e) {
+    push("security.killSwitch", "warn", e.message || String(e));
+  }
+
   // R3 owner safety
   try {
     const prof = cfg.profile || "lab";

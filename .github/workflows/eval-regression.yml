@@ -24,7 +24,10 @@ jobs:
             test/system-run-plan-gate.test.mjs \
             test/plan-revalidate-loop.test.mjs \
             test/gateway-auth-require.test.mjs \
-            test/agent-history.test.mjs
+            test/agent-history.test.mjs \
+            test/egress.test.mjs \
+            test/session-control.test.mjs \
+            test/session-kill-loop.test.mjs
       - name: OAuth + P5/P6 packs
         run: |
           node --test \
