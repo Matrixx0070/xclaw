@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.85.0 — router split complete, Anthropic thinking-block replay
+
+Suite 1252 total / 0 fail (1247 pass, 5 env-skipped). Live gateway smoke across all extracted groups + /v1 aliases green.
+
+**Gateway router split finished** (design review 4.3)
+
+- Six more route modules extracted — `routes/jwks.mjs`, `routes/alerts.mjs`, `routes/ops.mjs`, `routes/eval-queue.mjs`, `routes/tokens.mjs`, `routes/api.mjs` — joining security/swarm/cron. `index.mjs`: **2380 → 1564 lines**. Deliberately still inline: the three SSE stream handlers, the webchat static/OAuth block, the Telegram webhook, WS attach, and error handling — closures over writer/channel state, not route logic.
+- **Real pre-existing bug fixed during extraction**: the inline `POST /queue` handler contained pasted gateway-startup code that registered a NEW approval-digest `setInterval` on every enqueue request (unbounded interval leak) plus redundant slo-monitor starts. The extracted handler keeps only the idempotent worker ensure-call.
+
+**Anthropic multi-turn thinking-block replay** (closes the 3.83.0 known limitation)
+
+- With extended thinking + tool use, the API requires prior-turn thinking blocks (with signatures) replayed in assistant history. The stream parser now captures `thinkingBlocks` verbatim — including the previously discarded `signature_delta` and `redacted_thinking` blocks — and `toAnthropicMessages` re-emits them first in assistant content when thinking is enabled for the request (omitted otherwise, as the API demands). Zero `loop.mjs` changes needed: the provider message object flows into history by reference, and eviction's shallow spread preserves the field (both proven by tests). End-to-end two-call mock proves the exact signature round-trips to the second request's wire body.
+- Scope note: durable-transcript resume across process restarts reconstructs only role/content (it never restored `tool_calls` either), so cross-restart mid-tool-cycle resume doesn't exist as a flow — the in-process cycles the API requires are fully covered.
+
 ## 3.84.0 — final deferred tier: WS protocol hardening, resume journal, skills integrity, router split
 
 Suite 1235 total / 0 fail (1230 pass, 5 env-skipped). Extracted routes + /v1 live-verified on a booted gateway.

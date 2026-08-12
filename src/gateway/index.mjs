@@ -7,6 +7,12 @@ import { createHttpServer } from "./tls.mjs";
 import { tryHandleSecurityRoute } from "./routes/security.mjs";
 import { tryHandleSwarmRoute } from "./routes/swarm.mjs";
 import { tryHandleCronRoute } from "./routes/cron.mjs";
+import { tryHandleJwksRoute } from "./routes/jwks.mjs";
+import { tryHandleAlertsRoute } from "./routes/alerts.mjs";
+import { tryHandleOpsRoute } from "./routes/ops.mjs";
+import { tryHandleEvalQueueRoute } from "./routes/eval-queue.mjs";
+import { tryHandleTokensRoute } from "./routes/tokens.mjs";
+import { tryHandleApiRoute } from "./routes/api.mjs";
 import { applyCors } from "./cors.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import fs from "node:fs/promises";
@@ -64,20 +70,12 @@ function noteStreamNotFound(kind, resume) {
 
 import {
   pushEvictionEvent,
-  listEvictionEvents,
   subscribeEvictionSSE,
-  evictionListenerCount,
 } from "./eviction-events.mjs";
 import { createChannelManager } from "../channels/manager.mjs";
 import { ensureHeartbeat } from "../cron/heartbeat.mjs";
-import { loadAllSkills, loadMemoryFiles } from "../skills/loader.mjs";
-import { estimateRequestTokens, countTextTokens, resolveTokenizer } from "../tokens/count.mjs";
-import { probeTokenizerRuntime, runTokenProbes, applyProbeCalibration } from "../tokens/probes.mjs";
-import { benchProbeOverhead, formatBenchReport } from "../tokens/bench.mjs";
-import { readCostLedger, defaultLedgerPath, formatUsd } from "../tokens/usage-tracker.mjs";
-import { analyzeCacheByTool, formatCacheByToolReport } from "../tokens/cache-by-tool.mjs";
 
-import { spawnSubagent, listSubagents, getSubagent, configureSubagentPersistence } from "../agents/spawn.mjs";
+import { configureSubagentPersistence } from "../agents/spawn.mjs";
 import { createChannelPolicy } from "../channels/policy.mjs";
 import { createMcpClient } from "../mcp/client.mjs";
 import { createMcpServer } from "../mcp/server.mjs";
@@ -86,27 +84,14 @@ import { createGatewayAuth } from "./auth.mjs";
 import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
 import { takePending } from "../connected/oauth-pending.mjs";
 import { setAppToken } from "../connected/token-store.mjs";
-import { withOAuthRetry } from "../auth/oauth-retry.mjs";
-import { oauthError, withHint, OAuthErrorCode } from "../auth/oauth-errors.mjs";
-import { buildDoctorReport } from "./doctor.mjs";
 import { ensureDoctorCronJob } from "../cron/doctor-job.mjs";
 import { ensureEvalCronJob } from "../cron/eval-job.mjs";
 import { startQueueWorker } from "../jobs/queue.mjs";
 import { gracefulShutdown } from "./shutdown.mjs";
 import { softReloadConfig } from "../config/reload.mjs";
-import { resetSharedAlerter, getSharedAlerter } from "../alerting/alerts.mjs";
-import {
-  handlePagerDutyWebhook,
-  verifyPagerDutySignature,
-  listRecentPagerDutyWebhooks,
-  readRawBody,
-} from "../alerting/pagerduty-webhooks.mjs";
-import { listSessions, createSession, resolveBinding, bindPeer, buildSessionKey, parseSessionKey, getSessionByKey } from "../sessions/router.mjs";
+import { resetSharedAlerter } from "../alerting/alerts.mjs";
 import { createApprovalGate, getSharedApprovalGate, resetSharedApprovalGate } from "../security/approvals.mjs";
-import { resolveProviderRoute } from "../providers/router.mjs";
-import { scheduleJob, cancelJob, listJobs, addJob, run as runCronJob, status as cronStatus, start as startCron, getJob } from "../cron/scheduler.mjs";
-import { startDaemon, stopDaemon, systemdUnit, readPid, isPidAlive } from "../cli/daemon.mjs";
-import { createCanvas, getCanvas, addLayer, enqueueMediaJob, listMediaJobs, listCanvases, listImageProviders, getMediaJob } from "../media/canvas.mjs";
+import { start as startCron } from "../cron/scheduler.mjs";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1084,552 +1069,29 @@ export async function startGateway({ root } = {}) {
     }
 
     try {
-      
-      // PagerDuty inbound webhooks — HMAC on raw body
-      if (p === "/webhooks/pagerduty" && req.method === "POST") {
-        let rawBuf;
-        try {
-          rawBuf = await readRawBody(req, { limit: 1_000_000 });
-        } catch (err) {
-          return json(res, 413, { error: err.message || "body_too_large" });
-        }
-        const raw = rawBuf.toString("utf8");
-        const secret =
-          cfg.alerting?.pagerduty?.webhooks?.secret ||
-          cfg.alerting?.pagerduty?.webhooks?.secrets ||
-          process.env.PAGERDUTY_WEBHOOK_SECRET;
-        const requireSig =
-          cfg.alerting?.pagerduty?.webhooks?.requireSignature === true ||
-          Boolean(secret);
-        const sig =
-          req.headers["x-pagerduty-signature"] ||
-          req.headers["x-pd-signature"] ||
-          "";
-        const ver = verifyPagerDutySignature(rawBuf, sig, secret, {
-          required: requireSig,
-        });
-        if (!ver.ok) {
-          console.warn(`[xclaw:pd-webhook] reject: ${ver.reason}`);
-          return json(res, 401, {
-            error: "invalid_signature",
-            reason: ver.reason,
-          });
-        }
-        let body;
-        try {
-          body = JSON.parse(raw || "{}");
-        } catch {
-          return json(res, 400, { error: "invalid_json" });
-        }
-        const out = await handlePagerDutyWebhook(body, {
-          cfg,
-          alerter: getSharedAlerter(cfg),
-          onEvent: (e) => {
-            try {
-              wsBroadcast("ops", e);
-            } catch {}
-          },
-        });
-        return json(res, 200, {
-          ok: true,
-          eventType: out.event?.eventType,
-          verified: ver.mode,
-        });
-      }
-      if (p === "/webhooks/pagerduty/recent" && req.method === "GET") {
-        return json(res, 200, {
-          events: listRecentPagerDutyWebhooks(
-            Number(url.searchParams.get("limit") || 20)
-          ),
-        });
-      }
-
-      if ((p === "/report" || p === "/status/report") && req.method === "GET") {
-        const { buildStatusReport } = await import("./report.mjs");
-        const rep = await buildStatusReport(cfg);
-        if (url.searchParams.get("format") === "json") return json(res, 200, rep);
-        res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8" });
-        res.end(rep.markdown);
-        return;
-      }
-      if (p === "/config/reload" && req.method === "POST") {
-        const { softReloadConfig } = await import("../config/reload.mjs");
-        try {
-          const r = await softReloadConfig(cfg);
-          return json(res, 200, r);
-        } catch (err) {
-          return json(res, 500, { ok: false, error: err.message });
-        }
-      }
-      if (p === "/dashboard" && req.method === "GET") {
-        const { buildDashboard } = await import("./dashboard.mjs");
-        return json(res, 200, await buildDashboard(cfg));
-      }
-      if (p === "/profile" && req.method === "GET") {
-        const { listProfiles } = await import("../config/profiles.mjs");
-        return json(res, 200, {
-          active: cfg.profile || "dev",
-          autoApprove: cfg.security?.autoApprove,
-          maxTurns: cfg.agent?.maxTurns,
-          evalCron: cfg.eval?.cron,
-          profiles: listProfiles(),
-        });
-      }
-
-      if (p === "/eval/scoreboard" && req.method === "GET") {
-        const { buildScoreboard } = await import("../eval/scoreboard.mjs");
-        return json(res, 200, await buildScoreboard(cfg, { root }));
-      }
-      if (p === "/eval/spend" && req.method === "GET") {
-        const { summarizeEvalSpend } = await import("../eval/spend.mjs");
-        return json(res, 200, await summarizeEvalSpend(cfg, {
-          limit: Number(url.searchParams.get("limit") || 100),
-        }));
-      }
-      if (p === "/eval/history" && req.method === "GET") {
-        const { listEvalHistory } = await import("../eval/history.mjs");
-        const items = await listEvalHistory(cfg, { limit: Number(url.searchParams.get("limit") || 30) });
-        return json(res, 200, { history: items, count: items.length });
-      }
-      if (p === "/eval/baseline" && req.method === "GET") {
-        try {
-          const fs = await import("node:fs/promises");
-          const path = await import("node:path");
-          const fp = path.join(root, "eval", "baselines", "main.json");
-          const raw = await fs.readFile(fp, "utf8");
-          return json(res, 200, JSON.parse(raw));
-        } catch (err) {
-          return json(res, 404, { error: "baseline not found", detail: err.message });
-        }
-      }
-
-      if (p === "/queue/stats" && req.method === "GET") {
-        const { queueStats } = await import("../jobs/queue.mjs");
-        return json(res, 200, await queueStats(cfg));
-      }
-      if (p === "/queue/admission" && req.method === "GET") {
-        const { getDefaultAdmission, qedStaffing, offeredLoadErl } = await import("../utils/admission.mjs");
-        const adm = getDefaultAdmission(cfg);
-        const q = cfg.queue || {};
-        const a = Number(url.searchParams.get("a"));
-        const beta = Number(url.searchParams.get("beta") || 1);
-        const arrivals = Number(url.searchParams.get("arrivalsPerSec"));
-        const meanS = Number(url.searchParams.get("meanServiceSec"));
-        let suggest = null;
-        if (Number.isFinite(arrivals) && Number.isFinite(meanS)) {
-          suggest = adm.suggestConcurrency({ arrivalsPerSec: arrivals, meanServiceSec: meanS, beta });
-        } else if (Number.isFinite(a)) {
-          suggest = { a, beta, suggested: qedStaffing(a, beta), current: adm.concurrency };
-        }
-        return json(res, 200, {
-          ok: true,
-          policy: {
-            concurrency: q.concurrency ?? adm.concurrency,
-            maxDepth: q.maxDepth ?? adm.maxDepth,
-            maxWaitMs: q.maxWaitMs ?? adm.maxWaitMs,
-            maxConcurrencyCap: q.maxConcurrencyCap ?? 16,
-          },
-          metrics: adm.snapshot().metrics,
-          suggest,
-        });
-      }
-      if (p === "/queue/dead" && req.method === "GET") {
-        const { listDeadLetter } = await import("../jobs/queue.mjs");
-        const items = await listDeadLetter(cfg, { limit: Number(url.searchParams.get("limit") || 50) });
-        return json(res, 200, { deadLetter: items, count: items.length });
-      }
-      if (p === "/queue" && req.method === "GET") {
-        const { listQueue, queueStatus } = await import("../jobs/queue.mjs");
-        const items = await listQueue(cfg, { limit: Number(url.searchParams.get("limit") || 50) });
-        const { queueStats } = await import("../jobs/queue.mjs");
-        const stats = await queueStats(cfg);
-        return json(res, 200, { queue: items, count: items.length, worker: queueStatus(cfg), stats });
-      }
-      if (p === "/queue/retry-failed" && req.method === "POST") {
-        const { retryFailedQueue } = await import("../jobs/queue.mjs");
-        return json(res, 200, await retryFailedQueue(cfg));
-      }
-      if (p === "/queue/clear" && req.method === "POST") {
-        const { clearCompletedQueue } = await import("../jobs/queue.mjs");
-        return json(res, 200, await clearCompletedQueue(cfg));
-      }
-      if (p.startsWith("/queue/") && p.endsWith("/cancel") && req.method === "POST") {
-        const { cancelQueueItem } = await import("../jobs/queue.mjs");
-        const id = p.slice("/queue/".length, -"/cancel".length);
-        const item = await cancelQueueItem(cfg, id);
-        if (!item) return json(res, 404, { error: "not found" });
-        return json(res, 200, item);
-      }
-      if (p === "/queue/pause" && req.method === "POST") {
-        const { pauseQueue } = await import("../jobs/queue.mjs");
-        return json(res, 200, pauseQueue());
-      }
-      if (p === "/queue/resume" && req.method === "POST") {
-        const { resumeQueue } = await import("../jobs/queue.mjs");
-        return json(res, 200, resumeQueue(cfg));
-      }
-      if (p === "/queue" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        const { enqueueJob, startQueueWorker } = await import("../jobs/queue.mjs");
-        startQueueWorker(cfg);
-  try {
-    const { startSloMonitor } = await import("../ops/slo-monitor.mjs");
-    startSloMonitor(cfg);
-  } catch (e) {
-    console.warn("[xclaw] slo monitor", e.message);
-  }
-
-  if (cfg.security?.digestIntervalMs) {
-    const iv = setInterval(() => {
-      import("../security/approval-digest.mjs")
-        .then(({ sendApprovalDigest }) => sendApprovalDigest(cfg))
-        .catch((e) => console.warn("[xclaw:digest]", e.message));
-    }, cfg.security.digestIntervalMs);
-    if (iv.unref) iv.unref();
-    console.log(`[xclaw] approval digest every ${cfg.security.digestIntervalMs}ms`);
-  }
-        const item = await enqueueJob(cfg, {
-          goal: body.goal || body.message,
-          verify: body.verify || [],
-          maxTurns: body.maxTurns,
-          priority: body.priority,
-        });
-        return json(res, 202, item);
-      }
-      if (p.startsWith("/queue/") && req.method === "GET") {
-        const { getQueueItem } = await import("../jobs/queue.mjs");
-        const id = p.slice("/queue/".length).split("/")[0];
-        const item = await getQueueItem(cfg, id);
-        if (!item) return json(res, 404, { error: "not found" });
-        return json(res, 200, item);
-      }
-      if (p === "/cron/eval" && req.method === "GET") {
-        const { evalCronStatus } = await import("../cron/eval-job.mjs");
-        return json(res, 200, evalCronStatus());
-      }
-      if (p === "/cron/eval/run" && req.method === "POST") {
-        const { runScheduledEval } = await import("../cron/eval-job.mjs");
-        const body = await readBody(req).catch(() => ({}));
-        // async fire for long suite — but await for correctness in v1
-        const out = await runScheduledEval({ cfg, tag: body.tag, writeBaseline: body.writeBaseline !== false });
-        return json(res, out.ok ? 200 : 422, out);
-      }
-
-      if (p === "/jobs" && req.method === "GET") {
-        const { listJobs } = await import("../jobs/history.mjs");
-        const limit = Number(url.searchParams.get("limit") || 30);
-        const items = await listJobs(cfg, { limit });
-        return json(res, 200, { jobs: items, count: items.length });
-      }
-      if (p.startsWith("/jobs/") && req.method === "GET") {
-        const { getJob } = await import("../jobs/history.mjs");
-        const id = p.slice("/jobs/".length).split("/")[0];
-        const job = await getJob(cfg, id);
-        if (!job) return json(res, 404, { error: "job not found" });
-        return json(res, 200, job);
-      }
-      if (p === "/skills/proposals" && req.method === "GET") {
-        const { listProposals } = await import("../skills/propose.mjs");
-        const items = await listProposals(cfg, Number(url.searchParams.get("limit") || 20));
-        return json(res, 200, { proposals: items, count: items.length });
-      }
-      if (p === "/skills/stats" && req.method === "GET") {
-        const { loadSkillStats } = await import("../skills/registry.mjs");
-        return json(res, 200, await loadSkillStats(cfg));
-      }
-
-      if (p === "/jobs" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        const goal = body.goal || body.message || body.prompt;
-        if (!goal) return json(res, 400, { error: "goal required" });
-        const { runJob, saveJobSummary } = await import("../jobs/job.mjs");
-        const job = await runJob({
-          goal,
-          cfg,
-          workspace: body.workspace,
-          verify: body.verify || [],
-          maxTurns: body.maxTurns || cfg.agent?.maxTurns || 12,
-          timeoutMs: body.timeoutMs || 180000,
-          autoApprove: body.autoApprove,
-        });
-        await saveJobSummary(job).catch(() => {});
-        return json(res, job.pass ? 200 : 422, {
-          id: job.id,
-          status: job.status,
-          pass: job.pass,
-          turns: job.turns,
-          toolCalls: job.toolCalls,
-          wallMs: job.wallMs,
-          text: job.text,
-          verify: job.verify,
-          evidence: job.evidence,
-          error: job.error,
-        });
-      }
-
-      if (p === "/routes") {
-        const { listRoutes } = await import("./routes-map.mjs");
-        const routes = listRoutes();
-        return json(res, 200, { count: routes.length, routes });
-      }
-      if (p === "/version") {
-        const fs = await import("node:fs");
-        const path = await import("node:path");
-        const { uptimeInfo } = await import("./uptime.mjs");
-        let version = "0.0.0";
-        try {
-          version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
-        } catch {}
-        return json(res, 200, {
-          name: "xclaw",
-          version,
-          profile: cfg.profile || "dev",
-          ...uptimeInfo(),
-        });
-      }
-      if (p === "/metrics") {
-        const { renderMetrics } = await import("./metrics.mjs");
-        const text = await renderMetrics(cfg);
-        res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" });
-        res.end(text);
-        return;
-      }
-      if (p === "/ready" || p === "/readiness") {
-        const { checkReadiness } = await import("./readiness.mjs");
-        const r = await checkReadiness(cfg);
-        return json(res, r.status, r.body);
-      }
-      if (p === "/health" || p === "/gateway/health") {
-        const computerOk = await isComputerRunning(cfg);
-        return json(res, 200, {
-          status: "healthy",
-          service: "XClaw-Gateway",
-          version: XCLAW_VERSION,
-          phase: XCLAW_PHASE,
-          computer: computerOk ? "up" : "down",
-          computerUrl: `http://${cfg.computer.host}:${cfg.computer.port}`,
-          webchat: webchatEnabled,
-          sse: true,
-        });
-      }
-
-      // ---- JWKS public + invalidation API ----
-      if (
-        (p === "/xclaw/jwks.json" ||
-          p === "/.well-known/jwks.json" ||
-          p === "/jwks.json") &&
-        req.method === "GET"
-      ) {
-        const { getJwksCached, exportJwks } = await import("../auth/jwks.mjs");
-        const force = url.searchParams.get("force") === "1";
-        const out = force
-          ? await exportJwks(cfg)
-          : await getJwksCached(cfg, { force: false });
-        const etag = out.etag || out.exportedAt;
-        const inm = req.headers["if-none-match"];
-        if (inm && etag && inm.replace(/"/g, "") === String(etag)) {
-          res.writeHead(304, {
-            ETag: `"${etag}"`,
-            "Cache-Control": "public, max-age=60",
-            "X-Powered-By": "XClaw-Gateway",
-          });
-          res.end();
-          return;
-        }
-        const body = JSON.stringify(out.jwks || out, null, 2);
-        res.writeHead(200, {
-          "Content-Type": "application/json; charset=utf-8",
-          ETag: `"${etag}"`,
-          "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
-          "X-XClaw-Key-Generation": String(out.generation ?? ""),
-          "X-XClaw-Key-Kid": String(out.kid ?? ""),
-          "X-Powered-By": "XClaw-Gateway",
-              });
-        res.end(body);
-        return;
-      }
-
-      if (p === "/xclaw/jwks/epoch" && req.method === "GET") {
-        const { getInvalidationEpoch } = await import("../auth/jwks-invalidation.mjs");
-        return json(res, 200, await getInvalidationEpoch(cfg));
-      }
-
-      if (p === "/xclaw/jwks/invalidate" && req.method === "POST") {
-        const { handleInvalidationHttp } = await import("../auth/jwks-invalidation.mjs");
-        const body = await readBody(req).catch(() => ({}));
-        const r = await handleInvalidationHttp(cfg, "POST", body);
-        // After publish, warm local cache
-        try {
-          const { refreshJwksAfterRotation } = await import("../auth/jwks.mjs");
-          await refreshJwksAfterRotation(cfg, body || {});
-        } catch {
-          /* optional */
-        }
-        return json(res, r.status, r.body);
-      }
-
-      if (p === "/xclaw/jwks/cache" && req.method === "GET") {
-        const { getJwksCached } = await import("../auth/jwks.mjs");
-        const { getInvalidationEpoch } = await import("../auth/jwks-invalidation.mjs");
-        const cached = await getJwksCached(cfg);
-        const epoch = await getInvalidationEpoch(cfg);
-        return json(res, 200, {
-          etag: cached.etag,
-          generation: cached.generation,
-          kid: cached.kid,
-          keyCount: cached.keyCount ?? cached.jwks?.keys?.length,
-          dualWindowOpen: cached.dualWindowOpen,
-          invalidationEpoch: epoch.epoch,
-          exportedAt: cached.exportedAt,
-        });
-      }
-
-      if (p === "/alerts/status" && req.method === "GET") {
-        return json(res, 200, getSharedAlerter(cfg).status());
-      }
-      if (p === "/alerts/history" && req.method === "GET") {
-        const limit = Number(url.searchParams.get("limit") || 20);
-        return json(res, 200, { history: getSharedAlerter(cfg).history(limit) });
-      }
-      if (p === "/alerts/pd/levels" && req.method === "GET") {
-        const { previewEscalationLevels, diffEscalationLevels } = await import("../alerting/escalation-levels.mjs");
-        const mode = url.searchParams.get("mode") || "preview";
-        if (mode === "diff") return json(res, 200, await diffEscalationLevels(cfg));
-        return json(res, 200, previewEscalationLevels(cfg));
-      }
-      if (p === "/alerts/pd/levels" && req.method === "POST") {
-        const { applyEscalationLevels } = await import("../alerting/escalation-levels.mjs");
-        const body = await readBody(req).catch(() => ({}));
-        const out = await applyEscalationLevels(cfg, body);
-        return json(res, out.ok ? 200 : 502, out);
-      }
-      if (p === "/alerts/pd/setup" && req.method === "GET") {
-        const { pagerDutySetupReport } = await import("../alerting/pagerduty-rest.mjs");
-        return json(res, 200, await pagerDutySetupReport(cfg));
-      }
-      if (p === "/alerts/pd/policies" && req.method === "GET") {
-        const { listEscalationPolicies } = await import("../alerting/pagerduty-rest.mjs");
-        const out = await listEscalationPolicies({ query: url.searchParams.get("query") }, cfg);
-        return json(res, out.ok ? 200 : 502, out);
-      }
-      if (p === "/alerts/pd/services" && req.method === "GET") {
-        const { listServices } = await import("../alerting/pagerduty-rest.mjs");
-        const out = await listServices({}, cfg);
-        return json(res, out.ok ? 200 : 502, out);
-      }
-      if (p === "/alerts/pd" && req.method === "POST") {
-        const { sendPagerDutyEvent, pagerDutyDedupKey } = await import("../alerting/pagerduty.mjs");
-        const body = await readBody(req);
-        const out = await sendPagerDutyEvent({
-          routingKey:
-            body.routingKey ||
-            cfg.alerting?.pagerduty?.routingKey ||
-            process.env.PAGERDUTY_ROUTING_KEY,
-          eventAction: body.eventAction || body.action || "trigger",
-          dedupKey: pagerDutyDedupKey(body.dedupKey || body.key || `xclaw:${Date.now()}`),
-          summary: body.summary || body.title || "XClaw alert",
-          severity: body.severity || "error",
-          customDetails: body.customDetails || body.meta || {},
-        });
-        return json(res, out.ok ? 200 : 502, out);
-      }
-      if (p === "/alerts/test" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        const out = await getSharedAlerter(cfg).send({
-          title: body.title || "Test alert",
-          body: body.body || "Manual test from XClaw",
-          severity: body.severity || "error",
-          key: body.key || `test:${Date.now()}`,
-        });
-        return json(res, 200, out);
-      }
-      if (p === "/doctor/run" && req.method === "POST") {
-        const { runDoctorCheck } = await import("../cron/doctor-job.mjs");
-        const body = await readBody(req).catch(() => ({}));
-        const out = await runDoctorCheck({
-          cfg,
-          channelManager,
-          isComputerRunning,
-          notifyOnFail: body.notifyOnFail !== false,
-          notifyOnOk: body.notifyOnOk === true,
-          delivery: body.delivery || cfg.doctor?.cron?.delivery || null,
-        });
-        return json(res, out.report.ok ? 200 : 503, out);
-      }
-      if (p === "/doctor" || p === "/gateway/doctor") {
-        const report = await buildDoctorReport({
-          cfg,
-          channelManager,
-          isComputerRunning,
-        });
-        return json(res, report.ok ? 200 : 503, report);
-      }
-
-      if (p === "/gateway/info" || p === "/info") {
-        return json(res, 200, {
-          name: "XClaw Gateway",
-          version: XCLAW_VERSION,
-          phase: XCLAW_PHASE,
-          gateway: cfg.gateway,
-          computer: {
-            host: cfg.computer.host,
-            port: cfg.computer.port,
-            healthy: await isComputerRunning(cfg),
-          },
-          agent: {
-            model: cfg.agent?.model,
-            maxTurns: cfg.agent?.maxTurns,
-            hasApiKey: Boolean(
-              cfg.agent?.apiKey ||
-                process.env.OPENAI_API_KEY ||
-                process.env.XCLAW_API_KEY
-            ),
-          },
-          channels: {
-            webchat: { enabled: webchatEnabled, path: "/chat/", sse: true },
-            messaging: channelManager.status(),
-          },
-          paths: cfg.paths,
-        });
-      }
-
-      if (p === "/computer/health") {
-        try {
-          const u = `http://${cfg.computer.host}:${cfg.computer.port}/health`;
-          const r = await fetch(u);
-          const body = await r.json();
-          return json(res, r.status, body);
-        } catch (e) {
-          return json(res, 502, { error: "computer unreachable", detail: e.message });
-        }
-      }
+      const routeArgs = { p, method: req.method, req, res, url, cfg, json, readBody };
+      // Mechanical route groups live in ./routes/* (one tryHandle per module);
+      // stream/SSE, WebChat/static, OAuth-callback, telegram, and /agent/run
+      // handlers stay inline — they own writer/closure state.
+      if (await tryHandleAlertsRoute({ ...routeArgs, channelManager })) return;
+      if (await tryHandleOpsRoute({ ...routeArgs, root, webchatEnabled, channelManager, XCLAW_VERSION, XCLAW_PHASE })) return;
+      if (await tryHandleEvalQueueRoute({ ...routeArgs, root })) return;
+      if (await tryHandleJwksRoute(routeArgs)) return;
+      if (await tryHandleTokensRoute(routeArgs)) return;
+      if (await tryHandleApiRoute({ ...routeArgs, mcpClient, mcpServer })) return;
 
 
 
 
 
 
-      if (p === "/tokens/cache-by-tool" && req.method === "POST") {
-        const body = await readBody(req);
-        const analysis = analyzeCacheByTool({
-          usageTurns: body.usageTurns || body.usage?.turns || [],
-          toolTrace: body.toolTrace || [],
-          events: body.events || [],
-        });
-        return json(res, 200, {
-          ok: true,
-          summary: formatCacheByToolReport(analysis),
-          analysis,
-        });
-      }
 
-      if (p === "/events/eviction" && req.method === "GET") {
-        const limit = Number(url.searchParams.get("limit") || 50);
-        return json(res, 200, {
-          events: listEvictionEvents({ limit }),
-          listeners: evictionListenerCount(),
-        });
-      }
+
+
+
+
+
+
 
             if (p === "/events/eviction/stream" && req.method === "GET") {
         const lastEventId =
@@ -1657,113 +1119,8 @@ export async function startGateway({ root } = {}) {
         return;
       }
 
-      if (p === "/tokens/cost" && req.method === "GET") {
-        const ledger = cfg.tokens?.ledgerPath || defaultLedgerPath();
-        const since = url.searchParams.get("since");
-        const agg = await readCostLedger(ledger, { since });
-        return json(res, 200, { ok: true, ...agg });
-      }
 
-      if (p === "/tokens/bench" && (req.method === "GET" || req.method === "POST")) {
-        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : {};
-        const model = body.model || url.searchParams.get("model") || cfg.agent?.model || "gpt-4o-mini";
-        const iterations = Number(body.iterations || url.searchParams.get("iterations") || 100);
-        const bench = await benchProbeOverhead({
-          cfg,
-          model,
-          iterations: Number.isFinite(iterations) ? iterations : 100,
-          latencySamples: Number(body.latencySamples || 40),
-          probeIterations: Number(body.probeIterations || 5),
-          agentTurnsPerDay: Number(body.agentTurnsPerDay || 500),
-        });
-        return json(res, 200, {
-          ok: true,
-          summary: formatBenchReport(bench),
-          bench,
-        });
-      }
 
-      if (p === "/tokens/probe" && (req.method === "GET" || req.method === "POST")) {
-        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : {};
-        const model = body.model || url.searchParams.get("model") || cfg.agent?.model || "gpt-4o-mini";
-        const calibrate = body.calibrate === true || url.searchParams.get("calibrate") === "1";
-        const result = await probeTokenizerRuntime(cfg, model, {
-          baseUrl: cfg.agent?.baseUrl,
-        });
-        let calibrated = null;
-        if (calibrate && result.probe?.calibration?.suggested) {
-          const { cfg: newTok, applied } = applyProbeCalibration(cfg.tokens, result.probe);
-          if (applied) {
-            calibrated = newTok;
-            // runtime only — does not persist to disk
-            cfg.tokens = { ...cfg.tokens, ...newTok };
-          }
-        }
-        return json(res, 200, {
-          ok: result.probe.ok,
-          ...result,
-          calibrated,
-        });
-      }
-
-      if (p === "/tokens/estimate" && req.method === "POST") {
-        const body = await readBody(req);
-        const model = body.model || cfg.agent?.model || "gpt-4o-mini";
-        const tok = await resolveTokenizer(cfg, model);
-        const cfgTok = {
-          tokens: {
-            ...(cfg.tokens || {}),
-            mode: tok.encodeFn ? "tiktoken" : "heuristic",
-            _encodeFn: tok.encodeFn,
-          },
-        };
-        const messages = body.messages || [
-          { role: "user", content: body.text || body.message || "" },
-        ];
-        const est = estimateRequestTokens({
-          messages,
-          tools: body.tools,
-          model,
-          cfg: cfgTok,
-        });
-        return json(res, 200, { ok: true, tokenizer: tok.mode, package: tok.package || null, ...est });
-      }
-
-      // --- Skills / memory ---
-      if (p === "/skills" && req.method === "GET") {
-        const skills = await loadAllSkills({
-          configDir: cfg.paths?.configDir,
-          cwd: process.cwd(),
-        });
-        return json(res, 200, {
-          skills: skills.map((s) => ({
-            name: s.name,
-            description: s.description,
-            path: s.path,
-          })),
-        });
-      }
-
-      if (p === "/memory" && req.method === "GET") {
-        const cwd = new URL(req.url, "http://x").searchParams.get("cwd") || process.cwd();
-        const files = await loadMemoryFiles(cwd);
-        return json(res, 200, {
-          files: files.map((f) => ({
-            name: f.name,
-            path: f.path,
-            chars: f.body.length,
-            preview: f.body.slice(0, 200),
-          })),
-        });
-      }
-
-      // --- Channels status (always) ---
-      if (p === "/channels/status" && req.method === "GET") {
-        return json(res, 200, {
-          webchat: { enabled: webchatEnabled },
-          messaging: channelManager.status(),
-        });
-      }
 
       // --- Swarm first-class HTTP API (Phase D) ---
       if (p === "/swarm/run" && req.method === "POST") {
@@ -1822,17 +1179,6 @@ export async function startGateway({ root } = {}) {
         if (handled) return;
       }
 
-      // --- Transcripts (inspectable local conversation log) ---
-      if (p === "/transcripts" && req.method === "GET") {
-        const { listTranscripts } = await import("../sessions/transcript.mjs");
-        return json(res, 200, { transcripts: listTranscripts(cfg) });
-      }
-      if (p.startsWith("/transcripts/") && req.method === "GET") {
-        const { loadTranscriptHistory, transcriptPath } = await import("../sessions/transcript.mjs");
-        const id = decodeURIComponent(p.slice("/transcripts/".length).split("/")[0]);
-        const history = loadTranscriptHistory(cfg, id, Number(new URL(req.url, "http://local").searchParams.get("limit") || 200));
-        return json(res, 200, { sessionId: id, path: transcriptPath(cfg, id), history, count: history.length });
-      }
 
       // --- Agent: JSON (sync) ---
       if (p === "/agent/run" && req.method === "POST") {
@@ -2111,54 +1457,6 @@ export async function startGateway({ root } = {}) {
       }
 
 
-      // --- Parity APIs (gaps 1–10) ---
-      if (p === "/subagents" && req.method === "GET") {
-        return json(res, 200, { subagents: listSubagents() });
-      }
-      if (p === "/subagents/spawn" && req.method === "POST") {
-        const body = await readBody(req);
-        if (!body.task) return json(res, 400, { error: "task required" });
-        const out = await spawnSubagent({
-          task: body.task,
-          maxTurns: body.maxTurns,
-          cfg,
-          parentId: body.parentId,
-          workingDir: body.workingDir,
-        });
-        return json(res, out.ok ? 200 : 500, out);
-      }
-      if (p.startsWith("/subagents/") && req.method === "GET") {
-        const id = p.slice("/subagents/".length);
-        const s = getSubagent(id);
-        return s ? json(res, 200, s) : json(res, 404, { error: "not found" });
-      }
-
-      if (p === "/sessions" && req.method === "GET") {
-        return json(res, 200, { sessions: listSessions() });
-      }
-      if (p === "/sessions" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        return json(res, 200, createSession(body));
-      }
-      if (p === "/sessions/bind" && req.method === "POST") {
-        const body = await readBody(req);
-        const s = bindPeer(body.channel, body.peerId, body.sessionId);
-        return json(res, 200, { ok: true, session: s });
-      }
-      if (p === "/sessions/resolve" && req.method === "POST") {
-        const body = await readBody(req);
-        return json(res, 200, resolveBinding(body.channel, body.peerId, body.peerKind));
-      }
-      if (p === "/sessions/keys" && req.method === "POST") {
-        const body = await readBody(req);
-        if (body.sessionKey) return json(res, 200, { parsed: parseSessionKey(body.sessionKey) });
-        return json(res, 200, { sessionKey: buildSessionKey(body) });
-      }
-      if (p === "/sessions/by-key" && req.method === "GET") {
-        const key = url.searchParams.get("key");
-        const s = getSessionByKey(key);
-        return s ? json(res, 200, s) : json(res, 404, { error: "not found" });
-      }
 
       // /security/* served by the routes module (richer than the old inline
       // handlers: SLA stats, allow-always decision parsing, engine snapshot).
@@ -2175,61 +1473,7 @@ export async function startGateway({ root } = {}) {
         });
         if (handled) return;
       }
-      if (p === "/checkpoints" && req.method === "GET") {
-        const { listCheckpoints, loadCheckpoint } = await import("../jobs/checkpoint.mjs");
-        const id = url.searchParams.get("id");
-        if (id) {
-          try {
-            return json(res, 200, await loadCheckpoint(cfg, id));
-          } catch (e) {
-            return json(res, 404, { error: e.message });
-          }
-        }
-        return json(res, 200, { checkpoints: await listCheckpoints(cfg, { limit: Number(url.searchParams.get("limit") || 30) }) });
-      }
-      if (p === "/checkpoints/resume" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        const { resumeJobFromCheckpoint } = await import("../jobs/checkpoint.mjs");
-        try {
-          const job = await resumeJobFromCheckpoint(cfg, body.id, { autoApprove: body.autoApprove });
-          return json(res, 200, { id: job.id, pass: job.pass, status: job.status, turns: job.turns, resumedFrom: job.resumedFrom });
-        } catch (e) {
-          return json(res, 400, { error: e.message });
-        }
-      }
-      if (p === "/subagents/merge" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        const { getSubagent } = await import("../agents/spawn.mjs");
-        const { mergeSubagentWorktree } = await import("../agents/worktree.mjs");
-        const rec = getSubagent(body.subagentId);
-        if (!rec) return json(res, 404, { error: "subagent not found" });
-        const repo = body.repo || process.cwd();
-        const out = await mergeSubagentWorktree(
-          { result: rec.result, worktree: rec },
-          repo,
-          { checkOnly: Boolean(body.checkOnly) }
-        );
-        return json(res, out.ok ? 200 : 409, out);
-      }
-      if (p === "/mcp" && req.method === "POST") {
-        const body = await readBody(req);
-        const out = await mcpServer.handleRequest(body);
-        return json(res, 200, out);
-      }
-      if (p === "/mcp/tools" && req.method === "GET") {
-        const tools = await mcpClient.listTools();
-        return json(res, 200, { tools });
-      }
-      if (p === "/mcp/call" && req.method === "POST") {
-        const body = await readBody(req);
-        const out = await mcpClient.callTool(body.name, body.arguments || body.args || {});
-        return json(res, 200, out);
-      }
 
-      if (p === "/providers/route" && req.method === "GET") {
-        const model = url.searchParams.get("model") || undefined;
-        return json(res, 200, resolveProviderRoute(cfg, { model }));
-      }
 
       // /cron scheduler routes served by routes/cron.mjs (/cron/eval stays inline).
       if (p.startsWith("/cron/") && p !== "/cron/eval" && p !== "/cron/eval/run") {
@@ -2246,67 +1490,7 @@ export async function startGateway({ root } = {}) {
         if (handled) return;
       }
 
-      if (p === "/media/canvas" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        return json(res, 200, createCanvas(body));
-      }
-      if (p.startsWith("/media/canvas/") && req.method === "GET") {
-        const c = getCanvas(p.slice("/media/canvas/".length));
-        return c ? json(res, 200, c) : json(res, 404, { error: "not found" });
-      }
-      if (p === "/media/providers" && req.method === "GET") {
-        return json(res, 200, { providers: listImageProviders() });
-      }
-      if (p === "/media/canvas" && req.method === "GET") {
-        return json(res, 200, { canvases: listCanvases() });
-      }
-      if (p === "/media/jobs" && req.method === "GET") {
-        return json(res, 200, { jobs: listMediaJobs() });
-      }
-      if (p.startsWith("/media/jobs/") && req.method === "GET") {
-        const job = getMediaJob(p.slice("/media/jobs/".length));
-        return job ? json(res, 200, job) : json(res, 404, { error: "not found" });
-      }
-      if (p === "/media/jobs" && req.method === "POST") {
-        const body = await readBody(req);
-        return json(res, 200, enqueueMediaJob(body));
-      }
 
-      if (p === "/gateway") {
-        return json(res, 200, {
-          message: "XClaw Gateway Phase 7",
-          endpoints: [
-            "GET  /health",
-            "GET  /gateway/info",
-            "POST /agent/run",
-            "POST /agent/run/stream          (SSE or NDJSON via Accept)",
-            "POST /swarm/run",
-            "POST /swarm/run/stream       (SSE or NDJSON via Accept)",
-            "GET  /swarm",
-            "GET  /swarm/:id",
-            "GET  /swarm/merges",
-            "POST /swarm/merges/:id/approve",
-            "POST /swarm/merges/:id/reject",
-            "GET  /xclaw/jwks.json",
-            "GET  /control/",
-            "GET  /chat/",
-            "POST /channel/webchat/message",
-            "POST /channel/webchat/message/stream  (SSE or NDJSON via Accept)",
-            "GET  /channel/webchat/history?sessionId=",
-            "GET  /channel/webchat/sessions",
-            "GET  /channels/status",
-            "GET  /events/eviction",
-            "GET  /events/eviction/stream  (SSE)",
-            "WS   /ws/events                 (WebSocket JSON)",
-            "GET  /tokens/cost",
-            "GET  /tokens/bench",
-            "GET  /tokens/probe",
-            "POST /tokens/probe",
-            "GET  /skills",
-            "GET  /memory?cwd=",
-          ],
-        });
-      }
 
       json(res, 404, { error: "not found", path: p });
     } catch (err) {

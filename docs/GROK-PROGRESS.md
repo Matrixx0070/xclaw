@@ -422,3 +422,26 @@ internally until GitHub GC (not client-fetchable as heads; private repo —
 acceptable residual; a support ticket can force it if ever needed).
 NOTE FOR GROK: your working clone is now stale — fresh clone required; do NOT
 force-push old history back (protection will reject it).
+
+## 2026-08-12 — 3.85.0 router split complete + thinking-block replay (Claude)
+
+STATUS: green
+BUILT: (1) router split FINISHED — 6 new modules (jwks, alerts, ops,
+eval-queue, tokens, api) join security/swarm/cron; index.mjs 2380→1564 lines;
+SSE/webchat/webhook/WS handlers deliberately inline (writer-state closures).
+REAL BUG fixed: inline POST /queue contained pasted startup code registering
+a new approval-digest setInterval on EVERY enqueue (unbounded interval leak).
+(2) Anthropic thinking-block replay — SSE parser captures thinkingBlocks
+verbatim incl. previously-discarded signature_delta + redacted_thinking;
+toAnthropicMessages re-emits them first in assistant content when thinking
+enabled (omitted otherwise); ZERO loop.mjs changes (message object flows by
+reference; eviction spread preserves the field — both proven). Two-call mock
+proves the signature round-trips to the 2nd request body.
+RAN: suite 1252 total, 0 fail (1247 pass, 5 env-skipped) · eval:ci OK ·
+LIVE gateway: extracted groups + /v1 aliases all 200 (alerts/status,
+tokens/cost, transcripts, media/providers, sessions, queue, health, metrics);
+/doctor 503 = correct keyless-host semantic. NB: /mcp/status verified ABSENT
+pre-split (dropped in an earlier Grok refactor — /mcp, /mcp/tools, /mcp/call
+are the surviving surface).
+BOARD: the 2026-08-12 design review + Grok brief are now FULLY closed —
+nothing parked, nothing deferred.

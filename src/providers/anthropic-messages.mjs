@@ -129,8 +129,16 @@ export function capCacheBreakpoints(blocks, max = 4) {
  * structured Anthropic form (present whenever any system entry was
  * structured), preserving cache_control breakpoints from the loop's
  * cache-breakpoints builder.
+ *
+ * `opts.includeThinking`: when true, assistant history messages carrying
+ * `thinkingBlocks` (captured verbatim from prior responses, signatures intact)
+ * re-emit them FIRST in the content array — required by the API for extended
+ * thinking + tool use (the tool_result turn must see the prior assistant
+ * turn's signed thinking). Default false: blocks are omitted, because sending
+ * thinking blocks on a request without thinking enabled is an API error.
  */
-export function toAnthropicMessages(openaiMessages = []) {
+export function toAnthropicMessages(openaiMessages = [], opts = {}) {
+  const includeThinking = opts.includeThinking === true;
   /** @type {Array<{type:string,text:string,cache_control?:object}>} */
   let systemBlockParts = [];
   let sawStructuredSystem = false;
@@ -146,6 +154,15 @@ export function toAnthropicMessages(openaiMessages = []) {
 
     if (role === "assistant") {
       const blocks = [];
+      if (includeThinking && Array.isArray(m.thinkingBlocks)) {
+        for (const tb of m.thinkingBlocks) {
+          if (tb?.type === "thinking" && typeof tb.thinking === "string") {
+            blocks.push({ type: "thinking", thinking: tb.thinking, signature: tb.signature || "" });
+          } else if (tb?.type === "redacted_thinking" && tb.data != null) {
+            blocks.push({ type: "redacted_thinking", data: tb.data });
+          }
+        }
+      }
       if (m.content) {
         blocks.push({
           type: "text",
@@ -253,9 +270,17 @@ export function fromAnthropicMessage(msg) {
   const tool_calls = [];
 
   const thinkingParts = [];
+  /** Verbatim thinking/redacted_thinking blocks (signatures intact) for replay. */
+  const thinkingBlocks = [];
   for (const b of contentBlocks) {
     if (b.type === "text" && b.text) textParts.push(b.text);
-    if (b.type === "thinking" && b.thinking) thinkingParts.push(b.thinking);
+    if (b.type === "thinking" && b.thinking) {
+      thinkingParts.push(b.thinking);
+      thinkingBlocks.push({ type: "thinking", thinking: b.thinking, signature: b.signature || "" });
+    }
+    if (b.type === "redacted_thinking") {
+      thinkingBlocks.push({ type: "redacted_thinking", data: b.data });
+    }
     if (b.type === "tool_use") {
       tool_calls.push({
         id: b.id,
@@ -274,6 +299,7 @@ export function fromAnthropicMessage(msg) {
   };
   if (tool_calls.length) assistant.tool_calls = tool_calls;
   if (thinkingParts.length) assistant.reasoning = thinkingParts.join("");
+  if (thinkingBlocks.length) assistant.thinkingBlocks = thinkingBlocks;
   return assistant;
 }
 
@@ -386,7 +412,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
   }
 
   async function messagesOnce({ messages, tools, model, temperature, max_tokens }) {
-    const converted = toAnthropicMessages(messages);
+    const converted = toAnthropicMessages(messages, { includeThinking: thinkingActive });
     const body = {
       model: model || defaultModel,
       max_tokens: max_tokens ?? opts.cfg?.agent?.maxTokens ?? 4096,
@@ -475,7 +501,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
       onDelta,
     } = args;
 
-    const converted = toAnthropicMessages(messages);
+    const converted = toAnthropicMessages(messages, { includeThinking: thinkingActive });
     const body = {
       model: model || defaultModel,
       max_tokens: max_tokens ?? opts.cfg?.agent?.maxTokens ?? 4096,
@@ -535,6 +561,9 @@ export function createAnthropicMessagesProvider(opts = {}) {
     /** @type {Array<{id:string, name:string, input:object, _json:string}>} */
     const toolBlocks = [];
     let currentTool = null;
+    /** Verbatim thinking blocks (text + signature) for multi-turn replay. */
+    const thinkingBlocksOut = [];
+    let currentThinking = null;
     let stopReason = "stop";
     let usage = undefined;
 
@@ -558,6 +587,16 @@ export function createAnthropicMessagesProvider(opts = {}) {
             _json: "",
           };
           toolBlocks.push(currentTool);
+        } else if (block?.type === "thinking") {
+          currentThinking = {
+            type: "thinking",
+            thinking: block.thinking || "",
+            signature: block.signature || "",
+          };
+          thinkingBlocksOut.push(currentThinking);
+        } else if (block?.type === "redacted_thinking") {
+          // Arrives complete in the start event — keep verbatim for replay.
+          thinkingBlocksOut.push({ type: "redacted_thinking", data: block.data });
         }
       } else if (type === "content_block_delta") {
         const d = parsed.delta;
@@ -570,9 +609,14 @@ export function createAnthropicMessagesProvider(opts = {}) {
         } else if (d?.type === "thinking_delta" && d.thinking) {
           // Extended-thinking deltas: keep separate from text accumulation.
           thinkingOut += d.thinking;
+          if (currentThinking) currentThinking.thinking += d.thinking;
           onDelta?.({ type: "thinking", text: d.thinking });
+        } else if (d?.type === "signature_delta" && d.signature) {
+          // Cryptographic signature for the thinking block — REQUIRED verbatim
+          // when replaying the block on the next tool-cycle request.
+          if (currentThinking) currentThinking.signature += d.signature;
         }
-        // signature_delta and unknown delta types are intentionally ignored.
+        // Unknown delta types are intentionally ignored.
       } else if (type === "content_block_stop") {
         if (currentTool) {
           try {
@@ -584,6 +628,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
           }
           currentTool = null;
         }
+        currentThinking = null;
       } else if (type === "message_delta") {
         if (parsed.delta?.stop_reason) stopReason = parsed.delta.stop_reason;
         if (parsed.usage) {
@@ -641,6 +686,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
     };
     if (tool_calls.length) assistant.tool_calls = tool_calls;
     if (thinkingOut) assistant.reasoning = thinkingOut;
+    if (thinkingBlocksOut.length) assistant.thinkingBlocks = thinkingBlocksOut;
 
     return {
       message: assistant,
