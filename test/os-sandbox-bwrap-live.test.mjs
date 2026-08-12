@@ -26,7 +26,7 @@ describe("os-sandbox bwrap live", () => {
           cfg: { security: { osSandbox: "bwrap" }, profile: "lab" },
         }
       );
-      assert.equal(r.ok, true, r.stderr || "bash failed");
+      assert.equal(r.ok, true, `bash failed: ${r.stderr || ""} exit=${r.exitCode} ${JSON.stringify({osSandboxed: r.osSandboxed, blocked: r.blocked})}`);
       assert.match(String(r.stdout), /BWRAP_LIVE_OK/);
       assert.equal(r.osSandboxed, true);
     } finally {

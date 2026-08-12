@@ -119,36 +119,44 @@ export function buildBwrapArgv({
   const argv = [
     "--die-with-parent",
     "--new-session",
-    // minimal procs
     "--proc",
     "/proc",
     "--dev",
     "/dev",
     "--tmpfs",
     "/tmp",
-    // read-only base system (best-effort; skip missing)
   ];
 
+  // Order matters on Debian/Ubuntu merged-/usr: bind /usr first, then /bin if real dir
   const roDirs = [
     "/usr",
+    "/etc",
     "/bin",
+    "/sbin",
     "/lib",
     "/lib64",
-    "/sbin",
-    "/etc",
+    "/lib32",
     ...(cfg?.security?.osSandboxExtraRo || []),
   ];
+  const bound = new Set();
   for (const d of roDirs) {
     try {
-      if (fs.existsSync(d)) {
-        argv.push("--ro-bind", d, d);
+      if (!fs.existsSync(d)) continue;
+      // Avoid double-bind of the same realpath
+      let real = d;
+      try {
+        real = fs.realpathSync(d);
+      } catch {
+        /* keep d */
       }
+      if (bound.has(real)) continue;
+      argv.push("--ro-bind", d, d);
+      bound.add(real);
+      bound.add(d);
     } catch {
       /* skip */
     }
   }
-
-  // Symlink-friendly: some distros use /bin -> /usr/bin already covered
 
   // Workspace RW
   argv.push("--bind", ws, ws);
