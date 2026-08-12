@@ -1,0 +1,990 @@
+/**
+ * Telegram channel — deepened with OpenClaw allow-from + session bindings.
+ */
+import { replyWithAgent, truncate } from "../base.mjs";
+import { processInbound, fromTelegramUpdate } from "../runtime.mjs";
+import { createChannelPolicy, workspaceForChat } from "../policy.mjs";
+import { resolveBinding, touchSession } from "../../sessions/router.mjs";
+import { buildSessionKey } from "../../sessions/session-key.mjs";
+import {
+  createPairingStore,
+  buildPairingReply,
+} from "../../pairing/pairing-store.mjs";
+import { createRateLimiter } from "../rate-limit.mjs";
+import { handleChannelCommand } from "../commands.mjs";
+import {
+  createTelegramStreamer,
+  telegramStreamOptions,
+} from "./stream.mjs";
+import {
+  verifyTelegramWebhookSecret,
+  acquireTelegramWriterLock,
+  buildSetWebhookBody,
+  TELEGRAM_SECRET_HEADER,
+} from "./webhook.mjs";
+import {
+  pairingInlineKeyboard,
+  approvalInlineKeyboard,
+  parseCallbackData,
+  formatPendingApprovalText,
+} from "./inline.mjs";
+import { getSharedApprovalGate } from "../../security/approvals.mjs";
+import {
+  recordTelegramUpdate,
+  recordTelegramEdit,
+  recordTelegramDeny,
+  recordTelegramError,
+  recordTelegramCallback,
+  recordTelegramStreamDelta,
+  recordTelegramStructuredOut,
+} from "./metrics.mjs";
+import {
+  synthesizeReplyVoice,
+  sendTelegramVoiceNote,
+  voiceOutOptions,
+} from "./voice-out.mjs";
+import {
+  gateGroupMessage,
+  stripBotMention,
+  groupPolicyOptions,
+} from "./group-policy.mjs";
+import {
+  hasStructuredContent,
+  extractStructuredInbound,
+  structuredToAgentHint,
+} from "./structured-inbound.mjs";
+import { deliverStructuredReply } from "./structured-outbound.mjs";
+import {
+  suggestionsInlineKeyboard,
+  formatSuggestionsPlain,
+  recordSuggestionFeedback,
+} from "../../agent/suggestions.mjs";
+import { recordDurableSuggestionFeedback } from "../../agent/suggestion-feedback.mjs";
+import { recordSuggestionTapMetric } from "../../agent/agent-metrics.mjs";
+import {
+  classifyTelegramError,
+  telegramApiError,
+} from "./errors.mjs";
+import { runTelegramPollLoop } from "./poll-loop.mjs";
+import { enrichStickerMeta } from "./sticker-meta.mjs";
+import { chunkText, prepareReplyChunks } from "./chunk-text.mjs";
+
+const API = "https://api.telegram.org";
+
+export function createTelegramChannel(cfg) {
+  const conf = cfg.channels?.telegram || {};
+  const token =
+    conf.token || process.env.TELEGRAM_BOT_TOKEN || process.env.XCLAW_TELEGRAM_TOKEN;
+  const enabled = conf.enabled === true && Boolean(token);
+  const workingDir = conf.workingDir;
+  const policy = createChannelPolicy(cfg);
+  const dmPolicy = conf.dmPolicy || "pairing"; // open | allowlist | pairing
+  const rateLimiter = createRateLimiter(conf.rateLimit || cfg.channels?.rateLimit || {});
+  const pairing = createPairingStore({
+    storePath: conf.pairingStorePath,
+  });
+
+  /** poll (default) | webhook */
+  const transport = String(conf.transport || conf.mode || "poll").toLowerCase();
+  const webhookUrl = conf.webhookUrl || conf.webhook?.url || process.env.XCLAW_TELEGRAM_WEBHOOK_URL || null;
+  const webhookSecret =
+    conf.webhookSecret ||
+    conf.webhook?.secret ||
+    process.env.XCLAW_TELEGRAM_WEBHOOK_SECRET ||
+    null;
+  const ownerChatId =
+    conf.ownerChatId ||
+    conf.owner_chat_id ||
+    process.env.XCLAW_TELEGRAM_OWNER_CHAT_ID ||
+    null;
+  const singleWriter = conf.singleWriter !== false;
+
+  let offset = 0;
+  let stopped = false;
+  let loopPromise = null;
+  let botInfo = null;
+  let messagesHandled = 0;
+  let callbacksHandled = 0;
+  let lastError = null;
+  let lastOkAt = null;
+  let loopAlive = false;
+  let writerLock = null;
+  let seenUpdateIds = new Set();
+  const SEEN_MAX = 2000;
+  /** @type {Map<string, { prompt: string, chatId: string|number, at: number }>} */
+  const suggestionStore = new Map();
+  const SUG_TTL_MS = 30 * 60 * 1000;
+
+  function rememberSuggestions(chatId, items) {
+    const now = Date.now();
+    for (const [k, v] of suggestionStore) {
+      if (now - v.at > SUG_TTL_MS) suggestionStore.delete(k);
+    }
+    for (const s of items || []) {
+      if (s?.id && s?.prompt) {
+        suggestionStore.set(s.id, {
+          prompt: s.prompt,
+          chatId,
+          label: s.label,
+          source: s.source,
+          kind: s.kind,
+          at: now,
+        });
+      }
+    }
+  }
+
+  async function api(method, body) {
+    const url = `${API}/bot${token}/${method}`;
+    let r;
+    try {
+      r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (err) {
+      const e = new Error(`Telegram ${method}: ${err.message || err}`);
+      e.code = err.code || "NETWORK";
+      throw e;
+    }
+    let j;
+    try {
+      j = await r.json();
+    } catch {
+      throw telegramApiError(method, { description: `Invalid JSON HTTP ${r.status}` }, r.status);
+    }
+    if (!j.ok) {
+      throw telegramApiError(method, j, r.status);
+    }
+    return j.result;
+  }
+
+  async function sendChatAction(chatId, action = "typing") {
+    try {
+      await api("sendChatAction", { chat_id: chatId, action });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const chunkMax = Math.min(4096, Number(conf.chunkMax || conf.maxChunkChars) || 4000);
+  const maxReplyChars = Math.max(chunkMax, Number(conf.maxReplyChars) || 12_000);
+
+  async function sendMessage(chatId, text, replyTo, extra = {}) {
+    const chunks = prepareReplyChunks(text, {
+      chunkMax,
+      totalMax: maxReplyChars,
+    });
+    let last = null;
+    for (let i = 0; i < chunks.length; i++) {
+      const part = chunks[i];
+      const body = {
+        chat_id: chatId,
+        text: part,
+        disable_web_page_preview: true,
+        ...extra,
+      };
+      if (replyTo != null && i === 0) body.reply_to_message_id = replyTo;
+      // only attach keyboard on last chunk
+      if (i < chunks.length - 1) delete body.reply_markup;
+      last = await api("sendMessage", body);
+    }
+    return last;
+  }
+
+  async function answerCallback(callbackQueryId, text) {
+    try {
+      await api("answerCallbackQuery", {
+        callback_query_id: callbackQueryId,
+        text: text || undefined,
+        show_alert: false,
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
+   * Notify owner of a pending tool approval (inline buttons).
+   */
+  async function notifyOwnerApproval(item) {
+    if (!ownerChatId || !item?.id) return { ok: false, reason: "no_owner" };
+    try {
+      await sendMessage(
+        ownerChatId,
+        formatPendingApprovalText(item).replace(/\*/g, ""),
+        undefined,
+        { reply_markup: approvalInlineKeyboard({ pendingId: item.id, tool: item.tool }) }
+      );
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err.message };
+    }
+  }
+
+  /**
+   * Notify owner of a pairing request.
+   */
+  async function notifyOwnerPairing({ code, chatId, username }) {
+    if (!ownerChatId) return { ok: false, reason: "no_owner" };
+    const text = [
+      "🔗 Pairing request",
+      `Chat: ${chatId}`,
+      username ? `User: @${username}` : null,
+      `Code: ${code}`,
+      "",
+      "Approve or deny:",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    try {
+      await sendMessage(ownerChatId, text, undefined, {
+        reply_markup: pairingInlineKeyboard({ code, chatId }),
+      });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err.message };
+    }
+  }
+
+  async function downloadTelegramFile(fileId, destPath) {
+    const f = await api("getFile", { file_id: fileId });
+    const filePath = f.file_path;
+    if (!filePath) throw new Error("no file_path from getFile");
+    const url = `${API}/file/bot${token}/${filePath}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`download HTTP ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    await fs.mkdir(path.dirname(destPath), { recursive: true });
+    await fs.writeFile(destPath, buf);
+    return { path: destPath, bytes: buf.length, telegramPath: filePath };
+  }
+
+  /**
+   * Extract text + optional media paths from a Telegram message.
+   * Photos/documents/voice/video are downloaded under workspace/telegram-media/.
+   */
+  async function extractMessageContent(msg, workspace) {
+    const path = await import("node:path");
+    const parts = [];
+    const media = [];
+    if (msg.text) parts.push(msg.text.trim());
+    if (msg.caption) parts.push(msg.caption.trim());
+
+    const mediaDir = path.join(workspace || process.cwd(), "telegram-media");
+    const stamp = `${msg.message_id || Date.now()}`;
+
+    try {
+      if (msg.photo && msg.photo.length) {
+        const best = msg.photo[msg.photo.length - 1];
+        const dest = path.join(mediaDir, `photo_${stamp}.jpg`);
+        const d = await downloadTelegramFile(best.file_id, dest);
+        media.push({ type: "photo", ...d });
+        parts.push(`[Attached photo saved to ${d.path}]`);
+      }
+      if (msg.document) {
+        const name = msg.document.file_name || `doc_${stamp}`;
+        const dest = path.join(mediaDir, name.replace(/[^\w.\-]+/g, "_"));
+        const d = await downloadTelegramFile(msg.document.file_id, dest);
+        media.push({ type: "document", ...d, mime: msg.document.mime_type });
+        parts.push(`[Attached document saved to ${d.path}]`);
+      }
+      if (msg.voice) {
+        const dest = path.join(mediaDir, `voice_${stamp}.ogg`);
+        const d = await downloadTelegramFile(msg.voice.file_id, dest);
+        media.push({ type: "voice", ...d });
+        parts.push(`[Attached voice note saved to ${d.path}]`);
+      }
+      if (msg.video) {
+        const dest = path.join(mediaDir, `video_${stamp}.mp4`);
+        const d = await downloadTelegramFile(msg.video.file_id, dest);
+        media.push({ type: "video", ...d });
+        parts.push(`[Attached video saved to ${d.path}]`);
+      }
+      if (msg.audio) {
+        const name = msg.audio.file_name || `audio_${stamp}.mp3`;
+        const dest = path.join(mediaDir, name.replace(/[^\w.\-]+/g, "_"));
+        const d = await downloadTelegramFile(msg.audio.file_id, dest);
+        media.push({ type: "audio", ...d });
+        parts.push(`[Attached audio saved to ${d.path}]`);
+      }
+    } catch (err) {
+      parts.push(`[Media download failed: ${err.message}]`);
+    }
+
+    // P3 structured: sticker, location, venue, contact, poll, …
+    const structuredPack = extractStructuredInbound(msg);
+    for (const line of structuredPack.textParts) parts.push(line);
+    // Optional: download sticker/animation/video_note binary for workspace
+    try {
+      if (msg.sticker?.file_id) {
+        const ext = msg.sticker.is_video ? "webm" : msg.sticker.is_animated ? "tgs" : "webp";
+        const dest = path.join(mediaDir, `sticker_${stamp}.${ext}`);
+        const d = await downloadTelegramFile(msg.sticker.file_id, dest);
+        media.push({ type: "sticker", ...d, emoji: msg.sticker.emoji });
+        parts.push(`[Sticker file saved to ${d.path}]`);
+      }
+      if (msg.animation?.file_id) {
+        const dest = path.join(mediaDir, `anim_${stamp}.mp4`);
+        const d = await downloadTelegramFile(msg.animation.file_id, dest);
+        media.push({ type: "animation", ...d });
+        parts.push(`[Animation saved to ${d.path}]`);
+      }
+      if (msg.video_note?.file_id) {
+        const dest = path.join(mediaDir, `videonote_${stamp}.mp4`);
+        const d = await downloadTelegramFile(msg.video_note.file_id, dest);
+        media.push({ type: "video_note", ...d });
+        parts.push(`[Video note saved to ${d.path}]`);
+      }
+    } catch (err) {
+      parts.push(`[Structured media download failed: ${err.message}]`);
+    }
+
+    return {
+      text: parts.filter(Boolean).join("\n\n").trim(),
+      media,
+      structured: structuredPack.structured,
+    };
+  }
+
+  async function handleCallbackQuery(cq) {
+    if (!cq || !cq.id) return;
+    const data = parseCallbackData(cq.data);
+    const fromId = cq.from?.id;
+    // Only owner (if set) may press admin buttons
+    if (ownerChatId && String(fromId) !== String(ownerChatId)) {
+      await answerCallback(cq.id, "Not authorized");
+      return;
+    }
+    if (!data) {
+      await answerCallback(cq.id, "Unknown action");
+      return;
+    }
+    try {
+      if (data.kind === "pair") {
+        if (data.action === "approve") {
+          const r = pairing.approve("telegram", data.id);
+          await answerCallback(cq.id, r?.ok ? "Approved" : "Failed");
+          if (cq.message?.chat?.id && cq.message?.message_id) {
+            try {
+              await api("editMessageText", {
+                chat_id: cq.message.chat.id,
+                message_id: cq.message.message_id,
+                text: r?.ok
+                  ? `✅ Pairing approved: ${data.id}`
+                  : `❌ Pairing approve failed: ${data.id}`,
+              });
+            } catch {
+              /* */
+            }
+          }
+        } else if (data.action === "deny") {
+          // leave pending; optional revoke by not approving
+          await answerCallback(cq.id, "Denied (left unpaired)");
+          if (cq.message?.chat?.id && cq.message?.message_id) {
+            try {
+              await api("editMessageText", {
+                chat_id: cq.message.chat.id,
+                message_id: cq.message.message_id,
+                text: `❌ Pairing denied: ${data.id}`,
+              });
+            } catch {
+              /* */
+            }
+          }
+        }
+        recordTelegramCallback(data.action === "approve" ? "pair_approve" : "pair_deny");
+        callbacksHandled += 1;
+        lastOkAt = new Date().toISOString();
+        return;
+      }
+      if (data.kind === "apr") {
+        const gate = getSharedApprovalGate(cfg);
+        const approved = data.action === "ok";
+        const r = gate.decide(data.id, approved, approved ? "telegram_inline" : "telegram_deny");
+        await answerCallback(
+          cq.id,
+          r.ok ? (approved ? "Allowed" : "Denied") : "Unknown or expired"
+        );
+        if (cq.message?.chat?.id && cq.message?.message_id) {
+          try {
+            await api("editMessageText", {
+              chat_id: cq.message.chat.id,
+              message_id: cq.message.message_id,
+              text: r.ok
+                ? `${approved ? "✅ Allowed" : "❌ Denied"} ${data.id}`
+                : `⚠️ ${data.id} not pending`,
+            });
+          } catch {
+            /* */
+          }
+        }
+        recordTelegramCallback(approved ? "apr_ok" : "apr_no");
+        callbacksHandled += 1;
+        lastOkAt = new Date().toISOString();
+        return;
+      }
+      if (data.kind === "sug") {
+        const entry = suggestionStore.get(data.id);
+        await answerCallback(cq.id, entry ? "Running…" : "Expired");
+        if (!entry) return;
+        recordSuggestionFeedback({
+          suggestionId: data.id,
+          prompt: entry.prompt,
+          event: "tapped",
+          chatId: entry.chatId,
+        });
+        try { recordSuggestionTapMetric(); } catch { /* */ }
+        recordDurableSuggestionFeedback(cfg, {
+          event: "tapped",
+          source: entry.source,
+          kind: entry.kind,
+          prompt: entry.prompt,
+          suggestionId: data.id,
+          userId: cq.from?.id != null ? String(cq.from.id) : undefined,
+          chatId: entry.chatId,
+        }).catch(() => {});
+        // Re-inject as a user message into the same chat
+        const fakeMsg = {
+          message_id: cq.message?.message_id,
+          chat: cq.message?.chat || { id: entry.chatId, type: "private" },
+          from: cq.from,
+          text: entry.prompt,
+        };
+        callbacksHandled += 1;
+        lastOkAt = new Date().toISOString();
+        recordTelegramCallback("sug");
+        await handleUpdate({
+          update_id: Date.now(),
+          message: fakeMsg,
+        });
+        return;
+      }
+    } catch (err) {
+      lastError = err.message || String(err);
+      recordTelegramError("callback");
+      await answerCallback(cq.id, "Error");
+    }
+  }
+
+  async function handleUpdate(update) {
+    if (!update) return;
+    // Dedup (webhook retries / double delivery)
+    if (update.update_id != null) {
+      const uid = Number(update.update_id);
+      if (seenUpdateIds.has(uid)) return;
+      seenUpdateIds.add(uid);
+      if (seenUpdateIds.size > SEEN_MAX) {
+        const drop = [...seenUpdateIds].slice(0, SEEN_MAX / 2);
+        for (const x of drop) seenUpdateIds.delete(x);
+      }
+    }
+    if (update.callback_query) {
+      recordTelegramUpdate("callback_query");
+      await handleCallbackQuery(update.callback_query);
+      return;
+    }
+    const msg = update.message || update.edited_message;
+    if (!msg) return;
+    // Allow media-only + structured (sticker/location/contact/…) messages
+    const hasMedia = Boolean(
+      msg.photo || msg.document || msg.voice || msg.video || msg.audio
+    );
+    const hasStructured = hasStructuredContent(msg);
+    if (!msg.text && !msg.caption && !hasMedia && !hasStructured) return;
+    const chatId = msg.chat.id;
+    const chatType = msg.chat.type || "private";
+    const peerKind =
+      chatType === "group" || chatType === "supergroup" ? "group" : "dm";
+
+    // Group / topic policy (P2)
+    if (peerKind === "group") {
+      const g = gateGroupMessage({ msg, conf, botInfo });
+      if (!g.ok) {
+        console.log(`[telegram] group deny ${chatId}: ${g.reason}`);
+        recordTelegramDeny(g.reason || "group");
+        return;
+      }
+    }
+
+    // Access policy
+    if (dmPolicy === "allowlist") {
+      const gate = policy.gateTelegram(update);
+      if (!gate.ok) {
+        console.log(`[telegram] deny chat ${chatId}`);
+        recordTelegramDeny("allowlist");
+        return;
+      }
+    } else if (dmPolicy === "pairing" && peerKind === "dm") {
+      const allowedStatic = policy.gateTelegram(update).ok;
+      const approved = pairing.isApproved("telegram", chatId);
+      if (!allowedStatic && !approved) {
+        const { created, code } = pairing.upsertPairingRequest({
+          channel: "telegram",
+          id: String(chatId),
+          meta: { username: msg.from?.username || "" },
+        });
+        if (created) {
+          await sendMessage(
+            chatId,
+            buildPairingReply({
+              channel: "telegram",
+              idLine: `Your chat id: ${chatId}`,
+              code,
+            }),
+            msg.message_id
+          );
+          await notifyOwnerPairing({
+            code,
+            chatId,
+            username: msg.from?.username || "",
+          });
+        }
+        return;
+      }
+    }
+    // dmPolicy === "open" → allow all
+
+    const session = resolveBinding("telegram", String(chatId), peerKind);
+    touchSession(session.id);
+    const sessionKey = session.sessionKey || buildSessionKey({
+      channel: "telegram",
+      peerKind,
+      peerId: String(chatId),
+    });
+    const workspace = session.workingDir || workspaceForChat(cfg, "telegram", chatId, workingDir);
+    const extracted = await extractMessageContent(msg, workspace);
+    let text = extracted.text || "";
+    if (peerKind === "group" && botInfo?.username) {
+      text = stripBotMention(text, botInfo);
+    }
+    if (!text) return;
+
+    const voiceOpts = voiceOutOptions(conf);
+    const wantVoice =
+      voiceOpts.enabled &&
+      (voiceOpts.mode === "always" ||
+        (voiceOpts.mode === "on_request" &&
+          (/\/voice\b/i.test(text) || Boolean(msg.voice))));
+    if (wantVoice) {
+      text = text.replace(/\/voice\b/gi, "").trim() || text;
+    }
+
+    if (text === "/start" || text === "/help") {
+      await sendMessage(
+        chatId,
+        [
+          "XClaw Telegram channel",
+          "",
+          "Send a message — computer tools available.",
+          "/job /queue /approve /pending /resume — job mode",
+          "/status — health · /session — session key",
+        ].join("\n"),
+        msg.message_id
+      );
+      return;
+    }
+    if (text === "/status") {
+      await sendMessage(
+        chatId,
+        `XClaw Telegram up · @${botInfo?.username || "?"} · handled ${messagesHandled}`,
+        msg.message_id
+      );
+      return;
+    }
+    if (text === "/session") {
+      await sendMessage(
+        chatId,
+        `session ${session.id}\nkey ${sessionKey}`,
+        msg.message_id
+      );
+      return;
+    }
+
+    let typing = null;
+    console.log(`[telegram] ← ${chatId}: ${text.slice(0, 80)}`);
+    const streamOpts = telegramStreamOptions(conf);
+    const streamer = streamOpts.enabled
+      ? createTelegramStreamer({
+          api,
+          chatId,
+          replyToMessageId: msg.message_id,
+          minEditIntervalMs: streamOpts.minEditIntervalMs,
+          maxLen: chunkMax,
+          maxTotal: maxReplyChars,
+          truncate: (s, n) => truncate(s, n),
+          onEdit: (info) => {
+            recordTelegramEdit(info?.notModified ? "noop" : info?.ok ? "ok" : "err");
+          },
+        })
+      : null;
+
+    try {
+      if (streamer) {
+        try {
+          await streamer.sendPlaceholder();
+        } catch (err) {
+          console.warn(`[telegram] stream placeholder failed:`, err.message || err);
+        }
+      }
+
+      // Chat action "typing" while agent runs (best-effort)
+      try {
+        await sendChatAction(chatId, "typing");
+        typing = setInterval(() => {
+          sendChatAction(chatId, "typing").catch(() => {});
+        }, 4000);
+      } catch {
+        typing = null;
+      }
+
+      const inbound = fromTelegramUpdate({ message: msg });
+      inbound.text = text;
+      const structuredHint = structuredToAgentHint(extracted.structured || []);
+      if (structuredHint) {
+        inbound.text = [text, structuredHint].filter(Boolean).join("\n\n");
+      }
+      inbound.files = (extracted.media || []).map((m) => ({
+        name: m.path || m.type,
+        path: m.path,
+        type: m.type,
+      }));
+      inbound.structured = extracted.structured || [];
+      recordTelegramUpdate("message");
+      const out = await processInbound(inbound, {
+        cfg: {
+          ...cfg,
+          agent: {
+            ...(cfg.agent || {}),
+            model: session.agentModel || cfg.agent?.model,
+          },
+        },
+        workingDir: workspace,
+        rateLimiter,
+        stream: streamOpts.enabled && streamOpts.partialText !== false,
+        onEvent: (e) => {
+          if (e.type === "tool" && e.phase === "start") {
+            console.log(`[telegram]   → ${e.name}`);
+            if (streamer && streamOpts.showTools) {
+              streamer.onToolStart(e.name).catch(() => {});
+            }
+          } else if (e.type === "lifecycle" && e.phase === "start" && streamer) {
+            streamer.update("Thinking…").catch(() => {});
+          } else if (e.type === "model" && e.phase === "delta" && streamer && e.accumulated) {
+            streamer.setPartial(e.accumulated).catch(() => {});
+            recordTelegramStreamDelta();
+          } else if (e.type === "security" && e.phase === "approval_required") {
+            notifyOwnerApproval({
+              id: e.pendingId,
+              tool: e.name,
+              args: e.args,
+            }).catch(() => {});
+          } else if (e.type === "security" && e.phase === "denied") {
+            recordTelegramDeny(e.reason || "security");
+          }
+        },
+      });
+      if (out.handled && out.reply) {
+        let replyText = String(out.reply);
+        try {
+          const structured = await deliverStructuredReply({
+            api,
+            chatId,
+            replyTo: msg.message_id,
+            text: replyText,
+          });
+          replyText = structured.text || "";
+          if (structured.sent) {
+            recordTelegramStructuredOut("batch");
+            console.log(
+              `[telegram] structured outbound sent=${structured.sent}` +
+                (structured.errors?.length
+                  ? ` errors=${structured.errors.length}`
+                  : "")
+            );
+          }
+        } catch (serr) {
+          console.warn(`[telegram] structured outbound:`, serr.message || serr);
+        }
+        if (replyText.trim()) {
+          if (streamer) {
+            await streamer.finish(replyText);
+          } else {
+            await sendMessage(chatId, replyText, msg.message_id);
+          }
+        } else if (streamer) {
+          streamer.close();
+        }
+        if (wantVoice) {
+          try {
+            const syn = await synthesizeReplyVoice(out.reply, cfg, conf.voiceOut || {});
+            if (syn.ok) {
+              await sendTelegramVoiceNote({
+                token,
+                chatId,
+                filePath: syn.path,
+                replyTo: msg.message_id,
+                caption: voiceOpts.caption ? String(out.reply).slice(0, 200) : undefined,
+                format: syn.format,
+              });
+              console.log(`[telegram] ♪ voice via ${syn.provider}`);
+            } else {
+              console.warn(`[telegram] voice-out skipped: ${syn.reason}`);
+            }
+          } catch (verr) {
+            console.warn(`[telegram] voice-out error:`, verr.message || verr);
+            recordTelegramError("voice_out");
+          }
+        }
+        const suggestions = out.suggestions || [];
+        if (suggestions.length) {
+          rememberSuggestions(chatId, suggestions);
+          for (const s of suggestions) {
+            recordSuggestionFeedback({
+              suggestionId: s.id,
+              prompt: s.prompt,
+              event: "shown",
+              chatId,
+            });
+            recordDurableSuggestionFeedback(cfg, {
+              event: "shown",
+              source: s.source,
+              kind: s.kind,
+              prompt: s.prompt,
+              suggestionId: s.id,
+              userId: out.vaultUserId || out.userId || out.identity,
+              chatId,
+            }).catch(() => {});
+          }
+          const mode =
+            conf.suggestions?.telegramMode ||
+            cfg.suggestions?.telegramMode ||
+            "keyboard";
+          try {
+            if (mode === "keyboard" || mode === "both") {
+              const kb = suggestionsInlineKeyboard(suggestions);
+              if (kb) {
+                await sendMessage(
+                  chatId,
+                  "Next steps:",
+                  undefined,
+                  { reply_markup: kb }
+                );
+              }
+            }
+            if (mode === "plain" || mode === "both") {
+              const plain = formatSuggestionsPlain(suggestions);
+              if (plain) await sendMessage(chatId, plain);
+            }
+          } catch (sugErr) {
+            console.warn(`[telegram] suggestions:`, sugErr.message || sugErr);
+          }
+        }
+        messagesHandled += 1;
+        lastOkAt = new Date().toISOString();
+        lastError = null;
+        console.log(`[telegram] → ${chatId}: ${String(out.reply).slice(0, 80)}`);
+      } else if (streamer) {
+        // Command-only or empty — delete placeholder noise by finishing with a short note
+        streamer.close();
+      }
+    } catch (err) {
+      const isInternal =
+        err instanceof ReferenceError ||
+        err instanceof TypeError ||
+        err instanceof SyntaxError;
+      const c = isInternal
+        ? {
+            code: "INTERNAL",
+            message: String(err?.message || err),
+            userMessage: "Something went wrong on my side — try again.",
+          }
+        : classifyTelegramError(err);
+      lastError = c.message;
+      recordTelegramError("handle");
+      console.error(`[telegram] error:`, c.code, c.message);
+      try {
+        const userMsg = `Error: ${c.userMessage}`;
+        if (streamer) {
+          await streamer.finish(userMsg);
+        } else {
+          await sendMessage(chatId, userMsg, msg.message_id);
+        }
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      try {
+        streamer?.close?.();
+      } catch {
+        /* */
+      }
+      if (typing) {
+        try {
+          clearInterval(typing);
+        } catch {
+          /* */
+        }
+        typing = null;
+      }
+    }
+  }
+
+  async function pollLoop() {
+    await runTelegramPollLoop({
+      api,
+      conf,
+      botUsername: botInfo?.username,
+      isStopped: () => stopped,
+      getOffset: () => offset,
+      setOffset: (v) => {
+        offset = v;
+      },
+      onTouchLock: () => {
+        try {
+          writerLock?.touch?.();
+        } catch {
+          /* */
+        }
+      },
+      onUpdate: handleUpdate,
+      onError: (info) => {
+        lastError = info.message || info.code;
+        recordTelegramError(info.phase || "poll");
+        if (info.code === "UNAUTHORIZED") {
+          stopped = true;
+        }
+      },
+    });
+    loopAlive = false;
+  }
+
+  return {
+    name: "telegram",
+    get enabled() {
+      return enabled;
+    },
+    async start() {
+      if (!enabled) {
+        console.log(`[telegram] disabled (set channels.telegram.enabled + token)`);
+        return;
+      }
+      if (singleWriter) {
+        writerLock = acquireTelegramWriterLock({
+          lockPath: conf.writerLockPath,
+        });
+        if (!writerLock.ok) {
+          console.warn(
+            `[telegram] single-writer lock not acquired (${writerLock.reason}) — skip start (another process owns updates)`
+          );
+          lastError = `writer_lock:${writerLock.reason}`;
+          return;
+        }
+        console.log(`[telegram] writer lock ok pid=${process.pid}`);
+      }
+      botInfo = await api("getMe");
+      console.log(`[telegram] bot @${botInfo.username} (id ${botInfo.id}) transport=${transport}`);
+      stopped = false;
+      lastError = null;
+
+      if (transport === "webhook") {
+        if (!webhookUrl) {
+          lastError = "webhook_url_missing";
+          console.error(`[telegram] transport=webhook but channels.telegram.webhookUrl not set`);
+          return;
+        }
+        if (!webhookSecret) {
+          console.warn(`[telegram] webhook without secret_token — set channels.telegram.webhookSecret`);
+        }
+        // Drop long-poll conflict
+        try {
+          await api("deleteWebhook", { drop_pending_updates: false });
+        } catch {
+          /* */
+        }
+        await api(
+          "setWebhook",
+          buildSetWebhookBody({
+            url: webhookUrl,
+            secretToken: webhookSecret,
+          })
+        );
+        loopAlive = true;
+        console.log(`[telegram] webhook set → ${webhookUrl}`);
+        return;
+      }
+
+      // poll mode: ensure webhook cleared
+      try {
+        await api("deleteWebhook", { drop_pending_updates: false });
+      } catch {
+        /* */
+      }
+      loopAlive = true;
+      loopPromise = pollLoop().finally(() => {
+        loopAlive = false;
+      });
+    },
+    markError(msg) {
+      lastError = msg;
+    },
+    async stop() {
+      stopped = true;
+      loopAlive = false;
+      try {
+        if (token && transport === "poll") await api("getUpdates", { offset, timeout: 0 });
+      } catch {
+        /* ignore */
+      }
+      if (loopPromise) await loopPromise.catch(() => {});
+      try {
+        writerLock?.release?.();
+      } catch {
+        /* */
+      }
+      writerLock = null;
+    },
+    status() {
+      return {
+        name: "telegram",
+        enabled,
+        username: botInfo?.username || null,
+        messagesHandled,
+        callbacksHandled,
+        policy: dmPolicy,
+        transport,
+        webhookUrl: transport === "webhook" ? webhookUrl : null,
+        ownerChatId: ownerChatId ? String(ownerChatId) : null,
+        singleWriter,
+        writerLock: Boolean(writerLock?.ok),
+        running: enabled && loopAlive && !stopped,
+        loopAlive,
+        stopped,
+        lastError,
+        lastOkAt,
+        stream: telegramStreamOptions(conf).enabled,
+        voiceOut: voiceOutOptions(conf).enabled,
+        groups: groupPolicyOptions(conf),
+        pollTimeoutSec: conf.pollTimeoutSec ?? conf.poll?.timeoutSec ?? 30,
+      };
+    },
+    /** Ingest one Update (webhook or tests). */
+    async handleUpdate(update) {
+      return handleUpdate(update);
+    },
+    /** HTTP webhook helper: verify secret then handle. */
+    async handleWebhookRequest(req, body) {
+      const v = verifyTelegramWebhookSecret(req, webhookSecret || "");
+      if (!v.ok) return { ok: false, ...v };
+      await handleUpdate(body);
+      return { ok: true };
+    },
+    notifyOwnerApproval,
+    get webhookSecretConfigured() {
+      return Boolean(webhookSecret);
+    },
+  };
+}
