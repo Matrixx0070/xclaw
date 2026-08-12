@@ -1,10 +1,10 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — P1 CLI / doctor polish
+## 2026-08-13 — P2 prod honesty
 
 STATUS: green
 
-- doctor: grouped Config · Security · Computer · Runtime; exit legend 0/1/2; --json includes groups
-- status: sessions + --json
-- help: doctor, status, stop-all, sessions-active, transcripts
-- first-run tip shortened + XCLAW_QUIET
+- prod profile: egress deny, osSandbox auto, spawnEnforce check, swarm.autoMerge false
+- doctor: security.prod.* (token, autoApprove, egress, swarm, requireAuth)
+- eval cron: writes last-cron.json; main.json only if XCLAW_UPDATE_BASELINE=1
+- test/prod-profile-honesty.test.mjs 3/3

@@ -55,6 +55,10 @@ export const PROFILES = {
       autoApprove: false,
       bindSystemRunPlan: true,
       approvalPolicy: "risky",
+      // P2 honesty: prod defaults match the label
+      egress: { mode: "deny" },
+      osSandbox: "auto",
+      spawnEnforce: "check",
       requireApproval: [
         "xclaw_bash",
         "bash",
@@ -70,6 +74,10 @@ export const PROFILES = {
         "xclaw_file_list",
         "list_dir",
       ],
+    },
+    swarm: {
+      autoMerge: false,
+      earlyMergeImplement: false,
     },
     agent: {
       maxTurns: 12,

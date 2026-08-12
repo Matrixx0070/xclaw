@@ -35,7 +35,7 @@ export async function runScheduledEval(opts = {}) {
     cfg,
     tag = null,
     logPath = defaultLogPath(),
-    writeBaseline = true,
+    writeBaseline = process.env.XCLAW_UPDATE_BASELINE === "1",
     notifyOnFail = true,
   } = opts;
 
@@ -70,11 +70,23 @@ export async function runScheduledEval(opts = {}) {
     `\n===== eval ${stamp} passRate=${report.passRate} tokens=${report.tokens?.total ?? 0} =====\n${body}\n`
   );
 
+  // Always record last cron result; only promote to main.json when explicitly requested
+  try {
+    const dir = path.join(ROOT, "eval", "baselines");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "last-cron.json"),
+      JSON.stringify(report, null, 2) + "\n"
+    );
+  } catch (err) {
+    appendLog(logPath, `last-cron write failed: ${err.message}`);
+  }
   if (writeBaseline) {
     try {
       const fp = path.join(ROOT, "eval", "baselines", "main.json");
       fs.mkdirSync(path.dirname(fp), { recursive: true });
       fs.writeFileSync(fp, JSON.stringify(report, null, 2) + "\n");
+      appendLog(logPath, "baseline main.json updated (XCLAW_UPDATE_BASELINE=1)");
     } catch (err) {
       appendLog(logPath, `baseline write failed: ${err.message}`);
     }
