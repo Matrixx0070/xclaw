@@ -3,6 +3,7 @@
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
@@ -173,12 +174,55 @@ export function unquoteGitCStylePath(s) {
 }
 
 /**
- * Diff worktree vs main repo HEAD for merge report.
+ * Diff worktree vs the base it was created from, for the merge report.
+ *
+ * The child may COMMIT inside the worktree — `git diff HEAD` alone would then
+ * be empty and the merge would silently NOOP, stranding committed work. The
+ * patch is therefore taken against the merge-base of the worktree HEAD and the
+ * main repo's HEAD (main HEAD discovered via --git-common-dir), which is the
+ * worktree's creation point: committed AND uncommitted tracked changes both
+ * surface in a single working-tree patch. Falls back to plain HEAD (previous
+ * behavior) when base discovery fails; `opts.baseRef` overrides discovery.
  */
-export async function worktreeDiff(worktreePath) {
+export async function worktreeDiff(worktreePath, { baseRef = null } = {}) {
+  let base = baseRef ? String(baseRef) : null;
+  let committedCount = 0;
+  const wtHead = await run("git", ["rev-parse", "HEAD"], worktreePath);
+  if (!base && wtHead.code === 0) {
+    const common = await run(
+      "git",
+      ["rev-parse", "--git-common-dir"],
+      worktreePath
+    );
+    if (common.code === 0 && common.stdout.trim()) {
+      const commonDir = path.resolve(worktreePath, common.stdout.trim());
+      const mainHead = await run(
+        "git",
+        ["--git-dir", commonDir, "rev-parse", "HEAD"],
+        worktreePath
+      );
+      if (mainHead.code === 0 && mainHead.stdout.trim()) {
+        const mb = await run(
+          "git",
+          ["merge-base", mainHead.stdout.trim(), wtHead.stdout.trim()],
+          worktreePath
+        );
+        if (mb.code === 0 && mb.stdout.trim()) base = mb.stdout.trim();
+      }
+    }
+  }
+  const target = base || "HEAD";
+  if (base && wtHead.code === 0) {
+    const cnt = await run(
+      "git",
+      ["rev-list", "--count", `${base}..HEAD`],
+      worktreePath
+    );
+    if (cnt.code === 0) committedCount = Number(cnt.stdout.trim()) || 0;
+  }
   const r = await run("git", ["status", "--porcelain=v1"], worktreePath);
-  const r2 = await run("git", ["diff", "--stat", "HEAD"], worktreePath);
-  const r3 = await run("git", ["diff", "HEAD"], worktreePath);
+  const r2 = await run("git", ["diff", "--stat", target], worktreePath);
+  const r3 = await run("git", ["diff", target], worktreePath);
   const porcelain = (r.stdout || "").trim();
   // -uall: list every untracked file (not only top-level dirs)
   const rU = await run(
@@ -188,11 +232,14 @@ export async function worktreeDiff(worktreePath) {
   );
   const porcelainAll = (rU.stdout || "").trim() || porcelain;
   const untracked = parsePorcelainUntracked(porcelainAll);
-  const dirty = Boolean(porcelain);
+  // dirty = carries changes relative to base (committed in the worktree counts)
+  const dirty = Boolean(porcelain) || committedCount > 0;
   return {
     dirty,
     porcelain,
     untracked,
+    base,
+    committedCount,
     stat: (r2.stdout || "").trim() || (untracked.length ? `${untracked.length} untracked` : ""),
     diff: r3.stdout || "",
   };
@@ -295,6 +342,29 @@ export function classifyCopyConflicts(conflicts = []) {
   return MERGE_ERROR_CODES.UNKNOWN;
 }
 
+/**
+ * Walk up from `target` to the nearest EXISTING ancestor and assert it is
+ * writable. Read-only probe for checkOnly merges (replaces the old mkdir call,
+ * which mutated the repo during a dry run).
+ */
+async function assertWritableAncestor(target) {
+  let dir = path.resolve(target);
+  for (;;) {
+    try {
+      await fs.access(dir, fsConstants.W_OK);
+      return;
+    } catch (e) {
+      if (e && e.code === "ENOENT") {
+        const parent = path.dirname(dir);
+        if (parent === dir) throw e; // hit filesystem root without finding one
+        dir = parent;
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 export async function applyWorktreeMerge(
   repoDir,
   worktreePath,
@@ -331,7 +401,14 @@ export async function applyWorktreeMerge(
   }
 
   const meta = await worktreeDiff(worktreePath);
-  const trackedDiff = (meta.diff || "").trim();
+  const trackedDiff = (meta.diff || "").trim(); // emptiness signal only
+  // The patch handed to `git apply` must keep its trailing newline — trimming
+  // it makes the last hunk line "corrupt patch at line N".
+  const patchText = trackedDiff
+    ? meta.diff.endsWith("\n")
+      ? meta.diff
+      : meta.diff + "\n"
+    : "";
   const untracked = Array.isArray(meta.untracked) ? meta.untracked : [];
 
   if (!trackedDiff && !untracked.length) {
@@ -358,15 +435,17 @@ export async function applyWorktreeMerge(
     const dest = path.join(repoDir, rel);
     try {
       const st = await fs.stat(src);
+      if (checkOnly) {
+        // Pure dry-run: probe writability of the nearest existing ancestor —
+        // NO filesystem writes of any kind on the checkOnly path.
+        await assertWritableAncestor(st.isDirectory() ? dest : path.dirname(dest));
+        copied.push(rel);
+        continue;
+      }
       if (st.isDirectory()) {
         await fs.cp(src, dest, { recursive: true, force: false, errorOnExist: false });
       } else {
         await fs.mkdir(path.dirname(dest), { recursive: true });
-        if (checkOnly) {
-          // ensure parent is writable; do not write
-          copied.push(rel);
-          continue;
-        }
         await fs.copyFile(src, dest);
       }
       copied.push(rel);
@@ -401,7 +480,7 @@ export async function applyWorktreeMerge(
       os.tmpdir(),
       `xclaw-merge-${randomUUID().slice(0, 8)}.patch`
     );
-    await fs.writeFile(patchPath, trackedDiff);
+    await fs.writeFile(patchPath, patchText);
 
     const checkArgs = useIndex
       ? ["apply", "--check", "--index", patchPath]

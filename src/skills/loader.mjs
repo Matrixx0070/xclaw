@@ -177,17 +177,49 @@ export async function loadAllSkills({ configDir, cwd, cfg } = {}) {
 }
 
 
+/** Nearest ancestor (including startDir) containing .git, or null. The
+ *  filesystem root never qualifies — a stray /.git must not widen the walk
+ *  boundary to the whole filesystem. */
+async function findGitRoot(startDir) {
+  let d = path.resolve(startDir);
+  const fsRoot = path.parse(d).root;
+  while (d !== fsRoot) {
+    try {
+      await fs.stat(path.join(d, ".git"));
+      return d;
+    } catch {
+      /* keep walking */
+    }
+    const parent = path.dirname(d);
+    if (parent === d) return null;
+    d = parent;
+  }
+  return null;
+}
+
 /**
  * Walk upward from cwd looking for project instruction files.
  * Priority names (per directory): XCLAW.md, AGENTS.md, .xclaw/XCLAW.md
  * Nearest directory wins attention (listed last in the prompt).
  * Auto-injected into the agent system prompt when cfg.memory.enabled !== false.
+ *
+ * TRUST BOUNDARY: the walk stops at the workspace's git root (or at cwd when
+ * not inside a git repo, falling back to $HOME if cwd is under it). It never
+ * ascends to the filesystem root, so a planted /tmp/XCLAW.md (or any file
+ * outside the workspace) cannot inject instructions into the system prompt.
  */
 export async function loadMemoryFiles(cwd = process.cwd()) {
   const found = [];
   const seen = new Set();
   let dir = path.resolve(cwd);
   const root = path.parse(dir).root;
+  const home = path.resolve(os.homedir());
+  let stopAt = await findGitRoot(dir);
+  if (!stopAt) {
+    // Not a git workspace: allow the home-directory chain (user-owned), else
+    // just cwd itself.
+    stopAt = dir.startsWith(home + path.sep) || dir === home ? home : dir;
+  }
   /** @type {string[]} */
   const names = ["XCLAW.md", "AGENTS.md"];
 
@@ -223,7 +255,7 @@ export async function loadMemoryFiles(cwd = process.cwd()) {
         });
       }
     }
-    if (dir === root) break;
+    if (dir === stopAt || dir === root) break;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;

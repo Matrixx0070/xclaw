@@ -36,7 +36,7 @@ jobs:
             test/token-refresh.test.mjs \
             test/token-refresh-mock.test.mjs \
             test/oauth-browser.test.mjs \
-            test/vault.test.mjs || true
+            test/vault.test.mjs
 
   # Media path: real ffmpeg so view_x_video is exercised (not skipped).
   unit-media:

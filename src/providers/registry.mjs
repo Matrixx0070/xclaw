@@ -379,17 +379,22 @@ export async function resolveProviderRouteAsync(cfg = {}, opts = {}) {
     }
   }
 
-  // global fallbacks
+  // Fallbacks are provider-SCOPED: a missing key must never ship another
+  // vendor's credential as Bearer to this provider's baseUrl (rubric R11 —
+  // e.g. an Anthropic OAuth token leaking to an arbitrary custom endpoint).
+  // XCLAW_API_KEY stays generic because setting it is an explicit operator
+  // choice to use one key for whatever provider is configured.
   if (!apiKey) {
-    apiKey =
-      process.env.XCLAW_API_KEY ||
-      process.env.XAI_API_KEY ||
-      process.env.OPENAI_API_KEY ||
-      process.env.ANTHROPIC_API_KEY ||
-      process.env.CLAUDE_CODE_OAUTH_TOKEN ||
-      process.env.ANTHROPIC_AUTH_TOKEN ||
-      "";
-    if (apiKey) authSource = authSource || "env:fallback";
+    const scopedEnv = {
+      anthropic: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"],
+    };
+    for (const name of ["XCLAW_API_KEY", ...(scopedEnv[provider] || [])]) {
+      if (process.env[name]) {
+        apiKey = process.env[name];
+        authSource = authSource || `env:${name}`;
+        break;
+      }
+    }
   }
 
   const baseUrl = (

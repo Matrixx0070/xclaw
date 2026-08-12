@@ -3,6 +3,16 @@
  * Token via cfg.gateway.token | XCLAW_GATEWAY_TOKEN
  * Headers: Authorization: Bearer <token>  or  x-xclaw-token / x-api-key
  */
+import crypto from "node:crypto";
+
+/** Constant-time token compare (sha256 both sides to equalize length). */
+function tokenEqual(got, expected) {
+  if (!got || !expected) return false;
+  const a = crypto.createHash("sha256").update(String(got)).digest();
+  const b = crypto.createHash("sha256").update(String(expected)).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 export function createGatewayAuth(cfg = {}) {
   const token =
     cfg.gateway?.token ||
@@ -142,7 +152,7 @@ export function createGatewayAuth(cfg = {}) {
       }
     })();
     const got = bearer || x || q || "";
-    if (got && got === token) return { ok: true, mode: "token" };
+    if (tokenEqual(got, token)) return { ok: true, mode: "token" };
     return { ok: false, mode: "token", error: "unauthorized" };
   }
 
@@ -182,7 +192,7 @@ export function createGatewayAuth(cfg = {}) {
       }
     }
     const got = bearer || x || q || sub || "";
-    if (got && got === token) {
+    if (tokenEqual(got, token)) {
       return { ok: true, mode: "token", protocol: matchedProto || undefined };
     }
     return { ok: false, error: "unauthorized" };

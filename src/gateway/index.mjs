@@ -121,9 +121,21 @@ function json(res, status, body) {
   res.end(data);
 }
 
+const MAX_BODY_BYTES = 1_000_000; // 1MB cap — unbounded bodies are a trivial memory DoS
+
 async function readBody(req) {
   const chunks = [];
-  for await (const c of req) chunks.push(c);
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > MAX_BODY_BYTES) {
+      req.destroy();
+      throw Object.assign(new Error(`request body exceeds ${MAX_BODY_BYTES} bytes`), {
+        statusCode: 413,
+      });
+    }
+    chunks.push(c);
+  }
   const raw = Buffer.concat(chunks).toString("utf8");
   if (!raw) return {};
   return JSON.parse(raw);

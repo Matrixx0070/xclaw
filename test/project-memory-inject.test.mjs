@@ -48,6 +48,9 @@ describe("XCLAW.md auto-injection", () => {
 
   it("nearest XCLAW.md wins attention order (last in list)", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-mem3-"));
+    // The upward walk stops at the workspace git root (trust boundary) —
+    // mark the fixture root as that boundary so both levels are in scope.
+    fs.mkdirSync(path.join(root, ".git"));
     const sub = path.join(root, "pkg");
     fs.mkdirSync(sub);
     fs.writeFileSync(path.join(root, "XCLAW.md"), "ROOT rules");

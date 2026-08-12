@@ -155,6 +155,10 @@ export async function createFailoverProvider(cfg = {}, opts = {}) {
   const clients = [];
   const resolveErrors = [];
 
+  // Test seam: inject pre-built clients (skips provider resolution).
+  if (Array.isArray(opts._clients) && opts._clients.length) {
+    clients.push(...opts._clients);
+  } else
   for (const ref of chain) {
     try {
       const c = await createProviderForRef(cfg, ref, opts);
@@ -185,9 +189,22 @@ export async function createFailoverProvider(cfg = {}, opts = {}) {
   });
 
   let activeIndex = 0;
+  let demotedAt = 0;
+  // Half-open recovery: after cooldownMs on a fallback, re-probe the primary
+  // chain from the top instead of staying demoted forever (rubric R11).
+  const cooldownMs = Number.isFinite(policy?.cooldownMs) ? policy.cooldownMs : 60_000;
 
   async function withFailover(method, args) {
     let lastErr;
+    if (activeIndex > 0 && cooldownMs > 0 && Date.now() - demotedAt >= cooldownMs) {
+      onEvent({
+        type: "router",
+        phase: "failover_probe",
+        from: clients[activeIndex].route.modelRef,
+        to: clients[0].route.modelRef,
+      });
+      activeIndex = 0;
+    }
     for (let i = activeIndex; i < clients.length; i++) {
       const { provider, route } = clients[i];
       try {
@@ -201,6 +218,7 @@ export async function createFailoverProvider(cfg = {}, opts = {}) {
             method,
           });
           activeIndex = i;
+          demotedAt = Date.now();
         }
         return result;
       } catch (err) {

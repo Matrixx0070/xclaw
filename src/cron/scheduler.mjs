@@ -1,6 +1,15 @@
 /**
  * XClaw cron scheduler — OpenClaw job/delivery/session-target semantics (subset).
+ *
+ * Durable: serializable job definitions (payload jobs without an in-process
+ * handler) persist to ~/.xclaw/cron-jobs.json and are restored + re-armed by
+ * start(cfg) after a gateway restart. Handler-backed jobs (doctor/eval/
+ * heartbeat/automations) are process-owned and re-registered by their owners
+ * at boot, so they are deliberately NOT persisted here.
  */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { computeNextRun } from "./schedule.mjs";
 import {
@@ -18,6 +27,74 @@ const jobs = new Map();
 const hooks = new Map();
 let timer = null;
 let running = false;
+
+export function cronJobsPath(cfg) {
+  return (
+    cfg?.paths?.cronJobsFile ||
+    process.env.XCLAW_CRON_JOBS_FILE ||
+    path.join(os.homedir(), ".xclaw", "cron-jobs.json")
+  );
+}
+
+/** Jobs with an in-process handler are owned by whoever registered them. */
+function isPersistable(job) {
+  return !job.handler && job.payload != null;
+}
+
+function serializeJob(job) {
+  const { handler, _cfg, _lastAnnounce, ...rest } = job;
+  return rest;
+}
+
+function persistJobs(cfg) {
+  const fp = cronJobsPath(cfg);
+  try {
+    const records = [...jobs.values()].filter(isPersistable).map(serializeJob);
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    const tmp = fp + ".tmp";
+    fs.writeFileSync(
+      tmp,
+      JSON.stringify({ version: 1, jobs: records, updatedAt: new Date().toISOString() }, null, 2) + "\n"
+    );
+    fs.renameSync(tmp, fp);
+  } catch (err) {
+    console.warn(`[xclaw:cron] persist failed (${fp}):`, err.message);
+  }
+}
+
+/**
+ * Reload persisted job definitions and re-arm them. Idempotent — jobs whose
+ * id is already registered are skipped. Corrupt/missing store → no-op.
+ */
+export function restorePersistedJobs(cfg) {
+  const fp = cronJobsPath(cfg);
+  let records = [];
+  try {
+    if (!fs.existsSync(fp)) return { ok: true, restored: 0 };
+    const raw = JSON.parse(fs.readFileSync(fp, "utf8"));
+    records = Array.isArray(raw?.jobs) ? raw.jobs : [];
+  } catch (err) {
+    console.warn(`[xclaw:cron] restore failed (${fp}):`, err.message);
+    return { ok: false, restored: 0, error: err.message };
+  }
+  let restored = 0;
+  const now = Date.now();
+  for (const rec of records) {
+    if (!rec || !rec.id || jobs.has(rec.id) || !rec.schedule) continue;
+    const job = {
+      ...rec,
+      handler: null,
+      _cfg: cfg || null,
+      // No catch-up for runs missed while down — schedule from now.
+      nextRunAt: rec.enabled !== false ? computeNextRun(rec.schedule, now) : null,
+    };
+    if (job.schedule.kind === "at" && job.nextRunAt == null) job.enabled = false;
+    jobs.set(job.id, job);
+    restored += 1;
+  }
+  if (restored) armTimer();
+  return { ok: true, restored };
+}
 
 export function on(event, fn) {
   if (!hooks.has(event)) hooks.set(event, []);
@@ -123,6 +200,7 @@ async function runJob(job, opts = {}) {
   } else {
     job.nextRunAt = computeNextRun(job.schedule, Date.now());
   }
+  if (isPersistable(job)) persistJobs(job._cfg); // keep lastRunAt/status durable
   armTimer();
   return job;
 }
@@ -183,6 +261,7 @@ export function addJob(input = {}) {
     createdAt: new Date().toISOString(),
   };
   jobs.set(id, job);
+  if (isPersistable(job)) persistJobs(job._cfg);
   armTimer();
   return job;
 }
@@ -207,12 +286,16 @@ export function updateJob(id, patch = {}) {
   if (patch.schedule || patch.enabled != null) {
     job.nextRunAt = job.enabled ? computeNextRun(job.schedule, Date.now()) : null;
   }
+  if (isPersistable(job)) persistJobs(job._cfg);
   armTimer();
   return job;
 }
 
 export function cancelJob(id) {
+  const job = jobs.get(id);
+  const wasPersistable = job ? isPersistable(job) : false;
   jobs.delete(id);
+  if (wasPersistable) persistJobs(job._cfg);
   armTimer();
 }
 
@@ -250,9 +333,10 @@ export function status() {
   };
 }
 
-export function start() {
+export function start(cfg) {
+  const restored = restorePersistedJobs(cfg);
   armTimer();
-  return { ok: true };
+  return { ok: true, restored: restored.restored };
 }
 
 export function stop() {
