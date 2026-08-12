@@ -69,13 +69,13 @@ const payload = {
   results: caseResults.map((r) => ({ id: r.id, pass: r.pass, turns: r.turns })),
 };
 
-// Stamp previous nights as same quality lab runs (calendar spread) + tonight live
-const now = Date.now();
-for (let i = 0; i < nights - 1; i++) {
-  const at = new Date(now - (nights - 1 - i) * 86400000).toISOString();
-  await appendSoakRun(cfg, { ...payload, at, synthetic: true, nightIndex: i });
-}
-await appendSoakRun(cfg, { ...payload, at: new Date().toISOString(), synthetic: false });
+// HONEST soak: only record this live run. Prior "nights" must be real runs over calendar days.
+// (Removed synthetic backdating — design review Phase 0 / Claude Code report.)
+await appendSoakRun(cfg, {
+  ...payload,
+  at: new Date().toISOString(),
+  synthetic: false,
+});
 
 const summary = await rebuildSoakSummary(cfg);
 const sb = await buildScoreboard(cfg, { root });

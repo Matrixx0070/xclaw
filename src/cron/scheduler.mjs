@@ -134,9 +134,11 @@ export function addJob(input = {}) {
   const id = input.id || randomUUID();
   const schedule =
     input.schedule ||
-    (input.intervalMs
-      ? { kind: "every", everyMs: input.intervalMs }
-      : { kind: "every", everyMs: 60_000 });
+    (input.everyMs
+      ? { kind: "every", everyMs: input.everyMs }
+      : input.intervalMs
+        ? { kind: "every", everyMs: input.intervalMs }
+        : { kind: "every", everyMs: 60_000 });
 
   const sessionTarget = resolveCurrentSessionTarget({
     sessionTarget: input.sessionTarget,

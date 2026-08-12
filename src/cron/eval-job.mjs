@@ -130,6 +130,7 @@ export function ensureEvalCronJob(opts = {}) {
   const job = addJob({
     name,
     everyMs,
+    intervalMs: everyMs, // scheduler historically read intervalMs; without this defaulted to 60s
     enabled: true,
     _cfg: cfg,
     handler: async () => {

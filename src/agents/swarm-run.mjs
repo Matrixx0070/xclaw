@@ -738,10 +738,21 @@ export async function mergeImplementNodeEarly(cfg, result, input = {}, onEvent) 
     return { ok: true, skipped: true, method: "same-tree", nodeId: result.nodeId };
   }
 
-  const policy = resolveMergePolicy(cfg, { ...input, autoMerge: true });
-  // Early path always applies when lab/dev autoMerge or explicit autoMerge
-  if (!policy.autoMerge && input.autoMerge !== true && cfg?.swarm?.earlyMergeImplement !== true) {
-    return { ok: true, skipped: true, method: "autoMerge-off", nodeId: result.nodeId };
+  // CRITICAL: do NOT force autoMerge:true — that made prod guards dead code (design review P0).
+  // Early merge only when policy allows OR operator explicitly opts in.
+  const policy = resolveMergePolicy(cfg, input);
+  const explicitEarly =
+    input.autoMerge === true ||
+    input.earlyMergeImplement === true ||
+    cfg?.swarm?.earlyMergeImplement === true;
+  if (!policy.autoMerge && !explicitEarly) {
+    return {
+      ok: true,
+      skipped: true,
+      method: "autoMerge-off",
+      nodeId: result.nodeId,
+      policy: { autoMerge: policy.autoMerge, profile: cfg?.profile || null },
+    };
   }
 
   onEvent?.({
