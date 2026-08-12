@@ -203,3 +203,17 @@ cannot silently recur. Source-assertion test updated to router wiring.
 HYGIENE: session reports moved repo root → docs/reports/ · CHANGELOG 3.78.0
 covering Grok's T0–T4/skills/automations (was undocumented) · version 3.78.0
 RAN: (see commit) full suite + eval:ci + self-check before push
+
+## 2026-08-12 — ledger-guard CI: append-only now enforced (Claude)
+
+STATUS: green
+BUILT: scripts/ledger-guard.mjs (fails when this file shrinks in bytes OR any
+existing line is deleted/rewritten vs the push/PR base) + .github/workflows/
+ledger-guard.yml (push+PR to main, injection-safe env interpolation) +
+test/ledger-guard.test.mjs (7 cases in a temp git repo: append ok, unchanged ok,
+shrink FAIL, rewrite-while-growing FAIL, delete FAIL, missing-base skip,
+new-file skip).
+RAN: 7/7 unit tests · live check vs HEAD~3 OK · replay against Grok's historical
+overwrite commit b9cfa08 correctly exits 1 ("shrank 1469 -> 759 bytes")
+NOTE: from this commit on, overwriting this ledger fails CI — append entries at
+the bottom only.

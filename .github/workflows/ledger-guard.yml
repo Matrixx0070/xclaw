@@ -1,0 +1,42 @@
+name: ledger-guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  append-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: GROK-PROGRESS must be append-only
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE=$(git merge-base "origin/$BASE_REF" HEAD)
+          else
+            BASE="$PUSH_BEFORE"
+            # zero SHA on branch creation / force-push recovery: fall back to parent
+            if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+              BASE=$(git rev-parse HEAD~1 2>/dev/null || true)
+            fi
+          fi
+          if [ -z "$BASE" ]; then
+            echo "no base to compare — skipping"
+            exit 0
+          fi
+          node scripts/ledger-guard.mjs "$BASE"
