@@ -217,13 +217,23 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
         ? "bundle"
         : "native";
   }
-  const useNative = resolveComputerEngine(cfg) === "native";
-  if (useNative) {
-    const thinEntry = path.join(root, "src/computer/thin-server.mjs");
+  const engine = resolveComputerEngine(cfg);
+  const useNative = engine === "native";
+  const useGenerated = engine === "generated";
+  if (useNative || useGenerated) {
+    const thinEntry = useGenerated
+      ? path.join(root, "src/computer/generated/computer-server.mjs")
+      : path.join(root, "src/computer/thin-server.mjs");
     if (!fs.existsSync(thinEntry)) {
-      throw new Error(`Native computer entry not found: ${thinEntry}`);
+      throw new Error(
+        useGenerated
+          ? `Generated computer missing: ${thinEntry} — run npm run build:computer`
+          : `Native computer entry not found: ${thinEntry}`
+      );
     }
-    console.log(`[xclaw] Starting NATIVE thin computer: ${thinEntry}`);
+    console.log(
+      `[xclaw] Starting ${useGenerated ? "GENERATED (C3)" : "NATIVE thin"} computer: ${thinEntry}`
+    );
     const env = {
       ...process.env,
       ...cfg.computer?.env,
@@ -245,7 +255,7 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
     if (!foreground) child.unref();
     await writePid(cfg, child.pid);
     await writeMeta(cfg, {
-      engine: "thin-native",
+      engine: useGenerated ? "generated-c3" : "thin-native",
       entry: thinEntry,
       pid: child.pid,
       startedAt: new Date().toISOString(),

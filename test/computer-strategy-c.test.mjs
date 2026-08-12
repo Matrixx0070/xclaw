@@ -46,7 +46,7 @@ describe("Strategy C computer policy", () => {
       fs.readFileSync(path.join(root, "src/computer/build-stamp.json"), "utf8")
     );
     assert.equal(stamp.strategy, "C");
-    assert.ok(["C1","C2"].includes(stamp.phase));
+    assert.ok(["C1","C2","C3"].includes(stamp.phase));
     assert.equal(stamp.fullRebuild, false);
   });
 

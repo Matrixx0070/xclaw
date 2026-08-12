@@ -55,3 +55,10 @@ See also: `SOURCE_OF_TRUTH.json`, `MODULE_MAP.json`.
 - `native-tools.mjs` → registry
 - `*.extracted.mjs` = reference only
 - `npm run build:computer` checks maintained + extracted
+
+## C3 (done)
+
+- `npm run build:computer` runs **esbuild** → `src/computer/generated/computer-server.mjs`
+- **Does not overwrite** `xclaw-server.mjs` (16MB CDP)
+- Engine: `XCLAW_COMPUTER_ENGINE=generated`
+- Manager starts generated entry when selected
