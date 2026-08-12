@@ -25,6 +25,7 @@ import {
 } from "./turn-state.mjs";
 import { createLoopGuard } from "./loop-guards.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
+import { partitionToolCalls } from "./tool-concurrency.mjs";
 import { revalidatePlan, isExecTool } from "../security/system-run-plan.mjs";
 import { resolveProviderRoute, resolveProviderRouteAsync } from "../providers/router.mjs";
 import { createSpawnTool, spawnSubagent } from "../agents/spawn.mjs";
@@ -672,7 +673,7 @@ export async function runAgentLoop(options) {
         break;
       }
 
-      for (const call of calls) {
+      async function processToolCall(call) {
         if (signal?.aborted) throw new Error("aborted");
 
         const name = call.function?.name;
@@ -774,9 +775,9 @@ export async function runAgentLoop(options) {
           );
           // Stop the turn on pending approval — don't keep calling tools
           if (isPending) {
-            break;
+            return "stop";
           }
-          continue;
+          return;
         }
         if (auth.mode === "human") {
           onEvent({
@@ -835,7 +836,7 @@ export async function runAgentLoop(options) {
                 }
               )
             );
-            continue;
+            return;
           }
           onEvent({
             type: "security",
@@ -866,7 +867,7 @@ export async function runAgentLoop(options) {
               }
             )
           );
-          continue;
+          return;
         }
         args = sand.args || args;
 
@@ -1042,6 +1043,40 @@ export async function runAgentLoop(options) {
                 " Do not repeat the same tool call. Finish or change approach."
             )
           );
+        }
+      } // end processToolCall
+
+      const batches = partitionToolCalls(calls);
+      onEvent({
+        type: "tools",
+        phase: "batch_plan",
+        batches: batches.map((b) => ({
+          parallel: b.parallel,
+          count: b.calls.length,
+          names: b.calls.map((c) => c.function?.name),
+        })),
+      });
+      let stopTools = false;
+      for (const batch of batches) {
+        if (signal?.aborted) throw new Error("aborted");
+        if (stopTools) break;
+        if (batch.parallel && batch.calls.length > 1) {
+          onEvent({
+            type: "tools",
+            phase: "parallel",
+            count: batch.calls.length,
+            names: batch.calls.map((c) => c.function?.name),
+          });
+          const results = await Promise.all(batch.calls.map((c) => processToolCall(c)));
+          if (results.some((r) => r === "stop")) stopTools = true;
+        } else {
+          for (const c of batch.calls) {
+            const r = await processToolCall(c);
+            if (r === "stop") {
+              stopTools = true;
+              break;
+            }
+          }
         }
       }
     }
