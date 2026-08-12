@@ -1,6 +1,19 @@
 # Changelog
 
+## 3.76.0 — Security phase: egress, kill-switch, live e2e, media CI
+
+- **Egress policy** (`src/security/egress.mjs`): prod default deny network shell; allowlist hosts; `XCLAW_EGRESS`
+- **Agent loop** hooks egress after sandbox; blocks curl/wget/ssh/URL patterns in prod
+- **Session kill-switch** (`src/agent/session-control.mjs`): register/kill/killAll; CLI `stop-all`, `sessions-active`
+- **runAgentLoop** registers every run + merged AbortSignal; outer finally unregisters
+- **Doctor**: `security.egress`, `security.killSwitch` checks
+- **Native browser** list/read/navigate + redirects; `BrowserTabTool` registry; transcripts CLI
+- **CI**: `unit-media` job (apt ffmpeg); skip frame test without ffmpeg; security pack includes egress/session tests
+- **Live verified** (xAI grok-4.5): LIVE_OK, PROOF_LIVE tools, multi-step STEP1+STEP2 concat
+- Docs: `XCLAW.md` security section
+
 ## 3.75.0 — Verify pass (strong model on final answer)
+
 
 - `src/providers/verify-pass.mjs` — VERIFY_OK / VERIFY_REVISE protocol
 - Agent loop runs verify when `router.roles.verify` is set and final text has no tools

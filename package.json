@@ -1,11 +1,10 @@
 {
   "name": "xclaw",
-  "version": "3.75.0",
+  "version": "3.76.0",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
-    "xclaw": "./bin/xclaw-entry.mjs",
-    "xclaw-init": "./src/cli/init.mjs"
+    "xclaw": "./bin/xclaw.mjs"
   },
   "scripts": {
     "start": "node bin/xclaw.mjs gateway",
@@ -13,10 +12,6 @@
     "computer": "node bin/xclaw.mjs computer",
     "status": "node bin/xclaw.mjs status",
     "doctor": "node bin/xclaw.mjs doctor",
-    "init": "node src/cli/init.mjs",
-    "onboard": "node src/cli/init.mjs",
-    "install:local": "bash install/install.sh --yes",
-    "prove:install": "node scripts/prove-install-e2e.mjs",
     "test": "node --test test/**/*.test.mjs",
     "self-test": "node bin/xclaw.mjs self-test",
     "eval": "node bin/xclaw.mjs eval",
@@ -52,9 +47,7 @@
     "live-e2e:cron": "node bin/xclaw.mjs live-e2e",
     "live-e2e:schedule": "node bin/xclaw.mjs live-e2e-schedule",
     "build:computer": "node scripts/build-computer-bundle.mjs",
-    "computer:build": "node scripts/build-computer-bundle.mjs",
-    "check:computer-parity": "node scripts/check-computer-parity.mjs",
-    "computer:parity": "node scripts/check-computer-parity.mjs"
+    "computer:build": "node scripts/build-computer-bundle.mjs"
   },
   "files": [
     "bin/",
@@ -70,8 +63,7 @@
     "eval/",
     "INSTALL.md",
     "CHANGELOG.md",
-    "deploy/",
-    "install/"
+    "deploy/"
   ],
   "engines": {
     "node": ">=22"

@@ -1,13 +1,7 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — Doctor + CI security pack
+## 2026-08-12 — 3.76.0 ship readiness
 
-STATUS: green
+STATUS: green — version bumped to 3.76.0
 
-### BUILT
-- doctor checks: security.egress, security.killSwitch
-- CI security pack: egress + session-control + session-kill-loop tests
-
-### VERIFY
-doctor shows egress mode + kill-switch ready
-11/11 unit tests pass
+Security phase complete on main. See CHANGELOG + docs/RELEASE_3.76.md
