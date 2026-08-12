@@ -371,10 +371,14 @@ export async function resolveProviderRouteAsync(cfg = {}, opts = {}) {
   const def = getProvider(cfg, provider);
   const model = modelOnly || def.defaultModel || "gpt-4o-mini";
 
-  // API key: auth profiles → env → cfg
+  // API key: auth profiles → env → cfg. cfg.agent.apiKey is the ACTIVE
+  // provider's cached credential (loadConfig fills it) — applying it to a
+  // different provider ships one vendor's token to another's endpoint. Only
+  // use it when the resolved provider matches agent.provider, or none is set.
+  const agentKeyApplies = !cfg.agent?.provider || cfg.agent.provider === provider;
   let apiKey =
     opts.apiKey ||
-    cfg.agent?.apiKey ||
+    (agentKeyApplies ? cfg.agent?.apiKey : null) ||
     cfg.providers?.[provider]?.apiKey ||
     process.env[def.envKey] ||
     "";

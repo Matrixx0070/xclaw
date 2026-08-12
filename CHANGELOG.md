@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.86.1 — fix cross-provider credential leak (active provider's key sent to other providers)
+
+Found while setting up a second provider (xAI) alongside Anthropic. With one provider's credential active, resolving a *different* provider returned the ACTIVE provider's token — so an agent run on xAI was sent your Anthropic OAuth token (and, because the token shape forced the Anthropic adapter, produced `Anthropic HTTP 404: model grok-*`). This is both a correctness bug and a credential-exposure bug (one vendor's token reaching another vendor's endpoint).
+
+Three scoping fixes so each provider resolves ONLY its own credential:
+- `resolveProviderRouteAsync`/`resolveProviderRoute`: `cfg.agent.apiKey` (the active provider's cached key) is used only when the resolved provider matches `agent.provider` (or none is set) — same guard already applied to `baseUrl` in 3.85.2.
+- `resolveProviderToken` step 1: dropped the legacy `|| p === "xai"` default-to-xai clause that handed `cfg.agent.apiKey` to xai regardless of ownership; now returns it only for the matching provider.
+- `resolveProviderToken` step 2: honors `opts.profileId` (which `loadConfig` fills with the active provider's `authProfileId`) only when that profile's provider matches the requested one.
+- `createProvider`: the `sk-ant-oat` token-shape auto-detect no longer forces the Anthropic adapter when the provider is an explicit non-Anthropic one.
+
+Verified live: `xai:apikey` resolves the xAI key and runs grok-4.5 inference (real reply, cost-tracked); `anthropic` keeps its own OAuth token; no regression. Regression test added. Suite 1279/0.
+
 ## 3.86.0 — multi-provider management: per-provider key + OAuth + base URL, CLI wizard, TUI, web UI
 
 Configure every provider independently — its own API key, its own OAuth, its own base URL, all separate and switchable — and pick a model from the provider's LIVE model list after entering the credential.

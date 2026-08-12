@@ -27,13 +27,18 @@ export function createProvider(opts) {
   const apiKey = opts.apiKey || process.env.OPENAI_API_KEY || process.env.XCLAW_API_KEY || "";
   const defaultModel = opts.model || process.env.XCLAW_MODEL || "gpt-4o-mini";
 
-  // Native Anthropic Messages (API key or Claude OAuth) — required for OAuth attestation
+  // Native Anthropic Messages (API key or Claude OAuth) — required for OAuth attestation.
+  // The sk-ant-oat token-shape auto-detect only applies when the provider is NOT
+  // an explicit non-anthropic one — otherwise a mis-resolved Anthropic token would
+  // force the Anthropic adapter for e.g. xai (Anthropic HTTP 404: model grok-*).
   const providerName = String(opts.provider || opts.providerName || "").toLowerCase();
+  const explicitNonAnthropic =
+    providerName && providerName !== "anthropic" && providerName !== "claude";
   const wantAnthropic =
     opts.api === "anthropic-messages" ||
     providerName === "anthropic" ||
     providerName === "claude" ||
-    isAnthropicOAuthToken(apiKey) ||
+    (!explicitNonAnthropic && isAnthropicOAuthToken(apiKey)) ||
     (baseUrl.includes("api.anthropic.com") && !opts.forceOpenAICompat);
   if (wantAnthropic && apiKey) {
     return createAnthropicMessagesProvider({

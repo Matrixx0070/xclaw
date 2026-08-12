@@ -129,3 +129,17 @@ describe("cfg.providers.routes wiring (was dead config)", () => {
     );
   });
 });
+
+describe("active-provider key never leaks to another provider (R11 cache path)", () => {
+  it("cfg.agent.apiKey (active provider's cached key) is not returned for a different provider", async () => {
+    // Simulates loadConfig caching the ACTIVE provider's token into agent.apiKey.
+    const cfg = {
+      agent: { provider: "anthropic", apiKey: "sk-ant-oat01-ACTIVE", authProfileId: "anthropic:default" },
+      paths: { configDir: HERMETIC_STATE },
+    };
+    const xai = await resolveProviderRouteAsync(cfg, { model: "grok-4.5", provider: "xai" });
+    assert.notEqual(xai.apiKey, "sk-ant-oat01-ACTIVE", "xai must not receive the anthropic active key");
+    const anthropic = await resolveProviderRouteAsync(cfg, { model: "claude-sonnet-5", provider: "anthropic" });
+    assert.equal(anthropic.apiKey, "sk-ant-oat01-ACTIVE", "anthropic (the active provider) keeps its key");
+  });
+});

@@ -504,3 +504,26 @@ use route ok, inventory NO secret leak, /control/ 200, 10 esc() calls.
 CLI live: list renders real table, base-url + use roundtrips persist/restore.
 NOTE: xclaw installed on this host (v3.86.0 via npm link) + anthropic OAuth
 profile stored; agent turns work live (INSTALL-OK-CLAUDE earlier).
+
+## 2026-08-12 — 3.86.1 cross-provider credential leak fix (Claude)
+
+STATUS: green
+CONTEXT: setting up xAI api key alongside the active Anthropic provider —
+found xai runs were sent the ANTHROPIC OAuth token (→ "Anthropic HTTP 404:
+model grok-4.5", then "Incorrect API key" once adapter fixed). Real cred-leak:
+one vendor's token reaching another's endpoint.
+FIXED (3 scoping spots): (1) registry resolveProviderRouteAsync/Route —
+cfg.agent.apiKey (active provider's cached key) only used when
+agent.provider===resolved provider (mirrors 3.85.2 baseUrl guard); (2)
+resolveProviderToken step 1 — removed legacy `|| p==="xai"` clause; (3) step 2
+— opts.profileId (loadConfig fills it with active provider's authProfileId)
+honored only when profile.provider===p; (4) createProvider — sk-ant-oat
+token-shape no longer forces anthropic adapter for explicit non-anthropic
+providers.
+RAN: provider tests 31/31 · full suite 1279/0 · LIVE: xai:apikey → grok-4.5
+"XAI-KEY-OK" real inference cost-tracked $0.0177, anthropic still "ANTHRO-OK"
+no regression · resolveProviderToken(xai)=profile:xai:apikey,
+(anthropic)=profile:anthropic:default. Regression test added.
+NOTE: xAI API key setup COMPLETE + live-verified for the user; xai OAuth still
+pending (device/pkce 403 — no public xAI OAuth app; needs `grok login --oauth`
+then import-grok).

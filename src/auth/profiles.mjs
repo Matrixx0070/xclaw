@@ -361,14 +361,29 @@ async function refreshProfileOAuth(cfg, store, id, profile) {
 export async function resolveProviderToken(cfg = {}, provider = "xai", opts = {}) {
   const p = String(provider || "xai").toLowerCase();
 
-  // 1. explicit config
-  if (cfg.agent?.apiKey && (!cfg.agent?.provider || cfg.agent.provider === p || p === "xai")) {
-    return { token: cfg.agent.apiKey, source: "config.agent.apiKey", mode: "api_key" };
+  // 1. explicit config — but cfg.agent.apiKey belongs to the ACTIVE provider
+  //    (loadConfig caches the active provider's token there). Only hand it back
+  //    when the requested provider matches, or when no active provider is set
+  //    (a genuinely generic key). The old `|| p === "xai"` default-to-xai clause
+  //    leaked one provider's key (e.g. an Anthropic OAuth token) to another.
+  if (cfg.agent?.apiKey && (!cfg.agent?.provider || cfg.agent.provider === p)) {
+    return {
+      token: cfg.agent.apiKey,
+      source: cfg.agent.authSource || "config.agent.apiKey",
+      mode: cfg.agent.authMode || "api_key",
+    };
   }
 
-  // 2. preferred profile id
+  // 2. preferred profile id — but ONLY when that profile belongs to the
+  //    requested provider. cfg.agent.authProfileId is the ACTIVE provider's
+  //    profile (loadConfig sets it); honoring it for a different provider
+  //    shipped one vendor's token to another (Anthropic OAuth → xai endpoint).
   const store = await loadProfiles(cfg, opts.agentId);
-  if (opts.profileId && store.profiles[opts.profileId]) {
+  if (
+    opts.profileId &&
+    store.profiles[opts.profileId] &&
+    store.profiles[opts.profileId].provider === p
+  ) {
     const cred = await credentialFromProfile(cfg, store.profiles[opts.profileId], store, opts.profileId);
     if (cred?.token) return cred;
     if (cred?.error) return cred;
