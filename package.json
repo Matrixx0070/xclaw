@@ -4,7 +4,7 @@
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
-    "xclaw": "./bin/xclaw.mjs",
+    "xclaw": "./bin/xclaw-entry.mjs",
     "xclaw-init": "./src/cli/init.mjs"
   },
   "scripts": {
@@ -15,6 +15,8 @@
     "doctor": "node bin/xclaw.mjs doctor",
     "init": "node src/cli/init.mjs",
     "onboard": "node src/cli/init.mjs",
+    "install:local": "bash install/install.sh --yes",
+    "prove:install": "node scripts/prove-install-e2e.mjs",
     "test": "node --test test/**/*.test.mjs",
     "self-test": "node bin/xclaw.mjs self-test",
     "eval": "node bin/xclaw.mjs eval",

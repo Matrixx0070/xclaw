@@ -1,0 +1,25 @@
+name: install-e2e
+
+on:
+  push:
+    branches: [main, feat/one-command-install]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Prove install end-to-end
+        env:
+          XCLAW_E2E_PORT: "18790"
+          XCLAW_PROFILE: lab
+        run: node scripts/prove-install-e2e.mjs
