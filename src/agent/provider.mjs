@@ -52,13 +52,42 @@ export function createProvider(opts) {
   };
   const onRetry = opts.onRetry;
 
-  function chatOnce({ messages, tools, model, temperature = 0.2 }) {
+  // Sampling / reasoning config (cfg.agent.temperature, cfg.agent.reasoning).
+  // temperature: undefined → default 0.2 (legacy); number → sent; null → field
+  // omitted entirely (reasoning models reject or ignore it — omission is safe).
+  // When reasoning is active and temperature is not explicitly configured, the
+  // field is dropped.
+  const agentCfg = opts.cfg?.agent || {};
+  const reasoningCfg = agentCfg.reasoning || null;
+  const reasoningActive = Boolean(
+    reasoningCfg && (reasoningCfg.enabled === true || reasoningCfg.effort)
+  );
+
+  function resolveTemperature(callTemp) {
+    if (callTemp !== undefined) return callTemp; // per-call override (null → omit)
+    const t = agentCfg.temperature;
+    if (t === null) return null;
+    if (typeof t === "number" && Number.isFinite(t)) return t;
+    if (reasoningActive) return null;
+    return 0.2;
+  }
+
+  /** Apply temperature + reasoning fields to an OpenAI-compat request body. */
+  function applySampling(body, callTemp) {
+    const temp = resolveTemperature(callTemp);
+    if (temp != null) body.temperature = temp;
+    if (reasoningActive && reasoningCfg.effort) {
+      body.reasoning_effort = String(reasoningCfg.effort);
+    }
+  }
+
+  function chatOnce({ messages, tools, model, temperature }) {
     const url = new URL(`${baseUrl}/chat/completions`);
     const body = {
       model: model || defaultModel,
       messages,
-      temperature,
     };
+    applySampling(body, temperature);
     if (tools?.length) {
       body.tools = tools;
       body.tool_choice = "auto";
@@ -161,14 +190,14 @@ export function createProvider(opts) {
    * Streaming chat (SSE). Calls onDelta({ content?, tool_calls? }) per chunk.
    * Resolves to same shape as chat() when done.
    */
-  async function chatStream({ messages, tools, model, temperature = 0.2, signal, onDelta }) {
+  async function chatStream({ messages, tools, model, temperature, signal, onDelta }) {
     const url = new URL(`${baseUrl}/chat/completions`);
     const body = {
       model: model || defaultModel,
       messages,
-      temperature,
       stream: true,
     };
+    applySampling(body, temperature);
     if (tools?.length) {
       body.tools = tools;
       body.tool_choice = "auto";

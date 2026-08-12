@@ -47,6 +47,9 @@ export function summarizeArgs(name, args = {}) {
 
 /**
  * Collect artifacts from args + result text.
+ * SCAFFOLD: filename-regex guessing over prose — tools should declare their
+ * artifacts structurally in results; remove when the ToolCall contract carries
+ * an artifacts field end-to-end.
  * @param {string} name
  * @param {object} args
  * @param {string} resultText

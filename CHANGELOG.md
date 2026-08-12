@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.83.0 — deferred P2/P3 tier: progressive skills, reasoning params, swarm scale, /v1 API
+
+Suite 1213 total / 0 fail (1208 pass, 5 env-skipped) — and ~4s faster from an approval-timer fix. Gateway /v1 aliasing live-verified.
+
+**Skills progressive disclosure**
+
+- The system prompt now carries a compact skill INDEX (name, description, trigger hints) instead of full bodies truncated mid-sentence; only skills that fit whole within `skills.inlineMaxChars` (default 1500) are inlined — nothing is ever cut mid-body. New read-only `xclaw_skill` tool loads any full skill on demand (list variant without a name). `skills.progressive: false` restores the legacy behavior.
+
+**Provider sampling + reasoning**
+
+- `agent.temperature` config (default stays 0.2; `null` omits the field — required by reasoning models). `agent.reasoning = {enabled, effort, maxTokens}` → `reasoning_effort` on OpenAI-compat paths, `thinking: {type:"enabled", budget_tokens}` on Anthropic (temperature auto-omitted; `max_tokens` auto-grown past the budget as the API requires). Stream parser tolerates `thinking_delta`/`signature_delta`; thinking accumulates into `message.reasoning`, never into text. Zero wire change when unset.
+
+**Swarm scale**
+
+- Handoff truncation limits are config (`swarm.upstreamMaxChars`/`resultMaxChars`), defaults raised 1800→6000 / 1500→4000, and every actual cut is marked visibly (`…[truncated N chars — raise swarm.upstreamMaxChars]`) instead of silent loss. Node/parallelism caps are config (`swarm.maxNodes`/`maxParallel`, ceilings 50/16, legacy `maxChildrenPerRun` honored). New spawn depth guard: children carry `_spawnDepth` through their cfg; spawn/swarm refuse beyond `swarm.maxSpawnDepth` (default 2) with structured `SPAWN_DEPTH_EXCEEDED`.
+
+**Security + API plane**
+
+- **SLA auto-approve now revalidates the frozen plan** exactly like a human decide — an environment that drifted while the request sat pending is denied with `plan_drift` (closes brief 1.2's remaining shape).
+- **Real bug fixed**: pending-approval timeout timers were never cleared on resolution — any process using the gate stayed alive up to 120s after the approval settled. Timers are tracked and cleared on every resolution path (this is where the suite's ~4s speedup came from).
+- `EXEC_TOOLS` is single-sourced from `system-run-plan.mjs`; approvals' `requireApproval`/`execTools` defaults derive from it (previously triplicated string sets that had already drifted).
+- **`/v1` API versioning**: every gateway route is now reachable under `/v1/...` (marked with `X-XClaw-Api-Version: 1`) so clients can pin a version prefix before any breaking v2 surface exists.
+
+**SCAFFOLD sweep (Phase 8 start)**
+
+- The repo's named heuristics now carry `// SCAFFOLD:` markers stating what replaces them: `inferGoal`, `detectTurnClosure`, `collectArtifacts`, `isKnownPollToolCall`, `VERIFY_OK/REVISE` sentinels, `NON_CHAT_RE` model classification, tokenizer curve-fitting — and the Anthropic OAuth **Claude Code identity spoof**, which additionally gets a doctor WARN (`security.oauthIdentity`) whenever an `sk-ant-oat` token is in use.
+
+Still deferred with rationale: WS library (violates the zero-dependency stance — hand-rolled RFC6455 stays), signed skills/manifest-first activation (needs a trust-model decision), gateway router file split (mechanical, low value vs. churn), swarm resume journal (design sketched in-session), sessions/seats durability.
+
 ## 3.82.0 — P2 tier: structured critic verdicts, prompt caching on the wire, gateway hygiene
 
 Suite 1182 total / 0 fail (1177 pass, 5 env-skipped). Gateway boot + new routes + CORS live-verified.

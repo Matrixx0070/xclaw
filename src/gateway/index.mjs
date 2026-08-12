@@ -1058,7 +1058,13 @@ export async function startGateway({ root } = {}) {
 
   const { server, tls: tlsOn } = createHttpServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${cfg.gateway.host}`);
-    const p = url.pathname;
+    let p = url.pathname;
+    // API versioning: /v1/<route> is an alias for every route (clients can pin
+    // a version prefix today; a breaking v2 surface can then coexist later).
+    if (p === "/v1" || p.startsWith("/v1/")) {
+      p = p.slice(3) || "/";
+      res.setHeader("X-XClaw-Api-Version", "1");
+    }
     // CORS decided once per request (loopback-reflect by default, wildcard only
     // when cfg.gateway.corsOrigin === "*"); writeHead calls must not set ACAO.
     applyCors(req, res, cfg);

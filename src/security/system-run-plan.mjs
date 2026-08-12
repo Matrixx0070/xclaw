@@ -22,8 +22,10 @@ import { fileURLToPath } from "node:url";
 
 export const PLAN_VERSION = 1;
 
-/** Tools that receive full plan binding (argv + exe + cwd pins). */
-const EXEC_TOOLS = new Set([
+/** Tools that receive full plan binding (argv + exe + cwd pins).
+ *  Single source of truth — approvals.mjs derives its defaults from this
+ *  (capability metadata was previously triplicated across security modules). */
+export const EXEC_TOOLS = new Set([
   "xclaw_bash",
   "bash",
   "shell",

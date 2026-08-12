@@ -16,6 +16,7 @@ import { commandMatchesExecAllowlist } from "./exec-allowlist-pattern.mjs";
 import {
   buildSystemRunPlan,
   revalidatePlan,
+  EXEC_TOOLS,
   isExecTool,
 } from "./system-run-plan.mjs";
 
@@ -31,6 +32,7 @@ function ensureSlaTimer(cfg) {
     for (const [id, item] of [...pending.entries()]) {
       if (item.deadline && now >= item.deadline) {
         pending.delete(id);
+        if (item.timer) clearTimeout(item.timer);
         const action = item.slaAction || "deny";
         if (action === "deny") {
           item.resolve({
@@ -40,6 +42,24 @@ function ensureSlaTimer(cfg) {
             planFingerprint: item.plan?.fingerprint ?? null,
           });
         } else {
+          // SLA auto-approve is still an approval — run the same TOCTOU
+          // revalidation as a human decide (brief 1.2: deny at resolve when
+          // the pinned environment drifted while the request sat pending).
+          if (item.plan && (cfg?.security?.revalidateOnDecide !== false)) {
+            const check = revalidatePlan(item.plan);
+            if (!check.ok) {
+              item.resolve({
+                ok: false,
+                reason: check.reason || "plan_drift",
+                message:
+                  check.message ||
+                  "Execution environment drifted before SLA auto-approve (TOCTOU).",
+                drift: check.drift || null,
+                planFingerprint: item.plan?.fingerprint ?? null,
+              });
+              continue;
+            }
+          }
           item.resolve({
             ok: true,
             approved: true,
@@ -74,7 +94,7 @@ export function createApprovalGate(cfg = {}) {
   const security = cfg.security || {};
   const allowlist = new Set(security.allowedTools || []);
   const requireApproval = new Set(
-    (security.requireApproval || ["xclaw_bash", "bash", "shell"]).map(normalizeToolName)
+    (security.requireApproval || [...EXEC_TOOLS]).map(normalizeToolName)
   );
   const safeAuto = new Set(
     (security.safeAuto || [
@@ -106,7 +126,7 @@ export function createApprovalGate(cfg = {}) {
     const patterns = security.execAllowlist || security.execPatterns || [];
     if (!patterns.length) return true;
     const execTools = new Set(
-      (security.execTools || ["xclaw_bash", "bash", "shell", "exec"]).map(normalizeToolName)
+      (security.execTools || [...EXEC_TOOLS]).map(normalizeToolName)
     );
     if (!execTools.has(normalizeToolName(name))) return true;
     const cmd =
@@ -207,7 +227,9 @@ export function createApprovalGate(cfg = {}) {
         slaAction,
         resolve,
       });
-      setTimeout(() => {
+      // Tracked so decide()/SLA clear it on resolution — an uncleared 120s
+      // timer used to hold the process alive long after the request settled.
+      const timer = setTimeout(() => {
         if (pending.has(id)) {
           pending.delete(id);
           resolve({
@@ -218,6 +240,8 @@ export function createApprovalGate(cfg = {}) {
           });
         }
       }, timeoutMs);
+      const rec = pending.get(id);
+      if (rec) rec.timer = timer;
     });
 
     onPending?.({
@@ -252,12 +276,14 @@ export function createApprovalGate(cfg = {}) {
         at: new Date().toISOString(),
         resolve,
       });
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (pending.has(id)) {
           pending.delete(id);
           resolve({ ok: false, reason: "timeout", message: "Approval timed out." });
         }
       }, opts.timeoutMs ?? 120_000);
+      const rec = pending.get(id);
+      if (rec) rec.timer = timer;
     });
     return { ok: false, pending: true, pendingId: id, wait };
   }
@@ -266,6 +292,7 @@ export function createApprovalGate(cfg = {}) {
     const item = pending.get(pendingId);
     if (!item) return { ok: false, error: "unknown_pending" };
     pending.delete(pendingId);
+    if (item.timer) clearTimeout(item.timer);
 
     if (approved && item.plan && revalidateOnDecide) {
       const check = revalidatePlan(item.plan);

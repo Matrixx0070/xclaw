@@ -5,6 +5,10 @@
  * - Compare tiktoken vs heuristic on sample corpus
  * - Optionally calibrate charsPerToken from probe ratios
  * - Safe: never throws to callers (returns structured results)
+ *
+ * SCAFFOLD: startup curve-fitting compensates for not having provider-native
+ * token counting; prefer provider count endpoints (Anthropic count_tokens etc.)
+ * as they become available across the routed providers.
  */
 
 import {

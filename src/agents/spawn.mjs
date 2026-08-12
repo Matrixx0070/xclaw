@@ -77,6 +77,25 @@ function publicView(r) {
  * Spawn child agent; streams events to parent onEvent with subagentId.
  */
 export async function spawnSubagent(opts = {}) {
+  // Depth guard: subagents inherit cfg.swarm._spawnDepth (set below for their
+  // children). A chain deeper than swarm.maxSpawnDepth (default 2) is refused
+  // with a structured result instead of a throw — stops recursive spawn loops.
+  const spawnDepth = Number(opts.cfg?.swarm?._spawnDepth ?? 0) || 0;
+  const maxSpawnDepth = Math.max(
+    0,
+    Number(opts.cfg?.swarm?.maxSpawnDepth ?? 2) || 2
+  );
+  if (spawnDepth >= maxSpawnDepth) {
+    return {
+      ok: false,
+      code: "SPAWN_DEPTH_EXCEEDED",
+      status: "refused",
+      error: `spawn depth ${spawnDepth} >= swarm.maxSpawnDepth ${maxSpawnDepth} — flatten the task graph or raise the limit`,
+      depth: spawnDepth,
+      maxSpawnDepth,
+    };
+  }
+
   const id = randomUUID();
   const parentId = opts.parentId || null;
   const record = {
@@ -158,6 +177,12 @@ export async function spawnSubagent(opts = {}) {
     agent: {
       ...(opts.cfg?.agent || {}),
       maxTurns: opts.maxTurns ?? Math.min(opts.cfg?.agent?.maxTurns ?? 8, 8),
+    },
+    // Children run in-process via runAgentLoop, so cfg is the reliable depth
+    // carrier: any spawn/swarm tool the child invokes receives this cfg.
+    swarm: {
+      ...(opts.cfg?.swarm || {}),
+      _spawnDepth: spawnDepth + 1,
     },
     security: {
       ...(opts.cfg?.security || {}),

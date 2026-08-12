@@ -8,6 +8,10 @@
 
 import crypto from "node:crypto";
 
+// SCAFFOLD: impersonates the Claude Code client identity (attestation string +
+// user-agent/x-app below) because Anthropic's OAuth gate only serves premium
+// models to approved client identities. Remove when xclaw has its own approved
+// identity or uses plain API keys. Surfaced as a doctor WARN (security.oauthIdentity).
 /** Exact-prefix system attestation Anthropic gates OAuth inference on. */
 export const OAUTH_ATTESTATION =
   "You are Claude Code, Anthropic's official CLI for Claude.";

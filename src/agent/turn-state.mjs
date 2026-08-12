@@ -9,6 +9,8 @@
 
 /**
  * Infer a coarse goal type from the user message.
+ * SCAFFOLD: regex intent classification — a capable model states its own goal;
+ * replace with model-declared turn metadata when the loop requests it.
  * @param {string} userMessage
  */
 export function inferGoal(userMessage) {

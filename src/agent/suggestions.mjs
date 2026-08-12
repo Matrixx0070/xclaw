@@ -147,6 +147,8 @@ export function extractGrounding(toolTrace = []) {
 
 /**
  * Heuristic: did this turn complete the user's ask?
+ * SCAFFOLD: prose-signal closure detection — a capable model can report closure
+ * as structured turn metadata; retire this when the loop asks for it directly.
  * @returns {{ closed: boolean, confidence: number, reason: string }}
  */
 export function detectTurnClosure(ctx = {}) {

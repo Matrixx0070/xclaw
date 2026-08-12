@@ -81,12 +81,60 @@ const ROLES = {
   },
 };
 
-const UPSTREAM_MAX_CHARS = 1800;
-const RESULT_MAX_CHARS = 1500;
+// Handoff size defaults — config-overridable (swarm.upstreamMaxChars /
+// swarm.resultMaxChars). Raised from the original 1800/1500: modern context
+// windows make aggressive cuts needlessly lossy, and truncation is now MARKED
+// instead of silent.
+const DEFAULT_UPSTREAM_MAX_CHARS = 6000;
+const DEFAULT_RESULT_MAX_CHARS = 4000;
+const MIN_HANDOFF_CHARS = 200;
+
+/** Resolve handoff char limits from config (floored at MIN_HANDOFF_CHARS). */
+export function handoffLimits(swarmCfg = {}) {
+  const num = (v, dflt) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : dflt;
+  };
+  return {
+    upstream: Math.max(
+      MIN_HANDOFF_CHARS,
+      num(swarmCfg.upstreamMaxChars, DEFAULT_UPSTREAM_MAX_CHARS)
+    ),
+    result: Math.max(
+      MIN_HANDOFF_CHARS,
+      num(swarmCfg.resultMaxChars, DEFAULT_RESULT_MAX_CHARS)
+    ),
+  };
+}
+
+/**
+ * Config-driven swarm caps (swarm.maxParallel / swarm.maxNodes, legacy alias
+ * swarm.maxChildrenPerRun) with absolute ceilings against runaway configs.
+ */
+export function resolveSwarmCaps(swarmCfg = {}) {
+  return {
+    maxParallel: Math.max(1, Math.min(16, Number(swarmCfg.maxParallel ?? 3) || 3)),
+    maxChildren: Math.max(
+      1,
+      Math.min(50, Number(swarmCfg.maxNodes ?? swarmCfg.maxChildrenPerRun ?? 8) || 8)
+    ),
+  };
+}
+
+/** Truncate with a VISIBLE marker so downstream agents/operators see the loss. */
+export function truncateWithMarker(text, max, cfgKey) {
+  const s = String(text || "");
+  if (s.length <= max) return s;
+  const cut = s.length - max;
+  return (
+    s.slice(0, max).trimEnd() +
+    `\n…[truncated ${cut} chars — raise swarm.${cfgKey}]`
+  );
+}
 
 /**
  * Structured swarm error codes (pre-flight and runtime).
- * @typedef {'SWARM_DISABLED'|'TASKS_REQUIRED'|'MISSING_ID'|'MISSING_TASK'|'DUPLICATE_ID'|'UNKNOWN_DEP'|'SELF_DEP'|'CYCLE'|'TOO_MANY_TASKS'|'INVALID_POLICY'|'PERSIST_FAILED'|'SPAWN_FAILED'|'ABORTED'} SwarmErrorCode
+ * @typedef {'SWARM_DISABLED'|'TASKS_REQUIRED'|'MISSING_ID'|'MISSING_TASK'|'DUPLICATE_ID'|'UNKNOWN_DEP'|'SELF_DEP'|'CYCLE'|'TOO_MANY_TASKS'|'INVALID_POLICY'|'PERSIST_FAILED'|'SPAWN_FAILED'|'ABORTED'|'SPAWN_DEPTH_EXCEEDED'} SwarmErrorCode
  */
 
 /**
@@ -119,7 +167,9 @@ export const SWARM_ERROR_HINTS = {
   UNKNOWN_DEP: "dependsOn must reference ids that exist in the same tasks list.",
   SELF_DEP: "A node cannot depend on itself.",
   CYCLE: "Task graph must be a DAG — remove cyclic dependsOn edges.",
-  TOO_MANY_TASKS: "Reduce tasks or raise swarm.maxChildrenPerRun (hard max 8).",
+  TOO_MANY_TASKS: "Reduce tasks or raise swarm.maxNodes (absolute ceiling 50).",
+  SPAWN_DEPTH_EXCEEDED:
+    "Nested agents may not fan out past swarm.maxSpawnDepth (default 2) — flatten the task graph or raise the limit.",
   INVALID_POLICY: "onDepFail must be skip-downstream | fail-fast | best-effort.",
   PERSIST_FAILED: "Disk write under ~/.xclaw/swarms failed — check permissions.",
   SPAWN_FAILED: "Child agent failed to start or crashed — see node error.",
@@ -252,16 +302,19 @@ export function normalizeTaskGraph(tasks) {
   return { nodes };
 }
 
-function buildUpstreamContext(node, resultsByNodeId) {
+export function buildUpstreamContext(node, resultsByNodeId, swarmCfg = {}) {
   const deps = node.dependsOn || [];
   if (!deps.length) return "";
+  const { upstream } = handoffLimits(swarmCfg);
   const blocks = [];
   for (const d of deps) {
     const r = resultsByNodeId.get(d);
     if (!r) continue;
-    const body = String(r.text || r.error || "")
-      .slice(0, UPSTREAM_MAX_CHARS)
-      .trim();
+    const body = truncateWithMarker(
+      String(r.text || r.error || "").trim(),
+      upstream,
+      "upstreamMaxChars"
+    );
     blocks.push(
       `### ${d} (${r.role || "task"} · ${r.status}${r.ok ? "" : " · FAILED"})\n${body || "(empty)"}`
     );
@@ -450,7 +503,7 @@ async function runNodeOnce(cfg, swarmCfg, run, node, goal, resultsByNodeId, inpu
       node.worktree !== false &&
       roleOverride.requireWorktree !== false);
 
-  const upstream = buildUpstreamContext(node, resultsByNodeId);
+  const upstream = buildUpstreamContext(node, resultsByNodeId, swarmCfg);
   const taskText =
     (role.promptPrefix || "") +
     (goal ? `Overall goal: ${goal}\n\n` : "") +
@@ -827,14 +880,23 @@ export async function runSwarmFanOut(cfg, input = {}) {
     });
   }
 
-  const maxParallel = Math.max(
-    1,
-    Math.min(5, Number(swarmCfg.maxParallel ?? 3) || 3)
-  );
-  const maxChildren = Math.max(
-    1,
-    Math.min(8, Number(swarmCfg.maxChildrenPerRun ?? 8) || 8)
-  );
+  // Depth guard: a swarm child (cfg carries _spawnDepth) may not fan out past
+  // swarm.maxSpawnDepth (default 2) — stops runaway recursive swarms.
+  const spawnDepth = Number(swarmCfg._spawnDepth ?? 0) || 0;
+  const maxSpawnDepth = Math.max(0, Number(swarmCfg.maxSpawnDepth ?? 2) || 2);
+  if (spawnDepth >= maxSpawnDepth) {
+    return swarmError(
+      "SPAWN_DEPTH_EXCEEDED",
+      `spawn depth ${spawnDepth} >= swarm.maxSpawnDepth ${maxSpawnDepth}`,
+      {
+        depth: spawnDepth,
+        maxSpawnDepth,
+        hint: SWARM_ERROR_HINTS.SPAWN_DEPTH_EXCEEDED,
+      }
+    );
+  }
+
+  const { maxParallel, maxChildren } = resolveSwarmCaps(swarmCfg);
   /** @type {'skip-downstream'|'fail-fast'|'best-effort'} */
   const onDepFail =
     input.onDepFail ||
@@ -865,7 +927,7 @@ export async function runSwarmFanOut(cfg, input = {}) {
   if (nodes.length > maxChildren) {
     return swarmError(
       "TOO_MANY_TASKS",
-      `too many tasks (${nodes.length}); maxChildrenPerRun=${maxChildren}`,
+      `too many tasks (${nodes.length}); maxNodes=${maxChildren}`,
       {
         count: nodes.length,
         maxChildrenPerRun: maxChildren,
@@ -1206,7 +1268,13 @@ export async function runSwarmFanOut(cfg, input = {}) {
     if (r.dependsOn?.length) {
       parts.push(`Depends on: ${r.dependsOn.join(", ")}`);
     }
-    parts.push(String(r.text || r.error || "").slice(0, RESULT_MAX_CHARS));
+    parts.push(
+      truncateWithMarker(
+        String(r.text || r.error || ""),
+        handoffLimits(swarmCfg).result,
+        "resultMaxChars"
+      )
+    );
     parts.push("");
   }
 

@@ -5,7 +5,9 @@ function isPlainObject(v) {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
 
-/** OpenClaw poll tools + XClaw equivalents */
+/** OpenClaw poll tools + XClaw equivalents.
+ * SCAFFOLD: hardcoded tool-name table — poll-ness should be tool metadata
+ * (ToolCall contract), not a name list that drifts as tools are added. */
 export function isKnownPollToolCall(toolName, params) {
   if (toolName === "command_status") return true;
   if (toolName === "process" && isPlainObject(params)) {

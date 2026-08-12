@@ -252,8 +252,10 @@ export function fromAnthropicMessage(msg) {
   const textParts = [];
   const tool_calls = [];
 
+  const thinkingParts = [];
   for (const b of contentBlocks) {
     if (b.type === "text" && b.text) textParts.push(b.text);
+    if (b.type === "thinking" && b.thinking) thinkingParts.push(b.thinking);
     if (b.type === "tool_use") {
       tool_calls.push({
         id: b.id,
@@ -271,6 +273,7 @@ export function fromAnthropicMessage(msg) {
     content: textParts.join("") || null,
   };
   if (tool_calls.length) assistant.tool_calls = tool_calls;
+  if (thinkingParts.length) assistant.reasoning = thinkingParts.join("");
   return assistant;
 }
 
@@ -319,6 +322,41 @@ export function createAnthropicMessagesProvider(opts = {}) {
     bpCfg.enabled !== false &&
     !["none", "off"].includes(String(bpCfg.mode || "").toLowerCase());
 
+  // Extended thinking (cfg.agent.reasoning = { enabled?, effort?, maxTokens? }).
+  // Absent → no thinking field, zero wire change. When active: body.thinking =
+  // { type:"enabled", budget_tokens } and temperature is OMITTED (the API
+  // requires temperature unset/1 with thinking enabled).
+  const reasoningCfg = opts.cfg?.agent?.reasoning || null;
+  const thinkingActive = Boolean(
+    reasoningCfg && (reasoningCfg.enabled === true || reasoningCfg.effort)
+  );
+  const EFFORT_BUDGET = { low: 4096, medium: 10000, high: 20000 };
+  const thinkingBudget = thinkingActive
+    ? Number(reasoningCfg.maxTokens) ||
+      EFFORT_BUDGET[String(reasoningCfg.effort || "").toLowerCase()] ||
+      10000
+    : 0;
+  const cfgTemperature = opts.cfg?.agent?.temperature;
+
+  /** Temperature + thinking for a request body (both chat and stream). */
+  function applySampling(body, callTemp) {
+    if (thinkingActive) {
+      body.thinking = { type: "enabled", budget_tokens: thinkingBudget };
+      // budget_tokens must be < max_tokens — grow max_tokens to fit
+      if (body.max_tokens <= thinkingBudget) {
+        body.max_tokens = thinkingBudget + 4096;
+      }
+      return; // temperature omitted with thinking enabled
+    }
+    const temp =
+      callTemp !== undefined
+        ? callTemp
+        : typeof cfgTemperature === "number" && Number.isFinite(cfgTemperature)
+          ? cfgTemperature
+          : undefined;
+    if (temp != null) body.temperature = temp;
+  }
+
   /**
    * Attach system content to the request body: structured blocks with capped
    * cache_control when available, single cache-marked block for plain-string
@@ -354,7 +392,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
       max_tokens: max_tokens ?? opts.cfg?.agent?.maxTokens ?? 4096,
       messages: converted.messages,
     };
-    if (temperature != null) body.temperature = temperature;
+    applySampling(body, temperature);
 
     applySystem(body, converted);
 
@@ -444,7 +482,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
       stream: true,
       messages: converted.messages,
     };
-    if (temperature != null) body.temperature = temperature;
+    applySampling(body, temperature);
 
     applySystem(body, converted);
 
@@ -493,6 +531,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
     const decoder = new TextDecoder();
     let buf = "";
     let textOut = "";
+    let thinkingOut = "";
     /** @type {Array<{id:string, name:string, input:object, _json:string}>} */
     const toolBlocks = [];
     let currentTool = null;
@@ -528,7 +567,12 @@ export function createAnthropicMessagesProvider(opts = {}) {
         } else if (d?.type === "input_json_delta" && currentTool && d.partial_json) {
           currentTool._json += d.partial_json;
           onDelta?.({ type: "tool_json", partial: d.partial_json });
+        } else if (d?.type === "thinking_delta" && d.thinking) {
+          // Extended-thinking deltas: keep separate from text accumulation.
+          thinkingOut += d.thinking;
+          onDelta?.({ type: "thinking", text: d.thinking });
         }
+        // signature_delta and unknown delta types are intentionally ignored.
       } else if (type === "content_block_stop") {
         if (currentTool) {
           try {
@@ -596,6 +640,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
       content: textOut || null,
     };
     if (tool_calls.length) assistant.tool_calls = tool_calls;
+    if (thinkingOut) assistant.reasoning = thinkingOut;
 
     return {
       message: assistant,

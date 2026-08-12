@@ -108,6 +108,8 @@ export async function runVerifyPass(opts = {}) {
 
   const text = completion?.message?.content || completion?.content || "";
   const trimmed = String(text).trim();
+  // SCAFFOLD: prose sentinel protocol (VERIFY_OK/VERIFY_REVISE prefixes) —
+  // migrate to a structured tool-call verdict like the critic merge-gate did.
   const ok = /^VERIFY_OK\b/i.test(trimmed);
   const revise = /^VERIFY_REVISE\b/i.test(trimmed);
 

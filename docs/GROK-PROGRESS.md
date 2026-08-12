@@ -339,3 +339,31 @@ build:computer + C4 parity gate OK · doctor 0 errors · LIVE gateway boot:
 CORS reflects http://127.0.0.1:5173, blocks https://evil.example.
 DEFERRED: router split + /v1, WS library, skills progressive disclosure,
 swarm handoff caps, SCAFFOLD sweep, signed skills.
+
+## 2026-08-12 — 3.83.0 deferred P2/P3 tier (Claude)
+
+STATUS: green
+BUILT: (1) skills progressive disclosure — prompt carries an index (name/
+description/triggers), whole-body-or-nothing inlining under skills.inlineMaxChars
+(1500), new read-only xclaw_skill tool loads full bodies on demand;
+skills.progressive:false restores legacy. (2) provider sampling — agent.temperature
+config (null omits), agent.reasoning {enabled,effort,maxTokens} → reasoning_effort
+(OpenAI-compat) / thinking budget_tokens (Anthropic, temperature auto-omitted,
+max_tokens auto-grown); thinking_delta tolerated in SSE; zero wire change unset.
+(3) swarm scale — handoff limits config (defaults 1800→6000 / 1500→4000) with
+VISIBLE truncation markers; caps config (maxNodes/maxParallel, ceilings 50/16);
+spawn depth guard via cfg._spawnDepth (default max 2, SPAWN_DEPTH_EXCEEDED).
+(4) SLA auto-approve revalidates the frozen plan (deny plan_drift at resolve) +
+REAL BUG: pending-approval timeout timers never cleared → process held alive up
+to 120s after settle; now tracked+cleared (suite ~4s faster). (5) EXEC_TOOLS
+single-sourced from system-run-plan (approvals defaults derive). (6) /v1 API
+aliasing for every gateway route + X-XClaw-Api-Version header. (7) SCAFFOLD
+markers on all named heuristics incl. the Claude Code OAuth identity spoof +
+doctor WARN security.oauthIdentity when an sk-ant-oat token is in use.
+RAN: suite 1213 total, 0 fail (1208 pass, 5 env-skipped) · eval:ci OK ·
+build:computer OK · LIVE gateway: /v1/health 200 + X-XClaw-Api-Version:1,
+/v1/security/policy serves, unversioned routes intact.
+DEFERRED w/ rationale: WS library (zero-dep stance), signed skills (trust-model
+decision needed), router file split (churn>value), swarm resume journal
+(design sketched: append-only NDJSON at node state transitions, replay into
+resultsByNodeId), sessions/seats durability.

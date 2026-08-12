@@ -53,6 +53,7 @@ export const TOOL_PLANE = {
   xclaw_document_convert: "local",
   xclaw_finance_quote: "local",
   xclaw_host_info: "local",
+  xclaw_skill: "local",
   xclaw_web_fetch: "local",
 
   // Search plane (router target; may execute via local until worker exists)

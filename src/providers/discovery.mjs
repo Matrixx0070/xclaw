@@ -17,6 +17,8 @@ import { resolveProviderToken } from "../auth/profiles.mjs";
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000; // 1h
 
+// SCAFFOLD: name-pattern model classification — replace with capability
+// metadata from provider APIs (or a pricing/capability catalog) when added.
 const NON_CHAT_RE =
   /(embed|embedding|whisper|tts|tts-|realtime|audio|dall-e|dalle|image|imagine|video|moderation|transcribe|speech|voice|omni-moderation|text-embedding|ada-002|babbage|davinci-002$)/i;
 

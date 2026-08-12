@@ -124,6 +124,27 @@ export async function runDoctor(opts = {}) {
     push("security.ssrf", "warn", e.message || String(e));
   }
 
+  // SCAFFOLD surfacing: Anthropic OAuth path spoofs the Claude Code client
+  // identity (attestation + user-agent). Warn whenever an OAuth token is in
+  // reach so the operator knows the dependency exists.
+  try {
+    const candidates = [
+      cfg.agent?.apiKey,
+      process.env.ANTHROPIC_API_KEY,
+      process.env.CLAUDE_CODE_OAUTH_TOKEN,
+      process.env.ANTHROPIC_AUTH_TOKEN,
+    ];
+    if (candidates.some((t) => String(t || "").startsWith("sk-ant-oat"))) {
+      push(
+        "security.oauthIdentity",
+        "warn",
+        "Anthropic OAuth token in use — requests carry the Claude Code client identity (SCAFFOLD, see src/providers/anthropic-oauth-headers.mjs)"
+      );
+    }
+  } catch {
+    /* informational only */
+  }
+
   // WebSocket upgrade auth
   try {
     const prof = cfg.profile || process.env.XCLAW_PROFILE || "lab";

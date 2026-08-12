@@ -195,6 +195,17 @@ export async function loadAllSkills({ configDir, cwd, cfg } = {}) {
   } catch {
     /* stats optional */
   }
+  // Carry progressive-disclosure prefs to buildContextSections without
+  // changing its call sites (the loop passes cfg here but not there).
+  // Non-enumerable: invisible to iteration/JSON.
+  Object.defineProperty(skills, "_progressive", {
+    value: cfg?.skills?.progressive !== false,
+    enumerable: false,
+  });
+  Object.defineProperty(skills, "_inlineMaxChars", {
+    value: Number(cfg?.skills?.inlineMaxChars) > 0 ? Number(cfg.skills.inlineMaxChars) : 1500,
+    enumerable: false,
+  });
   return skills;
 }
 
@@ -304,7 +315,17 @@ export async function previewProjectMemory(cwd = process.cwd(), opts = {}) {
 /**
  * Build system prompt sections from skills + memory.
  */
-export function buildContextSections({ skills = [], memoryFiles = [], maxSkillChars = 6000, maxMemoryChars = 8000 } = {}) {
+export function buildContextSections({
+  skills = [],
+  memoryFiles = [],
+  maxSkillChars = 6000,
+  maxMemoryChars = 8000,
+  /** Progressive skill disclosure — index + small-skill inlining (default ON;
+   *  also settable via cfg.skills.progressive, carried on the skills array). */
+  progressive = undefined,
+  /** Skills with bodies at or under this size inline in full (default 1500). */
+  inlineMaxChars = undefined,
+} = {}) {
   const parts = [];
 
   if (memoryFiles.length) {
@@ -329,22 +350,67 @@ export function buildContextSections({ skills = [], memoryFiles = [], maxSkillCh
   }
 
   if (skills.length) {
-    let budget = maxSkillChars;
-    const blocks = [];
-    // Index first
-    const index = skills
-      .map((s) => `- **${s.name}**${s.description ? `: ${s.description}` : ""}`)
-      .join("\n");
-    parts.push(`## Available skills\n${index}`);
+    // Progressive disclosure (default ON): the prompt carries a compact index
+    // of every skill; only skills small enough to fit whole are inlined —
+    // nothing is ever cut mid-body. Full bodies load on demand via the
+    // xclaw_skill tool. cfg.skills.progressive:false restores the legacy
+    // full-body truncation. Flags arrive per-call (opts) or ride the skills
+    // array from loadAllSkills (non-enumerable markers).
+    const progressiveMode = progressive ?? skills._progressive ?? true;
+    const inlineMax =
+      Number(inlineMaxChars) > 0
+        ? Number(inlineMaxChars)
+        : Number(skills._inlineMaxChars) > 0
+          ? Number(skills._inlineMaxChars)
+          : 1500;
 
-    for (const s of skills) {
-      if (budget <= 0) break;
-      const body = s.body.slice(0, budget);
-      blocks.push(`### Skill: ${s.name}\n${body}`);
-      budget -= body.length;
-    }
-    if (blocks.length) {
-      parts.push(`## Skill details\n${blocks.join("\n\n")}`);
+    if (progressiveMode) {
+      const index = skills
+        .map((s) => {
+          const trig = s.meta?.triggers ?? s.meta?.trigger ?? null;
+          const trigStr = Array.isArray(trig) ? trig.join(", ") : trig ? String(trig) : "";
+          const size = String(s.body || "").length;
+          const parts_ = [`- **${s.name}**${s.description ? `: ${s.description}` : ""}`];
+          if (trigStr) parts_.push(` _(triggers: ${trigStr})_`);
+          if (size > inlineMax) parts_.push(` [${size} chars — load with xclaw_skill]`);
+          return parts_.join("");
+        })
+        .join("\n");
+      parts.push(
+        `## Available skills\nCall the \`xclaw_skill\` tool with {"name": "<skill>"} to load any skill's full instructions on demand.\n${index}`
+      );
+
+      let budget = maxSkillChars;
+      const blocks = [];
+      for (const s of skills) {
+        const body = String(s.body || "");
+        if (!body.trim()) continue;
+        if (body.length > inlineMax) continue; // big skill — index-only
+        if (body.length > budget) continue; // whole-body or nothing
+        blocks.push(`### Skill: ${s.name}\n${body}`);
+        budget -= body.length;
+      }
+      if (blocks.length) {
+        parts.push(`## Skill details (small skills inlined in full)\n${blocks.join("\n\n")}`);
+      }
+    } else {
+      // Legacy: inline everything, truncated to the running budget.
+      let budget = maxSkillChars;
+      const blocks = [];
+      const index = skills
+        .map((s) => `- **${s.name}**${s.description ? `: ${s.description}` : ""}`)
+        .join("\n");
+      parts.push(`## Available skills\n${index}`);
+
+      for (const s of skills) {
+        if (budget <= 0) break;
+        const body = s.body.slice(0, budget);
+        blocks.push(`### Skill: ${s.name}\n${body}`);
+        budget -= body.length;
+      }
+      if (blocks.length) {
+        parts.push(`## Skill details\n${blocks.join("\n\n")}`);
+      }
     }
   }
 
