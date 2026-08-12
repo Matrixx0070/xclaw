@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# XClaw R6 — macOS / Linux / WSL install helper
+# XClaw — macOS / Linux / WSL install helper
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -17,17 +17,45 @@ fi
 echo "[xclaw] root=$ROOT"
 echo "[xclaw] node=$(node -v)"
 
-# Optional: copy sample env
+# Optional project .env for local docker/dev
 if [ ! -f .env ] && [ -f .env.example ]; then
   cp .env.example .env
-  echo "[xclaw] wrote .env from example — add XAI_API_KEY"
+  echo "[xclaw] wrote .env from example — add XAI_API_KEY if needed"
+fi
+if [ ! -f deploy/.env ] && [ -f deploy/env.example ]; then
+  cp deploy/env.example deploy/.env
+  echo "[xclaw] wrote deploy/.env from env.example"
+fi
+
+# First-run config + optional API key from environment
+INIT_ARGS=(--yes)
+if [ -n "${XCLAW_PROFILE:-}" ]; then
+  INIT_ARGS+=(--profile "$XCLAW_PROFILE")
+else
+  INIT_ARGS+=(--profile lab)
+fi
+if [ -n "${XCLAW_MODEL:-}" ]; then
+  INIT_ARGS+=(--model "$XCLAW_MODEL")
+fi
+if [ -n "${XAI_API_KEY:-}${XCLAW_API_KEY:-}${OPENAI_API_KEY:-}" ]; then
+  # Prefer explicit flag only when we have a concrete key value
+  KEY="${XAI_API_KEY:-${XCLAW_API_KEY:-${OPENAI_API_KEY:-}}}"
+  INIT_ARGS+=(--api-key "$KEY")
+fi
+
+echo "[xclaw] running init…"
+if node bin/xclaw.mjs init "${INIT_ARGS[@]}"; then
+  :
+else
+  # Fallback if CLI not yet wired on older checkouts
+  node src/cli/init.mjs "${INIT_ARGS[@]}" || true
 fi
 
 echo ""
-echo "Next:"
-echo "  export XAI_API_KEY=xai-..."
+echo "Verify:"
 echo "  node bin/xclaw.mjs doctor"
 echo "  node bin/xclaw.mjs gateway"
 echo "  open http://127.0.0.1:18790/chat/"
 echo ""
-echo "Or:  node bin/xclaw.mjs gateway"
+echo "Docker try-me:"
+echo "  cd deploy && cp env.example .env && docker compose up --build"

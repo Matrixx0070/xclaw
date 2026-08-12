@@ -1,4 +1,4 @@
-# XClaw R6 — Windows PowerShell install helper
+# XClaw — Windows PowerShell install helper
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 if (-not $Root) { $Root = Get-Location }
@@ -18,9 +18,32 @@ if ($major -lt 22) {
 Write-Host "[xclaw] root=$Root"
 Write-Host "[xclaw] node=$(node -v)"
 
+if (-not (Test-Path .env) -and (Test-Path .env.example)) {
+  Copy-Item .env.example .env
+  Write-Host "[xclaw] wrote .env from example"
+}
+if (-not (Test-Path deploy/.env) -and (Test-Path deploy/env.example)) {
+  Copy-Item deploy/env.example deploy/.env
+  Write-Host "[xclaw] wrote deploy/.env from env.example"
+}
+
+$initArgs = @("--yes", "--profile", $(if ($env:XCLAW_PROFILE) { $env:XCLAW_PROFILE } else { "lab" }))
+if ($env:XCLAW_MODEL) { $initArgs += @("--model", $env:XCLAW_MODEL) }
+$key = $env:XAI_API_KEY; if (-not $key) { $key = $env:XCLAW_API_KEY }; if (-not $key) { $key = $env:OPENAI_API_KEY }
+if ($key) { $initArgs += @("--api-key", $key) }
+
+Write-Host "[xclaw] running init…"
+try {
+  & node bin/xclaw.mjs init @initArgs
+} catch {
+  & node src/cli/init.mjs @initArgs
+}
+
 Write-Host ""
-Write-Host "Next:"
-Write-Host '  $env:XAI_API_KEY="xai-..."'
+Write-Host "Verify:"
 Write-Host "  node bin/xclaw.mjs doctor"
 Write-Host "  node bin/xclaw.mjs gateway"
 Write-Host "  open http://127.0.0.1:18790/chat/"
+Write-Host ""
+Write-Host "Docker try-me:"
+Write-Host "  cd deploy; copy env.example .env; docker compose up --build"
