@@ -1,0 +1,124 @@
+{
+  "$schema_note": "Strategy C4 — tool capability parity across computer engines. Source of truth for CI gate scripts/check-computer-parity.mjs",
+  "version": 1,
+  "strategy": "C",
+  "phase": "C4",
+  "updatedAt": "2026-08-12",
+  "policy": {
+    "defaultEngine": "native",
+    "fallbackEngine": "bundle",
+    "generatedIsBuildArtifact": true,
+    "handEditBundle": false,
+    "deleteBundleOnlyAfter": "all default_path tools are parity on native|generated and soak passes"
+  },
+  "engines": {
+    "native": {
+      "entry": "src/computer/thin-server.mjs",
+      "role": "default lab/production path (maintained modules)"
+    },
+    "generated": {
+      "entry": "src/computer/generated/computer-server.mjs",
+      "role": "esbuild emit from thin-server + modules (C3)"
+    },
+    "bundle": {
+      "entry": "src/computer/xclaw-server.mjs",
+      "role": "legacy full CDP runtime — do not hand-edit; explicit fallback only"
+    }
+  },
+  "statusEnum": [
+    "parity",
+    "partial",
+    "missing",
+    "bundle_only",
+    "intentionally_omitted"
+  ],
+  "tools": [
+    {
+      "name": "xclaw_bash",
+      "maintainedModule": "src/computer/modules/bash-tool.mjs",
+      "native": "parity",
+      "generated": "parity",
+      "bundle": "parity",
+      "defaultPath": true,
+      "notes": "CLEAN module via registry"
+    },
+    {
+      "name": "xclaw_file_read",
+      "maintainedModule": "src/computer/modules/file-tools.mjs",
+      "native": "parity",
+      "generated": "parity",
+      "bundle": "parity",
+      "defaultPath": true,
+      "notes": "CLEAN module via registry"
+    },
+    {
+      "name": "xclaw_file_write",
+      "maintainedModule": "src/computer/modules/file-tools.mjs",
+      "native": "parity",
+      "generated": "parity",
+      "bundle": "parity",
+      "defaultPath": true,
+      "notes": "CLEAN module via registry"
+    },
+    {
+      "name": "xclaw_file_edit",
+      "maintainedModule": "src/computer/modules/file-tools.mjs",
+      "native": "parity",
+      "generated": "parity",
+      "bundle": "parity",
+      "defaultPath": true,
+      "notes": "CLEAN module via registry"
+    },
+    {
+      "name": "xclaw_browser_tab",
+      "maintainedModule": "src/computer/modules/browser-tab-tool.mjs",
+      "native": "partial",
+      "generated": "partial",
+      "bundle": "parity",
+      "defaultPath": true,
+      "notes": "Thin path has CLEAN tab tool; full CDP tab surface still richer in bundle"
+    },
+    {
+      "name": "xclaw_browser_network_details",
+      "maintainedModule": null,
+      "native": "missing",
+      "generated": "missing",
+      "bundle": "parity",
+      "defaultPath": false,
+      "notes": "Extracted reference only; promote to CLEAN module before defaultPath"
+    },
+    {
+      "name": "BrowserService",
+      "maintainedModule": "src/computer/browser-service.mjs",
+      "native": "partial",
+      "generated": "partial",
+      "bundle": "parity",
+      "defaultPath": false,
+      "notes": "Standalone browser-service.mjs exists; full vendored CDP still in bundle"
+    },
+    {
+      "name": "skills-context",
+      "maintainedModule": null,
+      "native": "missing",
+      "generated": "missing",
+      "bundle": "bundle_only",
+      "defaultPath": false,
+      "notes": "BUNDLE_ONLY_REGIONS; not required for core agent computer path"
+    },
+    {
+      "name": "http-server-main",
+      "maintainedModule": "src/computer/thin-server.mjs",
+      "native": "partial",
+      "generated": "partial",
+      "bundle": "parity",
+      "defaultPath": true,
+      "notes": "Thin HTTP covers sessions/tools; bundle has full surface"
+    }
+  ],
+  "ci": {
+    "requireDefaultPathNativeNotMissing": true,
+    "requireMaintainedModulesExist": true,
+    "requireRegistryNamesMatchParity": true,
+    "forbidHandEditMarkersOnBundle": false
+  }
+}

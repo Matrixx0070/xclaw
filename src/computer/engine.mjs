@@ -7,8 +7,10 @@
  *
  * Transitional default: native.
  * Build: npm run build:computer
+ * Parity gate: npm run check:computer-parity
  */
 import path from "node:path";
+import fs from "node:fs";
 
 /**
  * @param {object} [cfg]
@@ -59,9 +61,42 @@ export function resolveComputerEntryPath(cfg = {}, root = process.cwd()) {
   return path.join(root, "src/computer/thin-server.mjs");
 }
 
+/**
+ * Observability snapshot for status/doctor/logs (C4).
+ * @param {object} [cfg]
+ * @param {string} [root]
+ */
+export function describeComputerEngine(cfg = {}, root = process.cwd()) {
+  const engine = resolveComputerEngine(cfg);
+  const entry = resolveComputerEntryPath(cfg, root);
+  let entryExists = false;
+  let entryBytes = null;
+  try {
+    if (fs.existsSync(entry)) {
+      entryExists = true;
+      entryBytes = fs.statSync(entry).size;
+    }
+  } catch {
+    /* */
+  }
+  return {
+    engine,
+    entry,
+    entryExists,
+    entryBytes,
+    isFallbackBundle: engine === "bundle",
+    strategyPhase: "C4",
+    policy: {
+      defaultEngine: "native",
+      handEditBundle: false,
+    },
+  };
+}
+
 export default {
   resolveComputerEngine,
   isNativeComputer,
   isGeneratedComputer,
   resolveComputerEntryPath,
+  describeComputerEngine,
 };
