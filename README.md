@@ -14,6 +14,10 @@ Not a thin chat wrapper: agents **run tools**, can **verify work**, and can **pr
 git clone https://github.com/Matrixx0070/xclaw.git
 cd xclaw
 
+# 0) One-command install + onboard (creates ~/.xclaw, runs doctor)
+XAI_API_KEY=xai-... npm run install:local     # or: bash install/install.sh --yes
+# equivalently, just onboard:  npm run onboard -- --yes --profile lab
+
 # 1) Key (never commit this)
 export XAI_API_KEY=xai-...          # or other provider keys via config
 export XCLAW_PROFILE=lab            # convenient defaults

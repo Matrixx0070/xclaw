@@ -277,3 +277,16 @@ URL; --dry-run previews.
 RAN: 4 hermetic tests (dry-run/missing/guards/canary) · live end-to-end — published
 an altered bundle (manifest→new sha), republished the original (manifest restored to
 canonical 9d95d0…), fetch:bundle re-verifies · full suite + eval:ci + self-check.
+
+## 2026-08-12 — 3.80.2 restore install/onboard shortcuts + bundle-safe marker (Claude)
+
+STATUS: green
+FIXED: while verifying "ready for one-command install + onboard?", found Grok's
+3.76.0 commit (bf2922b) had dropped the install:local/onboard/init/prove:install
+npm aliases from package.json (files intact, install-e2e CI stayed green — only
+the shortcuts vanished). Restored all four. Also check-bundle-markers now SKIPs
+when the opt-in bundle is absent (was hard-reading the release-fetched file).
+README quickstart now shows the one-command path.
+RAN: npm run onboard -> exit 0, ~/.xclaw/xclaw.json created · npm run install:local
+-> exit 0 · check-bundle-markers SKIP with bundle absent · suite 1102/0 ·
+install-e2e CI green on clean bundle-less checkout.

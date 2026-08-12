@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.80.1",
+  "version": "3.80.2",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
@@ -43,13 +43,17 @@
     "live-e2e": "node scripts/live-enforcement-e2e.mjs",
     "live-enforcement": "node scripts/live-enforcement-e2e.mjs",
     "release-gate:live": "node scripts/release-gate.mjs --live",
-    "check-bundle-markers": "node -e \"const fs=require('fs');const p='src/computer/xclaw-server.mjs';const t=fs.readFileSync(p,'utf8');const m=['A2: driver hooks','A4: humanized CDP motor','A5: single Chrome argv'];const miss=m.filter(x=>!t.includes(x));if(miss.length){console.error('MISSING',miss);process.exit(2)};console.log('OK markers',m.join(', '));\"",
+    "check-bundle-markers": "node -e \"const fs=require('fs');const p='src/computer/xclaw-server.mjs';if(!fs.existsSync(p)){console.log('SKIP: bundle not installed (opt-in artifact — npm run fetch:bundle)');process.exit(0)}const t=fs.readFileSync(p,'utf8');const m=['A2: driver hooks','A4: humanized CDP motor','A5: single Chrome argv'];const miss=m.filter(x=>!t.includes(x));if(miss.length){console.error('MISSING',miss);process.exit(2)}console.log('OK markers',m.join(', '));\"",
     "live-e2e:cron": "node bin/xclaw.mjs live-e2e",
     "live-e2e:schedule": "node bin/xclaw.mjs live-e2e-schedule",
     "build:computer": "node scripts/build-computer-bundle.mjs",
     "computer:build": "node scripts/build-computer-bundle.mjs",
     "fetch:bundle": "node scripts/fetch-computer-bundle.mjs",
-    "publish:bundle": "node scripts/publish-bundle.mjs"
+    "publish:bundle": "node scripts/publish-bundle.mjs",
+    "init": "node src/cli/init.mjs",
+    "onboard": "node src/cli/init.mjs",
+    "install:local": "bash install/install.sh --yes",
+    "prove:install": "node scripts/prove-install-e2e.mjs"
   },
   "files": [
     "bin/",

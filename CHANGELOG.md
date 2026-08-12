@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.80.2 — restore install/onboard npm shortcuts + bundle-safe marker check
+
+- Restored the `npm run install:local` / `onboard` / `init` / `prove:install` script aliases that were dropped from package.json in the 3.76.0 release commit (the underlying `install/install.sh`, `src/cli/init.mjs`, and `scripts/prove-install-e2e.mjs` were always present and `install-e2e` CI stayed green — only the ergonomic shortcuts were missing).
+- `check-bundle-markers` now SKIPs cleanly when the opt-in bundle isn't installed instead of hard-failing on the (now release-fetched) `xclaw-server.mjs`.
+- README quickstart documents the one-command path: `XAI_API_KEY=… npm run install:local` (or `npm run onboard -- --yes --profile lab`).
+- Verified live: `npm run onboard` → exit 0, `~/.xclaw/xclaw.json` created; `npm run install:local` → exit 0; one-command install-e2e proof green in CI on a clean bundle-less checkout.
+
 ## 3.80.1 — atomic bundle publish helper (closes the manifest-drift footgun)
 
 - `npm run publish:bundle [path]` (`scripts/publish-bundle.mjs`) updates the release asset and the `bundle-artifact.json` manifest in one step, so the pinned sha256 can't drift from what `fetch:bundle` downloads. It hashes the bundle, `gh release upload --clobber`s it, **re-downloads and verifies the checksum round-trips**, and only then rewrites the manifest — if the upload or verify fails, the manifest is left untouched. Auto-derives the repo from the manifest URL; `--dry-run` previews.
