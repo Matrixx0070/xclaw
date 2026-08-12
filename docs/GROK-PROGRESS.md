@@ -168,3 +168,15 @@ BUILT:
   fixes 2 host-leak test failures; build stamp gains `fullRebuild:false` —
   fixes strategy-c stamp test
 - This ledger reconstructed append-only from git history
+
+## 2026-08-12 — 3.77.0 MCP reaches the agent loop (0b2f199, Claude)
+
+STATUS: green
+BUILT: cfg.mcp.servers tools join every runAgentLoop as mcp__<server>__<tool>
+via src/agent/mcp-tools.mjs; stdio transport (src/mcp/stdio-client.mjs) +
+client manager rework (initialize handshake, TTL cache, status/close);
+same sandbox/egress/approval path as built-ins; fail-open discovery;
+GET /mcp/status; doctor mcp check. Strategy C: bundle + modules untouched.
+RAN: suite 1043/0 · eval:ci exit 0 · self-check OK · CI green on 0b2f199 ·
+9 new MCP tests incl. real spawned stdio fixture round-trip
+UNVERIFIED: live LLM selecting an MCP tool (no API key on build host)
