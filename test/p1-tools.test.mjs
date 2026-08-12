@@ -5,8 +5,17 @@ import { createViewXVideoTool } from "../src/tools/video-tools.mjs";
 import { createSearchImagesTool } from "../src/tools/image-tools.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import os from "node:os";
+
+function hasFfmpeg() {
+  try {
+    const r = spawnSync("ffmpeg", ["-version"], { encoding: "utf8" });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
 
 describe("P1 tools", () => {
   it("registers view_x_video and image tools", () => {
@@ -16,7 +25,11 @@ describe("P1 tools", () => {
     }
   });
 
-  it("view_x_video extracts frames from synthetic mp4", async () => {
+  it("view_x_video extracts frames from synthetic mp4", async (t) => {
+    if (!hasFfmpeg()) {
+      t.skip("ffmpeg not installed (CI runners often lack it)");
+      return;
+    }
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-vid-"));
     const mp4 = path.join(tmp, "t.mp4");
     await new Promise((resolve, reject) => {
