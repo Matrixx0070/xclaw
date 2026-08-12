@@ -40,6 +40,17 @@ Config: `~/.xclaw/xclaw.json`
 
 More detail: **[INSTALL.md](./INSTALL.md)** · **[OPS.md](./OPS.md)** · **[docs/](./docs/)**
 
+## Docker (try-me)
+
+```bash
+cd deploy
+cp env.example .env   # set XAI_API_KEY
+docker compose up --build
+# → http://127.0.0.1:18790/chat/
+```
+
+Publishes **18790** (gateway / WebChat) and **4243** (computer). See [INSTALL.md](./INSTALL.md#docker-try-me).
+
 ## What you get
 
 | Area | Capability |
@@ -99,7 +110,8 @@ export XCLAW_PROFILE=prod
 export XCLAW_GATEWAY_TOKEN=long-random-secret
 
 # Docker
-cd deploy && docker compose up -d --build
+cd deploy && cp env.example .env   # set token + key + PROFILE=prod
+docker compose up -d --build
 ```
 
 See **deploy/** and **OPS.md**.
