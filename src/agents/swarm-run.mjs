@@ -21,7 +21,9 @@ import {
   toMermaid,
   toDot,
 } from "./graph-viz.mjs";
-import { planAndMaybeMerge } from "./swarm-merge.mjs";
+import { planAndMaybeMerge, resolveMergePolicy } from "./swarm-merge.mjs";
+import { applyWorktreeMerge, removeWorktree } from "./worktree.mjs";
+import path from "node:path";
 import {
   structuredMajorityVote,
   formatVoteReport,
@@ -713,6 +715,97 @@ async function runNode(cfg, swarmCfg, run, node, goal, resultsByNodeId, input) {
  * @param {object} cfg
  * @param {object} input
  */
+
+/**
+ * A — After a successful implement node, merge its worktree into main
+ * so dependent nodes (verify) see the files on the real project tree.
+ * @returns {Promise<object|null>} merge detail or null if skipped
+ */
+export async function mergeImplementNodeEarly(cfg, result, input = {}, onEvent) {
+  if (!result?.ok) return null;
+  if (String(result.role || "").toLowerCase() !== "implement") return null;
+
+  const wt =
+    result.workspace ||
+    result.worktree?.path ||
+    result.result?.worktree?.path ||
+    result.result?.workspace;
+  if (!wt) return null;
+
+  const main = path.resolve(String(input.workingDir || process.cwd()));
+  const wtPath = path.resolve(String(wt));
+  if (wtPath === main) {
+    return { ok: true, skipped: true, method: "same-tree", nodeId: result.nodeId };
+  }
+
+  const policy = resolveMergePolicy(cfg, { ...input, autoMerge: true });
+  // Early path always applies when lab/dev autoMerge or explicit autoMerge
+  if (!policy.autoMerge && input.autoMerge !== true && cfg?.swarm?.earlyMergeImplement !== true) {
+    return { ok: true, skipped: true, method: "autoMerge-off", nodeId: result.nodeId };
+  }
+
+  onEvent?.({
+    type: "swarm",
+    phase: "merge_early_check",
+    nodeId: result.nodeId,
+    worktreePath: wtPath,
+    repoDir: main,
+  });
+
+  const check = await applyWorktreeMerge(main, wtPath, {
+    checkOnly: true,
+    useIndex: Boolean(policy.useIndex),
+  });
+  if (!check.ok) {
+    onEvent?.({
+      type: "swarm",
+      phase: "merge_early_conflict",
+      nodeId: result.nodeId,
+      error: check.error,
+      code: check.code || null,
+    });
+    return {
+      ok: false,
+      nodeId: result.nodeId,
+      phase: "check",
+      code: check.code || null,
+      error: check.error,
+      conflicts: check.conflicts,
+    };
+  }
+  if (check.method === "noop" || check.method === "copy-untracked-check" && !(check.copied || []).length && check.stat === "no changes") {
+    // still try apply for copy-untracked-check with files
+  }
+
+  const apply = await applyWorktreeMerge(main, wtPath, {
+    checkOnly: false,
+    useIndex: Boolean(policy.useIndex),
+  });
+  onEvent?.({
+    type: "swarm",
+    phase: apply.ok ? "merge_early_applied" : "merge_early_failed",
+    nodeId: result.nodeId,
+    method: apply.method,
+    copied: apply.copied,
+    error: apply.error,
+    code: apply.code || null,
+  });
+
+  if (apply.ok && policy.cleanupWorktree) {
+    await removeWorktree(main, wtPath).catch(() => {});
+  }
+
+  return {
+    ok: Boolean(apply.ok),
+    nodeId: result.nodeId,
+    method: apply.method,
+    code: apply.code || null,
+    copied: apply.copied || [],
+    error: apply.error || null,
+    early: true,
+  };
+}
+
 export async function runSwarmFanOut(cfg, input = {}) {
   const swarmCfg = cfg?.swarm || {};
   if (swarmCfg.enabled === false) {
@@ -988,6 +1081,35 @@ export async function runSwarmFanOut(cfg, input = {}) {
           r.nodeId,
           r.ok ? "done" : r.status === "timeout" ? "timeout" : "error"
         );
+        // A: merge implement worktree before dependents in later waves
+        if (r.ok && String(r.role || "").toLowerCase() === "implement") {
+          try {
+            const early = await mergeImplementNodeEarly(
+              cfg,
+              r,
+              input,
+              input.onEvent
+            );
+            if (early) {
+              r.earlyMerge = early;
+              if (early.ok && !early.skipped) {
+                r.mergedToMain = true;
+              }
+            }
+          } catch (e) {
+            r.earlyMerge = {
+              ok: false,
+              error: e.message || String(e),
+              early: true,
+            };
+            input.onEvent?.({
+              type: "swarm",
+              phase: "merge_early_failed",
+              nodeId: r.nodeId,
+              error: r.earlyMerge.error,
+            });
+          }
+        }
         resultsByNodeId.set(r.nodeId, r);
         results.push(r);
         if (r.id) childIds.push(r.id);
