@@ -59,7 +59,9 @@ function httpGet(url, timeoutMs = 3000) {
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
-        res.on("end", () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 500, status: res.statusCode, data }));
+        res.on("end", () =>
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 500, status: res.statusCode, data })
+        );
       }
     );
     req.on("error", (err) => resolve({ ok: false, error: err.message }));
@@ -90,18 +92,19 @@ async function main() {
     else fail(`files.${rel}`, "missing");
   }
 
-  // Gate 2: init --yes --skip-doctor (no live services yet)
+  // Gate 2: init --yes --skip-doctor
   const initEnv = {
     HOME: home,
     XCLAW_PROFILE: "lab",
     XCLAW_GATEWAY_HOST: "127.0.0.1",
     XCLAW_GATEWAY_PORT: String(port),
-    // dummy key so doctor/apiKey check is green; not used for live LLM
     XAI_API_KEY: process.env.XAI_API_KEY || "xai-e2e-dummy-not-for-live-calls",
   };
-  const init = await run(process.execPath, ["src/cli/init.mjs", "--yes", "--profile", "lab", "--skip-doctor", "--json"], {
-    env: initEnv,
-  });
+  const init = await run(
+    process.execPath,
+    ["src/cli/init.mjs", "--yes", "--profile", "lab", "--skip-doctor", "--json"],
+    { env: initEnv }
+  );
   if (init.code === 0) {
     pass("init", "exit 0");
     try {
@@ -110,8 +113,7 @@ async function main() {
       else fail("init.configPath", "missing in json");
       if (j.profile === "lab") pass("init.profile", "lab");
       else fail("init.profile", String(j.profile));
-    } catch (e) {
-      // non-json path still ok if exit 0
+    } catch {
       pass("init.output", "non-json ok");
     }
   } else {
@@ -122,17 +124,16 @@ async function main() {
   if (fs.existsSync(cfgPath)) pass("config.written", cfgPath);
   else fail("config.written", "~/.xclaw/xclaw.json missing under isolated HOME");
 
-  // Gate 3: install.sh syntax + dry path (already did init; re-run script without gateway)
+  // Gate 3: install.sh
   const sh = await run("bash", ["install/install.sh", "--yes", "--skip-doctor"], { env: initEnv });
   if (sh.code === 0) pass("install.sh", "exit 0");
   else fail("install.sh", `exit ${sh.code}: ${(sh.stderr || sh.stdout).slice(0, 400)}`);
 
-  // Gate 4: start gateway, probe /health and /ready
+  // Gate 4: gateway /health + /ready
   const gwEnv = {
     ...initEnv,
     XCLAW_GATEWAY_HOST: "127.0.0.1",
     XCLAW_GATEWAY_PORT: String(port),
-    // allow ready without computer for low-setup proof
     XCLAW_PROFILE: "lab",
   };
   const gw = spawn(process.execPath, ["bin/xclaw.mjs", "gateway"], {
@@ -162,18 +163,24 @@ async function main() {
   if (ready) pass("gateway.ready", `:${port}/ready`);
   else fail("gateway.ready", gwLog.slice(-800) || "not ready");
 
-  // optional chat UI path
   const chat = await httpGet(`http://127.0.0.1:${port}/chat/`);
-  if (chat.ok || chat.status === 200 || chat.status === 304) pass("gateway.chat", `status=${chat.status}`);
-  else pass("gateway.chat.optional", `status=${chat.status || chat.error} (non-fatal)");
+  if (chat.ok || chat.status === 200 || chat.status === 304) {
+    pass("gateway.chat", `status=${chat.status}`);
+  } else {
+    pass("gateway.chat.optional", `status=${chat.status || chat.error} (non-fatal)`);
+  }
 
   try {
     gw.kill("SIGTERM");
-  } catch {}
+  } catch {
+    /* */
+  }
   await sleep(500);
   try {
     gw.kill("SIGKILL");
-  } catch {}
+  } catch {
+    /* */
+  }
 
   console.log("\nSummary");
   console.log("-------");
