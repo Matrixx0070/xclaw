@@ -5,11 +5,12 @@
  *
  * Usage:
  *   node scripts/release-gate.mjs
- *   node scripts/release-gate.mjs --quick     # unit + audit + A-enforcement
+ *   node scripts/release-gate.mjs --quick     # unit + audit + A-enforcement + parity
  *   node scripts/release-gate.mjs --strict    # REQUIRE_SOAK=1 on evidence
  *   node scripts/release-gate.mjs --live      # also run live-enforcement-e2e (needs computer/Chrome)
  *
  * B1: A-enforcement smoke + bundle markers always required (even --quick).
+ * C4: computer-parity gate always required (even --quick).
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -165,6 +166,19 @@ await step("bundle-markers", async () => {
   }
   console.log("Markers present:", markers.join(", "));
   return { code: 0, detail: markers };
+}, { required: true });
+
+// C4 — Strategy C parity matrix (required even in --quick)
+await step("computer-parity", async () => {
+  const r = await run("node", ["scripts/check-computer-parity.mjs"], {
+    quiet: true,
+    env: { XCLAW_ROOT: root },
+  });
+  console.log((r.out + r.err).slice(-800));
+  return {
+    code: r.code,
+    detail: (r.out + r.err).split("\n").filter(Boolean).slice(-6).join(" | "),
+  };
 }, { required: true });
 
 if (live) {
