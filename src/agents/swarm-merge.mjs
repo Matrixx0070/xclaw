@@ -686,8 +686,33 @@ export async function diagnoseMergeProposal(cfg, proposalId, opts = {}) {
 
 /**
  * Owner-approved apply of a pending merge proposal.
+ *
+ * `opts.principal` identifies who is approving: "operator" (CLI/gateway —
+ * default) or "agent" (model-callable tool in the loop). Agents may NOT
+ * approve merges — the agent that proposed a patch approving it next turn
+ * voids the entire pending-approval model (design review P0 / brief 2.2).
+ * Lab-only escape hatch: swarm.allowAgentMergeApprove: true (never in prod).
  */
 export async function approveMergeProposal(cfg, proposalId, opts = {}) {
+  const principal = String(opts.principal || "operator");
+  if (principal !== "operator") {
+    const labOverride =
+      cfg?.swarm?.allowAgentMergeApprove === true &&
+      String(cfg?.profile || "").toLowerCase() !== "prod";
+    if (!labOverride) {
+      return {
+        ok: false,
+        code: "PRINCIPAL_DENIED",
+        error:
+          "merge approval requires an operator (CLI `xclaw merge approve` or gateway) — agents cannot approve proposals",
+        principal,
+        hints: [
+          `xclaw merge approve ${proposalId}`,
+          "lab-only override: swarm.allowAgentMergeApprove: true",
+        ],
+      };
+    }
+  }
   const rec = await getMergeProposal(cfg, proposalId);
   if (!rec) {
     return {
@@ -941,7 +966,7 @@ export function createMergeTools(ctx = {}) {
     {
       name: "xclaw_swarm_merge_approve",
       description:
-        "Approve a pending swarm worktree merge proposal (applies git patches to main repo after re-check).",
+        "Request approval of a pending swarm merge proposal. Approval is operator-gated: unless swarm.allowAgentMergeApprove is set (lab only), this returns PRINCIPAL_DENIED and the operator must run `xclaw merge approve <id>`.",
       parameters: {
         type: "object",
         properties: {
@@ -954,6 +979,7 @@ export function createMergeTools(ctx = {}) {
         const out = await approveMergeProposal(ctx.cfg, proposalId, {
           cleanupWorktree,
           repoDir: ctx.workingDir,
+          principal: "agent",
         });
         return {
           isError: !out.ok,
