@@ -17,3 +17,21 @@
 - Project memory preview: `node bin/xclaw.mjs memory show`
 - Computer build: `npm run build:computer`
 - Tests (memory): `node --test test/project-memory-inject.test.mjs`
+
+## Security (privacy + killable)
+
+- **Egress:** prod profile defaults to **deny** network shell (`curl`/`wget`/`ssh`/URLs).  
+  - Override: `XCLAW_EGRESS=allow|deny|allowlist`  
+  - Allowlist: `security.egress.allowHosts: ["api.x.ai"]` in config  
+- **Sandbox:** tool paths stay under workspace unless `sandbox.allowPaths`  
+- **Kill-switch:**  
+  - `node bin/xclaw.mjs stop-all` — abort active agent sessions + stop computer  
+  - `node bin/xclaw.mjs sessions-active` — list live sessions  
+  - Every `runAgentLoop` registers a session and respects abort  
+- **Auth:** prod should set `requireAuth` + `XCLAW_GATEWAY_TOKEN`  
+- Never commit API keys; rotate any key pasted into chat
+
+## Transcripts
+
+- `node bin/xclaw.mjs transcripts list`  
+- `node bin/xclaw.mjs transcripts show <sessionId>`
