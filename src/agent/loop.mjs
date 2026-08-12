@@ -102,7 +102,7 @@ export async function runAgentLoop(options) {
     userMessage,
     cfg,
     workingDir = process.cwd(),
-    signal,
+    signal: signalOpt,
     onEvent: onEventCb = () => {},
     /** Prefer SSE token streaming when provider supports chatStream */
     stream: preferStream = false,
@@ -117,6 +117,35 @@ export async function runAgentLoop(options) {
   const transcriptId =
     chatSessionId || options.conversationId || chatId || null;
 
+  // Kill-switch: every loop is registered so `xclaw stop-all` / killSession aborts it
+  const sessionKey =
+    transcriptId ||
+    options.sessionId ||
+    `agent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const registered = registerSession(sessionKey, {
+    label: String(userMessage || "").slice(0, 80) || sessionKey,
+  });
+  // Prefer caller signal; also abort when session kill fires
+  let signal = signalOpt;
+  if (signal && registered.signal) {
+    const merged = new AbortController();
+    const forward = () => {
+      try {
+        merged.abort(signal.reason || registered.signal.reason || new Error("aborted"));
+      } catch {
+        /* ignore */
+      }
+    };
+    if (signal.aborted || registered.signal.aborted) forward();
+    else {
+      signal.addEventListener("abort", forward, { once: true });
+      registered.signal.addEventListener("abort", forward, { once: true });
+    }
+    signal = merged.signal;
+  } else {
+    signal = signal || registered.signal;
+  }
+
   const eventLog = [];
   const onEvent = (e) => {
     eventLog.push(e);
@@ -127,6 +156,8 @@ export async function runAgentLoop(options) {
   const skillsEnabled = cfg.skills?.enabled !== false;
   const memoryEnabled = cfg.memory?.enabled !== false;
 
+  // Outer try ensures kill-switch unregister even if setup throws
+  try {
   const computer = createComputerClient(cfg);
   const useFailover = cfg.router?.enabled !== false;
   let provider;
@@ -1141,6 +1172,11 @@ export async function runAgentLoop(options) {
       finalText = `Stopped after ${maxTurns} turns (maxTurns).`;
     }
   } finally {
+    try {
+      unregisterSession(sessionKey);
+    } catch {
+      /* ignore */
+    }
     await computer.destroySession(sessionId).catch(() => {});
 
     // Durable transcript (local-only)
@@ -1308,14 +1344,21 @@ export async function runAgentLoop(options) {
     text: finalText || "(no response)",
     turns,
     toolTrace,
-    model: provider.model,
+    model: provider?.model,
     sessionId,
     suggestions,
     turnState,
     context: {
-      skills: skills.map((s) => s.name),
-      memory: memoryFiles.map((m) => m.path),
+      skills: (skills || []).map((s) => s.name),
+      memory: (memoryFiles || []).map((m) => m.path),
     },
     usage: usageSnap,
   };
+  } finally {
+    try {
+      unregisterSession(sessionKey);
+    } catch {
+      /* ignore */
+    }
+  }
 }

@@ -1,16 +1,14 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — Egress + kill-switch
+## 2026-08-12 — Kill-switch wired into runAgentLoop
 
 STATUS: green
 
 ### BUILT
-- `src/security/egress.mjs` — allow / deny / allowlist (prod default deny)
-- Agent loop hooks `guardToolEgress` after sandbox
-- `src/agent/session-control.mjs` — register / kill / killAll
-- CLI: `xclaw stop-all`, `xclaw sessions-active`
-- Tests: egress + session-control 9/9
+- Every `runAgentLoop` registers a session + merges AbortSignal
+- Outer try/finally always `unregisterSession`
+- Caller signal + `killSession` / `stop-all` both abort the loop
+- Tests: session-kill-loop + session-control + egress
 
 ### PRIOR
-- Live xAI e2e LIVE_OK + PROOF_LIVE
-- CI unit-media apt ffmpeg
+- Egress prod deny, live xAI e2e, unit-media ffmpeg
