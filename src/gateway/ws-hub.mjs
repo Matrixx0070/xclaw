@@ -47,14 +47,196 @@ export function encodeTextFrame(str) {
   return Buffer.concat([header, payload]);
 }
 
-/** Decode frames from a buffer; returns { messages, rest } */
+const DEFAULT_MAX_MESSAGE_BYTES = 1_000_000; // matches the gateway HTTP body cap
+const utf8Strict = new TextDecoder("utf-8", { fatal: true });
+
+/**
+ * Stateful RFC6455 frame parser (server side).
+ *
+ * Handles: frames split across TCP chunks, multiple frames per chunk,
+ * fragmentation (continuation frames, interleaved control frames), safe
+ * 64-bit lengths (rejected above the cap BEFORE buffering), client-mask
+ * enforcement, control-frame rules (FIN required, payload ≤125), RSV bits,
+ * unknown opcodes, close codes, and strict UTF-8 on text messages.
+ *
+ * push(chunk) → { messages, error }. `error` is {code, reason} — after an
+ * error the parser is dead and further pushes return nothing. Garbage input
+ * can only ever produce an error, never a throw.
+ *
+ * @param {{ maxMessageBytes?: number, requireMask?: boolean }} [opts]
+ */
+export function createFrameParser(opts = {}) {
+  const maxMessageBytes = Number(opts.maxMessageBytes) || DEFAULT_MAX_MESSAGE_BYTES;
+  const requireMask = opts.requireMask !== false;
+  let buf = Buffer.alloc(0);
+  let dead = false;
+  /** open fragmented message: { opcode, chunks, size } | null */
+  let fragment = null;
+
+  function fail(code, reason) {
+    dead = true;
+    buf = Buffer.alloc(0);
+    fragment = null;
+    return { code, reason };
+  }
+
+  function push(chunk) {
+    const messages = [];
+    if (dead) return { messages, error: null };
+    buf = buf.length ? Buffer.concat([buf, chunk]) : Buffer.from(chunk);
+
+    while (buf.length >= 2) {
+      const b0 = buf[0];
+      const b1 = buf[1];
+      const fin = (b0 & 0x80) !== 0;
+      const rsv = b0 & 0x70;
+      const opcode = b0 & 0x0f;
+      const masked = (b1 & 0x80) !== 0;
+      let payloadLen = b1 & 0x7f;
+      let hdr = 2;
+
+      if (rsv !== 0) {
+        return { messages, error: fail(1002, "nonzero RSV bits (no extension negotiated)") };
+      }
+      const isControl = (opcode & 0x8) !== 0;
+      if (isControl) {
+        if (!fin) return { messages, error: fail(1002, "fragmented control frame") };
+        if (payloadLen > 125) return { messages, error: fail(1002, "control frame payload > 125") };
+        if (opcode !== 0x8 && opcode !== 0x9 && opcode !== 0xa) {
+          return { messages, error: fail(1002, `unknown control opcode 0x${opcode.toString(16)}`) };
+        }
+      } else if (opcode !== 0x0 && opcode !== 0x1 && opcode !== 0x2) {
+        return { messages, error: fail(1002, `unknown opcode 0x${opcode.toString(16)}`) };
+      }
+      if (requireMask && !masked) {
+        return { messages, error: fail(1002, "client frame not masked") };
+      }
+
+      if (payloadLen === 126) {
+        if (buf.length < 4) break;
+        payloadLen = buf.readUInt16BE(2);
+        hdr = 4;
+      } else if (payloadLen === 127) {
+        if (buf.length < 10) break;
+        const big = buf.readBigUInt64BE(2);
+        // Reject the claimed size BEFORE waiting for (or buffering) the bytes.
+        if (big > BigInt(maxMessageBytes)) {
+          return { messages, error: fail(1009, `frame of ${big} bytes exceeds ${maxMessageBytes}`) };
+        }
+        payloadLen = Number(big);
+        hdr = 10;
+      }
+      if (payloadLen > maxMessageBytes) {
+        return { messages, error: fail(1009, `frame of ${payloadLen} bytes exceeds ${maxMessageBytes}`) };
+      }
+
+      const maskLen = masked ? 4 : 0;
+      const total = hdr + maskLen + payloadLen;
+      if (buf.length < total) break; // wait for more bytes (bounded: payloadLen ≤ cap)
+
+      let payload = buf.subarray(hdr + maskLen, total);
+      if (masked) {
+        const mask = buf.subarray(hdr, hdr + 4);
+        const out = Buffer.alloc(payloadLen);
+        for (let i = 0; i < payloadLen; i++) out[i] = payload[i] ^ mask[i % 4];
+        payload = out;
+      } else {
+        payload = Buffer.from(payload); // detach from the shared buffer
+      }
+      buf = buf.subarray(total);
+
+      if (isControl) {
+        if (opcode === 0x8) {
+          let code = 1000;
+          let reason = "";
+          if (payload.length === 1) {
+            return { messages, error: fail(1002, "close frame with 1-byte payload") };
+          }
+          if (payload.length >= 2) {
+            code = payload.readUInt16BE(0);
+            reason = payload.subarray(2).toString("utf8");
+            if (code < 1000 || code > 4999) code = 1002;
+          }
+          messages.push({ type: "close", code, reason });
+        } else if (opcode === 0x9) {
+          messages.push({ type: "ping", data: payload });
+        } else {
+          messages.push({ type: "pong", data: payload });
+        }
+        continue;
+      }
+
+      // Data frames — fragmentation state machine.
+      if (opcode === 0x0) {
+        if (!fragment) return { messages, error: fail(1002, "continuation without open fragment") };
+        fragment.size += payload.length;
+        if (fragment.size > maxMessageBytes) {
+          return { messages, error: fail(1009, `fragmented message exceeds ${maxMessageBytes}`) };
+        }
+        fragment.chunks.push(payload);
+        if (fin) {
+          const whole = Buffer.concat(fragment.chunks);
+          const kind = fragment.opcode;
+          fragment = null;
+          const out = finishData(kind, whole, messages);
+          if (out) return { messages, error: out };
+        }
+        continue;
+      }
+      if (fragment) {
+        return { messages, error: fail(1002, "new data frame while fragment open") };
+      }
+      if (!fin) {
+        fragment = { opcode, chunks: [payload], size: payload.length };
+        continue;
+      }
+      const out = finishData(opcode, payload, messages);
+      if (out) return { messages, error: out };
+    }
+    return { messages, error: null };
+  }
+
+  function finishData(opcode, payload, messages) {
+    if (opcode === 0x1) {
+      let text;
+      try {
+        text = utf8Strict.decode(payload);
+      } catch {
+        return fail(1007, "invalid UTF-8 in text message");
+      }
+      messages.push({ type: "text", data: text });
+    } else {
+      messages.push({ type: "binary", data: payload });
+    }
+    return null;
+  }
+
+  return {
+    push,
+    get dead() {
+      return dead;
+    },
+  };
+}
+
+/**
+ * Legacy one-shot decode; returns { messages, rest }.
+ * Accepts unmasked frames (server→client direction) — mask enforcement lives
+ * in the per-connection parser, not here. On a protocol error it stops and
+ * returns what was decoded so far.
+ */
 export function decodeFrames(buf) {
-  const messages = [];
+  const parser = createFrameParser({ requireMask: false });
+  const { messages } = parser.push(buf);
+  const rest = parser.dead ? Buffer.alloc(0) : buf.subarray(buf.length - unconsumedTail(buf));
+  return { messages, rest };
+}
+
+/** Internal: bytes after the last complete frame (legacy `rest` semantics). */
+function unconsumedTail(buf) {
   let offset = 0;
   while (offset + 2 <= buf.length) {
-    const b0 = buf[offset];
     const b1 = buf[offset + 1];
-    const opcode = b0 & 0x0f;
     const masked = (b1 & 0x80) !== 0;
     let payloadLen = b1 & 0x7f;
     let hdr = 2;
@@ -64,30 +246,16 @@ export function decodeFrames(buf) {
       hdr = 4;
     } else if (payloadLen === 127) {
       if (offset + 10 > buf.length) break;
-      payloadLen = Number(buf.readBigUInt64BE(offset + 2));
+      const big = buf.readBigUInt64BE(offset + 2);
+      if (big > BigInt(Number.MAX_SAFE_INTEGER)) break;
+      payloadLen = Number(big);
       hdr = 10;
     }
-    const maskLen = masked ? 4 : 0;
-    if (offset + hdr + maskLen + payloadLen > buf.length) break;
-    let payload = buf.subarray(offset + hdr + maskLen, offset + hdr + maskLen + payloadLen);
-    if (masked) {
-      const mask = buf.subarray(offset + hdr, offset + hdr + 4);
-      const out = Buffer.alloc(payloadLen);
-      for (let i = 0; i < payloadLen; i++) out[i] = payload[i] ^ mask[i % 4];
-      payload = out;
-    }
-    offset += hdr + maskLen + payloadLen;
-    if (opcode === 0x8) {
-      messages.push({ type: "close" });
-    } else if (opcode === 0x9) {
-      messages.push({ type: "ping", data: payload });
-    } else if (opcode === 0xa) {
-      messages.push({ type: "pong" });
-    } else if (opcode === 0x1) {
-      messages.push({ type: "text", data: payload.toString("utf8") });
-    }
+    const total = hdr + (masked ? 4 : 0) + payloadLen;
+    if (offset + total > buf.length) break;
+    offset += total;
   }
-  return { messages, rest: buf.subarray(offset) };
+  return buf.length - offset;
 }
 
 function sendJson(socket, obj) {
@@ -100,19 +268,38 @@ function sendJson(socket, obj) {
   }
 }
 
-function sendClose(socket, code = 1000) {
-  try {
-    const payload = Buffer.alloc(2);
-    payload.writeUInt16BE(code, 0);
-    const header = Buffer.from([0x88, 0x02]);
-    socket.write(Buffer.concat([header, payload]));
-  } catch {
-    /* */
+/**
+ * Send a close frame (code + optional reason ≤123 bytes) once, then destroy —
+ * immediately by default, or after a short grace so the peer can read the
+ * frame and echo its own close (RFC close handshake).
+ */
+function sendClose(socket, code = 1000, reason = "", { graceMs = 0 } = {}) {
+  if (!socket || socket.destroyed) return;
+  if (!socket._xclawCloseSent) {
+    socket._xclawCloseSent = true;
+    try {
+      const reasonBuf = Buffer.from(String(reason || ""), "utf8").subarray(0, 123);
+      const payload = Buffer.alloc(2 + reasonBuf.length);
+      payload.writeUInt16BE(code, 0);
+      reasonBuf.copy(payload, 2);
+      socket.write(Buffer.concat([Buffer.from([0x88, payload.length]), payload]));
+    } catch {
+      /* */
+    }
   }
-  try {
-    socket.destroy();
-  } catch {
-    /* */
+  const destroy = () => {
+    try {
+      socket.destroy();
+    } catch {
+      /* */
+    }
+  };
+  if (graceMs > 0) {
+    const t = setTimeout(destroy, graceMs);
+    if (t.unref) t.unref();
+    socket.once("close", () => clearTimeout(t));
+  } else {
+    destroy();
   }
 }
 
@@ -124,6 +311,7 @@ function sendClose(socket, code = 1000) {
 export function attachWebSocketHub(server, opts = {}) {
   const path = opts.path || "/ws/events";
   const heartbeatMs = Math.max(1000, Number(opts.heartbeatMs) || 25_000);
+  const maxMessageBytes = Number(opts.maxMessageBytes) || DEFAULT_MAX_MESSAGE_BYTES;
   /** @type {(req) => {ok:boolean, protocol?:string, error?:string}} */
   const authorize = typeof opts.authorize === "function" ? opts.authorize : null;
   const missThreshold = Math.max(1, Number(opts.missThreshold) || 2);
@@ -206,7 +394,7 @@ export function attachWebSocketHub(server, opts = {}) {
       const client = {
         socket,
         channels: new Set(["all"]),
-        buf: Buffer.alloc(0),
+        parser: createFrameParser({ maxMessageBytes, requireMask: true }),
         alive: true,
         misses: 0,
         lastPongAt: Date.now(),
@@ -214,10 +402,6 @@ export function attachWebSocketHub(server, opts = {}) {
       };
       clients.add(client);
       stats.connected += 1;
-
-      if (head && head.length) {
-        client.buf = Buffer.concat([client.buf, head]);
-      }
 
       sendJson(socket, {
         type: "ready",
@@ -228,29 +412,30 @@ export function attachWebSocketHub(server, opts = {}) {
         at: new Date().toISOString(),
       });
 
-      socket.on("data", (chunk) => {
-        client.buf = Buffer.concat([client.buf, chunk]);
-        const { messages, rest } = decodeFrames(client.buf);
-        client.buf = rest;
+      const onBytes = (chunk) => {
+        let messages, error;
+        try {
+          ({ messages, error } = client.parser.push(chunk));
+        } catch {
+          // Fuzz-safety belt: the parser must not throw, but if it ever does,
+          // fail the connection rather than the gateway process.
+          messages = [];
+          error = { code: 1002, reason: "frame parse failure" };
+        }
         for (const msg of messages) {
           // any traffic counts as liveness
           touch(client);
 
           if (msg.type === "close") {
-            dropClient(client, "close");
+            // Close handshake: echo the peer's code, then tear down.
+            clients.delete(client);
+            sendClose(socket, msg.code || 1000, "", { graceMs: 250 });
             return;
           }
           if (msg.type === "ping") {
             try {
-              const payload = msg.data || Buffer.alloc(0);
-              const header = Buffer.alloc(2);
-              header[0] = 0x8a;
-              header[1] = payload.length < 126 ? payload.length : 0;
-              if (payload.length < 126) {
-                socket.write(Buffer.concat([header, payload]));
-              } else {
-                // oversized control payload — ignore
-              }
+              const payload = msg.data || Buffer.alloc(0); // parser enforces ≤125
+              socket.write(Buffer.concat([Buffer.from([0x8a, payload.length]), payload]));
             } catch {
               /* */
             }
@@ -281,7 +466,16 @@ export function attachWebSocketHub(server, opts = {}) {
             });
           }
         }
-      });
+        if (error) {
+          // Protocol violation: close with the parser's code, then destroy
+          // after a short grace. Malformed bytes can never crash the gateway.
+          clients.delete(client);
+          sendClose(socket, error.code, error.reason, { graceMs: 250 });
+        }
+      };
+
+      socket.on("data", onBytes);
+      if (head && head.length) onBytes(head);
 
       socket.on("close", () => dropClient(client, "close"));
       socket.on("error", () => dropClient(client, "error"));

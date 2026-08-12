@@ -367,3 +367,32 @@ DEFERRED w/ rationale: WS library (zero-dep stance), signed skills (trust-model
 decision needed), router file split (churn>value), swarm resume journal
 (design sketched: append-only NDJSON at node state transitions, replay into
 resultsByNodeId), sessions/seats durability.
+
+## 2026-08-12 — 3.84.0 final deferred tier (Claude)
+
+STATUS: green
+BUILT: (1) WS RFC6455 hardening ZERO-DEP — old parser had NO payload cap
+(10GB claim = buffered), ignored FIN (fragmented messages silently corrupted),
+no mask enforcement; new createFrameParser: stateful chunking, 1009 on header
+before buffering (1MB cap), 1002 unmasked/protocol, full fragmentation state
+machine, close handshake w/ code echo + grace, 1007 UTF-8; garbage → clean
+close, never a crash; API + auth-before-101 unchanged. (2) swarm resume
+journal — append-only NDJSON per run (graph-hash header, node transitions),
+resumeSwarmRun + `xclaw swarm resume <id>` replays ok results and re-runs
+failed/skipped; JOURNAL_GRAPH_MISMATCH refusal; torn lines tolerated;
+advisory (write errors never fail runs). (3) skills integrity manifest —
+`xclaw skills lock`/`verify`, skills.lock.json at workspace git root
+(sha256 over SKILL.md bytes); modes off (no lockfile) / warn (lockfile) /
+enforce (lockfile+prod: changed/unmanifested excluded incl. xclaw_skill tool);
+doctor skills.integrity row. (4) router split started — routes/swarm.mjs +
+routes/cron.mjs extracted (index 2451→2380 lines; SSE handlers stay inline);
+STALE findings closed: sessions persist already atomic, seats/manager.mjs
+no longer exists.
+RAN: suite 1235 total, 0 fail (1230 pass, 5 env-skipped) · eval:ci OK ·
+LIVE gateway boot: /cron/status + /cron/jobs + /swarm/merges via extracted
+modules, /swarm/<bad-id> 404, /v1/cron/status 200 · WS pack 46/46 incl.
+raw-socket fragmentation/oversize/masking/close tests · swarm+spawn+worktree
+114/114 incl. resume-only-failed-node proof · skills lock/verify CLI smoke
+(22 pinned, drift → exit 1).
+PARKED (explicit): full router split, thinking-block replay (loop.mjs),
+bundle git-history purge (needs Frank's opt-in).

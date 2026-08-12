@@ -195,6 +195,15 @@ export async function loadAllSkills({ configDir, cwd, cfg } = {}) {
   } catch {
     /* stats optional */
   }
+  // Manifest-first integrity (skills.lock.json): warn on or exclude skills
+  // that drifted from the pinned hashes. Never breaks loading.
+  try {
+    const { applyIntegrity } = await import("./integrity.mjs");
+    const res = await applyIntegrity(skills, { cwd: cwd || process.cwd(), cfg });
+    skills = res.skills;
+  } catch {
+    /* integrity optional */
+  }
   // Carry progressive-disclosure prefs to buildContextSections without
   // changing its call sites (the loop passes cfg here but not there).
   // Non-enumerable: invisible to iteration/JSON.

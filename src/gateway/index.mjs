@@ -5,6 +5,8 @@
 import http from "node:http";
 import { createHttpServer } from "./tls.mjs";
 import { tryHandleSecurityRoute } from "./routes/security.mjs";
+import { tryHandleSwarmRoute } from "./routes/swarm.mjs";
+import { tryHandleCronRoute } from "./routes/cron.mjs";
 import { applyCors } from "./cors.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import fs from "node:fs/promises";
@@ -1804,50 +1806,20 @@ export async function startGateway({ root } = {}) {
         return json(res, 200, { count: items.length, runs: items });
       }
 
-      if (p === "/swarm/merges" && req.method === "GET") {
-        const { listMergeProposals } = await import("../agents/swarm-merge.mjs");
-        const statusFilter = url.searchParams.get("status") || undefined;
-        const limit = Number(url.searchParams.get("limit") || 30);
-        const items = await listMergeProposals(cfg, { status: statusFilter, limit });
-        return json(res, 200, { count: items.length, proposals: items });
-      }
-
-      if (p.startsWith("/swarm/merges/") && p.endsWith("/approve") && req.method === "POST") {
-        const { approveMergeProposal } = await import("../agents/swarm-merge.mjs");
-        const id = p.slice("/swarm/merges/".length, p.length - "/approve".length);
-        const body = await readBody(req).catch(() => ({}));
-        const result = await approveMergeProposal(cfg, id, {
-          repoDir: body.repo || body.repoDir,
-          checkOnly: body.checkOnly === true,
+      // /swarm read + merge-approval routes served by routes/swarm.mjs;
+      // /swarm/run + /swarm/run/stream POST stay inline above (SSE closures).
+      if (p === "/swarm/merges" || p.startsWith("/swarm/")) {
+        const handled = await tryHandleSwarmRoute({
+          p,
+          method: req.method,
+          req,
+          res,
+          url,
+          cfg,
+          json,
+          readBody,
         });
-        return json(res, result.ok ? 200 : 422, result);
-      }
-
-      if (p.startsWith("/swarm/merges/") && p.endsWith("/reject") && req.method === "POST") {
-        const { rejectMergeProposal } = await import("../agents/swarm-merge.mjs");
-        const id = p.slice("/swarm/merges/".length, p.length - "/reject".length);
-        const body = await readBody(req).catch(() => ({}));
-        const result = await rejectMergeProposal(cfg, id, body.reason || "");
-        return json(res, result.ok ? 200 : 422, result);
-      }
-
-      if (p.startsWith("/swarm/merges/") && req.method === "GET") {
-        const { getMergeProposal } = await import("../agents/swarm-merge.mjs");
-        const id = p.slice("/swarm/merges/".length).split("/")[0];
-        const rec = await getMergeProposal(cfg, id);
-        if (!rec) return json(res, 404, { error: "merge proposal not found", id });
-        return json(res, 200, rec);
-      }
-
-      if (p.startsWith("/swarm/") && req.method === "GET") {
-        const { getSwarmRun } = await import("../agents/swarm-store.mjs");
-        const id = p.slice("/swarm/".length).split("/")[0];
-        if (!id || id === "run" || id === "merges") {
-          return json(res, 404, { error: "not found" });
-        }
-        const run = await getSwarmRun(cfg, id);
-        if (!run) return json(res, 404, { error: "swarm run not found", id });
-        return json(res, 200, run);
+        if (handled) return;
       }
 
       // --- Transcripts (inspectable local conversation log) ---
@@ -2259,62 +2231,19 @@ export async function startGateway({ root } = {}) {
         return json(res, 200, resolveProviderRoute(cfg, { model }));
       }
 
-      if (p === "/cron/logs" && req.method === "GET") {
-        const { monitorCronLogs } = await import("../cron/logs.mjs");
-        const lines = Number(url.searchParams.get("lines") || 40);
-        return json(res, 200, monitorCronLogs(cfg, { lines }));
-      }
-      if (p === "/cron/logs/doctor" && req.method === "GET") {
-        const { tailFile, doctorLogPath, parseDoctorLogRuns } = await import("../cron/logs.mjs");
-        const lines = Number(url.searchParams.get("lines") || 80);
-        const tail = tailFile(doctorLogPath(cfg), { lines });
-        return json(res, 200, {
-          ...tail,
-          runs: parseDoctorLogRuns(tail.text),
-        });
-      }
-      if (p === "/cron/status" && req.method === "GET") {
-        return json(res, 200, cronStatus());
-      }
-      if (p === "/cron/jobs" && req.method === "GET") {
-        return json(res, 200, { jobs: listJobs() });
-      }
-      if (p === "/cron/jobs" && req.method === "POST") {
-        const body = await readBody(req);
-        const job = addJob({
-          name: body.name || "job",
-          intervalMs: body.intervalMs,
-          schedule: body.schedule,
-          enabled: body.enabled !== false,
-          sessionKey: body.sessionKey,
-          sessionTarget: body.sessionTarget,
-          delivery: body.delivery,
-          deliveryContext: body.deliveryContext,
-          payload: body.payload,
-          agentId: body.agentId,
+      // /cron scheduler routes served by routes/cron.mjs (/cron/eval stays inline).
+      if (p.startsWith("/cron/") && p !== "/cron/eval" && p !== "/cron/eval/run") {
+        const handled = await tryHandleCronRoute({
+          p,
+          method: req.method,
+          req,
+          res,
+          url,
           cfg,
-          handler: body.payload?.message || body.payload?.text
-            ? undefined // use announceCronJob default
-            : async (job) => {
-                console.log(`[xclaw:cron] tick ${job.name}`, job.delivery || "");
-              },
+          json,
+          readBody,
         });
-        return json(res, 200, { id: job.id, job: { ...job, handler: undefined } });
-      }
-      if (p.startsWith("/cron/jobs/") && p.endsWith("/run") && req.method === "POST") {
-        const id = p.slice("/cron/jobs/".length, -"/run".length);
-        return json(res, 200, await runCronJob(id));
-      }
-      if (p.startsWith("/cron/jobs/") && req.method === "GET") {
-        const id = p.slice("/cron/jobs/".length);
-        const job = getJob(id);
-        return job
-          ? json(res, 200, { ...job, handler: undefined })
-          : json(res, 404, { error: "not found" });
-      }
-      if (p.startsWith("/cron/jobs/") && req.method === "DELETE") {
-        cancelJob(p.slice("/cron/jobs/".length));
-        return json(res, 200, { ok: true });
+        if (handled) return;
       }
 
       if (p === "/media/canvas" && req.method === "POST") {

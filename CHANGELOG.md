@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.84.0 — final deferred tier: WS protocol hardening, resume journal, skills integrity, router split
+
+Suite 1235 total / 0 fail (1230 pass, 5 env-skipped). Extracted routes + /v1 live-verified on a booted gateway.
+
+**WebSocket protocol hardening (zero-dep — no library added)**
+
+- The hand-rolled RFC6455 layer had real holes: NO payload cap anywhere (a client claiming a 10GB frame via the 64-bit length header would be buffered), the FIN bit was ignored entirely (fragmented messages were silently corrupted, first fragment parsed as the whole message), no client-mask enforcement, close frames never echoed the peer's code. New exported `createFrameParser`: stateful partial-chunk/multi-frame parsing, 64-bit lengths rejected on the header alone (1009 before any buffering, 1MB default cap matching the HTTP body cap), client mask required (1002), full fragmentation state machine with interleaved control frames, control-frame rules enforced, close-code validation + proper close handshake with grace, strict UTF-8 (1007), unknown opcodes/RSV → 1002. Garbage bytes can only produce a clean close, never a crash. Public API and auth-before-101 unchanged.
+
+**Swarm resume journal**
+
+- Per-run append-only NDJSON (`~/.xclaw/swarms/runs/<id>.journal`): `run_start` header with a graph hash, `node_start`/`node_result` at every transition. New `resumeSwarmRun(cfg, runId)` + `xclaw swarm resume <id>`: replays last-terminal-ok results, re-runs failed/skipped nodes, refuses on graph-hash mismatch (`JOURNAL_GRAPH_MISMATCH`), tolerates torn trailing lines. Journaling is advisory — a write error warns, never fails the run. The wave scheduler is reused via preloaded state, not duplicated.
+
+**Skills integrity manifest (signed-skills lite, no external trust infra)**
+
+- `xclaw skills lock` pins every discovered skill's SKILL.md sha256 into a versionable `skills.lock.json` at the workspace git root; `xclaw skills verify` reports ok/changed/new/missing (exit 1 on drift). Loader enforcement via `skills.integrity`: no lockfile → off (zero behavior change); lockfile present → warn; lockfile + prod → **enforce** (changed/unmanifested skills excluded from injection AND from the `xclaw_skill` tool). Doctor row `skills.integrity`.
+
+**Gateway router split (started) + stale-finding closure**
+
+- `/swarm` read/merge routes and `/cron` scheduler routes extracted into `routes/swarm.mjs` / `routes/cron.mjs` (the routes/security.mjs pattern); index.mjs shrinks 2451→2380 lines with the SSE-heavy handlers deliberately left inline. Remaining groups tracked.
+- Stale audit findings closed by inspection: sessions persistence already writes atomically (tmp+rename), and the flagged `seats/manager.mjs` no longer exists in the tree.
+
+Remaining (explicitly parked): full router split to ~400 lines, Anthropic multi-turn thinking-block replay (loop.mjs history plumbing), bundle git-history purge (destructive — needs explicit owner opt-in).
+
 ## 3.83.0 — deferred P2/P3 tier: progressive skills, reasoning params, swarm scale, /v1 API
 
 Suite 1213 total / 0 fail (1208 pass, 5 env-skipped) — and ~4s faster from an approval-timer fix. Gateway /v1 aliasing live-verified.

@@ -2,6 +2,7 @@
  * S5 — CLI for swarm runs and merge proposals (no agent loop required).
  */
 import { listSwarmRuns, getSwarmRun } from "../agents/swarm-store.mjs";
+import { resumeSwarmRun } from "../agents/swarm-run.mjs";
 import {
   listMergeProposals,
   getMergeProposal,
@@ -54,6 +55,34 @@ export async function swarmCliMain(cfg, args = []) {
     }
     console.log(`\nDetail: xclaw swarm show <id>`);
     return 0;
+  }
+
+  if (sub === "resume") {
+    const id = args[1] || flag(args, "--id");
+    if (!id) {
+      console.error("Usage: xclaw swarm resume <swarmId>");
+      return 1;
+    }
+    const rec = (await getSwarmRun(cfg, id)) || (await findRunByPrefix(cfg, id));
+    if (!rec) {
+      console.error("Swarm run not found:", id);
+      return 1;
+    }
+    console.log(`Resuming swarm ${rec.id} (${rec.status}) …`);
+    const out = await resumeSwarmRun(cfg, rec.id, {
+      workingDir: process.cwd(),
+      onEvent: (e) => {
+        if (e?.phase && e.type === "swarm") {
+          console.log(`  [${e.phase}] ${e.nodeId || ""}`.trimEnd());
+        }
+      },
+    });
+    if (!out.ok && out.error) {
+      console.error(`Resume failed (${out.code || "ERROR"}): ${out.error}`);
+      return 1;
+    }
+    console.log(out.summary || `status=${out.status}`);
+    return out.ok ? 0 : 1;
   }
 
   if (sub === "show" || sub === "get") {
@@ -303,6 +332,7 @@ function printSwarmHelp() {
   console.log(`Usage:
   xclaw swarm status|--list [--json] [--limit N]
   xclaw swarm show <id> [--json] [--summary]
+  xclaw swarm resume <id>       re-run an interrupted run from its journal
   xclaw swarm policy
 
 Shows durable SwarmRun records under ~/.xclaw/swarms/runs/`);

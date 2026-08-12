@@ -14,7 +14,14 @@ import {
 import {
   createSwarmRun,
   updateSwarmRun,
+  getSwarmRun,
 } from "./swarm-store.mjs";
+import {
+  createRunJournal,
+  readJournal,
+  computeGraphHash,
+  slimResultForJournal,
+} from "./swarm-journal.mjs";
 import {
   topologicalWaves,
   toAsciiWaves,
@@ -949,30 +956,65 @@ export async function runSwarmFanOut(cfg, input = {}) {
   }
 
   let run;
-  try {
-    run = await createSwarmRun(cfg, {
-      goal,
-      status: "running",
-      parentSession: input.parentId || null,
-      budget: { maxParallel, maxChildren },
-      policy: {
-        isolation: swarmCfg.defaultIsolation || "worktree",
-        onDepFail,
-        waves: waves.length,
-      },
-      graph: nodes.map((n) => ({
-        id: n.id,
-        role: n.role,
-        task: n.task,
-        dependsOn: n.dependsOn,
-        status: "pending",
-      })),
-      children: [],
+  if (input._resumeRun) {
+    run = input._resumeRun;
+    try {
+      await updateSwarmRun(cfg, run.id, { status: "running", finishedAt: null });
+    } catch {
+      /* resume proceeds even if the status refresh fails */
+    }
+  } else {
+    try {
+      run = await createSwarmRun(cfg, {
+        goal,
+        status: "running",
+        parentSession: input.parentId || null,
+        budget: { maxParallel, maxChildren },
+        policy: {
+          isolation: swarmCfg.defaultIsolation || "worktree",
+          onDepFail,
+          waves: waves.length,
+        },
+        graph: nodes.map((n) => ({
+          id: n.id,
+          role: n.role,
+          task: n.task,
+          dependsOn: n.dependsOn,
+          status: "pending",
+        })),
+        children: [],
+      });
+    } catch (e) {
+      return swarmError("PERSIST_FAILED", e.message || String(e), {
+        phase: "createSwarmRun",
+        hint: SWARM_ERROR_HINTS.PERSIST_FAILED,
+      });
+    }
+  }
+
+  // Append-only resume journal (advisory — write errors warn, never fail the run)
+  const journal = createRunJournal(cfg, run.id, {
+    onWarn: (e) =>
+      input.onEvent?.({
+        type: "swarm",
+        phase: "journal_warn",
+        swarmId: run.id,
+        error: e?.message || String(e),
+      }),
+  });
+  if (input._resumeRun) {
+    journal.append({
+      type: "resume",
+      runId: run.id,
+      replayed: [...(input._preloadedResults?.keys?.() || [])],
     });
-  } catch (e) {
-    return swarmError("PERSIST_FAILED", e.message || String(e), {
-      phase: "createSwarmRun",
-      hint: SWARM_ERROR_HINTS.PERSIST_FAILED,
+  } else {
+    journal.append({
+      type: "run_start",
+      runId: run.id,
+      goal,
+      graphHash: computeGraphHash(goal, nodes),
+      nodes: nodes.map((n) => ({ id: n.id, role: n.role, dependsOn: n.dependsOn })),
     });
   }
 
@@ -993,6 +1035,18 @@ export async function runSwarmFanOut(cfg, input = {}) {
   const resultsByNodeId = new Map();
   const childIds = [];
   const results = [];
+
+  // Resume: replay terminal ok results — those nodes are "done" and the wave
+  // scheduler (which only dispatches "pending") re-runs everything else.
+  if (input._preloadedResults instanceof Map) {
+    for (const [nodeId, r] of input._preloadedResults) {
+      if (!state.has(nodeId)) continue;
+      state.set(nodeId, "done");
+      resultsByNodeId.set(nodeId, r);
+      results.push(r);
+      if (r.id) childIds.push(r.id);
+    }
+  }
 
   const persistGraph = async () => {
     try {
@@ -1038,6 +1092,7 @@ export async function runSwarmFanOut(cfg, input = {}) {
       };
       resultsByNodeId.set(m.id, sr);
       results.push(sr);
+      journal.append({ type: "node_result", nodeId: m.id, result: sr });
     }
   }
 
@@ -1090,6 +1145,7 @@ export async function runSwarmFanOut(cfg, input = {}) {
         await recordSkippedNode(cfg, run, n, skipRes, goal);
         resultsByNodeId.set(n.id, skipRes);
         results.push(skipRes);
+        journal.append({ type: "node_result", nodeId: n.id, result: skipRes });
         continue;
       }
 
@@ -1115,6 +1171,7 @@ export async function runSwarmFanOut(cfg, input = {}) {
         await recordSkippedNode(cfg, run, n, skipRes, goal);
         resultsByNodeId.set(n.id, skipRes);
         results.push(skipRes);
+        journal.append({ type: "node_result", nodeId: n.id, result: skipRes });
         input.onEvent?.({
           type: "swarm",
           phase: "child_skipped",
@@ -1142,7 +1199,10 @@ export async function runSwarmFanOut(cfg, input = {}) {
     // Run wave with concurrency ≤ maxParallel
     for (let i = 0; i < toRun.length; i += maxParallel) {
       const batch = toRun.slice(i, i + maxParallel);
-      for (const n of batch) state.set(n.id, "running");
+      for (const n of batch) {
+        state.set(n.id, "running");
+        journal.append({ type: "node_start", nodeId: n.id });
+      }
       await persistGraph();
 
       const batchResults = await Promise.all(
@@ -1188,6 +1248,11 @@ export async function runSwarmFanOut(cfg, input = {}) {
         resultsByNodeId.set(r.nodeId, r);
         results.push(r);
         if (r.id) childIds.push(r.id);
+        journal.append({
+          type: "node_result",
+          nodeId: r.nodeId,
+          result: slimResultForJournal(r),
+        });
       }
       await persistGraph();
 
@@ -1428,7 +1493,98 @@ export async function runSwarmFanOut(cfg, input = {}) {
     skipCount,
   });
 
+  await journal.flush();
   return finalResult;
+}
+
+/**
+ * Resume an interrupted swarm run from its journal.
+ *
+ * Replays terminal ok node results (a node whose LAST journaled terminal
+ * entry is not ok gets re-run), verifies the journal's graph hash against the
+ * graph reconstructed from the run record (a journal can never drive a
+ * different graph), then re-enters the shared wave scheduler — only nodes
+ * still "pending" execute.
+ *
+ * @param {object} cfg
+ * @param {string} runId
+ * @param {object} [opts] forwarded to runSwarmFanOut (onEvent, workingDir,
+ *   signal, autoMerge, spawnSubagent for tests, …)
+ */
+export async function resumeSwarmRun(cfg, runId, opts = {}) {
+  const run = await getSwarmRun(cfg, runId);
+  if (!run) {
+    return {
+      ok: false,
+      code: "RUN_NOT_FOUND",
+      error: `swarm run not found: ${runId}`,
+    };
+  }
+  const entries = await readJournal(cfg, runId);
+  if (!entries || !entries.length) {
+    return {
+      ok: false,
+      code: "JOURNAL_NOT_FOUND",
+      error: `no journal for run ${runId} (runs before 3.84.0 have none)`,
+    };
+  }
+  const header = entries.find((e) => e.type === "run_start");
+  if (!header || !header.graphHash) {
+    return {
+      ok: false,
+      code: "JOURNAL_NOT_FOUND",
+      error: `journal for ${runId} has no run_start header`,
+    };
+  }
+
+  const graph = Array.isArray(run.graph) ? run.graph : [];
+  if (!graph.length) {
+    return {
+      ok: false,
+      code: "JOURNAL_GRAPH_MISMATCH",
+      error: `run record ${runId} has no graph to resume`,
+    };
+  }
+  const tasks = graph.map((n) => ({
+    id: n.id,
+    task: n.task,
+    role: n.role,
+    dependsOn: n.dependsOn || [],
+  }));
+  const norm = normalizeTaskGraph(tasks);
+  if (norm.error) {
+    return {
+      ok: false,
+      code: "JOURNAL_GRAPH_MISMATCH",
+      error: `stored graph no longer normalizes: ${norm.error}`,
+    };
+  }
+  const actualHash = computeGraphHash(run.goal || "", norm.nodes);
+  if (actualHash !== header.graphHash) {
+    return {
+      ok: false,
+      code: "JOURNAL_GRAPH_MISMATCH",
+      error: "journal graph hash does not match the run record's graph/goal",
+      details: { journalHash: header.graphHash, runHash: actualHash },
+    };
+  }
+
+  // Last terminal entry per node wins; only ok results are replayed.
+  const preloaded = new Map();
+  for (const e of entries) {
+    if (e.type !== "node_result" || !e.nodeId || !e.result) continue;
+    if (e.result.ok) preloaded.set(e.nodeId, e.result);
+    else preloaded.delete(e.nodeId);
+  }
+
+  return runSwarmFanOut(cfg, {
+    ...opts,
+    goal: run.goal || "",
+    tasks,
+    onDepFail: opts.onDepFail || run.policy?.onDepFail,
+    _resumeRun: run,
+    _preloadedResults: preloaded,
+  });
 }
 
 /**

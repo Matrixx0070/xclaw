@@ -723,6 +723,41 @@ export async function runDoctor(opts = {}) {
       "ok",
       n ? `${n} draft proposal(s) in skill-proposals/` : "no skill drafts pending"
     );
+    // Manifest-first skill integrity (skills.lock.json)
+    try {
+      const integrity = await import("../skills/integrity.mjs");
+      const { loadAllSkills } = await import("../skills/loader.mjs");
+      const { path: lockPath, data } = await integrity.readLockfile(process.cwd());
+      const prod = String(cfg.profile || "").toLowerCase() === "prod";
+      if (!data) {
+        push(
+          "skills.integrity",
+          prod ? "warn" : "ok",
+          prod
+            ? `no ${integrity.LOCKFILE_NAME} — prod injects unpinned skills (run: xclaw skills lock)`
+            : `no ${integrity.LOCKFILE_NAME} (integrity off — optional: xclaw skills lock)`
+        );
+      } else {
+        const rawCfg = { ...cfg, skills: { ...(cfg.skills || {}), integrity: "off" } };
+        const skills = await loadAllSkills({
+          configDir: cfg.paths?.configDir,
+          cwd: process.cwd(),
+          cfg: rawCfg,
+        });
+        const { evaluated, missing } = await integrity.evaluateSkills(skills, data);
+        const drift = evaluated.filter((e) => e.status !== "verified").length + missing.length;
+        const mode = integrity.resolveIntegrityMode(cfg, true);
+        push(
+          "skills.integrity",
+          drift ? "warn" : "ok",
+          drift
+            ? `${drift} skill(s) drifted from ${lockPath} (mode=${mode}) — xclaw skills verify`
+            : `${evaluated.length} skill(s) verified against lockfile (mode=${mode})`
+        );
+      }
+    } catch (ie) {
+      push("skills.integrity", "warn", ie?.message || String(ie));
+    }
     const pref = (await import("node:path")).default.join(
       cfg.paths?.configDir || "",
       "memory",

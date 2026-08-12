@@ -1691,6 +1691,40 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         }, null, 2));
         break;
       }
+      if (sub === "lock" || sub === "verify") {
+        const { loadAllSkills } = await import("../src/skills/loader.mjs");
+        const integrity = await import("../src/skills/integrity.mjs");
+        // Raw discovery — integrity checking off so enforce mode can't hide
+        // drifted skills from the very command meant to report them.
+        const rawCfg = { ...cfg, skills: { ...(cfg.skills || {}), integrity: "off" } };
+        const skills = await loadAllSkills({
+          configDir: cfg.paths?.configDir,
+          cwd: process.cwd(),
+          cfg: rawCfg,
+        });
+        if (sub === "lock") {
+          const data = await integrity.buildLockData(skills);
+          const p = await integrity.writeLockfile(process.cwd(), data);
+          console.log(JSON.stringify({ ok: true, path: p, skills: Object.keys(data.skills).length }, null, 2));
+          break;
+        }
+        const { path: lockPath, data } = await integrity.readLockfile(process.cwd());
+        if (!data) {
+          console.error(`No valid ${integrity.LOCKFILE_NAME} at ${lockPath} — run: xclaw skills lock`);
+          process.exit(1);
+        }
+        const { evaluated, missing } = await integrity.evaluateSkills(skills, data);
+        const rows = evaluated.map(({ skill, status }) => ({
+          name: skill.name,
+          status: status === "unmanifested" ? "new" : status === "verified" ? "ok" : status,
+          path: skill.path,
+        }));
+        for (const name of missing) rows.push({ name, status: "missing", path: data.skills[name]?.path || null });
+        const drift = rows.filter((r) => r.status !== "ok");
+        console.log(JSON.stringify({ ok: drift.length === 0, lockfile: lockPath, drift: drift.length, skills: rows }, null, 2));
+        if (drift.length) process.exit(1);
+        break;
+      }
       if (sub === "proposals") {
         console.log(JSON.stringify(await listProposals(cfg), null, 2));
         break;
@@ -1708,7 +1742,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         console.log(JSON.stringify(await rejectProposal(cfg, file, args.slice(3).join(" ")), null, 2));
         break;
       }
-      console.error("Usage: xclaw skills [list|proposals|install|reject]");
+      console.error("Usage: xclaw skills [list|lock|verify|proposals|install|reject]");
       process.exit(1);
       break;
     }
