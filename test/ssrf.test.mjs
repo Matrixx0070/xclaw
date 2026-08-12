@@ -5,6 +5,7 @@ import {
   isPrivateIp,
   assertUrlAllowed,
   safeFetch,
+  requestPinned,
   getSsrfPolicy,
 } from "../src/security/ssrf.mjs";
 
@@ -34,6 +35,17 @@ describe("SSRF IP classifier", () => {
     for (const ip of ["8.8.8.8", "1.1.1.1", "93.184.216.34", "2606:4700:4700::1111"]) {
       assert.equal(isPrivateIp(ip), false, `${ip} should be public`);
     }
+  });
+
+  it("assertUrlAllowed returns a pinIp for hostnames + literal IPs", async () => {
+    const lit = await assertUrlAllowed("http://8.8.8.8/", {});
+    assert.equal(lit.ok, true);
+    assert.equal(lit.pinIp, "8.8.8.8");
+    // allowHosts / off bypass → no pin, caller falls back to normal resolution
+    const bypass = await assertUrlAllowed("http://8.8.8.8/", {
+      security: { ssrf: { mode: "off" } },
+    });
+    assert.equal(bypass.pinIp, null);
   });
 
   it("treats non-IP / garbage as unsafe", () => {
@@ -119,5 +131,42 @@ describe("safeFetch redirect re-validation", () => {
     const res = await safeFetch(`${base}/ok`, {}, cfg);
     assert.equal(res.status, 200);
     assert.equal(await res.text(), "hello");
+  });
+});
+
+describe("requestPinned — connection is pinned to the validated IP", () => {
+  let server;
+  let port;
+
+  before(async () => {
+    server = http.createServer((req, res) => {
+      // Echo back the Host header so we can confirm the real name is preserved
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end(`host=${req.headers.host}`);
+    });
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    port = server.address().port;
+  });
+
+  after(() => server?.close());
+
+  it("connects to the pinned IP, ignoring what the hostname resolves to", async () => {
+    // example.com resolves to a real PUBLIC IP in DNS. Pinning to 127.0.0.1
+    // must send the socket to our LOCAL server instead — the only way this
+    // request can hit our loopback listener. Proves DNS is bypassed at connect.
+    const res = await requestPinned(`http://example.com:${port}/`, {
+      ip: "127.0.0.1",
+    });
+    assert.equal(res.status, 200);
+    // Host header keeps the real hostname (Host/SNI/cert integrity preserved)
+    assert.match(await res.text(), /host=example\.com:/);
+  });
+
+  it("passes headers and decodes the body", async () => {
+    const res = await requestPinned(`http://example.com:${port}/`, {
+      ip: "127.0.0.1",
+    });
+    assert.equal(res.headers.get("content-type"), "text/plain");
+    assert.equal(typeof (await res.text()), "string");
   });
 });

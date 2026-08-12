@@ -233,3 +233,16 @@ handshake auth over a real socket) · full suite 1094/0 · both closed the last 
 UNVERIFIED items from the 2026-08-12 review.
 SCOPE: browser-tab navigation fetch NOT covered here (separate role-binding hooks);
 finance/search/openai fetches hit hardcoded hosts — future work if agent-parameterized.
+
+## 2026-08-12 — 3.79.1 SSRF: pin connection to validated IP (Claude)
+
+STATUS: green
+FIXED: DNS-rebind window in safeFetch — it validated via DNS then let fetch
+resolve again. Now safeFetch connects via requestPinned (node:http/https +
+lookup override) to the exact validated IP; URL keeps its hostname so Host/SNI/
+cert are intact. assertUrlAllowed returns pinIp (null on off/allowPrivate/
+allowHosts bypass). requestPinned decodes gzip/deflate/br, Accept-Encoding
+identity, redirects re-validated per hop by safeFetch. Zero new deps.
+RAN: pinning proven deterministically (example.com pinned to 127.0.0.1 hits
+local server, Host preserved) · live web_fetch https://example.com → 200 via
+pinned path, metadata still blocked · full suite 1097/0 · eval:ci 0 · self-check OK.

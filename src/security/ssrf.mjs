@@ -20,6 +20,9 @@
  */
 import dns from "node:dns/promises";
 import net from "node:net";
+import http from "node:http";
+import https from "node:https";
+import zlib from "node:zlib";
 
 const DEFAULT_MAX_REDIRECTS = 5;
 
@@ -85,11 +88,15 @@ export function isPrivateIp(ip) {
 
 /**
  * Validate a single URL against the SSRF policy (scheme + DNS→IP checks).
- * @returns {Promise<{ ok: true, addresses: string[] } | { ok: false, error: string }>}
+ * `pinIp` is the exact validated address the connection should be pinned to
+ * (closes the DNS-rebind window between validation and connect); it is null
+ * when the guard is bypassed (off / allowPrivate / allowHosts) and the caller
+ * should fall back to normal resolution.
+ * @returns {Promise<{ ok: true, addresses: string[], pinIp: string|null } | { ok: false, error: string }>}
  */
 export async function assertUrlAllowed(rawUrl, cfg = {}) {
   const policy = getSsrfPolicy(cfg);
-  if (policy.mode === "off") return { ok: true, addresses: [] };
+  if (policy.mode === "off") return { ok: true, addresses: [], pinIp: null };
 
   let u;
   try {
@@ -101,15 +108,15 @@ export async function assertUrlAllowed(rawUrl, cfg = {}) {
     return { ok: false, error: `blocked scheme ${u.protocol} (http/https only)` };
   }
   const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (policy.allowHosts.includes(host)) return { ok: true, addresses: [] };
-  if (policy.allowPrivate) return { ok: true, addresses: [] };
+  if (policy.allowHosts.includes(host)) return { ok: true, addresses: [], pinIp: null };
+  if (policy.allowPrivate) return { ok: true, addresses: [], pinIp: null };
 
   // Literal IP in the URL — classify directly (no DNS needed).
   if (net.isIP(host)) {
     if (isPrivateIp(host)) {
       return { ok: false, error: `blocked private/loopback address ${host}` };
     }
-    return { ok: true, addresses: [host] };
+    return { ok: true, addresses: [host], pinIp: host };
   }
 
   // Hostname — resolve and block if ANY address is private (DNS-rebind safe).
@@ -126,14 +133,109 @@ export async function assertUrlAllowed(rawUrl, cfg = {}) {
       return { ok: false, error: `${host} resolves to private/loopback ${a} — blocked` };
     }
   }
-  return { ok: true, addresses: addrs };
+  // Pin the connection to the first validated address so a rebind after this
+  // point can't redirect the socket to a private target.
+  return { ok: true, addresses: addrs, pinIp: addrs[0] };
+}
+
+/** Wrap a node:http response into the minimal fetch-Response shape callers use. */
+function toResponseLike(res, finalUrl, bodyBuf) {
+  const h = new Map();
+  for (const [k, v] of Object.entries(res.headers)) {
+    h.set(k.toLowerCase(), Array.isArray(v) ? v.join(", ") : v);
+  }
+  return {
+    status: res.statusCode,
+    ok: res.statusCode >= 200 && res.statusCode < 300,
+    url: finalUrl,
+    headers: { get: (k) => h.get(String(k).toLowerCase()) ?? null },
+    async text() {
+      return decodeBody(res.headers["content-encoding"], bodyBuf).toString("utf8");
+    },
+    async json() {
+      return JSON.parse(decodeBody(res.headers["content-encoding"], bodyBuf).toString("utf8"));
+    },
+    async arrayBuffer() {
+      const b = decodeBody(res.headers["content-encoding"], bodyBuf);
+      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+    },
+  };
+}
+
+/** node:http does not auto-decompress; handle the common encodings. */
+function decodeBody(encoding, buf) {
+  const enc = String(encoding || "").toLowerCase();
+  try {
+    if (enc === "gzip") return zlib.gunzipSync(buf);
+    if (enc === "deflate") return zlib.inflateSync(buf);
+    if (enc === "br") return zlib.brotliDecompressSync(buf);
+  } catch {
+    /* fall through to raw bytes */
+  }
+  return buf;
 }
 
 /**
- * SSRF-safe fetch: validates the URL and every redirect hop.
- * Signature mirrors global fetch minus automatic redirect following.
+ * Single HTTP(S) request pinned to a validated IP. The URL keeps its real
+ * hostname (so Host header, TLS SNI, and cert validation use it) while the
+ * socket connects to `ip` via the `lookup` override — closing the window where
+ * DNS could rebind to a private address between validation and connect.
+ * Does NOT follow redirects (safeFetch re-validates each hop).
+ * @returns {Promise<object>} fetch-Response-like
+ */
+export function requestPinned(rawUrl, { method = "GET", headers = {}, signal, ip, timeoutMs = 25_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try {
+      u = new URL(rawUrl);
+    } catch (err) {
+      return reject(err);
+    }
+    if (signal?.aborted) return reject(new Error("aborted"));
+
+    const mod = u.protocol === "https:" ? https : http;
+    const family = ip ? net.isIP(ip) : 0;
+    const lookup = ip
+      ? (hostname, opts, cb) => {
+          const callback = typeof opts === "function" ? opts : cb;
+          if (opts && typeof opts === "object" && opts.all) {
+            return callback(null, [{ address: ip, family }]);
+          }
+          callback(null, ip, family);
+        }
+      : undefined;
+
+    const reqHeaders = { "Accept-Encoding": "identity", ...headers };
+    const req = mod.request(
+      u,
+      { method, headers: reqHeaders, lookup, servername: u.hostname },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => resolve(toResponseLike(res, u.toString(), Buffer.concat(chunks))));
+        res.on("error", reject);
+      }
+    );
+
+    const onAbort = () => {
+      req.destroy(new Error("aborted"));
+    };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`request timed out after ${timeoutMs}ms`)));
+    req.on("error", (err) => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      reject(err);
+    });
+    req.end();
+  });
+}
+
+/**
+ * SSRF-safe fetch: validates the URL and every redirect hop, pinning each
+ * connection to the exact IP that passed validation (rebind-proof).
+ * Returns a fetch-Response-like object ({ status, ok, url, headers.get, text, json }).
  * @param {string} rawUrl
- * @param {RequestInit} [init]
+ * @param {{ method?: string, headers?: object, signal?: AbortSignal }} [init]
  * @param {object} [cfg]
  */
 export async function safeFetch(rawUrl, init = {}, cfg = {}) {
@@ -148,10 +250,15 @@ export async function safeFetch(rawUrl, init = {}, cfg = {}) {
       e.code = "SSRF_BLOCKED";
       throw e;
     }
-    const res = await fetch(current, { ...init, redirect: "manual" });
-    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
-      const next = new URL(res.headers.get("location"), current).toString();
-      current = next;
+    const res = await requestPinned(current, {
+      method: init.method || "GET",
+      headers: init.headers || {},
+      signal: init.signal,
+      ip: check.pinIp,
+    });
+    const loc = res.headers.get("location");
+    if (res.status >= 300 && res.status < 400 && loc) {
+      current = new URL(loc, current).toString();
       continue;
     }
     return res;
@@ -161,4 +268,4 @@ export async function safeFetch(rawUrl, init = {}, cfg = {}) {
   throw e;
 }
 
-export default { getSsrfPolicy, isPrivateIp, assertUrlAllowed, safeFetch };
+export default { getSsrfPolicy, isPrivateIp, assertUrlAllowed, requestPinned, safeFetch };

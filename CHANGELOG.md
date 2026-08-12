@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.79.1 — SSRF: pin the connection to the validated IP (close DNS-rebind)
+
+- `safeFetch` previously validated via DNS, then handed the URL to `fetch`, which resolved DNS **again** — a rebind between the two lookups could still send the socket to a private target. Now each hop connects through `requestPinned` (`node:http`/`node:https` with a `lookup` override) that forces the socket to the exact IP that passed validation, while the URL keeps its real hostname so Host header, TLS SNI, and cert validation are unchanged. Zero new dependencies.
+- `assertUrlAllowed` now returns `pinIp` (the validated address; null when the guard is bypassed via off/allowPrivate/allowHosts, where the caller falls back to normal resolution).
+- `requestPinned` handles redirects at the `safeFetch` layer (re-validated per hop), sets `Accept-Encoding: identity`, and decodes gzip/deflate/br responses (node:http does not auto-decompress).
+- Tests: pinning proven deterministically — a request to `example.com` pinned to `127.0.0.1` reaches the local server (DNS bypassed at connect), Host header preserved; `pinIp` presence/absence asserted. Live-verified: `web_fetch https://example.com` → 200 through the pinned path; metadata still blocked.
+
 ## 3.79.0 — SSRF guard + WebSocket upgrade auth
 
 - **SSRF guard** (`src/security/ssrf.mjs`) on `web_fetch` — the agent-controlled server-side fetch was the review's open SSRF vector. Now: http/https only; DNS-resolve the host and block if ANY address is loopback/private/link-local/ULA/CGNAT/**cloud-metadata (169.254.169.254)** (getaddrinfo canonicalizes decimal/hex host encodings, so `http://2130706433/` → 127.0.0.1 is caught); **redirects followed manually and re-validated per hop** (a public host 302-ing to metadata is blocked). Config `security.ssrf`: `mode` block|off, `allowPrivate` (lab dev), `allowHosts`, `maxRedirects`; `XCLAW_SSRF` env.
