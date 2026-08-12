@@ -1,0 +1,22 @@
+{
+  "strategy": "C",
+  "phase": "C1",
+  "builtAt": "2026-08-12T07:18:46.420Z",
+  "fullRebuild": false,
+  "note": "C1 validates modules + keeps xclaw-server.mjs as runtime artifact. Full regenerate lands in C3.",
+  "bundleBytes": 16839070,
+  "modulesChecked": [
+    "bash-tool",
+    "browser-network-details-tool",
+    "browser-tab-tool",
+    "file-edit-tool",
+    "file-read-tool",
+    "file-write-tool",
+    "http-server-main",
+    "skills-context"
+  ],
+  "policy": {
+    "handEditBundle": false,
+    "editSource": "src/computer/modules/** and bridges"
+  }
+}

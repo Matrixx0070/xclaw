@@ -1,8 +1,10 @@
 /**
  * Computer engine selection — native (thin) vs bundle (xclaw-server.mjs).
  *
- * Default: **native** (maintainable tools, no 16MB blob).
+ * Strategy C: modules are source; ~16MB xclaw-server.mjs is **runtime** (do not hand-edit).
+ * Transitional default: **native** thin until C4 flips default to built bundle.
  * Bundle:  computer.engine="bundle" | XCLAW_COMPUTER_NATIVE=0 | XCLAW_COMPUTER_ENGINE=bundle
+ * Build:   npm run build:computer
  */
 
 /**

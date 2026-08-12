@@ -1,5 +1,6 @@
 /**
- * Thin computer HTTP server — default engine (no 16MB xclaw-server.mjs).
+ * Thin computer HTTP server — transitional lab/default until Strategy C4.
+ * Full runtime target remains src/computer/xclaw-server.mjs (built from modules; do not hand-edit).
  *
  * Compatible with createComputerClient session API:
  *   GET  /health
