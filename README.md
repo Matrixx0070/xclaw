@@ -1,136 +1,170 @@
 # XClaw
 
-**Self-hosted multi-LLM agent gateway** with a real computer (tools + optional full CDP), swarm DAG + receipts, and production-minded guards.
+**Self-hosted multi-LLM agent gateway** with a real computer (bash / files / browser tools), swarm + receipts, and production-minded guards.
 
-Not a thin chat wrapper: agents can **run tools**, **verify work**, **merge worktrees**, and **prove** outcomes with evals and soak scripts.
+Not a thin chat wrapper: agents **run tools**, can **verify work**, and can **prove** outcomes with evals—not just talk.
 
-> Honest scope: competitive with serious open agent platforms. Not “one year ahead of the entire industry.” See [MILESTONE-2026-08-12.md](./MILESTONE-2026-08-12.md).
+> Honest scope: competitive with serious open agent platforms. Not “one year ahead of the entire industry.”
 
-## Requirements
+---
 
-- **Node.js ≥ 22**
-- An API key for live runs (`XAI_API_KEY`, or other providers via config)
-
-## Quick start
+## 15-minute start
 
 ```bash
 git clone https://github.com/Matrixx0070/xclaw.git
 cd xclaw
 
-export XAI_API_KEY=xai-...
-export XCLAW_PROFILE=lab          # auto-approve tools (lab)
-export XCLAW_MODEL=xai/grok-4.5   # example
+# 1) Key (never commit this)
+export XAI_API_KEY=xai-...          # or other provider keys via config
+export XCLAW_PROFILE=lab            # convenient defaults
+export XCLAW_MODEL=xai/grok-4.5
 
-# optional: doctor / health
+# 2) Health
 node bin/xclaw.mjs doctor
-node bin/xclaw.mjs gateway        # WebChat + agent API
 
-# one-shot agent turn
-node bin/xclaw.mjs agent "Create /tmp/hello.txt with content ok"
-```
+# 3) One-shot goal
+node bin/xclaw.mjs agent "Create /tmp/xclaw-hello.txt with text ok"
 
-| Surface | Default |
-|---------|---------|
-| Gateway | http://127.0.0.1:18790 |
-| WebChat | http://127.0.0.1:18790/chat/ |
-| Control | http://127.0.0.1:18790/control/ |
-| Computer | http://127.0.0.1:4243 (auto-started) |
-
-Config: `~/.xclaw/xclaw.json`
-
-More detail: **[INSTALL.md](./INSTALL.md)** · **[OPS.md](./OPS.md)** · **[docs/](./docs/)**
-
-## Docker (try-me)
-
-```bash
-cd deploy
-cp env.example .env   # set XAI_API_KEY
-docker compose up --build
+# Optional: long-running gateway + WebChat
+node bin/xclaw.mjs gateway
 # → http://127.0.0.1:18790/chat/
 ```
 
-Publishes **18790** (gateway / WebChat) and **4243** (computer). See [INSTALL.md](./INSTALL.md#docker-try-me).
+| Check | Expect |
+|-------|--------|
+| `doctor` | Config loads; lab profile OK; warns if no API key |
+| `agent "…"` | Tool runs (lab auto-approves) or clear error |
+| Computer | Thin native server on `:4243` (auto-start) |
+
+**Requirements:** Node.js **≥ 22**, network for model APIs.
+
+Config file: `~/.xclaw/xclaw.json` (created on first run).
+
+More install detail: [INSTALL.md](./INSTALL.md)
+
+---
+
+## Secrets
+
+- **Never commit** API keys, OAuth tokens, or GitHub PATs.
+- Prefer env vars or local config outside the repo.
+- If a key was pasted into chat or logs → **rotate it**.
+- Prod: set `XCLAW_GATEWAY_TOKEN` (or `gateway.token` in config).
+
+---
+
+## Profiles
+
+| Profile | Intent | Typical defaults |
+|---------|--------|------------------|
+| **lab** | Local experiments | `autoApprove=true`, egress allow, open gateway |
+| **dev** | Day-to-day build | Mixed; prefer explicit approvals for risky tools |
+| **prod** | Exposed or unattended | Token required, stricter approvals, egress **deny**, prefer OS sandbox |
+
+```bash
+export XCLAW_PROFILE=lab    # default-friendly
+export XCLAW_PROFILE=prod
+export XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
+```
+
+| Knob | Env / config | Notes |
+|------|----------------|-------|
+| Egress | `XCLAW_EGRESS=deny\|allow\|allowlist` | Prod default deny for shell network patterns |
+| OS sandbox | `XCLAW_OS_SANDBOX=auto\|bwrap\|off` | Uses **bubblewrap** when installed & usable |
+| Spawn plan | `XCLAW_SPAWN_ENFORCE` | Exact approved command at bash spawn |
+| Kill | `xclaw stop-all` | Abort sessions + stop computer |
+
+Project memory injected into the agent: **[XCLAW.md](./XCLAW.md)** (edit this for repo-local rules).
+
+---
+
+## Strategy C (computer)
+
+**Modules are the source of truth.** Do **not** hand-edit the ~16MB `xclaw-server.mjs` bundle.
+
+| Engine | Entry | When |
+|--------|--------|------|
+| **native** (default) | `src/computer/thin-server.mjs` | Fast lab; edit `src/computer/modules/**` |
+| **generated** | `src/computer/generated/computer-server.mjs` | `npm run build:computer` |
+| **bundle** | `src/computer/xclaw-server.mjs` | Full CDP — treat as **runtime artifact** |
+
+```bash
+npm run build:computer
+# XCLAW_COMPUTER_ENGINE=native|generated|bundle
+```
+
+Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
+
+---
 
 ## What you get
 
 | Area | Capability |
 |------|------------|
-| **Agent** | Multi-provider loop, tools, loop guards, role routing |
-| **Computer** | Bash / files / browser tools; thin lab server or full **~16MB** CDP runtime |
-| **Strategy C** | Modules are source; bundle is runtime — `npm run build:computer` |
-| **Swarm** | DAG tasks, receipts, early worktree→main merge, merge error codes |
-| **Jobs / eval** | Verified jobs, eval suite, release-gate scripts |
-| **Ops** | `/health`, `/ready`, `/metrics`, profiles lab/dev/prod |
-| **Security** | Approvals, optional gateway token, sandbox-minded paths |
+| **Agent** | Multi-provider loop, tools, loop guards, role routing, transcripts |
+| **Computer** | Bash / files / browser (native); optional full CDP bundle |
+| **Security** | Approvals, plan binding + spawn enforce, egress, optional bwrap, kill-switch |
+| **Swarm** | DAG, receipts, merge policy (prod should not silent-auto-merge) |
+| **Ops** | `/health`, `/ready`, doctor, CI unit / media / sandbox |
 
-## Computer engines (Strategy C)
+---
 
-| Engine | Entry | When |
-|--------|--------|------|
-| **native** (default lab) | `src/computer/thin-server.mjs` | Fast, module-editable tools |
-| **generated** | `src/computer/generated/computer-server.mjs` | esbuild from modules (`npm run build:computer`) |
-| **bundle** | `src/computer/xclaw-server.mjs` (~16MB) | Full CDP / BrowserService — **do not hand-edit** |
+## Common commands
 
 ```bash
-npm run build:computer
-XCLAW_COMPUTER_ENGINE=generated   # modules-built
-XCLAW_COMPUTER_ENGINE=bundle      # full CDP
+node bin/xclaw.mjs doctor
+node bin/xclaw.mjs status
+node bin/xclaw.mjs agent "your goal"
+node bin/xclaw.mjs gateway
+node bin/xclaw.mjs stop-all
+node bin/xclaw.mjs sessions-active
+node bin/xclaw.mjs transcripts list
+
+node --test test/spawn-enforce.test.mjs test/os-sandbox.test.mjs
+npm run release-gate:quick
 ```
 
-Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
+| Surface | Default URL |
+|---------|-------------|
+| Gateway | http://127.0.0.1:18790 |
+| WebChat | http://127.0.0.1:18790/chat/ |
+| Computer | http://127.0.0.1:4243 |
 
-## Profiles
-
-```bash
-XCLAW_PROFILE=lab     # auto-approve, higher loop limits
-XCLAW_PROFILE=prod    # stricter approvals / guards
-```
-
-## Swarm (programmatic)
-
-Implement → early merge → verify is supported via `runSwarmFanOut` (see `src/agents/swarm-run.mjs`).  
-Merge candidates are **implement-only** (or `merge: true`); same-tree merges are no-ops; failures carry codes such as `PATCH_CORRUPT`, `PATCH_REJECT`.
-
-## Tests & soak
-
-```bash
-node --test test/computer-strategy-c.test.mjs test/computer-c3-generated.test.mjs
-node --test test/merge-*.test.mjs test/swarm-early-merge.test.mjs
-
-# short live soak (needs API key)
-node scripts/soak-agent.mjs 3
-```
-
-Broader gates: `npm run release-gate:quick` · `npm run eval:ci`
+---
 
 ## Production sketch
 
 ```bash
 export XCLAW_PROFILE=prod
 export XCLAW_GATEWAY_TOKEN=long-random-secret
+# Linux: apt install bubblewrap   # OS sandbox for bash when usable
 
-# Docker
-cd deploy && cp env.example .env   # set token + key + PROFILE=prod
-docker compose up -d --build
+cd deploy && docker compose up -d --build   # if using compose
 ```
 
-See **deploy/** and **OPS.md**.
+See [OPS.md](./OPS.md) and `deploy/`.
 
-## Docs map
+---
+
+## Docs map (start here)
 
 | Doc | Topic |
 |-----|--------|
+| **This README** | Entry path, profiles, secrets, Strategy C |
+| [XCLAW.md](./XCLAW.md) | Project notes auto-injected into the agent |
 | [INSTALL.md](./INSTALL.md) | Install, verify, troubleshooting |
-| [OPS.md](./OPS.md) | Operations, MITM, runtime |
-| [MILESTONE-2026-08-12.md](./MILESTONE-2026-08-12.md) | Proven capabilities & gaps |
+| [OPS.md](./OPS.md) | Operations, runtime |
+| [CHANGELOG.md](./CHANGELOG.md) | Version history |
 | [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md) | Computer source vs runtime |
 | [docs/API.md](./docs/API.md) | HTTP / gateway API |
-| [docs/](./docs/) | Auth, approvals, swarm notes, … |
+| [docs/APPROVALS.md](./docs/APPROVALS.md) | Approval / plan binding |
+| [docs/BROWSER_UNBUNDLE.md](./docs/BROWSER_UNBUNDLE.md) | Native browser vs CDP |
+| [docs/](./docs/) | Auth, swarm, eval notes (many specialized) |
+
+Deep / historical design notes live under `docs/`—prefer this README + XCLAW.md for daily use.
+
+---
 
 ## License
 
 MIT — see [THIRD_PARTY.md](./THIRD_PARTY.md) for bundled components.
-
----
-
-**Repo:** https://github.com/Matrixx0070/xclaw

@@ -1,12 +1,9 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — bwrap OS sandbox
+## 2026-08-12 — P0 docs polish
 
 STATUS: green
 
-- `src/security/os-sandbox.mjs` — detect bwrap, build binds, unshare-net/pid
-- bash-tool wraps spawn via wrapSpawnWithOsSandbox
-- doctor: security.osSandbox
-- tests skip live bwrap when binary missing (this host)
-
-Install bubblewrap on runners/hosts for full isolation.
+- README: 15-minute start, secrets, profiles table, Strategy C, security knobs, slim docs map
+- XCLAW.md: aligned project memory (security + commands)
+- docs/README.md: index pointing back to root README
