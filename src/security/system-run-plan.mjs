@@ -20,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PLAN_VERSION = 1;
+export const PLAN_VERSION = 1;
 
 /** Tools that receive full plan binding (argv + exe + cwd pins). */
 const EXEC_TOOLS = new Set([

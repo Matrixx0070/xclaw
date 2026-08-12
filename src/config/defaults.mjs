@@ -475,6 +475,7 @@ export const DEFAULT_CONFIG = {
     allowedTools: [],
     requireApproval: ["xclaw_bash", "bash", "xclaw_file_write"],
     /** Phase 7.4: safer default — set true only in trusted envs */
+    bindSystemRunPlan: true,
     autoApprove: true,  // low-setup; prod profile sets false
     /** Max wait for human approval before slaAction */
     approvalSlaMs: 300_000,

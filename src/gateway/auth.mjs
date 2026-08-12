@@ -14,6 +14,14 @@ export function createGatewayAuth(cfg = {}) {
   /** When true, all non-open paths require token if token is set */
   const strict = cfg.gateway?.authStrict !== false;
 
+  /** Fail-closed when profile=prod or gateway.requireAuth=true */
+  const requireAuth =
+    cfg.gateway?.requireAuth === true ||
+    cfg.profile === "prod" ||
+    process.env.XCLAW_GATEWAY_REQUIRE_AUTH === "1" ||
+    process.env.XCLAW_GATEWAY_REQUIRE_AUTH === "true";
+
+
   const alwaysOpen = new Set([
     "/",
     "/health",
@@ -51,9 +59,10 @@ export function createGatewayAuth(cfg = {}) {
         return false;
       }
     }
-    if (p === "/metrics") return protectMetrics && required;
+    if (p === "/metrics") return protectMetrics && (required || requireAuth);
     if (p.startsWith("/webhooks/")) return false; // signed webhooks later
-    if (!required) return false;
+    // requireAuth (prod) protects API even when token is not yet configured
+    if (!required && !requireAuth) return false;
     if (!strict) {
       // legacy subset
       return (
@@ -109,7 +118,19 @@ export function createGatewayAuth(cfg = {}) {
   function check(req) {
     const p = (req.url || "/").split("?")[0];
     if (!isProtectedPath(p)) return { ok: true, mode: "open" };
-    if (!token) return { ok: true, mode: "open" };
+    // No token configured: open only in lab/dev unless requireAuth
+    if (!token) {
+      if (requireAuth) {
+        return {
+          ok: false,
+          mode: "token",
+          error: "auth_required_no_token_configured",
+          message:
+            "Gateway requireAuth is on (prod or gateway.requireAuth) but no token is set. Set XCLAW_GATEWAY_TOKEN.",
+        };
+      }
+      return { ok: true, mode: "open" };
+    }
     const hdr = req.headers?.authorization || req.headers?.Authorization || "";
     const bearer = hdr.startsWith("Bearer ") ? hdr.slice(7).trim() : "";
     const x = req.headers?.["x-xclaw-token"] || req.headers?.["x-api-key"];
@@ -125,5 +146,5 @@ export function createGatewayAuth(cfg = {}) {
     return { ok: false, mode: "token", error: "unauthorized" };
   }
 
-  return { check, isProtectedPath, required, protectMetrics, strict };
+  return { check, isProtectedPath, required, requireAuth, protectMetrics, strict };
 }

@@ -25,6 +25,7 @@ import {
 } from "./turn-state.mjs";
 import { createLoopGuard } from "./loop-guards.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
+import { revalidatePlan, isExecTool } from "../security/system-run-plan.mjs";
 import { resolveProviderRoute, resolveProviderRouteAsync } from "../providers/router.mjs";
 import { createSpawnTool, spawnSubagent } from "../agents/spawn.mjs";
 import { createSwarmRunTool } from "../agents/swarm-run.mjs";
@@ -101,6 +102,8 @@ export async function runAgentLoop(options) {
     userId,
     channel,
     chatId,
+    /** Prior conversation turns: [{role, content}, ...] — excludes system */
+    history = [],
   } = options;
 
   const eventLog = [];
@@ -293,8 +296,11 @@ export async function runAgentLoop(options) {
       if (memoryEnabled) {
         memoryFiles = await loadMemoryFiles(workingDir);
         try {
+          // Durable local MEMORY.md is lower priority than repo XCLAW.md.
+          // Put it first so project files stay last (win model attention)
+          // and survive maxMemoryChars truncation from the front.
           const durable = await loadDurableMemoryFile(cfg, workingDir);
-          if (durable) memoryFiles = [...memoryFiles, durable];
+          if (durable) memoryFiles = [durable, ...memoryFiles];
         } catch {
           /* */
         }
@@ -423,10 +429,34 @@ export async function runAgentLoop(options) {
   });
   tools = optimized.tools;
   const prefixHash = optimized.fingerprint.hash;
+  // Conversation threading: prior turns then current user message
+  const prior = [];
+  if (Array.isArray(history)) {
+    for (const m of history) {
+      if (!m || typeof m !== "object") continue;
+      const role = m.role;
+      if (role !== "user" && role !== "assistant" && role !== "tool") continue;
+      const content = m.content;
+      if (content == null) continue;
+      prior.push({ role, content: String(content) });
+    }
+  }
+  // Cap history to avoid unbounded context (configurable)
+  const maxHistory = cfg.agent?.maxHistoryMessages ?? 40;
+  const priorCapped = prior.length > maxHistory ? prior.slice(-maxHistory) : prior;
   let messages = [
     optimized.systemMessage,
+    ...priorCapped,
     { role: "user", content: userMessage },
   ];
+  if (priorCapped.length) {
+    onEvent({
+      type: "context",
+      phase: "history",
+      historyMessages: priorCapped.length,
+      capped: prior.length > maxHistory,
+    });
+  }
   onEvent({
     type: "cache",
     phase: "breakpoints",
@@ -755,6 +785,63 @@ export async function runAgentLoop(options) {
             name,
             mode: auth.mode,
             note: auth.note,
+            planFingerprint: auth.planFingerprint || auth.plan?.fingerprint || null,
+          });
+        }
+
+        // TOCTOU: re-validate frozen systemRunPlan pins after approval, before spawn
+        if (
+          auth.plan &&
+          isExecTool(name) &&
+          cfg.security?.bindSystemRunPlan !== false
+        ) {
+          const rv = revalidatePlan(auth.plan);
+          if (!rv.ok) {
+            const msg =
+              rv.message ||
+              `Plan revalidation failed (${rv.reason || "drift"}).`;
+            onEvent({
+              type: "security",
+              phase: "plan_revalidate_failed",
+              name,
+              reason: rv.reason,
+              drift: rv.drift || null,
+              planFingerprint: auth.planFingerprint || auth.plan?.fingerprint || null,
+              message: msg,
+            });
+            messages.push(
+              makeToolMessage({
+                tool_call_id: call.id,
+                content: msg,
+                source: "security",
+              })
+            );
+            toolTrace.push(
+              finalizeToolTraceEntry(
+                beginToolTraceEntry({
+                  name,
+                  args,
+                  toolCallId: call.id,
+                  turn: turns + 1,
+                }),
+                {
+                  resultText: msg,
+                  blocked: true,
+                  policy: {
+                    phase: "plan_revalidate",
+                    decision: "deny",
+                    reason: rv.reason || "plan_drift",
+                  },
+                }
+              )
+            );
+            continue;
+          }
+          onEvent({
+            type: "security",
+            phase: "plan_revalidated",
+            name,
+            planFingerprint: auth.planFingerprint || auth.plan?.fingerprint || null,
           });
         }
 

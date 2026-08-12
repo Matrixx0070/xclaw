@@ -316,6 +316,11 @@ async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} })
       cfg,
       workingDir: workingDir || process.cwd(),
       signal: controller.signal,
+      history: Array.isArray(body?.history)
+        ? body.history
+        : Array.isArray(body?.messages)
+          ? body.messages
+          : [],
       onEvent: (e) => {
         noteEviction(e, "agent/stream");
         produce(e.type || "message", e);
@@ -1831,6 +1836,11 @@ export async function startGateway({ root } = {}) {
             userMessage: message,
             cfg,
             workingDir: body.workingDir || process.cwd(),
+            history: Array.isArray(body.history)
+              ? body.history
+              : Array.isArray(body.messages)
+                ? body.messages
+                : [],
             onEvent: (e) => {
               noteEviction(e, "agent/run");
               events.push({ ...e, at: Date.now() });
