@@ -1,18 +1,18 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — Phase 1.7 transcripts + browser policy
+## 2026-08-12 — Phase 1.8 native browser P1
 
 STATUS: green (partial)
 
 ### BUILT
-- `src/sessions/transcript.mjs` — local JSONL transcripts
-- Agent loop load/save via `chatSessionId` / `sessionId`
-- Gateway `GET /transcripts`, `GET /transcripts/:id`
-- `docs/BROWSER_UNBUNDLE.md` — Strategy C browser policy (no 16MB hand-edits)
+- Native `browser-tab-tool`: redirects, list/read/navigate, links + meta description
+- Clear CDP errors for jsCode/screenshot
+- CLI: `xclaw transcripts list|show`
+- Tests: native-browser-tab + transcript
 
 ### RAN
-`node --test test/transcript-persist.test.mjs test/progress-circuit-breaker.test.mjs` → 7/7
+node --test test/native-browser-tab.test.mjs test/transcript-persist.test.mjs → 6/6
 
 ### NOT DONE
-- Full CDP parity in native/generated (still bundle for heavy browser)
-- Live Anthropic stream e2e with API key
+- Full CDP in native (still bundle)
+- Live Anthropic stream e2e

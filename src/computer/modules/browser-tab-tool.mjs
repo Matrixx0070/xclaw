@@ -1,20 +1,21 @@
 /**
- * CLEAN xclaw_browser_tab — lightweight native implementation (P0).
+ * CLEAN xclaw_browser_tab — lightweight native implementation (P0→P1).
  *
  * Full CDP/Chrome path remains in browser-service.mjs + bundle.
- * This module provides a maintainable, dependency-light tool:
- *   - open/fetch URL → extract title + text
- *   - tab registry (in-process)
- *   - optional jsCode not supported without CDP (clear error)
+ * Native engine:
+ *   - navigate/fetch URL (redirect-aware)
+ *   - tab registry (list / read)
+ *   - title, text, links extraction
+ *   - jsCode/screenshot → clear error pointing at bundle/CDP
  *
- * Upgrade path: swap execute body to BrowserService when wired.
+ * @see docs/BROWSER_UNBUNDLE.md
  */
 
 import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
 
-/** @type {Map<string, { id: string, url: string, title: string, text: string, at: string }>} */
+/** @type {Map<string, { id: string, url: string, title: string, text: string, links: object[], status: number, at: string }>} */
 const tabs = new Map();
 let seq = 0;
 
@@ -23,13 +24,20 @@ function nextId() {
   return `tab_${seq}_${Date.now().toString(36)}`;
 }
 
-function fetchUrl(urlStr, timeoutMs = 15000) {
+/**
+ * GET with redirect follow (max 5).
+ */
+function fetchUrl(urlStr, timeoutMs = 15000, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
     let u;
     try {
       u = new URL(urlStr);
     } catch (e) {
       reject(e);
+      return;
+    }
+    if (u.protocol !== "http:" && u.protocol !== "https:") {
+      reject(new Error(`Unsupported protocol: ${u.protocol}`));
       return;
     }
     const lib = u.protocol === "https:" ? https : http;
@@ -39,12 +47,32 @@ function fetchUrl(urlStr, timeoutMs = 15000) {
         method: "GET",
         headers: {
           "user-agent":
-            "XClawNativeBrowser/3.70 (+https://xclaw; lightweight-fetch)",
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "XClawNativeBrowser/3.75 (+https://github.com/Matrixx0070/xclaw; native-fetch)",
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "accept-language": "en-US,en;q=0.9",
         },
         timeout: timeoutMs,
       },
       (res) => {
+        const status = res.statusCode || 0;
+        if (
+          redirectsLeft > 0 &&
+          status >= 300 &&
+          status < 400 &&
+          res.headers.location
+        ) {
+          res.resume();
+          let next;
+          try {
+            next = new URL(res.headers.location, urlStr).href;
+          } catch (e) {
+            reject(e);
+            return;
+          }
+          fetchUrl(next, timeoutMs, redirectsLeft - 1).then(resolve, reject);
+          return;
+        }
         const chunks = [];
         let size = 0;
         const max = 2_000_000;
@@ -56,9 +84,10 @@ function fetchUrl(urlStr, timeoutMs = 15000) {
         });
         res.on("end", () => {
           resolve({
-            status: res.statusCode,
+            status,
             headers: res.headers,
             body: Buffer.concat(chunks).toString("utf8"),
+            finalUrl: urlStr,
           });
         });
       }
@@ -77,18 +106,58 @@ function extractTitle(html) {
   return m ? m[1].replace(/\s+/g, " ").trim().slice(0, 200) : "";
 }
 
+function extractMetaDescription(html) {
+  const m = String(html).match(
+    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i
+  ) || String(html).match(
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i
+  );
+  return m ? m[1].replace(/\s+/g, " ").trim().slice(0, 500) : "";
+}
+
 function htmlToText(html) {
   return String(html)
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 12000);
 }
 
+function extractLinks(html, baseUrl, limit = 30) {
+  const links = [];
+  const re = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) && links.length < limit) {
+    let href = m[1];
+    const label = m[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
+    try {
+      href = new URL(href, baseUrl).href;
+    } catch {
+      continue;
+    }
+    if (href.startsWith("http://") || href.startsWith("https://")) {
+      links.push({ href, label: label || null });
+    }
+  }
+  return links;
+}
+
+function listTabs() {
+  return [...tabs.values()].map((t) => ({
+    tabId: t.id,
+    url: t.url,
+    title: t.title,
+    status: t.status,
+    at: t.at,
+  }));
+}
+
 /**
  * @param {object} input
+ * @param {string} [input.action] navigate|list|read (default: navigate if url, else list/read)
  * @param {string} [input.url]
  * @param {string} [input.tabId]
  * @param {string} [input.jsCode]
@@ -96,106 +165,110 @@ function htmlToText(html) {
  * @param {string} [input.screenshot]
  */
 export async function runBrowserTab(input = {}) {
+  const action = String(input.action || "").toLowerCase();
+
   if (input.jsCode) {
     return {
       ok: false,
       error:
-        "jsCode requires CDP/BrowserService. Native lightweight browser_tab only supports url load/fetch. Set computer to full bundle or wire browser-service.",
+        "jsCode requires CDP/BrowserService. Use XCLAW_COMPUTER_ENGINE=bundle or wire browser-service. See docs/BROWSER_UNBUNDLE.md",
       tabId: input.tabId || null,
+      engine: "native-fetch",
     };
   }
   if (input.screenshot) {
     return {
       ok: false,
       error:
-        "screenshot requires CDP/BrowserService. Native lightweight browser_tab does not capture images yet.",
+        "screenshot requires CDP/BrowserService. Native browser_tab does not capture images. See docs/BROWSER_UNBUNDLE.md",
       tabId: input.tabId || null,
-    };
-  }
-
-  let tab = input.tabId ? tabs.get(input.tabId) : null;
-  if (input.tabId && !tab) {
-    return {
-      ok: false,
-      error: `Unknown tabId: ${input.tabId}`,
-      tabId: input.tabId,
-    };
-  }
-
-  if (input.url) {
-    const res = await fetchUrl(input.url);
-    const title = extractTitle(res.body);
-    const text = htmlToText(res.body);
-    const id = tab?.id || nextId();
-    tab = {
-      id,
-      url: input.url,
-      title,
-      text,
-      status: res.status,
-      at: new Date().toISOString(),
-    };
-    tabs.set(id, tab);
-    return {
-      ok: true,
-      tabId: id,
-      url: tab.url,
-      title: tab.title,
-      status: tab.status,
-      textPreview: tab.text.slice(0, 4000),
       engine: "native-fetch",
-      networkSummaries: input.includeNetwork
-        ? [
-            {
-              requestId: "nav1",
-              method: "GET",
-              url: input.url,
-              status: res.status,
-            },
-          ]
-        : undefined,
     };
   }
 
-  if (tab) {
+  if (action === "list" || (!input.url && !input.tabId && action !== "read")) {
     return {
       ok: true,
+      action: "list",
+      tabs: listTabs(),
+      count: tabs.size,
+      engine: "native-fetch",
+    };
+  }
+
+  if (action === "read" || (input.tabId && !input.url)) {
+    const tab = tabs.get(input.tabId);
+    if (!tab) {
+      return { ok: false, error: `Unknown tabId: ${input.tabId}`, tabId: input.tabId };
+    }
+    return {
+      ok: true,
+      action: "read",
       tabId: tab.id,
       url: tab.url,
       title: tab.title,
+      description: tab.description || "",
+      status: tab.status,
       textPreview: tab.text.slice(0, 4000),
+      links: tab.links || [],
       engine: "native-fetch",
     };
   }
 
+  if (!input.url) {
+    return {
+      ok: false,
+      error: "url required for navigate (or action=list|read with tabId)",
+      engine: "native-fetch",
+    };
+  }
+
+  const res = await fetchUrl(input.url);
+  const title = extractTitle(res.body);
+  const description = extractMetaDescription(res.body);
+  const text = htmlToText(res.body);
+  const links = extractLinks(res.body, res.finalUrl || input.url);
+  const id = input.tabId && tabs.has(input.tabId) ? input.tabId : nextId();
+  const tab = {
+    id,
+    url: res.finalUrl || input.url,
+    title,
+    description,
+    text,
+    links,
+    status: res.status,
+    at: new Date().toISOString(),
+  };
+  tabs.set(id, tab);
+
   return {
-    ok: false,
-    error: "Provide url to open a tab (native lightweight mode)",
+    ok: true,
+    action: "navigate",
+    tabId: id,
+    url: tab.url,
+    title: tab.title,
+    description: tab.description,
+    status: tab.status,
+    textPreview: tab.text.slice(0, 4000),
+    links: links.slice(0, 20),
+    engine: "native-fetch",
+    networkSummaries: input.includeNetwork
+      ? [
+          {
+            requestId: "nav1",
+            method: "GET",
+            url: tab.url,
+            status: tab.status,
+          },
+        ]
+      : undefined,
   };
 }
 
-export const BrowserTabTool = {
-  name: "xclaw_browser_tab",
-  description:
-    "Loads a URL into a lightweight native tab (fetch + text extract). Full JS/screenshot needs BrowserService/CDP.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      url: { type: "string" },
-      tabId: { type: "string" },
-      jsCode: { type: "string" },
-      includeNetwork: { type: "boolean" },
-      screenshot: { type: "string", description: "mobile|desktop|both (requires CDP)" },
-    },
-  },
-  isReadOnly: () => false,
-  async call(input, context = {}) {
-    return { data: await runBrowserTab(input, context) };
-  },
-};
-
-export function listNativeTabs() {
-  return [...tabs.values()];
+/** Test helper */
+export function _resetTabsForTests() {
+  tabs.clear();
+  seq = 0;
 }
 
-export default BrowserTabTool;
+export default { runBrowserTab };

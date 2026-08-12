@@ -1135,6 +1135,33 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "transcripts":
+    case "transcript": {
+      const { listTranscripts, loadTranscriptHistory, transcriptPath } = await import("../src/sessions/transcript.mjs");
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "list";
+      if (sub === "list") {
+        const items = listTranscripts(cfg);
+        console.log(JSON.stringify({ count: items.length, transcripts: items }, null, 2));
+        break;
+      }
+      if (sub === "show" || sub === "get") {
+        const id = args[2];
+        if (!id) {
+          console.error("Usage: xclaw transcripts show <sessionId>");
+          process.exitCode = 1;
+          break;
+        }
+        const history = loadTranscriptHistory(cfg, id, Number(args[3] || 50));
+        console.log(JSON.stringify({ sessionId: id, path: transcriptPath(cfg, id), count: history.length, history }, null, 2));
+        break;
+      }
+      console.error("Usage: xclaw transcripts list | show <sessionId>");
+      process.exitCode = 1;
+      break;
+    }
+
     case "memory": {
       const { previewProjectMemory } = await import("../src/skills/loader.mjs");
       const cwd = process.cwd();
