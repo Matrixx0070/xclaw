@@ -85,8 +85,103 @@ export function emitAuthDecision({ onEvent, name, auth, phase }) {
   });
 }
 
+/**
+ * Full security gate used by the agent loop.
+ * Handles authorize + pending/deny messaging + event emission + policy.
+ *
+ * @param {object} opts
+ * @param {object} opts.approvalGate
+ * @param {string} opts.name
+ * @param {object} opts.args
+ * @param {object} opts.cfg
+ * @param {(e: object) => void} opts.onEvent
+ * @param {(o: object) => string} opts.formatBlockedReply
+ * @returns {Promise<{
+ *   allowed: boolean,
+ *   auth: object,
+ *   isPending: boolean,
+ *   pendingId: string|null,
+ *   message: string|null,
+ *   policy: object|null,
+ *   lastPending: object|null,
+ * }>}
+ */
+export async function authorizeToolInLoop({
+  approvalGate,
+  name,
+  args,
+  cfg,
+  onEvent = () => {},
+  formatBlockedReply,
+}) {
+  const auth = await authorizeToolCall({
+    approvalGate,
+    name,
+    args,
+    cfg,
+    onEvent,
+  });
+
+  if (auth.ok) {
+    if (auth.mode === "human") {
+      emitAuthDecision({ onEvent, name, auth, phase: "approved" });
+    }
+    return {
+      allowed: true,
+      auth,
+      isPending: false,
+      pendingId: null,
+      message: null,
+      policy: policyFromAuth(auth, "allow"),
+      lastPending: null,
+    };
+  }
+
+  const isPending =
+    auth.reason === "pending" ||
+    auth.reason === "timeout" ||
+    auth.pending === true ||
+    Boolean(auth.pendingId);
+  const pendingId = auth.pendingId || auth.id || null;
+
+  const message = isPending
+    ? formatBlockedReply({
+        tool: name,
+        reason: auth.reason || "awaiting approval",
+        pendingId,
+        argsPreview: JSON.stringify(args || {}).slice(0, 180),
+      })
+    : auth.message || `Tool ${name} blocked (${auth.reason || "denied"}).`;
+
+  emitAuthDecision({
+    onEvent,
+    name,
+    auth: { ...auth, message, pendingId },
+    phase: isPending ? "approval_required" : "denied",
+  });
+
+  return {
+    allowed: false,
+    auth,
+    isPending,
+    pendingId,
+    message,
+    policy: policyFromAuth({ ...auth, pendingId }, isPending ? "pending" : "deny"),
+    lastPending: isPending
+      ? {
+          id: pendingId,
+          tool: name,
+          args,
+          reason: auth.reason || "pending",
+          planFingerprint: auth.planFingerprint ?? null,
+        }
+      : null,
+  };
+}
+
 export default {
   authorizeToolCall,
   policyFromAuth,
   emitAuthDecision,
+  authorizeToolInLoop,
 };
