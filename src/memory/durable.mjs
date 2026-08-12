@@ -1,0 +1,114 @@
+/**
+ * Durable workspace memory — survives jobs across sessions.
+ * Store: ~/.xclaw/memory/<workspace-hash>/events.jsonl + MEMORY.md
+ */
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import crypto from "node:crypto";
+
+function baseDir(cfg) {
+  return path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "memory");
+}
+
+export function workspaceKey(workspacePath) {
+  const norm = path.resolve(workspacePath || process.cwd());
+  const h = crypto.createHash("sha256").update(norm).digest("hex").slice(0, 16);
+  return { key: h, path: norm };
+}
+
+export function memoryPaths(cfg, workspacePath) {
+  const { key, path: ws } = workspaceKey(workspacePath);
+  const dir = path.join(baseDir(cfg), key);
+  return {
+    key,
+    workspace: ws,
+    dir,
+    jsonl: path.join(dir, "events.jsonl"),
+    md: path.join(dir, "MEMORY.md"),
+  };
+}
+
+export async function appendMemory(cfg, workspacePath, event) {
+  const p = memoryPaths(cfg, workspacePath);
+  await fs.mkdir(p.dir, { recursive: true });
+  const line = {
+    at: new Date().toISOString(),
+    ...event,
+  };
+  await fs.appendFile(p.jsonl, JSON.stringify(line) + "\n");
+  await rebuildMemoryMd(cfg, workspacePath);
+  return line;
+}
+
+export async function listMemory(cfg, workspacePath, { limit = 50 } = {}) {
+  const p = memoryPaths(cfg, workspacePath);
+  let raw = "";
+  try {
+    raw = await fs.readFile(p.jsonl, "utf8");
+  } catch {
+    return [];
+  }
+  const items = [];
+  for (const line of raw.split("\n").filter(Boolean)) {
+    try {
+      items.push(JSON.parse(line));
+    } catch {
+      /* */
+    }
+  }
+  return items.slice(-limit).reverse();
+}
+
+export async function rebuildMemoryMd(cfg, workspacePath) {
+  const p = memoryPaths(cfg, workspacePath);
+  const items = await listMemory(cfg, workspacePath, { limit: 30 });
+  const lines = [
+    `# Workspace memory`,
+    ``,
+    `Path: \`${p.workspace}\``,
+    ``,
+  ];
+  for (const it of items) {
+    const tag = it.type || "note";
+    lines.push(`- **${tag}** (${(it.at || "").slice(0, 19)}): ${(it.summary || it.goal || "").slice(0, 200)}`);
+    if (it.proposal) lines.push(`  - skill proposal: \`${it.proposal}\``);
+  }
+  lines.push("");
+  await fs.mkdir(p.dir, { recursive: true });
+  await fs.writeFile(p.md, lines.join("\n"));
+  return p.md;
+}
+
+export async function loadDurableMemoryFile(cfg, workspacePath) {
+  const p = memoryPaths(cfg, workspacePath);
+  try {
+    const content = await fs.readFile(p.md, "utf8");
+    if (!content.trim()) return null;
+    // Shape must match loadMemoryFiles / buildContextSections: { path, name, body }
+    return {
+      path: p.md,
+      name: "MEMORY.md",
+      body: content.trim(),
+      source: "durable",
+      content: content.trim(), // alias for older callers
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function rememberJob(cfg, job, extra = {}) {
+  if (!job?.workspace) return null;
+  return appendMemory(cfg, job.workspace, {
+    type: job.pass ? "job_ok" : "job_fail",
+    goal: String(job.goal || "").slice(0, 300),
+    status: job.status,
+    turns: job.turns,
+    summary: job.pass
+      ? `Succeeded: ${String(job.goal || "").slice(0, 120)}`
+      : `Failed: ${job.error || job.status} — ${String(job.goal || "").slice(0, 100)}`,
+    proposal: extra.proposal || job.proposal || null,
+    jobId: job.id,
+  });
+}

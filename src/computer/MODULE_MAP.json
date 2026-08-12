@@ -1,0 +1,157 @@
+{
+  "sourceBundle": "src/computer/xclaw-server.mjs",
+  "sourceBytes": 16830476,
+  "sourceLines": 395462,
+  "extracted": [
+    {
+      "id": "bash-tool",
+      "path": "src/computer/modules/bash-tool.extracted.mjs",
+      "lineStart": 382468,
+      "lineEnd": 382575,
+      "bytes": 3848
+    },
+    {
+      "id": "browser-network-details-tool",
+      "path": "src/computer/modules/browser-network-details-tool.extracted.mjs",
+      "lineStart": 383406,
+      "lineEnd": 383537,
+      "bytes": 5123
+    },
+    {
+      "id": "browser-tab-tool",
+      "path": "src/computer/modules/browser-tab-tool.extracted.mjs",
+      "lineStart": 383637,
+      "lineEnd": 383943,
+      "bytes": 11436
+    },
+    {
+      "id": "file-edit-tool",
+      "path": "src/computer/modules/file-edit-tool.extracted.mjs",
+      "lineStart": 392505,
+      "lineEnd": 392662,
+      "bytes": 5258
+    },
+    {
+      "id": "file-read-tool",
+      "path": "src/computer/modules/file-read-tool.extracted.mjs",
+      "lineStart": 392733,
+      "lineEnd": 392844,
+      "bytes": 3372
+    },
+    {
+      "id": "file-write-tool",
+      "path": "src/computer/modules/file-write-tool.extracted.mjs",
+      "lineStart": 392907,
+      "lineEnd": 393068,
+      "bytes": 5435
+    },
+    {
+      "id": "http-server-main",
+      "path": "src/computer/modules/http-server-main.extracted.mjs",
+      "lineStart": 394324,
+      "lineEnd": 395462,
+      "bytes": 32455
+    },
+    {
+      "id": "skills-context",
+      "path": "src/computer/modules/skills-context.extracted.mjs",
+      "lineStart": 380000,
+      "lineEnd": 382467,
+      "bytes": 83995
+    }
+  ],
+  "regions": [
+    {
+      "key": "vendored_and_deps",
+      "lineStart": 1,
+      "lineEnd": 380000,
+      "note": "Bundled third-party + protocol types (do not hand-edit)",
+      "approxLines": 380000
+    },
+    {
+      "key": "skills_context_utils",
+      "lineStart": 380000,
+      "lineEnd": 382467,
+      "note": "Skills, context formatting, helpers before tools",
+      "approxLines": 2468
+    },
+    {
+      "key": "bash_tool_region",
+      "lineStart": 382468,
+      "lineEnd": 383391,
+      "note": "xclaw_bash + shell helpers",
+      "approxLines": 924
+    },
+    {
+      "key": "browser_service",
+      "lineStart": 382706,
+      "lineEnd": 383270,
+      "note": "BrowserService class (also: browser-service.mjs clean)",
+      "approxLines": 565
+    },
+    {
+      "key": "browser_helpers_and_network_tool",
+      "lineStart": 383271,
+      "lineEnd": 383636,
+      "note": "screenshot/console/network helpers + network details tool",
+      "approxLines": 366
+    },
+    {
+      "key": "browser_tab_tool",
+      "lineStart": 383637,
+      "lineEnd": 383949,
+      "note": "xclaw_browser_tab",
+      "approxLines": 313
+    },
+    {
+      "key": "mid_bundle_app",
+      "lineStart": 383950,
+      "lineEnd": 392504,
+      "note": "Diff and intermediate app (between browser and file tools)",
+      "approxLines": 8555
+    },
+    {
+      "key": "file_tools",
+      "lineStart": 392505,
+      "lineEnd": 393100,
+      "note": "xclaw_file_edit/read/write",
+      "approxLines": 596
+    },
+    {
+      "key": "worktree_and_errors",
+      "lineStart": 393101,
+      "lineEnd": 394323,
+      "note": "Worktree + AppError middleware",
+      "approxLines": 1223
+    },
+    {
+      "key": "http_server_main",
+      "lineStart": 394324,
+      "lineEnd": 395462,
+      "note": "Express routes + main/stdio/shutdown",
+      "approxLines": 1139
+    }
+  ],
+  "cleanModules": {
+    "browser-service": "src/computer/browser-service.mjs",
+    "bash-tool": "src/computer/modules/bash-tool.mjs",
+    "file-tools": "src/computer/modules/file-tools.mjs",
+    "browser-tab-tool": "src/computer/modules/browser-tab-tool.mjs",
+    "native-tools": "src/computer/native-tools.mjs",
+    "thin-server": "src/computer/thin-server.mjs",
+    "status": "native_thin_server_and_core_tools_ok"
+  },
+  "coverage": {
+    "bundleBytes": 16830476,
+    "strategy": "CLEAN rewrites for bash/file/browser_tab + thin HTTP server; full bundle still default unless XCLAW_COMPUTER_NATIVE=1",
+    "vendoredLines": 380000,
+    "appLines": 15462,
+    "cleanStandaloneTools": [
+      "xclaw_bash",
+      "xclaw_file_read",
+      "xclaw_file_write",
+      "xclaw_file_edit",
+      "xclaw_browser_tab"
+    ]
+  }
+}
