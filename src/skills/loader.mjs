@@ -130,15 +130,7 @@ export async function defaultSkillRoots({ configDir, cwd } = {}) {
   if (configDir) roots.push(path.join(configDir, "skills"));
   roots.push(path.join(os.homedir(), ".xclaw", "skills"));
   if (cwd) roots.push(path.join(cwd, ".xclaw", "skills"));
-  // 2) Bundled with this XClaw install
-  try {
-    const here = path.dirname(new URL(import.meta.url).pathname);
-    roots.push(path.resolve(here, "../../skills/bundled"));
-    roots.push(path.resolve(here, "../../skills"));
-  } catch {
-    /* */
-  }
-  // 3) Grok sandbox pre-built skills (this host)
+  // 2) Grok sandbox skills (optional host) — loaded early so XClaw bundled can override
   for (const envKey of ["XCLAW_GROK_SKILLS", "GROK_SKILLS_PATH", "XCLAW_EXTRA_SKILLS"]) {
     if (process.env[envKey]) {
       for (const part of String(process.env[envKey]).split(path.delimiter)) {
@@ -149,6 +141,14 @@ export async function defaultSkillRoots({ configDir, cwd } = {}) {
   roots.push(path.join(os.homedir(), ".grok", "skills"));
   roots.push("/root/.grok/skills");
   roots.push("/home/workdir/.grok/skills");
+  // 3) Bundled with this XClaw install (wins over Grok host copies)
+  try {
+    const here = path.dirname(new URL(import.meta.url).pathname);
+    roots.push(path.resolve(here, "../../skills"));
+    roots.push(path.resolve(here, "../../skills/bundled"));
+  } catch {
+    /* */
+  }
   return [...new Set(roots.filter(Boolean))];
 }
 
@@ -254,19 +254,23 @@ export function buildContextSections({ skills = [], memoryFiles = [], maxSkillCh
   const parts = [];
 
   if (memoryFiles.length) {
+    // Allocate budget from the end of the list (nearest / highest-priority files)
+    // so a huge ancestor file cannot starve the workspace XCLAW.md.
     let budget = maxMemoryChars;
-    const blocks = [];
-    for (const m of memoryFiles) {
+    const selected = [];
+    for (let i = memoryFiles.length - 1; i >= 0; i--) {
       if (budget <= 0) break;
+      const m = memoryFiles[i];
       const body = String(m.body ?? m.content ?? "");
       if (!body.trim()) continue;
       const label = m.name || (m.path ? path.basename(m.path) : "memory");
       const chunk = body.slice(0, budget);
-      blocks.push(`### ${label} (${m.path || "—"})\n${chunk}`);
+      selected.push(`### ${label} (${m.path || "—"})\n${chunk}`);
       budget -= chunk.length;
     }
-    if (blocks.length) {
-      parts.push(`## Project memory (auto-injected)\nThe following project instructions from XCLAW.md / AGENTS.md are authoritative for this workspace. Follow them unless the user explicitly overrides.\n\n${blocks.join("\n\n")}`);
+    selected.reverse(); // restore outer→inner order; nearest still last in text
+    if (selected.length) {
+      parts.push(`## Project memory (auto-injected)\nThe following project instructions from XCLAW.md / AGENTS.md are authoritative for this workspace. Follow them unless the user explicitly overrides.\n\n${selected.join("\n\n")}`);
     }
   }
 
