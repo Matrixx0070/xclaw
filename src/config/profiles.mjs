@@ -43,8 +43,8 @@ export const PROFILES = {
     eval: { cron: { enabled: true } },
   },
   prod: {
-    description: "Production-ish — strict approvals, structured claims on long/campaign",
-    gateway: { host: "127.0.0.1" },
+    description: "Production-ish — strict approvals, require gateway token, structured claims on long/campaign",
+    gateway: { host: "127.0.0.1", requireAuth: true, publicUi: false },
     jobs: {
       groundHard: true,
       claimsRequireEvidence: true,
@@ -53,6 +53,7 @@ export const PROFILES = {
     },
     security: {
       autoApprove: false,
+      bindSystemRunPlan: true,
       approvalPolicy: "risky",
       requireApproval: [
         "xclaw_bash",
