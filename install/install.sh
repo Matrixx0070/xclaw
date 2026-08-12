@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# XClaw R6 — macOS / Linux / WSL install helper
+# XClaw — macOS / Linux / WSL install helper
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -17,17 +17,32 @@ fi
 echo "[xclaw] root=$ROOT"
 echo "[xclaw] node=$(node -v)"
 
-# Optional: copy sample env
 if [ ! -f .env ] && [ -f .env.example ]; then
   cp .env.example .env
-  echo "[xclaw] wrote .env from example — add XAI_API_KEY"
+  echo "[xclaw] wrote .env from example"
+fi
+if [ ! -f deploy/.env ] && [ -f deploy/env.example ]; then
+  cp deploy/env.example deploy/.env
+  echo "[xclaw] wrote deploy/.env from env.example"
 fi
 
+INIT_ARGS=(--yes --profile "${XCLAW_PROFILE:-lab}")
+if [ -n "${XCLAW_MODEL:-}" ]; then
+  INIT_ARGS+=(--model "$XCLAW_MODEL")
+fi
+KEY="${XAI_API_KEY:-${XCLAW_API_KEY:-${OPENAI_API_KEY:-}}}"
+if [ -n "$KEY" ]; then
+  INIT_ARGS+=(--api-key "$KEY")
+fi
+
+echo "[xclaw] running init…"
+node src/cli/init.mjs "${INIT_ARGS[@]}"
+
 echo ""
-echo "Next:"
-echo "  export XAI_API_KEY=xai-..."
+echo "Verify:"
 echo "  node bin/xclaw.mjs doctor"
 echo "  node bin/xclaw.mjs gateway"
 echo "  open http://127.0.0.1:18790/chat/"
 echo ""
-echo "Or:  node bin/xclaw.mjs gateway"
+echo "Docker try-me:"
+echo "  cd deploy && docker compose up --build"

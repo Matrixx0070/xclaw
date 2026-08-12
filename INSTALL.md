@@ -4,21 +4,22 @@
 
 - **Node.js ≥ 22** (22 LTS or 24+)
 - API key for live agent runs:
-  - `XAI_API_KEY` and/or provider keys in `~/.xclaw/xclaw.json`
+  - `XAI_API_KEY` and/or provider keys stored via `init` / auth profiles
 - Optional: Git for swarm worktree flows
 
-## Install from GitHub
+## Install from GitHub (recommended)
 
 ```bash
 git clone https://github.com/Matrixx0070/xclaw.git
 cd xclaw
 
-# core is pure ESM; install only if you need optional deps / scripts
-npm install   # safe to run
+# optional: npm install if you need package scripts / global bin
+npm install
 
+# First-run setup (creates ~/.xclaw, stores key, sets profile)
 export XAI_API_KEY=xai-...
-export XCLAW_PROFILE=lab
-export XCLAW_MODEL=xai/grok-4.5
+npm run init -- --yes --profile lab --model xai/grok-4.5
+# equivalent: node src/cli/init.mjs --yes --api-key "$XAI_API_KEY"
 
 node bin/xclaw.mjs doctor
 node bin/xclaw.mjs gateway
@@ -30,21 +31,36 @@ node bin/xclaw.mjs gateway
 | http://127.0.0.1:18790/control/ | Control UI |
 | http://127.0.0.1:4243/health | Computer (auto-start) |
 
-Config is created at **`~/.xclaw/xclaw.json`** on first load. Default profile **lab** auto-approves tools.
+Config: **`~/.xclaw/xclaw.json`**. Default profile **lab** auto-approves tools.
 
-### Optional installer scripts
+### Installer scripts
 
 ```bash
-# macOS / Linux / WSL
+# macOS / Linux / WSL — runs node version check + init
+export XAI_API_KEY=xai-...
 bash install/install.sh
 
 # Windows PowerShell
+$env:XAI_API_KEY="xai-..."
 .\install\install.ps1
 ```
 
-## Docker (try-me)
+### `init` options
 
-All-in-one image publishes **gateway (WebChat)** and computer:
+```bash
+node src/cli/init.mjs --help
+
+# Non-interactive
+node src/cli/init.mjs --yes --profile lab --api-key "$XAI_API_KEY"
+node src/cli/init.mjs --yes --provider openai --api-key "$OPENAI_API_KEY" --model openai/gpt-4o-mini
+
+# Interactive (TTY)
+node src/cli/init.mjs
+```
+
+Also available as `npm run init` / `npx xclaw-init` after install.
+
+## Docker (try-me)
 
 ```bash
 cd deploy
@@ -54,7 +70,7 @@ cp env.example .env
 docker compose up --build
 ```
 
-Then open **http://127.0.0.1:18790/chat/**
+Open **http://127.0.0.1:18790/chat/**
 
 | Host port | Service |
 |-----------|---------|
@@ -63,17 +79,9 @@ Then open **http://127.0.0.1:18790/chat/**
 
 Notes:
 
-- Compose sets `XCLAW_GATEWAY_HOST=0.0.0.0` so published ports reach the process (profiles otherwise bind `127.0.0.1`).
-- Default profile is **lab**. For stricter mode:
-  ```bash
-  # in .env
-  XCLAW_PROFILE=prod
-  XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
-  ```
-- Sidecar layout (separate computer container):  
-  `docker compose -f docker-compose.sidecar.yml up --build`
-
-Image choices:
+- Compose forces `XCLAW_GATEWAY_HOST=0.0.0.0` so published ports work.
+- Default profile **lab**. For prod: set `XCLAW_PROFILE=prod` and `XCLAW_GATEWAY_TOKEN` in `.env`.
+- Sidecar: `docker compose -f docker-compose.sidecar.yml up --build`
 
 | Dockerfile | Use |
 |------------|-----|
@@ -91,7 +99,6 @@ node bin/xclaw.mjs agent "List files in the current directory"
 Default lab engine is **native** (thin server).
 
 ```bash
-# Build modules → generated/computer-server.mjs (does not overwrite 16MB CDP bundle)
 npm run build:computer
 
 XCLAW_COMPUTER_ENGINE=native      # thin-server.mjs (default)
@@ -108,14 +115,6 @@ node bin/xclaw.mjs doctor
 node bin/xclaw.mjs status
 curl -s http://127.0.0.1:18790/health
 curl -s http://127.0.0.1:4243/health
-
-node --test test/computer-strategy-c.test.mjs test/computer-c3-generated.test.mjs
-```
-
-Live soak (API key required):
-
-```bash
-node scripts/soak-agent.mjs 3
 ```
 
 ## Production
@@ -126,35 +125,16 @@ export XCLAW_GATEWAY_TOKEN="$(openssl rand -hex 32)"
 node bin/xclaw.mjs gateway
 ```
 
-Docker prod sketch: set `XCLAW_PROFILE=prod` and `XCLAW_GATEWAY_TOKEN` in `deploy/.env`, then `docker compose up -d --build`.
-
-## Swarm data dirs
-
-| Path | Content |
-|------|---------|
-| `~/.xclaw/swarms/agents/` | Subagent snapshots |
-| `~/.xclaw/swarms/runs/` | Swarm run records |
-
-## Optional: mitmproxy
-
-```bash
-pip install --user mitmproxy
-export XCLAW_MITM=true
-# lab only until CA trusted:
-export XCLAW_MITM_INSECURE_CERTS=1
-```
-
-See **OPS.md** and **docs/MITM_SCRIPTING.md**.
+Docker: set `XCLAW_PROFILE=prod` and `XCLAW_GATEWAY_TOKEN` in `deploy/.env`, then `docker compose up -d --build`.
 
 ## Troubleshooting
 
 | Symptom | Try |
 |---------|-----|
-| Computer not healthy | `node bin/xclaw.mjs computer` / check port **4243** |
+| No API key | `npm run init -- --yes --api-key xai-...` or export `XAI_API_KEY` |
+| Computer not healthy | `node bin/xclaw.mjs computer` / port **4243** |
 | Tools blocked | `XCLAW_PROFILE=lab` or approval settings |
-| Generated engine missing | `npm run build:computer` |
-| Bundle vs thin confusion | Read STRATEGY_C — modules are source; 16MB is runtime |
-| Docker WebChat unreachable | Confirm port **18790** published; host must be `0.0.0.0` inside container |
+| Docker WebChat unreachable | Port **18790** published; host `0.0.0.0` inside container |
 | Docker health failing | `curl -fsS http://127.0.0.1:18790/ready` inside container |
 
 More: **OPS.md**, **docs/API.md**, **README.md**.
