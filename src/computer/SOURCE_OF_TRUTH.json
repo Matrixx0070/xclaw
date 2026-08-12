@@ -85,10 +85,9 @@
     "note": "XClaw computer server is the same class of artifact as Grok computer server: a single bundled .mjs. Same BrowserService line numbers. XClaw adds renames (xclaw_ prefix) and Horizon patches (H0 flags, profile lock). No multi-file TypeScript/JS BrowserService source tree was found in-repo or under /app."
   },
   "editableModules": {
-    "browserService": "src/computer/browser-service.mjs",
     "browserTabToolExtract": "src/computer/browser-tab-tool.extracted.mjs",
     "runtimeStillBundle": true,
-    "note": "Clean BrowserService extracted and importable. Computer entry still executes inlined class in xclaw-server.mjs until A2 wires import/sync."
+    "note": "The 'clean BrowserService' extract was dead code (undefined identifiers, no runtime importer) and was deleted in 3.82.0. CDP runs only inside the bundle engine; maintained modules live in src/computer/modules/."
   },
   "fullBundleMap": "src/computer/MODULE_MAP.json",
   "modulesDir": "src/computer/modules",

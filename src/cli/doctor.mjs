@@ -982,7 +982,6 @@ export async function runDoctor(opts = {}) {
       ["a.hooks_module", "src/browser/hooks.mjs"],
       ["a.motor_module", "src/browser/motor.mjs"],
       ["a.chrome_args_module", "src/computer/chrome-args.mjs"],
-      ["a.browser_service_clean", "src/computer/browser-service.mjs"],
     ];
     for (const [id, rel] of bridgeFiles) {
       const abs = path.join(root, rel);

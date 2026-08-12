@@ -123,14 +123,21 @@ export async function loadSkillDir(dir) {
 
 /**
  * Discover skills from global + project roots.
+ *
+ * Precedence (later roots override earlier via the byName map):
+ *   1. user/project XClaw skill dirs
+ *   2. env-provided extras (XCLAW_GROK_SKILLS / GROK_SKILLS_PATH / XCLAW_EXTRA_SKILLS)
+ *      + legacy Grok-sandbox host dirs (included only when present on disk)
+ *   3. skills bundled with this install
+ *   4. cfg.skills.roots — operator config, highest precedence
  */
-export async function defaultSkillRoots({ configDir, cwd } = {}) {
+export async function defaultSkillRoots({ configDir, cwd, cfg } = {}) {
   const roots = [];
   // 1) User / project XClaw skills
   if (configDir) roots.push(path.join(configDir, "skills"));
   roots.push(path.join(os.homedir(), ".xclaw", "skills"));
   if (cwd) roots.push(path.join(cwd, ".xclaw", "skills"));
-  // 2) Grok sandbox skills (optional host) — loaded early so XClaw bundled can override
+  // 2) Env-provided extras — loaded early so XClaw bundled can override
   for (const envKey of ["XCLAW_GROK_SKILLS", "GROK_SKILLS_PATH", "XCLAW_EXTRA_SKILLS"]) {
     if (process.env[envKey]) {
       for (const part of String(process.env[envKey]).split(path.delimiter)) {
@@ -138,9 +145,20 @@ export async function defaultSkillRoots({ configDir, cwd } = {}) {
       }
     }
   }
-  roots.push(path.join(os.homedir(), ".grok", "skills"));
-  roots.push("/root/.grok/skills");
-  roots.push("/home/workdir/.grok/skills");
+  // Legacy Grok-sandbox host dirs: fallbacks only, and only when they exist on
+  // disk — no hardcoded absolute paths on machines that never had them.
+  for (const legacy of [
+    path.join(os.homedir(), ".grok", "skills"),
+    "/root/.grok/skills",
+    "/home/workdir/.grok/skills",
+  ]) {
+    try {
+      await fs.stat(legacy);
+      roots.push(legacy);
+    } catch {
+      /* absent — skip */
+    }
+  }
   // 3) Bundled with this XClaw install (wins over Grok host copies)
   try {
     const here = path.dirname(new URL(import.meta.url).pathname);
@@ -149,11 +167,15 @@ export async function defaultSkillRoots({ configDir, cwd } = {}) {
   } catch {
     /* */
   }
+  // 4) Operator-configured roots — explicit config wins over everything
+  for (const r of cfg?.skills?.roots || []) {
+    if (r && String(r).trim()) roots.push(path.resolve(String(r).trim()));
+  }
   return [...new Set(roots.filter(Boolean))];
 }
 
 export async function loadAllSkills({ configDir, cwd, cfg } = {}) {
-  const roots = await defaultSkillRoots({ configDir, cwd });
+  const roots = await defaultSkillRoots({ configDir, cwd, cfg });
 
   const byName = new Map();
   for (const root of roots) {

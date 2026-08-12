@@ -61,7 +61,7 @@ export async function getExtractionStatus() {
         "Vendored ~380k lines remain in bundle. Clean standalone: bash + file read/write/edit. Next: wire native tools into computer HTTP or agent local path; extract browser_tab to clean module.",
     },
     nextSlices: [
-      "browser-tab-tool → clean CDP module (prefer browser-service.mjs)",
+      "browser-tab-tool → full CDP via the bundle engine (XCLAW_COMPUTER_ENGINE=bundle)",
       "http-server-main → thin router importing native tools",
       "CI gate: fail if new tool only added inside xclaw-server.mjs",
     ],

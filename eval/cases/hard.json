@@ -9,8 +9,10 @@
     "prompt": "The test fails. Run node src/run.js, find the bug in src/sum.js, fix it so sum(2,3)===5, and re-run until exit 0. Do not change run.js. Stop when tests pass.",
     "expect": {
       "success": [
-        { "type": "file_contains", "path": "src/sum.js", "text": "a + b" },
         { "type": "command", "cmd": "node src/run.js", "exitCode": 0 }
+      ],
+      "fileContainsAny": [
+        { "path": "src/sum.js", "anyOf": ["a + b", "b + a"] }
       ],
       "budgets": { "maxTurns": 14, "maxToolCalls": 24 }
     }
@@ -44,10 +46,12 @@
     "prompt": "In app.json set debug to false and port to 8080. Keep name as demo. Valid JSON only. Stop when done.",
     "expect": {
       "success": [
-        { "type": "file_contains", "path": "app.json", "text": "\"debug\": false" },
         { "type": "file_contains", "path": "app.json", "text": "8080" },
         { "type": "file_contains", "path": "app.json", "text": "demo" },
         { "type": "command", "cmd": "node -e \"const j=require('./app.json'); if(j.debug!==false||j.port!==8080||j.name!=='demo') process.exit(1)\"", "exitCode": 0 }
+      ],
+      "fileContainsAny": [
+        { "path": "app.json", "anyOf": ["\"debug\": false"] }
       ],
       "budgets": { "maxTurns": 10, "maxToolCalls": 16 }
     }

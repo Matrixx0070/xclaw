@@ -314,3 +314,28 @@ response (last UNVERIFIED item closed) · browser_tab live: example.com 200,
 metadata + loopback SSRF_BLOCKED · env bind override live: host 0.0.0.0:19999.
 BOARD: 10 superseded remote branches deleted after per-branch git-cherry checks;
 only main remains.
+
+## 2026-08-12 — 3.82.0 P2 tier: structured verdicts, cache on wire, gateway hygiene (Claude)
+
+STATUS: green
+BUILT: (1) critic merge-gate structured — critics end with an authoritative
+JSON verdict line; parseCriticVerdict (balanced-brace, last-wins) decides;
+keyword regex demoted to fallback-only ("I would not reject this" now merges).
+(2) Anthropic cache_control reaches the wire — toAnthropicMessages was
+stringify-ing structured system content; now native text blocks with
+cache_control, 4-breakpoint cap, opt-outs honored, OAuth attestation first.
+(3) CORS wildcard removed — loopback-reflect default, gateway.corsOrigin
+override; /security/* served by the routes module (SLA stats, allow-always
+parsing) replacing 3 stale inline duplicates. (4) Sweeper: DELETED zombie
+browser-service.mjs (undefined identifiers, could never run) + unwired
+secure-tool-call.mjs + policy-matrix.mjs (+tests); wired cfg.providers.routes
+(was dead documented config). (5) skills.roots config-driven, Grok-sandbox
+paths on-disk-gated; eval scorer normalized any-of matching, hard.json
+brittle literals fixed. NOTE: automations re-arm at boot was already wired
+(hydrateAutomations, gateway line ~947) — earlier audit line was stale.
+RAN: suite 1182 total, 0 fail (1177 pass, 5 env-skipped) · eval:ci OK ·
+build:computer + C4 parity gate OK · doctor 0 errors · LIVE gateway boot:
+/security/policy serves module payload (approvalGate+computerEngine keys),
+CORS reflects http://127.0.0.1:5173, blocks https://evil.example.
+DEFERRED: router split + /v1, WS library, skills progressive disclosure,
+swarm handoff caps, SCAFFOLD sweep, signed skills.

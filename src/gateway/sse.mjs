@@ -16,7 +16,6 @@ export function initSSE(res) {
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
     "X-Powered-By": "XClaw-Gateway",
-    "Access-Control-Allow-Origin": "*",
   });
   if (typeof res.flushHeaders === "function") res.flushHeaders();
   safeWrite(res, ": connected\n\n");
@@ -247,8 +246,7 @@ export function createStreamWriter(req, res, opts = {}) {
       Connection: "keep-alive",
       "X-Powered-By": "XClaw-Gateway",
       "X-XClaw-Stream": "ndjson",
-      "Access-Control-Allow-Origin": "*",
-    });
+      });
     if (typeof res.flushHeaders === "function") res.flushHeaders();
   } else {
     initSSE(res);

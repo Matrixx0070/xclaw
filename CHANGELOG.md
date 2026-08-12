@@ -1,5 +1,33 @@
 # Changelog
 
+## 3.82.0 — P2 tier: structured critic verdicts, prompt caching on the wire, gateway hygiene
+
+Suite 1182 total / 0 fail (1177 pass, 5 env-skipped). Gateway boot + new routes + CORS live-verified.
+
+**Bitter-lesson fixes**
+
+- **Critic merge-gate is structured**: critics now end with an authoritative JSON verdict line (`{"verdict":"approve"|"block","confidence":0..1,"reasons":[...]}`); `parseCriticVerdict` (string-aware balanced-brace scanner, last-verdict-wins, fenced/bare/embedded) decides the gate. The keyword regex survives ONLY as a fallback for critics that emit no parseable verdict — "I would not reject this" no longer blocks a merge. Reasons mark which path decided.
+- **Anthropic prompt caching finally reaches the wire**: `toAnthropicMessages` was JSON.stringify-ing structured system content into a text blob, destroying the loop's `cache_control` breakpoints. Now structured system content maps to native Anthropic text blocks with `cache_control` preserved (capped at the API's 4-breakpoint limit, keeping the last 4); plain-string system gets one trailing breakpoint by default. Opt-outs: `tokens.cacheBreakpoints.enabled:false` or mode `none`. OAuth attestation block stays first; shared `applySystem` dedupes chat/chatStream.
+
+**Gateway hygiene**
+
+- **CORS wildcard removed**: `Access-Control-Allow-Origin: *` was on every response — any web page could read loopback gateway responses on tokenless lab setups. Default now: no Origin → no header; loopback origins reflected; everything else blocked. Operator override `gateway.corsOrigin` (`"*"`, origin string, or list).
+- **`/security/*` served by the routes module** (was an unwired extracted file + three stale inline duplicates): richer payloads — pending list with SLA stats, `allow-always`-style decision parsing, policy with approval-gate info + computer-engine snapshot.
+- Preflight allows `Authorization`/`x-xclaw-token` headers.
+
+**Sweeper pass**
+
+- **Deleted** `src/computer/browser-service.mjs` — zombie module referencing undefined identifiers (could never run); every runtime pointer/doc updated; the CDP path is the bundle engine. Recovery via git history.
+- **Deleted** `src/agent/secure-tool-call.mjs` + `src/security/policy-matrix.mjs` (+tests) — imported by nothing but their own tests; the live logic runs inline in the loop/approval gate.
+- **Wired `cfg.providers.routes`** (documented config that was consumed by nothing): config prefix routes now win over the built-in table; `routes.default` beats the hardcoded fallback but never an explicit `agent.provider`.
+
+**Skills + eval honesty**
+
+- Skill roots are config-driven (`skills.roots`, highest precedence); legacy Grok-sandbox absolute paths are on-disk-gated fallbacks instead of hardcoded entries.
+- Eval scorer gains normalized any-of matching (`fileContainsAny`/`replyContainsAny`, whitespace-insensitive); brittle literal expectations in `hard.json` converted — correct-but-reformatted answers pass, wrong answers still fail.
+
+Deferred (tracked): gateway router split + `/v1` versioning, hand-rolled WS → library, skills progressive disclosure, swarm handoff truncation/caps, SCAFFOLD sweep (Phase 8), signed skills.
+
 ## 3.81.0 — P0/P1 close-out: browser SSRF, merge self-approve, correctness batch
 
 Closes the remaining P0/P1 tier of the 2026-08-12 design review + Grok brief. Suite 1149/0 fail (1144 pass, 5 env-skipped; was 1107), live LLM→MCP loop verified end-to-end for the first time.

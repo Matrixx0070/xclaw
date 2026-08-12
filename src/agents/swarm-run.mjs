@@ -60,7 +60,9 @@ const ROLES = {
     isolateWorkspace: false,
     promptPrefix:
       "Role: critic. Review the plan/results for risks and gaps. Do not implement. " +
-      "Session physics: no motor (click/type). You may approve/reject commit_gate. Do not acquire actor tab leases.\n\n",
+      "Session physics: no motor (click/type). You may approve/reject commit_gate. Do not acquire actor tab leases. " +
+      'End your final message with one JSON line: {"verdict":"approve"|"block","confidence":0..1,"reasons":["..."]} — ' +
+      'use "block" only if the work must NOT merge as-is. This verdict line is authoritative; prose does not gate the merge.\n\n',
   },
   actor: {
     maxTurns: 8,

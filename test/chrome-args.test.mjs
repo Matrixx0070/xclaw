@@ -8,7 +8,6 @@ import {
   chromeArgsInvariants,
 } from "../src/computer/chrome-args.mjs";
 import { resolveChromeArgs, loadChromeArgsModule } from "../src/computer/chrome-args-bridge.mjs";
-import { BrowserService } from "../src/computer/browser-service.mjs";
 
 describe("Phase A5 single Chrome args path", () => {
   it("buildChromeArgs requires userDataDir", () => {
@@ -67,8 +66,4 @@ describe("Phase A5 single Chrome args path", () => {
     assert.equal(inv.ok, true);
   });
 
-  it("clean BrowserService imports and uses canonical builder path", () => {
-    assert.equal(typeof BrowserService, "function");
-    assert.equal(typeof BrowserService.getChromePath, "function");
-  });
 });

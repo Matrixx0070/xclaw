@@ -86,7 +86,7 @@
       "key": "browser_service",
       "lineStart": 382706,
       "lineEnd": 383270,
-      "note": "BrowserService class (also: browser-service.mjs clean)",
+      "note": "BrowserService class (bundle-internal; the standalone extract was deleted in 3.82.0)",
       "approxLines": 565
     },
     {
@@ -133,7 +133,6 @@
     }
   ],
   "cleanModules": {
-    "browser-service": "src/computer/browser-service.mjs",
     "bash-tool": "src/computer/modules/bash-tool.mjs",
     "file-tools": "src/computer/modules/file-tools.mjs",
     "browser-tab-tool": "src/computer/modules/browser-tab-tool.mjs",

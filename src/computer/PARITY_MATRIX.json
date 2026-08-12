@@ -89,12 +89,12 @@
     },
     {
       "name": "BrowserService",
-      "maintainedModule": "src/computer/browser-service.mjs",
-      "native": "partial",
-      "generated": "partial",
+      "maintainedModule": null,
+      "native": "missing",
+      "generated": "missing",
       "bundle": "parity",
       "defaultPath": false,
-      "notes": "Standalone browser-service.mjs exists; full vendored CDP still in bundle"
+      "notes": "Dead browser-service.mjs extract deleted 3.82.0 (never ran — undefined identifiers); full CDP lives only in the bundle engine"
     },
     {
       "name": "skills-context",

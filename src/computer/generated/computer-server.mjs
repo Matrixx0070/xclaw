@@ -1183,7 +1183,7 @@ async function runBrowserTab(input = {}) {
   if (input.jsCode) {
     return {
       ok: false,
-      error: "jsCode requires CDP/BrowserService. Use XCLAW_COMPUTER_ENGINE=bundle or wire browser-service. See docs/BROWSER_UNBUNDLE.md",
+      error: "jsCode requires the CDP bundle engine. Set XCLAW_COMPUTER_ENGINE=bundle (npm run fetch:bundle). See docs/BROWSER_UNBUNDLE.md",
       tabId: input.tabId || null,
       engine: "native-fetch"
     };
@@ -1191,7 +1191,7 @@ async function runBrowserTab(input = {}) {
   if (input.screenshot) {
     return {
       ok: false,
-      error: "screenshot requires CDP/BrowserService. Native browser_tab does not capture images. See docs/BROWSER_UNBUNDLE.md",
+      error: "screenshot requires the CDP bundle engine. Native browser_tab does not capture images. See docs/BROWSER_UNBUNDLE.md",
       tabId: input.tabId || null,
       engine: "native-fetch"
     };
@@ -1392,7 +1392,7 @@ async function getExtractionStatus() {
       note: "Vendored ~380k lines remain in bundle. Clean standalone: bash + file read/write/edit. Next: wire native tools into computer HTTP or agent local path; extract browser_tab to clean module."
     },
     nextSlices: [
-      "browser-tab-tool \u2192 clean CDP module (prefer browser-service.mjs)",
+      "browser-tab-tool \u2192 full CDP via the bundle engine (XCLAW_COMPUTER_ENGINE=bundle)",
       "http-server-main \u2192 thin router importing native tools",
       "CI gate: fail if new tool only added inside xclaw-server.mjs"
     ]

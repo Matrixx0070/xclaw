@@ -6,7 +6,7 @@
  * Kept as the editable *text of record* for the navigate/evaluate path
  * so A2 hooks can be designed against real call sites (Page.navigate, etc.).
  *
- * Clean BrowserService lives in browser-service.mjs (syntax-checked, importable).
+ * (The former browser-service.mjs extract was dead code and was deleted in 3.82.0.)
  */
 
 var BrowserTabTool = {

@@ -99,3 +99,27 @@ describe("run-once → loop contract (tripwire)", () => {
     assert.ok(!/messages:\s*\[/.test(src), "run-once must not pass a messages array");
   });
 });
+
+describe("cfg.providers.routes wiring (was dead config)", () => {
+  it("config prefix routes win over the built-in table", async () => {
+    const { inferProviderFromModel } = await import("../src/providers/registry.mjs");
+    const cfg = { providers: { routes: { "grok-": "custom" } } };
+    assert.equal(inferProviderFromModel("grok-4.5", cfg), "custom");
+    assert.equal(inferProviderFromModel("gpt-4o", cfg), "openai"); // built-in still applies
+  });
+
+  it("routes.default beats hardcoded fallback but not agent.provider", async () => {
+    const { inferProviderFromModel } = await import("../src/providers/registry.mjs");
+    assert.equal(
+      inferProviderFromModel("mystery-model", { providers: { routes: { default: "ollama" } } }),
+      "ollama"
+    );
+    assert.equal(
+      inferProviderFromModel("mystery-model", {
+        agent: { provider: "xai" },
+        providers: { routes: { default: "ollama" } },
+      }),
+      "xai"
+    );
+  });
+});

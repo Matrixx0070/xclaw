@@ -263,10 +263,23 @@ export function inferProviderFromModel(model, cfg = {}) {
   if (!model) return cfg.agent?.provider || process.env.XCLAW_PROVIDER || "xai";
   const parsed = parseModelRef(model);
   if (parsed.provider) return parsed.provider;
+  // cfg.providers.routes (documented in defaults) wins over the built-in
+  // prefix table; its "default" key overrides the final fallback.
+  const cfgRoutes = cfg.providers?.routes || {};
+  for (const [prefix, prov] of Object.entries(cfgRoutes)) {
+    if (prefix !== "default" && String(model).startsWith(prefix) && prov) return prov;
+  }
   for (const [prefix, prov] of PREFIX_ROUTES) {
     if (String(model).startsWith(prefix)) return prov;
   }
-  return cfg.agent?.provider || process.env.XCLAW_PROVIDER || "xai";
+  // agent.provider (explicit operator choice) still beats routes.default,
+  // which in turn beats the hardcoded final fallback.
+  return (
+    cfg.agent?.provider ||
+    process.env.XCLAW_PROVIDER ||
+    cfgRoutes.default ||
+    "xai"
+  );
 }
 
 /**

@@ -75,18 +75,72 @@ function httpJson(urlStr, { method = "POST", headers, body, timeout = 180_000 })
   });
 }
 
+/** Normalize one system-content entry into Anthropic text blocks. */
+function systemContentToBlocks(content) {
+  if (typeof content === "string") {
+    return content ? [{ type: "text", text: content }] : [];
+  }
+  if (Array.isArray(content)) {
+    // Cache-breakpoint builder emits [{type:"text", text, cache_control?}].
+    // Preserve structure — stringifying this array (the old behavior) turned
+    // the whole prefix into a JSON blob and dropped every cache mark.
+    const out = [];
+    for (const part of content) {
+      if (part == null) continue;
+      if (typeof part === "string") {
+        if (part) out.push({ type: "text", text: part });
+        continue;
+      }
+      const text = typeof part.text === "string" ? part.text : typeof part.content === "string" ? part.content : "";
+      if (!text) continue;
+      const block = { type: "text", text };
+      if (part.cache_control && typeof part.cache_control === "object") {
+        block.cache_control = part.cache_control;
+      }
+      out.push(block);
+    }
+    return out;
+  }
+  if (content && typeof content === "object" && typeof content.text === "string") {
+    return content.text ? [{ type: "text", text: content.text }] : [];
+  }
+  return [];
+}
+
+/**
+ * Anthropic allows at most 4 cache_control breakpoints per request. Keep the
+ * LAST `max` markers (they cover the longest prefixes) and silently strip the
+ * rest.
+ */
+export function capCacheBreakpoints(blocks, max = 4) {
+  const marked = (blocks || []).filter((b) => b.cache_control);
+  if (marked.length <= max) return blocks;
+  const drop = new Set(marked.slice(0, marked.length - max));
+  return blocks.map((b) => {
+    if (!drop.has(b)) return b;
+    const { cache_control, ...rest } = b;
+    return rest;
+  });
+}
+
 /**
  * OpenAI-style messages → Anthropic messages + system.
+ * `system` is the flattened text (back-compat); `systemBlocks` is the
+ * structured Anthropic form (present whenever any system entry was
+ * structured), preserving cache_control breakpoints from the loop's
+ * cache-breakpoints builder.
  */
 export function toAnthropicMessages(openaiMessages = []) {
-  let systemParts = [];
+  /** @type {Array<{type:string,text:string,cache_control?:object}>} */
+  let systemBlockParts = [];
+  let sawStructuredSystem = false;
   const messages = [];
 
   for (const m of openaiMessages) {
     const role = m.role;
     if (role === "system") {
-      const t = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
-      if (t) systemParts.push(t);
+      if (typeof m.content !== "string") sawStructuredSystem = true;
+      systemBlockParts.push(...systemContentToBlocks(m.content));
       continue;
     }
 
@@ -169,7 +223,8 @@ export function toAnthropicMessages(openaiMessages = []) {
   }
 
   return {
-    system: systemParts.filter(Boolean).join("\n\n"),
+    system: systemBlockParts.map((b) => b.text).filter(Boolean).join("\n\n"),
+    systemBlocks: sawStructuredSystem && systemBlockParts.length ? systemBlockParts : null,
     messages: merged,
   };
 }
@@ -255,6 +310,43 @@ export function createAnthropicMessagesProvider(opts = {}) {
   };
   const onRetry = opts.onRetry;
 
+  // Prompt caching: emit cache_control breakpoints unless explicitly disabled
+  // (opts.cache === false, tokens.cacheBreakpoints.enabled === false, or
+  // mode none/off). Caching is free savings on Anthropic — default ON.
+  const bpCfg = opts.cfg?.tokens?.cacheBreakpoints || {};
+  const cacheEnabled =
+    opts.cache !== false &&
+    bpCfg.enabled !== false &&
+    !["none", "off"].includes(String(bpCfg.mode || "").toLowerCase());
+
+  /**
+   * Attach system content to the request body: structured blocks with capped
+   * cache_control when available, single cache-marked block for plain-string
+   * systems, attestation-first for OAuth.
+   */
+  function applySystem(body, converted) {
+    let system;
+    if (converted.systemBlocks) {
+      let blocks = converted.systemBlocks;
+      if (!cacheEnabled) {
+        blocks = blocks.map(({ cache_control, ...rest }) => rest);
+      }
+      system = capCacheBreakpoints(blocks);
+    } else if (converted.system) {
+      system = cacheEnabled
+        ? [{ type: "text", text: converted.system, cache_control: { type: "ephemeral" } }]
+        : converted.system;
+    } else {
+      system = "";
+    }
+    if (oauth) {
+      body.system = system;
+      ensureOAuthSystemAttestation(body);
+    } else if (typeof system === "string" ? system : system.length) {
+      body.system = system;
+    }
+  }
+
   async function messagesOnce({ messages, tools, model, temperature, max_tokens }) {
     const converted = toAnthropicMessages(messages);
     const body = {
@@ -264,19 +356,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
     };
     if (temperature != null) body.temperature = temperature;
 
-    let system = converted.system || "";
-    if (oauth) {
-      // Required attestation as exact first system text
-      if (!system.startsWith(OAUTH_ATTESTATION)) {
-        system = system
-          ? `${OAUTH_ATTESTATION}\n\n${system}`
-          : OAUTH_ATTESTATION;
-      }
-      body.system = system;
-      ensureOAuthSystemAttestation(body);
-    } else if (system) {
-      body.system = system;
-    }
+    applySystem(body, converted);
 
     const anthTools = toAnthropicTools(tools);
     if (anthTools?.length) {
@@ -366,18 +446,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
     };
     if (temperature != null) body.temperature = temperature;
 
-    let system = converted.system || "";
-    if (oauth) {
-      if (!system.startsWith(OAUTH_ATTESTATION)) {
-        system = system
-          ? `${OAUTH_ATTESTATION}\n\n${system}`
-          : OAUTH_ATTESTATION;
-      }
-      body.system = system;
-      ensureOAuthSystemAttestation(body);
-    } else if (system) {
-      body.system = system;
-    }
+    applySystem(body, converted);
 
     const anthTools = toAnthropicTools(tools);
     if (anthTools?.length) body.tools = anthTools;

@@ -1,8 +1,15 @@
 /**
  * Eval scorers (verify + budgets + grounding + reply text).
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { runVerifyChecks } from "../jobs/verify.mjs";
 import { scoreCausal, loadTimeline } from "../browser/timetravel.mjs";
+
+/** Whitespace-insensitive form for code-ish comparisons ("a + b" ≡ "a+b"). */
+function normalizeLoose(s) {
+  return String(s || "").replace(/\s+/g, "");
+}
 
 export async function scoreCase(caseDef, jobResult) {
   const failures = [];
@@ -42,10 +49,38 @@ export async function scoreCase(caseDef, jobResult) {
     if (!check.ok) failures.push(`forbid_file:${fp}`);
   }
 
+  // Formatting-robust any-of checks. Surface-form literals (file_contains /
+  // replyContains) are brittle both ways: a correct answer phrased differently
+  // fails, and they invite teaching-to-the-test. These match whitespace-
+  // normalized, so "a + b" ≡ "a+b" ≡ "a  +  b" — but "a - b" still fails.
+  for (const check of caseDef.expect?.fileContainsAny || []) {
+    const anyOf = (check.anyOf || []).map(normalizeLoose).filter(Boolean);
+    if (!check.path || !anyOf.length) {
+      failures.push(`fileContainsAny:invalid:${check.path || "?"}`);
+      continue;
+    }
+    let body = null;
+    try {
+      body = normalizeLoose(await fs.readFile(path.join(workspace, check.path), "utf8"));
+    } catch {
+      failures.push(`fileContainsAny:missing:${check.path}`);
+      continue;
+    }
+    if (!anyOf.some((n) => body.includes(n))) {
+      failures.push(`fileContainsAny:${check.path}:${check.anyOf.join("|")}`);
+    }
+  }
+
   const reply = String(jobResult.text || "");
   for (const needle of caseDef.expect?.replyContains || []) {
     if (!reply.includes(needle)) {
       failures.push(`replyContains:${needle}`);
+    }
+  }
+  for (const group of caseDef.expect?.replyContainsAny || []) {
+    const anyOf = (Array.isArray(group) ? group : [group]).map(normalizeLoose).filter(Boolean);
+    if (anyOf.length && !anyOf.some((n) => normalizeLoose(reply).includes(n))) {
+      failures.push(`replyContainsAny:${(Array.isArray(group) ? group : [group]).join("|")}`);
     }
   }
   for (const needle of caseDef.expect?.replyNotContains || []) {

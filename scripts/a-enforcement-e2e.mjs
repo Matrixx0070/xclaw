@@ -41,7 +41,6 @@ async function main() {
     "src/computer/motor-bridge.mjs",
     "src/computer/chrome-args.mjs",
     "src/computer/chrome-args-bridge.mjs",
-    "src/computer/browser-service.mjs",
     "src/computer/xclaw-server.mjs",
   ];
   for (const rel of need) {

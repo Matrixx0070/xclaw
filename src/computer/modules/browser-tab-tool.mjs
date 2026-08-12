@@ -1,7 +1,7 @@
 /**
  * CLEAN xclaw_browser_tab — lightweight native implementation (P0→P1).
  *
- * Full CDP/Chrome path remains in browser-service.mjs + bundle.
+ * Full CDP/Chrome path lives in the bundle engine (XCLAW_COMPUTER_ENGINE=bundle).
  * Native engine:
  *   - navigate/fetch URL (redirect-aware)
  *   - tab registry (list / read)
@@ -137,7 +137,7 @@ export async function runBrowserTab(input = {}) {
     return {
       ok: false,
       error:
-        "jsCode requires CDP/BrowserService. Use XCLAW_COMPUTER_ENGINE=bundle or wire browser-service. See docs/BROWSER_UNBUNDLE.md",
+        "jsCode requires the CDP bundle engine. Set XCLAW_COMPUTER_ENGINE=bundle (npm run fetch:bundle). See docs/BROWSER_UNBUNDLE.md",
       tabId: input.tabId || null,
       engine: "native-fetch",
     };
@@ -146,7 +146,7 @@ export async function runBrowserTab(input = {}) {
     return {
       ok: false,
       error:
-        "screenshot requires CDP/BrowserService. Native browser_tab does not capture images. See docs/BROWSER_UNBUNDLE.md",
+        "screenshot requires the CDP bundle engine. Native browser_tab does not capture images. See docs/BROWSER_UNBUNDLE.md",
       tabId: input.tabId || null,
       engine: "native-fetch",
     };

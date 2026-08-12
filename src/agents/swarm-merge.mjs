@@ -76,6 +76,69 @@ export function resolveMergePolicy(cfg, input = {}) {
   };
 }
 
+/** Extract a balanced {...} span starting at `start`, string/escape aware. */
+function extractBalancedObject(s, start) {
+  let depth = 0;
+  let inStr = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse the LAST structured critic verdict from model output.
+ * Accepts a bare JSON line, a fenced ```json block, or an object embedded in
+ * prose — anything containing {"verdict":"approve"|"block",...}. The verdict
+ * line is the contract; prose around it carries no gate semantics.
+ * @returns {{ verdict: "approve"|"block", confidence: number|null, reasons: string[] }|null}
+ */
+export function parseCriticVerdict(text) {
+  const s = String(text || "");
+  let last = null;
+  let idx = -1;
+  while ((idx = s.indexOf('"verdict"', idx + 1)) !== -1) {
+    let start = s.lastIndexOf("{", idx);
+    while (start !== -1) {
+      const span = extractBalancedObject(s, start);
+      if (span) {
+        try {
+          const obj = JSON.parse(span);
+          const v = String(obj.verdict || "").toLowerCase();
+          if (v === "approve" || v === "block") {
+            const conf = Number(obj.confidence);
+            last = {
+              verdict: v,
+              confidence: Number.isFinite(conf) ? Math.min(1, Math.max(0, conf)) : null,
+              reasons: Array.isArray(obj.reasons)
+                ? obj.reasons.map((r) => String(r)).slice(0, 10)
+                : [],
+            };
+          }
+          break; // parsed (or wrong shape) — done with this "verdict" hit
+        } catch {
+          // malformed at this brace — widen to the previous enclosing brace
+          start = start > 0 ? s.lastIndexOf("{", start - 1) : -1;
+        }
+      } else {
+        start = start > 0 ? s.lastIndexOf("{", start - 1) : -1;
+      }
+    }
+  }
+  return last;
+}
+
 /**
  * Decide if graph gates allow merge.
  * @param {object[]} results — swarm node results
@@ -103,15 +166,35 @@ export function evaluateMergeGates(results = [], policy = {}) {
   }
 
   if (policy.requireCriticPass && criticNodes.length) {
-    const blocked = criticNodes.some((r) => {
-      if (!r.ok) return true;
+    // Structured verdict decides when present; the keyword regex survives only
+    // as a fallback for critics that emitted no parseable verdict (design
+    // review 2.7 — "I would not reject this" must not block a merge).
+    const details = [];
+    for (const r of criticNodes) {
+      const id = r.nodeId || "?";
+      if (!r.ok) {
+        details.push(`critic ${id} failed`);
+        continue;
+      }
+      const verdict = parseCriticVerdict(r.text);
+      if (verdict) {
+        if (verdict.verdict === "block") {
+          const why = verdict.reasons.length ? `: ${verdict.reasons.slice(0, 3).join("; ")}` : "";
+          details.push(`critic ${id} verdict: block (structured${why})`);
+        }
+        continue; // structured approve — prose keywords carry no weight
+      }
       const t = String(r.text || "").toLowerCase();
-      return (
+      if (
         /\b(block|blocking|do not merge|reject|critical risk)\b/.test(t) &&
         !/\bnot blocking\b/.test(t)
-      );
-    });
-    if (blocked) reasons.push("critic indicated merge should be blocked");
+      ) {
+        details.push(`critic ${id} indicated block (keyword-fallback)`);
+      }
+    }
+    if (details.length) {
+      reasons.push("critic indicated merge should be blocked", ...details);
+    }
   }
 
   // S2 receipt policy

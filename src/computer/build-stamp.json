@@ -1,11 +1,11 @@
 {
   "strategy": "C",
   "phase": "C3",
-  "builtAt": "2026-08-12T20:44:01.944Z",
+  "builtAt": "2026-08-12T20:57:23.118Z",
   "fullRebuild": false,
   "generatedEmit": true,
   "generatedPath": "src/computer/generated/computer-server.mjs",
-  "generatedBytes": 48183,
+  "generatedBytes": 48204,
   "legacyBundlePath": "src/computer/xclaw-server.mjs",
   "legacyBundleBytes": 16839070,
   "legacyBundlePresent": false,

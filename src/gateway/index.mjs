@@ -4,6 +4,8 @@
  */
 import http from "node:http";
 import { createHttpServer } from "./tls.mjs";
+import { tryHandleSecurityRoute } from "./routes/security.mjs";
+import { applyCors } from "./cors.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -116,7 +118,6 @@ function json(res, status, body) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "X-Powered-By": "XClaw-Gateway",
-    "Access-Control-Allow-Origin": "*",
   });
   res.end(data);
 }
@@ -1058,6 +1059,9 @@ export async function startGateway({ root } = {}) {
   const { server, tls: tlsOn } = createHttpServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${cfg.gateway.host}`);
     const p = url.pathname;
+    // CORS decided once per request (loopback-reflect by default, wildcard only
+    // when cfg.gateway.corsOrigin === "*"); writeHead calls must not set ACAO.
+    applyCors(req, res, cfg);
       if (gatewayAuth.isProtectedPath(p) && req.method !== "OPTIONS") {
         const auth = gatewayAuth.check(req);
         if (!auth.ok) return json(res, 401, { error: "unauthorized" });
@@ -1065,9 +1069,8 @@ export async function startGateway({ root } = {}) {
 
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-xclaw-token",
       });
       return res.end();
     }
@@ -1433,8 +1436,7 @@ export async function startGateway({ root } = {}) {
           "X-XClaw-Key-Generation": String(out.generation ?? ""),
           "X-XClaw-Key-Kid": String(out.kid ?? ""),
           "X-Powered-By": "XClaw-Gateway",
-          "Access-Control-Allow-Origin": "*",
-        });
+              });
         res.end(body);
         return;
       }
@@ -1631,8 +1633,7 @@ export async function startGateway({ root } = {}) {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-cache, no-transform",
           Connection: "keep-alive",
-          "Access-Control-Allow-Origin": "*",
-          "X-Accel-Buffering": "no",
+                "X-Accel-Buffering": "no",
         });
         res.write(": eviction stream\n\n");
         subscribeEvictionSSE(res, { lastEventId });
@@ -2181,12 +2182,20 @@ export async function startGateway({ root } = {}) {
         return s ? json(res, 200, s) : json(res, 404, { error: "not found" });
       }
 
-      if (p === "/security/pending" && req.method === "GET") {
-        return json(res, 200, { pending: approvalGate.listPending() });
-      }
-      if (p === "/security/decide" && req.method === "POST") {
-        const body = await readBody(req);
-        return json(res, 200, approvalGate.decide(body.id, Boolean(body.approved), body.note));
+      // /security/* served by the routes module (richer than the old inline
+      // handlers: SLA stats, allow-always decision parsing, engine snapshot).
+      if (p.startsWith("/security/")) {
+        const handled = await tryHandleSecurityRoute({
+          p,
+          method: req.method,
+          req,
+          res,
+          cfg,
+          approvalGate,
+          json,
+          readBody,
+        });
+        if (handled) return;
       }
       if (p === "/checkpoints" && req.method === "GET") {
         const { listCheckpoints, loadCheckpoint } = await import("../jobs/checkpoint.mjs");
@@ -2224,14 +2233,6 @@ export async function startGateway({ root } = {}) {
         );
         return json(res, out.ok ? 200 : 409, out);
       }
-      if (p === "/security/policy" && req.method === "GET") {
-        return json(res, 200, {
-          telegram: cfg.channels?.telegram || {},
-          discord: cfg.channels?.discord || {},
-          security: cfg.security || {},
-        });
-      }
-
       if (p === "/mcp" && req.method === "POST") {
         const body = await readBody(req);
         const out = await mcpServer.handleRequest(body);
