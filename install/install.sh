@@ -17,39 +17,26 @@ fi
 echo "[xclaw] root=$ROOT"
 echo "[xclaw] node=$(node -v)"
 
-# Optional project .env for local docker/dev
 if [ ! -f .env ] && [ -f .env.example ]; then
   cp .env.example .env
-  echo "[xclaw] wrote .env from example — add XAI_API_KEY if needed"
+  echo "[xclaw] wrote .env from example"
 fi
 if [ ! -f deploy/.env ] && [ -f deploy/env.example ]; then
   cp deploy/env.example deploy/.env
   echo "[xclaw] wrote deploy/.env from env.example"
 fi
 
-# First-run config + optional API key from environment
-INIT_ARGS=(--yes)
-if [ -n "${XCLAW_PROFILE:-}" ]; then
-  INIT_ARGS+=(--profile "$XCLAW_PROFILE")
-else
-  INIT_ARGS+=(--profile lab)
-fi
+INIT_ARGS=(--yes --profile "${XCLAW_PROFILE:-lab}")
 if [ -n "${XCLAW_MODEL:-}" ]; then
   INIT_ARGS+=(--model "$XCLAW_MODEL")
 fi
-if [ -n "${XAI_API_KEY:-}${XCLAW_API_KEY:-}${OPENAI_API_KEY:-}" ]; then
-  # Prefer explicit flag only when we have a concrete key value
-  KEY="${XAI_API_KEY:-${XCLAW_API_KEY:-${OPENAI_API_KEY:-}}}"
+KEY="${XAI_API_KEY:-${XCLAW_API_KEY:-${OPENAI_API_KEY:-}}}"
+if [ -n "$KEY" ]; then
   INIT_ARGS+=(--api-key "$KEY")
 fi
 
 echo "[xclaw] running init…"
-if node bin/xclaw.mjs init "${INIT_ARGS[@]}"; then
-  :
-else
-  # Fallback if CLI not yet wired on older checkouts
-  node src/cli/init.mjs "${INIT_ARGS[@]}" || true
-fi
+node src/cli/init.mjs "${INIT_ARGS[@]}"
 
 echo ""
 echo "Verify:"
@@ -58,4 +45,4 @@ echo "  node bin/xclaw.mjs gateway"
 echo "  open http://127.0.0.1:18790/chat/"
 echo ""
 echo "Docker try-me:"
-echo "  cd deploy && cp env.example .env && docker compose up --build"
+echo "  cd deploy && docker compose up --build"

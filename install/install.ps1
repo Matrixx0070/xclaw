@@ -33,11 +33,7 @@ $key = $env:XAI_API_KEY; if (-not $key) { $key = $env:XCLAW_API_KEY }; if (-not 
 if ($key) { $initArgs += @("--api-key", $key) }
 
 Write-Host "[xclaw] running init…"
-try {
-  & node bin/xclaw.mjs init @initArgs
-} catch {
-  & node src/cli/init.mjs @initArgs
-}
+& node src/cli/init.mjs @initArgs
 
 Write-Host ""
 Write-Host "Verify:"
@@ -46,4 +42,4 @@ Write-Host "  node bin/xclaw.mjs gateway"
 Write-Host "  open http://127.0.0.1:18790/chat/"
 Write-Host ""
 Write-Host "Docker try-me:"
-Write-Host "  cd deploy; copy env.example .env; docker compose up --build"
+Write-Host "  cd deploy; docker compose up --build"

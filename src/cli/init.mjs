@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * XClaw first-run onboarding (init).
  *
@@ -5,20 +6,21 @@
  * runs a light doctor pass, and prints the next step to open WebChat.
  *
  * Non-interactive (CI / install scripts):
- *   xclaw init --yes --api-key "$XAI_API_KEY" --profile lab
+ *   node src/cli/init.mjs --yes --api-key "$XAI_API_KEY" --profile lab
+ *   npm run init -- --yes --profile lab
  *
  * Interactive (TTY):
- *   xclaw init
+ *   node src/cli/init.mjs
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { pathToFileURL } from "node:url";
 import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
 
 function flag(args, name) {
-  const i = args.indexOf(name);
-  return i >= 0;
+  return args.indexOf(name) >= 0;
 }
 
 function opt(args, name, fallback = null) {
@@ -96,6 +98,11 @@ export async function initMain(args = []) {
     process.env.OPENAI_API_KEY ||
     null;
 
+  // Legacy onboard flags
+  const authChoice = opt(args, "--auth-choice");
+  if (authChoice === "openai-api-key") provider = "openai";
+  if (authChoice === "xai-api-key" || authChoice === "api-key") provider = provider || "xai";
+
   const interactive = !yes && isTty() && !json;
 
   if (interactive) {
@@ -115,7 +122,7 @@ export async function initMain(args = []) {
         );
         if (entered) apiKey = entered;
       } else {
-        console.log(`API key: present via env/flag (not shown)`);
+        console.log("API key: present via env/flag (not shown)");
       }
 
       const defaultModel =
@@ -148,30 +155,24 @@ export async function initMain(args = []) {
     next: [],
   };
 
-  // Persist profile + model into user config (env still wins at runtime)
   try {
     const patch = { profile };
     if (model) {
-      patch.agent = { ...(cfg.agent || {}), model, provider };
+      patch.agent = { model, provider };
     } else if (provider) {
-      patch.agent = { ...(cfg.agent || {}), provider };
+      patch.agent = { provider };
     }
     result.configPath = await writeConfigPatch(patch);
   } catch (err) {
     result.ok = false;
     result.error = `config write failed: ${err.message}`;
-    if (json) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.error(`[xclaw] ${result.error}`);
-    }
+    if (json) console.log(JSON.stringify(result, null, 2));
+    else console.error(`[xclaw] ${result.error}`);
     return 1;
   }
 
-  // Store API key in auth profiles (preferred) when provided
   if (apiKey) {
     try {
-      // Reload after patch so paths/profile are current
       cfg = await loadConfig({ strict: false });
       const { loginApiKey } = await import("../auth/profiles.mjs");
       const authOut = await loginApiKey(cfg, {
@@ -185,9 +186,8 @@ export async function initMain(args = []) {
     } catch (err) {
       result.ok = false;
       result.error = `auth store failed: ${err.message}`;
-      if (json) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
+      if (json) console.log(JSON.stringify(result, null, 2));
+      else {
         console.error(`[xclaw] ${result.error}`);
         console.error("[xclaw] You can still export XAI_API_KEY / XCLAW_API_KEY and continue.");
       }
@@ -195,7 +195,6 @@ export async function initMain(args = []) {
     }
   }
 
-  // Light doctor (config + node + key presence) — skip live probes noise when --skip-doctor
   if (!skipDoctor) {
     try {
       const { runDoctor } = await import("./doctor.mjs");
@@ -205,9 +204,10 @@ export async function initMain(args = []) {
         exitCode: report.exitCode,
         errors: report.errors,
         warnings: report.warnings,
-        // Keep a short subset for humans
         highlights: (report.checks || [])
-          .filter((c) => ["config.load", "node", "apiKey", "profile", "bind", "owner.gatewayToken"].includes(c.id))
+          .filter((c) =>
+            ["config.load", "node", "apiKey", "profile", "bind", "owner.gatewayToken"].includes(c.id)
+          )
           .map((c) => ({ id: c.id, status: c.status, message: c.message })),
       };
       if (report.errors > 0) result.ok = false;
@@ -220,7 +220,7 @@ export async function initMain(args = []) {
   result.next = [
     apiKey || result.apiKeyStored
       ? null
-      : `export XAI_API_KEY=xai-...   # or: xclaw init --api-key xai-...`,
+      : `export XAI_API_KEY=xai-...   # or: npm run init -- --yes --api-key xai-...`,
     profile === "prod" && !(cfg.gateway?.token || process.env.XCLAW_GATEWAY_TOKEN)
       ? `export XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)`
       : null,
@@ -239,7 +239,9 @@ export async function initMain(args = []) {
     console.log(`  profile:  ${profile}`);
     console.log(`  provider: ${provider}`);
     console.log(`  model:    ${model || "(unset)"}`);
-    console.log(`  api key:  ${result.apiKeyStored ? "stored in auth profiles" : apiKey ? "provided" : "not set"}`);
+    console.log(
+      `  api key:  ${result.apiKeyStored ? "stored in auth profiles" : apiKey ? "provided" : "not set"}`
+    );
     if (result.doctor) {
       console.log(
         `  doctor:   ${result.doctor.ok ? "ok" : "issues"} (${result.doctor.errors || 0} err, ${result.doctor.warnings || 0} warn)`
@@ -261,7 +263,9 @@ export async function initMain(args = []) {
 
 function printHelp() {
   console.log(`Usage:
-  xclaw init [options]
+  node src/cli/init.mjs [options]
+  npm run init -- [options]
+  npx xclaw-init [options]
 
 Options:
   --yes, -y              Non-interactive (use flags/env defaults)
@@ -274,18 +278,15 @@ Options:
   -h, --help             Show this help
 
 Examples:
-  xclaw init
-  xclaw init --yes --api-key "$XAI_API_KEY" --profile lab
-  xclaw init --yes --provider openai --api-key "$OPENAI_API_KEY" --model openai/gpt-4o-mini
-
-Note: "xclaw onboard" is an alias for init (auth-focused flags still accepted).
+  npm run init
+  npm run init -- --yes --api-key "$XAI_API_KEY" --profile lab
+  npm run init -- --yes --provider openai --api-key "$OPENAI_API_KEY"
 `);
 }
 
-// Allow: node src/cli/init.mjs --yes
-import { pathToFileURL } from "node:url";
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+const entry = process.argv[1] ? path.resolve(process.argv[1]) : "";
+if (entry && import.meta.url === pathToFileURL(entry).href) {
   initMain(process.argv.slice(2)).then((code) => {
-    process.exitCode = code;
+    process.exit(code ?? 0);
   });
 }
