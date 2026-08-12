@@ -1,14 +1,25 @@
 /**
  * Exec approvals & tool allowlists (parity gap #6).
  * Module holds a shared gate so gateway decide API and agent loop see the same pending map.
+ *
+ * systemRunPlan binding (OpenClaw-aligned):
+ * - For tools that require human/SLA approval, freeze argv/cwd/exe (+ optional file hashes)
+ *   before the decision is recorded.
+ * - On approve, revalidate pins to close classic TOCTOU windows.
+ * - Fail-closed only when security.requirePinnedExe is true and the executable cannot be realpath'd.
  */
 import {
   isToolNameAllowlisted,
   normalizeToolName,
 } from "./tool-allowlist-guard.mjs";
 import { commandMatchesExecAllowlist } from "./exec-allowlist-pattern.mjs";
+import {
+  buildSystemRunPlan,
+  revalidatePlan,
+  isExecTool,
+} from "./system-run-plan.mjs";
 
-const pending = new Map(); // id -> { tool, args, resolve, at, deadline }
+const pending = new Map(); // id -> { tool, args, plan, resolve, at, deadline }
 let slaTimer = null;
 let sharedGate = null;
 
@@ -26,14 +37,37 @@ function ensureSlaTimer(cfg) {
             ok: false,
             reason: "sla_timeout",
             message: `Approval SLA exceeded for ${item.tool}`,
+            planFingerprint: item.plan?.fingerprint ?? null,
           });
         } else {
-          item.resolve({ ok: true, approved: true, mode: "sla_auto", note: "SLA auto-approve" });
+          item.resolve({
+            ok: true,
+            approved: true,
+            mode: "sla_auto",
+            note: "SLA auto-approve",
+            planFingerprint: item.plan?.fingerprint ?? null,
+          });
         }
       }
     }
   }, tickMs);
   if (slaTimer.unref) slaTimer.unref();
+}
+
+function sanitizePlan(plan) {
+  if (!plan) return null;
+  return {
+    version: plan.version,
+    tool: plan.tool,
+    isExec: plan.isExec,
+    command: plan.command,
+    argv: plan.argv ? [...plan.argv] : [],
+    cwd: plan.cwd,
+    exe: plan.exe,
+    fingerprint: plan.fingerprint,
+    fileOperandCount: (plan.fileOperands || []).length,
+    createdAt: plan.createdAt,
+  };
 }
 
 export function createApprovalGate(cfg = {}) {
@@ -54,6 +88,14 @@ export function createApprovalGate(cfg = {}) {
   const autoApprove = security.autoApprove === true;
   /** always | risky | never — when not full autoApprove */
   const policy = security.approvalPolicy || "risky";
+
+  /** Bind frozen systemRunPlan for tools that enter the approval path. Default on. */
+  const bindSystemRunPlan = security.bindSystemRunPlan !== false;
+  const hashFileOperands = security.hashFileOperands === true;
+  const requirePinnedExe = security.requirePinnedExe === true;
+  /** Re-check pins on human/SLA approve. Default on. */
+  const revalidateOnDecide = security.revalidateOnDecide !== false;
+  const planRoot = security.planRoot || process.cwd();
 
   function isToolAllowed(name) {
     if (!allowlist.size) return true;
@@ -85,7 +127,25 @@ export function createApprovalGate(cfg = {}) {
   }
 
   /**
-   * @returns {Promise<{ok, approved?, reason?, message?, mode?, pendingId?}>}
+   * Build a frozen plan when binding is enabled.
+   * Returns { ok, plan?, reason?, message? }.
+   */
+  function tryBindPlan(name, args) {
+    if (!bindSystemRunPlan) return { ok: true, plan: null };
+    const built = buildSystemRunPlan({
+      tool: name,
+      args: {
+        ...args,
+        requirePinnedExe: requirePinnedExe || args?.requirePinnedExe,
+      },
+      root: planRoot,
+      hashFileOperands,
+    });
+    return built;
+  }
+
+  /**
+   * @returns {Promise<{ok, approved?, reason?, message?, mode?, pendingId?, plan?, planFingerprint?}>}
    */
   async function authorize(name, args, { timeoutMs = 120_000, onPending } = {}) {
     if (!isToolAllowed(name)) {
@@ -103,8 +163,33 @@ export function createApprovalGate(cfg = {}) {
       };
     }
     if (!needsApproval(name)) {
-      return { ok: true, approved: true, mode: "auto" };
+      // Auto path: still optionally bind a plan for downstream audit, but do not block.
+      let plan = null;
+      if (bindSystemRunPlan && isExecTool(name)) {
+        const bound = tryBindPlan(name, args);
+        if (bound.ok) plan = bound.plan;
+        // Soft on auto path — never fail closed for unboundable exe unless caller forced it.
+      }
+      return {
+        ok: true,
+        approved: true,
+        mode: "auto",
+        plan: sanitizePlan(plan),
+        planFingerprint: plan?.fingerprint ?? null,
+      };
     }
+
+    // Human / SLA path: freeze the plan before the pending record is visible.
+    const bound = tryBindPlan(name, args);
+    if (!bound.ok) {
+      return {
+        ok: false,
+        reason: bound.reason || "plan_bind_failed",
+        message: bound.message || `Failed to bind systemRunPlan for ${name}`,
+        plan: sanitizePlan(bound.plan),
+      };
+    }
+    const plan = bound.plan;
 
     const id = `apr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const slaMs = security.approvalSlaMs ?? timeoutMs;
@@ -115,6 +200,7 @@ export function createApprovalGate(cfg = {}) {
         id,
         tool: name,
         args,
+        plan,
         at: new Date().toISOString(),
         atMs: Date.now(),
         deadline: Date.now() + slaMs,
@@ -128,12 +214,19 @@ export function createApprovalGate(cfg = {}) {
             ok: false,
             reason: "timeout",
             message: `Approval timed out for ${name}.`,
+            planFingerprint: plan?.fingerprint ?? null,
           });
         }
       }, timeoutMs);
     });
 
-    onPending?.({ id, tool: name, args });
+    onPending?.({
+      id,
+      tool: name,
+      args,
+      plan: sanitizePlan(plan),
+      planFingerprint: plan?.fingerprint ?? null,
+    });
     const decision = await wait;
     return { ...decision, pendingId: id };
   }
@@ -173,12 +266,38 @@ export function createApprovalGate(cfg = {}) {
     const item = pending.get(pendingId);
     if (!item) return { ok: false, error: "unknown_pending" };
     pending.delete(pendingId);
+
+    if (approved && item.plan && revalidateOnDecide) {
+      const check = revalidatePlan(item.plan);
+      if (!check.ok) {
+        const result = {
+          ok: false,
+          reason: check.reason || "plan_drift",
+          message:
+            check.message ||
+            "Execution environment drifted after approval (TOCTOU).",
+          drift: check.drift || null,
+          planFingerprint: item.plan?.fingerprint ?? null,
+        };
+        item.resolve(result);
+        return { ok: true, result };
+      }
+    }
+
     const result = approved
-      ? { ok: true, approved: true, mode: "human", note }
+      ? {
+          ok: true,
+          approved: true,
+          mode: "human",
+          note,
+          planFingerprint: item.plan?.fingerprint ?? null,
+          plan: sanitizePlan(item.plan),
+        }
       : {
           ok: false,
           reason: "denied",
           message: note || "Denied by operator.",
+          planFingerprint: item.plan?.fingerprint ?? null,
         };
     item.resolve(result);
     return { ok: true, result };
@@ -195,6 +314,8 @@ export function createApprovalGate(cfg = {}) {
       deadline: item.deadline ? new Date(item.deadline).toISOString() : null,
       remainingMs: item.deadline ? Math.max(0, item.deadline - now) : null,
       slaAction: item.slaAction || "deny",
+      plan: sanitizePlan(item.plan),
+      planFingerprint: item.plan?.fingerprint ?? null,
     }));
   }
 
@@ -216,6 +337,12 @@ export function createApprovalGate(cfg = {}) {
       safeAuto: [...safeAuto],
       pending: pending.size,
       sla: slaStats(),
+      systemRunPlan: {
+        bind: bindSystemRunPlan,
+        hashFileOperands,
+        requirePinnedExe,
+        revalidateOnDecide,
+      },
     };
   }
 
