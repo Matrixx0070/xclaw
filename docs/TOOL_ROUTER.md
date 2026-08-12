@@ -90,3 +90,11 @@ Router **does not** replace approvals or plan binding. Order remains:
 - No in-process local fallback if computer is down → blocked error
 - `isComputerOnlyTool()` / `COMPUTER_ONLY_TOOLS` in `planes.mjs`
 - Doctor: `tools.computerOnly`
+
+
+## T4 search plane
+
+- `src/planes/search.mjs` — Brave (API key) or DuckDuckGo lite; host allowlist only
+- Tool: `web_search` registered in agent tool list
+- Router: `plane === search` → `runWebSearch` (never shell / computer)
+- Env: `BRAVE_API_KEY` or `XCLAW_BRAVE_API_KEY` optional

@@ -69,6 +69,7 @@ import { registerSession, unregisterSession } from "./session-control.mjs";
 import { makeToolMessage, freezeRankSize } from "../tokens/rank-size.mjs";
 import { createAllLocalTools, localToolsAsOpenAI, executeLocalTool, localToolNames } from "../tools/registry.mjs";
 import { createToolRouter } from "../tools/router.mjs";
+import { searchPlaneToolsAsOpenAI } from "../planes/search.mjs";
 import { afterBrowserToolTruth } from "../browser/truth.mjs";
 import { beforeNavigate, beforeInput } from "../browser/hooks.mjs";
 import { resolveRole } from "../browser/role-binding.mjs";
@@ -435,6 +436,7 @@ export async function runAgentLoop(options) {
     // Local tools (glob/grep/web/media/finance/x/connected)
     var localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId });
     tools.push(...localToolsAsOpenAI(localTools));
+    tools.push(...searchPlaneToolsAsOpenAI());
     // Cross-session recall (durable memory + receipts)
     if (cfg.memory?.recall !== false) {
       const recallTool = createRecallTool({ cfg, workingDir });

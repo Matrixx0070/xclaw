@@ -12,6 +12,7 @@ import {
   isComputerOnlyTool,
 } from "./planes.mjs";
 import { executeLocalTool, localToolNames } from "./registry.mjs";
+import { runWebSearch, isSearchPlaneTool } from "../planes/search.mjs";
 
 /**
  * @param {object} ctx
@@ -126,13 +127,13 @@ export function createToolRouter(ctx = {}) {
         } else {
           result = await computer.callTool(sessionId, name, args);
         }
-      } else if (plane === "local" || plane === "search") {
+      } else if (plane === "search" || isSearchPlaneTool(name)) {
+        // T4: dedicated search plane — allowlisted HTTP only, never shell
+        result = await runWebSearch(args);
+      } else if (plane === "local") {
         if (localNames.has(name)) {
           result = await executeLocalTool(localTools, name, args);
           if (result == null) throw new Error(`Unknown local tool: ${name}`);
-        } else if (computer?.callTool && plane === "search") {
-          // search may optionally live on computer later; not for computer-only tools
-          result = await computer.callTool(sessionId, name, args);
         } else {
           throw new Error(`No adapter for ${name} (plane=${plane})`);
         }
