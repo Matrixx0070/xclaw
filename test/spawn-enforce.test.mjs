@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import {
   assertPlanAtSpawn,
   buildEnforcedBashSpawn,
-  getSpawnEnforceMode,
 } from "../src/security/spawn-enforce.mjs";
 import { buildSystemRunPlan } from "../src/security/system-run-plan.mjs";
 import { executeBash } from "../src/computer/modules/bash-tool.mjs";
+
+const cfgOff = { profile: "lab", security: { osSandbox: "off", spawnEnforce: "check" } };
 
 describe("spawn enforce", () => {
   it("allows when no plan and not strict", () => {
@@ -68,32 +69,46 @@ describe("spawn enforce", () => {
   });
 
   it("executeBash blocks mutated command when plan attached", async () => {
-    const built = buildSystemRunPlan({
-      tool: "xclaw_bash",
-      args: { command: "echo SAFE" },
-      root: process.cwd(),
-    });
-    const r = await executeBash(
-      { command: "echo PWNED", systemRunPlan: built.plan },
-      { cwd: process.cwd(), cfg: { profile: "lab", security: { osSandbox: "off" } } }
-    );
-    assert.equal(r.ok, false);
-    assert.equal(r.blocked, true);
-    assert.match(String(r.stderr), /spawn enforce|command/);
+    const prev = process.env.XCLAW_OS_SANDBOX;
+    process.env.XCLAW_OS_SANDBOX = "off";
+    try {
+      const built = buildSystemRunPlan({
+        tool: "xclaw_bash",
+        args: { command: "echo SAFE" },
+        root: process.cwd(),
+      });
+      const r = await executeBash(
+        { command: "echo PWNED", systemRunPlan: built.plan },
+        { cwd: process.cwd(), cfg: cfgOff }
+      );
+      assert.equal(r.ok, false);
+      assert.equal(r.blocked, true);
+      assert.match(String(r.stderr), /spawn enforce|command/);
+    } finally {
+      if (prev == null) delete process.env.XCLAW_OS_SANDBOX;
+      else process.env.XCLAW_OS_SANDBOX = prev;
+    }
   });
 
   it("executeBash runs frozen command with enforcement", async () => {
-    const built = buildSystemRunPlan({
-      tool: "xclaw_bash",
-      args: { command: "echo SPAWN_OK" },
-      root: process.cwd(),
-    });
-    const r = await executeBash(
-      { command: "echo SPAWN_OK", systemRunPlan: built.plan },
-      { cwd: process.cwd(), cfg: { profile: "lab", security: { osSandbox: "off" } } }
-    );
-    assert.equal(r.ok, true);
-    assert.match(r.stdout, /SPAWN_OK/);
-    assert.equal(r.spawnEnforced, true);
+    const prev = process.env.XCLAW_OS_SANDBOX;
+    process.env.XCLAW_OS_SANDBOX = "off";
+    try {
+      const built = buildSystemRunPlan({
+        tool: "xclaw_bash",
+        args: { command: "echo SPAWN_OK" },
+        root: process.cwd(),
+      });
+      const r = await executeBash(
+        { command: "echo SPAWN_OK", systemRunPlan: built.plan },
+        { cwd: process.cwd(), cfg: cfgOff }
+      );
+      assert.equal(r.ok, true, `stderr=${r.stderr} blocked=${r.blocked}`);
+      assert.match(r.stdout, /SPAWN_OK/);
+      assert.equal(r.spawnEnforced, true);
+    } finally {
+      if (prev == null) delete process.env.XCLAW_OS_SANDBOX;
+      else process.env.XCLAW_OS_SANDBOX = prev;
+    }
   });
 });
