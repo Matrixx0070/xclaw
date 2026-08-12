@@ -74,16 +74,13 @@ export function getOsSandboxMode(cfg = {}) {
 }
 
 function shouldUnshareNet(cfg) {
+  // Explicit only. Auto-unshare from egress is off by default because some
+  // hosts (GitHub Actions) reject RTM_NEWADDR when creating loopback in a new netns.
   if (cfg?.security?.osSandboxUnshareNet === false) return false;
   if (cfg?.security?.osSandboxUnshareNet === true) return true;
   if (process.env.XCLAW_OS_SANDBOX_NET === "allow") return false;
   if (process.env.XCLAW_OS_SANDBOX_NET === "deny") return true;
-  try {
-    const eg = getEgressPolicy(cfg);
-    return eg.mode === "deny";
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 /**
@@ -118,7 +115,6 @@ export function buildBwrapArgv({
   /** @type {string[]} */
   const argv = [
     "--die-with-parent",
-    "--new-session",
     "--proc",
     "/proc",
     "--dev",
