@@ -42,3 +42,9 @@ node bin/xclaw.mjs agent "your goal"
 1. `git push origin main` with PAT
 2. CI job: `node --test test/merge-*.test.mjs test/swarm-early-merge.test.mjs`
 3. Optional P2 branch merge
+
+## Soak (this freeze)
+
+- Script: scripts/soak-agent.mjs
+- Result: 3/3 pass (passRate 1.0), ~5.5-6.2s/goal, model grok-4.5
+- Clean swarm: no merge_conflict noise; verify PASS; main swarm-ok
