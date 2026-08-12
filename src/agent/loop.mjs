@@ -25,7 +25,7 @@ import {
 } from "./turn-state.mjs";
 import { createLoopGuard } from "./loop-guards.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
-import { partitionToolCalls } from "./tool-concurrency.mjs";
+import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
   appendTranscript,
   loadTranscriptHistory,
@@ -1181,39 +1181,14 @@ export async function runAgentLoop(options) {
         }
       } // end processToolCall
 
-      const batches = partitionToolCalls(calls);
-      onEvent({
-        type: "tools",
-        phase: "batch_plan",
-        batches: batches.map((b) => ({
-          parallel: b.parallel,
-          count: b.calls.length,
-          names: b.calls.map((c) => c.function?.name),
-        })),
+      // T2: plane-aligned partition + maxParallel chunks + abort between chunks
+      const { stop: stopTools } = await runToolBatches(calls, {
+        processFn: processToolCall,
+        signal,
+        cfg,
+        onEvent,
       });
-      let stopTools = false;
-      for (const batch of batches) {
-        if (signal?.aborted) throw new Error("aborted");
-        if (stopTools) break;
-        if (batch.parallel && batch.calls.length > 1) {
-          onEvent({
-            type: "tools",
-            phase: "parallel",
-            count: batch.calls.length,
-            names: batch.calls.map((c) => c.function?.name),
-          });
-          const results = await Promise.all(batch.calls.map((c) => processToolCall(c)));
-          if (results.some((r) => r === "stop")) stopTools = true;
-        } else {
-          for (const c of batch.calls) {
-            const r = await processToolCall(c);
-            if (r === "stop") {
-              stopTools = true;
-              break;
-            }
-          }
-        }
-      }
+      void stopTools;
     }
 
     if (turns >= maxTurns && !finalText) {

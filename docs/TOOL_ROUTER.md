@@ -6,7 +6,7 @@
 |-------|--------|
 | **T0** Inventory + plane map + contract | **Done** (`src/tools/planes.mjs`) |
 | **T1** `router.mjs` + agent loop wire | **Done** |
-| **T2** Batch concurrency + abort | Planned |
+| **T2** Batch concurrency + abort | **Done** |
 | **T3** Computer-only for heavy tools | Planned |
 
 ## Flow (target)
@@ -74,3 +74,11 @@ Router **does not** replace approvals or plan binding. Order remains:
 - Plan carried as `args.systemRunPlan` for spawn enforce
 - `AbortSignal` → blocked result when aborted
 - Tests: `test/tool-router.test.mjs`
+
+
+## T2 concurrency
+
+- `src/agent/tool-concurrency.mjs` — plane-aligned `isParallelSafeTool`, `runToolBatches`
+- Cap: `cfg.tools.maxParallel` or `XCLAW_TOOLS_MAX_PARALLEL` (default **4**)
+- Parallel batches split into chunks; abort checked between chunks
+- Loop uses `runToolBatches(calls, { processFn, signal, cfg, onEvent })`
