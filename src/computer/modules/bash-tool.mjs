@@ -1,45 +1,84 @@
 /**
- * CLEAN xclaw_bash — standalone, no xclaw-server.mjs scope.
- * P0 extraction: maintainable replacement for bash-tool.extracted.mjs reference.
+ * Native bash tool — clean module (Strategy C).
+ * Spawn-time plan enforcement when systemRunPlan is present.
  */
-
 import { spawn } from "node:child_process";
-import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import fs from "node:fs/promises";
 import crypto from "node:crypto";
+import {
+  assertPlanAtSpawn,
+  buildEnforcedBashSpawn,
+  getSpawnEnforceMode,
+} from "../../security/spawn-enforce.mjs";
 
 const DEFAULT_TIMEOUT_SECONDS = 30;
 
 /**
  * @param {object} input
- * @param {string} input.command
- * @param {number} [input.timeout]
- * @param {boolean} [input.background]
- * @param {object} [ctx]
+ * @param {object} ctx
  * @param {string} [ctx.cwd]
  * @param {AbortSignal} [ctx.signal]
+ * @param {object} [ctx.cfg]
+ * @param {object} [ctx.systemRunPlan]
  */
-export async function runBash(input = {}, ctx = {}) {
-  const command = String(input.command || "");
+export async function executeBash(input = {}, ctx = {}) {
+  let command = String(input.command || "");
   if (!command.trim()) {
     return { ok: false, stdout: "", stderr: "command is required", exitCode: 1 };
   }
+
+  const plan =
+    input.systemRunPlan ||
+    input.plan ||
+    ctx.systemRunPlan ||
+    ctx.plan ||
+    null;
+  const mode = getSpawnEnforceMode(ctx.cfg || {});
+  const check = assertPlanAtSpawn({
+    plan,
+    command,
+    cwd: ctx.cwd || input.cwd,
+    mode: plan ? mode : mode === "strict" ? "strict" : "off",
+  });
+  if (!check.ok) {
+    return {
+      ok: false,
+      stdout: "",
+      stderr: check.error || "spawn enforce denied",
+      exitCode: 126,
+      blocked: true,
+      reason: check.reason || "spawn_enforce",
+    };
+  }
+  command = check.command || command;
+
   const timeoutSec = Number(input.timeout ?? DEFAULT_TIMEOUT_SECONDS);
   const timeoutMs = Math.min(120_000, Math.max(0, timeoutSec * 1000));
-  const cwd = ctx.cwd || process.cwd();
+  const cwd = check.cwd || ctx.cwd || process.cwd();
   const background = Boolean(input.background);
+
+  const useEnforceSpawn = Boolean(check.enforced || plan);
+  const spec = useEnforceSpawn
+    ? buildEnforcedBashSpawn({ plan, command, cwd, env: process.env })
+    : {
+        exe: "/bin/bash",
+        argv: ["-lc", command],
+        cwd,
+        env: process.env,
+      };
 
   if (background) {
     const logDir = path.join(os.tmpdir(), "xclaw-bash-bg");
     await fs.mkdir(logDir, { recursive: true });
     const logFile = path.join(logDir, `${crypto.randomBytes(6).toString("hex")}.log`);
     const logFd = await fs.open(logFile, "w");
-    const child = spawn("/bin/bash", ["-lc", command], {
-      cwd,
+    const child = spawn(spec.exe, spec.argv, {
+      cwd: spec.cwd,
       detached: true,
       stdio: ["ignore", logFd.fd, logFd.fd],
-      env: process.env,
+      env: spec.env,
     });
     child.unref();
     await logFd.close();
@@ -51,13 +90,14 @@ export async function runBash(input = {}, ctx = {}) {
       stderr: "",
       timedOut: false,
       interrupted: false,
+      spawnEnforced: Boolean(check.enforced),
     };
   }
 
   return new Promise((resolve) => {
-    const child = spawn("/bin/bash", ["-lc", command], {
-      cwd,
-      env: process.env,
+    const child = spawn(spec.exe, spec.argv, {
+      cwd: spec.cwd,
+      env: spec.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -107,6 +147,7 @@ export async function runBash(input = {}, ctx = {}) {
         exitCode: code ?? 1,
         timedOut,
         interrupted,
+        spawnEnforced: Boolean(check.enforced),
       });
     });
   });
@@ -119,20 +160,16 @@ export const BashTool = {
   inputSchema: {
     type: "object",
     properties: {
-      command: { type: "string" },
-      timeout: { type: "number", description: "Seconds (max 120)" },
+      command: { type: "string", description: "Bash command to run" },
+      timeout: { type: "number", description: "Timeout seconds" },
       background: { type: "boolean" },
     },
     required: ["command"],
   },
-  isReadOnly: () => false,
-  async call(input, context = {}) {
-    const data = await runBash(input, {
-      cwd: context.cwd || context.workingDir || process.cwd(),
-      signal: context.signal || context.abortController?.signal,
-    });
-    return { data };
-  },
+  execute: executeBash,
+  call: async (args, ctx) => executeBash(args, ctx),
 };
+
+export const runBash = executeBash;
 
 export default BashTool;

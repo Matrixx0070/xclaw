@@ -909,6 +909,11 @@ export async function runAgentLoop(options) {
           });
         }
 
+        // Spawn enforcement: carry frozen plan into computer plane (bash checks at spawn)
+        if (auth.plan && isExecTool(name)) {
+          args = { ...args, systemRunPlan: auth.plan };
+        }
+
         const sand = guardToolPaths(cfg, workingDir, name, args);
         if (!sand.ok) {
           const msg = sand.error || "sandbox denied";

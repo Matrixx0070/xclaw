@@ -1,14 +1,15 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — Design-review P0 honesty fixes
+## 2026-08-12 — Spawn-time plan enforcement
 
 STATUS: green
 
-### FIXED (Claude Code report)
-1. **swarm early-merge** — no longer forces `autoMerge:true` (prod can skip)
-2. **soak-multinight** — removed synthetic backdated nights
-3. **release-gate** — no exit 1→0 remap; weak steps advisory
-4. **eval cron** — `intervalMs`/`everyMs` aligned (not silent 60s)
+### BUILT
+- `src/security/spawn-enforce.mjs` — assertPlanAtSpawn + buildEnforcedBashSpawn (-c not -lc)
+- `bash-tool.mjs` — refuses command mutation when systemRunPlan present; non-login spawn
+- Agent loop attaches `auth.plan` as `args.systemRunPlan` before computer.callTool
+- Tests: test/spawn-enforce.test.mjs 6/6
 
-### TESTS
-test/swarm-early-merge-policy.test.mjs 3/3
+### LIMITS
+Still not a kernel sandbox: free-form bash can still do anything *inside* the frozen string.
+Binding = that string is exactly what was approved.
