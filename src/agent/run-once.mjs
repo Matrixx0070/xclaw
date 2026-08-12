@@ -6,10 +6,11 @@ export async function runAgentOnce({ cfg, message, goal } = {}) {
   if (!text) return { ok: false, error: "empty_message" };
   try {
     const { runAgentLoop } = await import("./loop.mjs");
+    // runAgentLoop takes `userMessage` (string) — passing a `messages` array
+    // here silently produced content:undefined requests (Provider HTTP 400).
     const out = await runAgentLoop({
       cfg: cfg || {},
-      messages: [{ role: "user", content: text }],
-      goal: text,
+      userMessage: text,
     });
     return {
       ok: true,

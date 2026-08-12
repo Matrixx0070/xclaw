@@ -90,3 +90,12 @@ describe("memory-file walk trust boundary (7.5)", () => {
     }
   });
 });
+
+describe("run-once → loop contract (tripwire)", () => {
+  it("runAgentOnce passes userMessage (not a messages array) to runAgentLoop", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile(new URL("../src/agent/run-once.mjs", import.meta.url), "utf8");
+    assert.match(src, /userMessage:\s*text/, "run-once must pass userMessage — a messages array is silently dropped by the loop (content:undefined → Provider HTTP 400)");
+    assert.ok(!/messages:\s*\[/.test(src), "run-once must not pass a messages array");
+  });
+});
