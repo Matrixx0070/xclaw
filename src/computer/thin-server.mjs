@@ -225,10 +225,15 @@ export function createThinComputerServer(opts = {}) {
   };
 }
 
-const isMain =
-  process.argv[1] &&
-  (process.argv[1].endsWith("thin-server.mjs") ||
-    process.argv[1].includes("thin-server"));
+const isMain = (() => {
+  const a = process.argv[1] || "";
+  return (
+    a.endsWith("thin-server.mjs") ||
+    a.includes("thin-server") ||
+    a.endsWith("computer-server.mjs") ||
+    a.includes("generated/computer-server")
+  );
+})();
 
 if (isMain) {
   const svc = createThinComputerServer();
