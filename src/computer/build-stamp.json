@@ -1,9 +1,9 @@
 {
   "strategy": "C",
-  "phase": "C1",
-  "builtAt": "2026-08-12T07:18:46.420Z",
+  "phase": "C2",
+  "builtAt": "2026-08-12T07:22:54.958Z",
   "fullRebuild": false,
-  "note": "C1 validates modules + keeps xclaw-server.mjs as runtime artifact. Full regenerate lands in C3.",
+  "note": "C2: maintained registry + extracted refs validated; xclaw-server.mjs still runtime artifact (no full emit yet).",
   "bundleBytes": 16839070,
   "modulesChecked": [
     "bash-tool",
@@ -14,6 +14,14 @@
     "file-write-tool",
     "http-server-main",
     "skills-context"
+  ],
+  "maintainedChecked": [
+    "registry",
+    "bash-tool",
+    "file-tools",
+    "browser-tab-tool",
+    "native-tools",
+    "bundle-entry"
   ],
   "policy": {
     "handEditBundle": false,

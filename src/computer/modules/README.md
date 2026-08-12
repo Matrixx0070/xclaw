@@ -1,29 +1,16 @@
-# Computer modules — full bundle map (~16.8 MB)
+# Computer modules (Strategy C)
 
-The runtime entry remains `../xclaw-server.mjs` (Grok-lineage bundle).
+| Path | Role |
+|------|------|
+| `bash-tool.mjs`, `file-tools.mjs`, `browser-tab-tool.mjs` | **Maintained source** — edit these |
+| `registry.mjs` | Tool registry for thin + future bundle entry |
+| `*.extracted.mjs` | **Reference only** — line snapshots from the 16MB blob; do not extend features here |
 
-This directory holds **extracted application regions** so we can edit and reason
-about the full computer server without treating 16.8MB as one opaque file.
+## C2 status
 
-## Layout
+- Maintained: bash, file read/write/edit, lightweight browser_tab
+- Still bundle-only: HTTP main shell, skills-context, full BrowserService/CDP, network-details depth
 
-| File | Origin in bundle | Role |
-|------|------------------|------|
-| `../browser-service.mjs` | L~382706–383270 | **Clean importable** Chrome/CDP service |
-| `bash-tool.extracted.mjs` | xclaw_bash | Shell tool |
-| `browser-tab-tool.extracted.mjs` | xclaw_browser_tab | Navigate / JS / screenshot |
-| `browser-network-details-tool.extracted.mjs` | network details | |
-| `file-*-tool.extracted.mjs` | file edit/read/write | |
-| `skills-context.extracted.mjs` | skills + context | |
-| `http-server-main.extracted.mjs` | routes + main() | HTTP/stdio server |
-| `../MODULE_MAP.json` | whole file | Line regions for all ~395k lines |
-
-## What “full 16.8MB” means
-
-- **~380k lines** — vendored deps + CDP protocol types (not hand-edited)
-- **~15k lines** — application (tools, BrowserService, routes) — **extracted / mapped**
-- **Clean module** — `browser-service.mjs` is the first fully rewired, importable unit
-
-Winning path: grow clean modules → wire entry to import them → shrink reliance on string-patching the blob.
-
-See `../../docs/COMPUTER_EDITABLE_MODULES.md` and `../../docs/COMPUTER_SOURCE_OF_TRUTH.md`.
+```js
+import { listMaintainedTools, executeMaintainedTool } from "./registry.mjs";
+```
