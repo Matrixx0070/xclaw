@@ -11,7 +11,6 @@ import { resolveProviderRoute } from "../providers/router.mjs";
 import { listImageProviders } from "../media/canvas.mjs";
 import { loadAllSkills } from "../skills/loader.mjs";
 import { defaultSessionsPath } from "../sessions/persist.mjs";
-import { computerEnginePolicySnapshot } from "./policy/computer-engine.mjs";
 
 /**
  * @returns {Promise<object>}
@@ -38,35 +37,6 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
       summary: "error",
       error: err.message,
       hint: "Check computer.host/port in config",
-    });
-  }
-
-  // computer engine policy (Strategy C4)
-  try {
-    const root = process.env.XCLAW_ROOT || process.cwd();
-    const snap = computerEnginePolicySnapshot(cfg, root);
-    const v = snap.validation || {};
-    const ok = v.ok !== false;
-    push("computer_engine", ok, {
-      summary: ok
-        ? `${snap.engine}${snap.isFallbackBundle ? " (explicit fallback)" : ""} · phase ${snap.strategyPhase}`
-        : v.reason || "policy fail",
-      severity: !ok ? "error" : snap.isFallbackBundle || v.warning ? "warn" : "ok",
-      engine: snap.engine,
-      entry: snap.entry,
-      entryExists: snap.entryExists,
-      isFallbackBundle: snap.isFallbackBundle,
-      strategyPhase: snap.strategyPhase,
-      validation: v,
-      hint: snap.isFallbackBundle
-        ? "Running legacy 16MB bundle — prefer native/generated when parity allows"
-        : null,
-    });
-  } catch (err) {
-    push("computer_engine", false, {
-      summary: "unavailable",
-      error: err.message,
-      severity: "warn",
     });
   }
 
@@ -198,15 +168,26 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
   }
 
   // gateway auth
-  const tokenRequired = Boolean(
+  const tokenConfigured = Boolean(
     cfg.gateway?.token ||
       cfg.gateway?.authToken ||
       process.env.XCLAW_GATEWAY_TOKEN
   );
-  push("gateway_auth", true, {
-    summary: tokenRequired ? "token required" : "open (no token)",
-    severity: tokenRequired ? "ok" : "info",
-    tokenRequired,
+  const requireAuth =
+    cfg.gateway?.requireAuth === true ||
+    cfg.profile === "prod" ||
+    process.env.XCLAW_GATEWAY_REQUIRE_AUTH === "1";
+  const authOk = !requireAuth || tokenConfigured;
+  push("gateway_auth", authOk, {
+    summary: tokenConfigured
+      ? "token configured"
+      : requireAuth
+        ? "FAIL: prod/requireAuth but no XCLAW_GATEWAY_TOKEN"
+        : "open (lab — no token)",
+    severity: authOk ? (tokenConfigured ? "ok" : "info") : "error",
+    tokenConfigured,
+    requireAuth,
+    profile: cfg.profile || null,
   });
 
   // config home
