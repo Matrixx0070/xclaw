@@ -5,7 +5,7 @@
 | Phase | State |
 |-------|--------|
 | **T0** Inventory + plane map + contract | **Done** (`src/tools/planes.mjs`) |
-| **T1** `router.mjs` + agent loop wire | Planned |
+| **T1** `router.mjs` + agent loop wire | **Done** |
 | **T2** Batch concurrency + abort | Planned |
 | **T3** Computer-only for heavy tools | Planned |
 
@@ -65,3 +65,12 @@ Router **does not** replace approvals or plan binding. Order remains:
 
 - Classification: `src/tools/planes.mjs`
 - Router (T1): `src/tools/router.mjs` (not yet)
+
+
+## T1 implementation
+
+- `src/tools/router.mjs` — `createToolRouter({ computer, sessionId, localTools, agentHandlers }).dispatch(req)`
+- Agent loop: local + computer paths go through `toolRouter.dispatch`
+- Plan carried as `args.systemRunPlan` for spawn enforce
+- `AbortSignal` → blocked result when aborted
+- Tests: `test/tool-router.test.mjs`

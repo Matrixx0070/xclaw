@@ -66,9 +66,9 @@ import { truncateToolResult, truncationOptsFromConfig } from "./truncate.mjs";
 import { guardToolPaths } from "../security/sandbox.mjs";
 import { guardToolEgress } from "../security/egress.mjs";
 import { registerSession, unregisterSession } from "./session-control.mjs";
-import { createAgentMcpTools } from "./mcp-tools.mjs";
 import { makeToolMessage, freezeRankSize } from "../tokens/rank-size.mjs";
 import { createAllLocalTools, localToolsAsOpenAI, executeLocalTool, localToolNames } from "../tools/registry.mjs";
+import { createToolRouter } from "../tools/router.mjs";
 import { afterBrowserToolTruth } from "../browser/truth.mjs";
 import { beforeNavigate, beforeInput } from "../browser/hooks.mjs";
 import { resolveRole } from "../browser/role-binding.mjs";
@@ -447,25 +447,24 @@ export async function runAgentLoop(options) {
         },
       });
     }
-    // MCP servers (cfg.mcp.servers) — discovered tools join the loop and are
-    // dispatched through the same security path as every other tool
-    var mcpTools = await createAgentMcpTools({ cfg, onEvent });
-    tools.push(...mcpTools.toolDefs);
     onEvent({
       type: "tools",
       count: tools.length,
       names: tools.map((t) => t.function.name),
     });
   } catch (err) {
-    try {
-      mcpTools?.close?.();
-    } catch {
-      /* ignore */
-    }
     await computer.destroySession(sessionId).catch(() => {});
     throw new Error(`Failed to list computer tools: ${err.message}`);
   }
   if (typeof localTools === "undefined") localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId });
+  const toolRouter = createToolRouter({
+    computer,
+    sessionId,
+    localTools,
+    cfg,
+    workingDir,
+  });
+
 
   const sysBuilt = buildSystemMessageWithBreakpoints({
     basePrompt: BASE_SYSTEM_PROMPT,
@@ -1018,13 +1017,10 @@ export async function runAgentLoop(options) {
           } else if (name === "xclaw_recall") {
             const recallTool = createRecallTool({ cfg, workingDir });
             result = await recallTool.execute(args);
-          } else if (localToolNames(localTools).includes(name)) {
-            result = await executeLocalTool(localTools, name, args);
-            if (result == null) throw new Error(`Unknown local tool: ${name}`);
-          } else if (mcpTools?.names?.has(name)) {
-            result = await mcpTools.callTool(name, args);
           } else {
-            // A3 gateway belt: fabric hooks for browser tab tools
+            // T1: single dispatch path via Tool Router (local | computer | search | mcp)
+            let dispatchArgs = args;
+            // A3 gateway belt: fabric hooks for browser tab tools before computer plane
             if (name === "xclaw_browser_tab" || name === "browser_tab") {
               try {
                 const act = args?.url ? "navigate" : args?.jsCode ? "evaluate" : args?.screenshot ? "observe" : "act";
@@ -1058,16 +1054,51 @@ export async function runAgentLoop(options) {
                     metadata: hr,
                   };
                 } else {
-                  result = await computer.callTool(sessionId, name, args);
+                  const routed = await toolRouter.dispatch({
+                    callId: call.id,
+                    name,
+                    args: dispatchArgs,
+                    plan: args.systemRunPlan || null,
+                    signal,
+                  });
+                  result = routed.result ?? {
+                    isError: !routed.ok,
+                    content: [{ type: "text", text: routed.error || "tool failed" }],
+                  };
                   if (hr?.actionId && result && typeof result === "object") {
-                    result.metadata = { ...(result.metadata || {}), actionId: hr.actionId, hook: hr };
+                    result.metadata = { ...(result.metadata || {}), actionId: hr.actionId, hook: hr, plane: routed.plane };
+                  } else if (result && typeof result === "object") {
+                    result.metadata = { ...(result.metadata || {}), plane: routed.plane, durationMs: routed.durationMs };
                   }
                 }
               } catch (beltErr) {
-                result = await computer.callTool(sessionId, name, args);
+                const routed = await toolRouter.dispatch({
+                  callId: call.id,
+                  name,
+                  args: dispatchArgs,
+                  plan: args.systemRunPlan || null,
+                  signal,
+                });
+                result = routed.result ?? {
+                  isError: !routed.ok,
+                  content: [{ type: "text", text: routed.error || "tool failed" }],
+                };
               }
             } else {
-              result = await computer.callTool(sessionId, name, args);
+              const routed = await toolRouter.dispatch({
+                callId: call.id,
+                name,
+                args: dispatchArgs,
+                plan: args.systemRunPlan || null,
+                signal,
+              });
+              result = routed.result ?? {
+                isError: !routed.ok,
+                content: [{ type: "text", text: routed.error || "tool failed" }],
+              };
+              if (result && typeof result === "object") {
+                result.metadata = { ...(result.metadata || {}), plane: routed.plane, durationMs: routed.durationMs };
+              }
             }
           }
         } catch (err) {
@@ -1191,11 +1222,6 @@ export async function runAgentLoop(options) {
   } finally {
     try {
       unregisterSession(sessionKey);
-    } catch {
-      /* ignore */
-    }
-    try {
-      mcpTools?.close?.();
     } catch {
       /* ignore */
     }
