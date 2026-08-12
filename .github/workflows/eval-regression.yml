@@ -45,12 +45,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Setup FFmpeg (pinned)
-        uses: FedericoCarboni/setup-ffmpeg@v3
-        with:
-          ffmpeg-version: "7.1"
-      - name: Verify ffmpeg
-        run: ffmpeg -version | head -2
+      # apt is more reliable than marketplace pin (7.1 was unavailable upstream)
+      - name: Install ffmpeg (apt)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -2
       - name: P1 media tools (view_x_video + images)
         run: node --test test/p1-tools.test.mjs
 
@@ -58,8 +58,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: unit
-    # Do NOT use secrets in job-level `if` (GitHub Actions validation fails).
-    # Gate live runs inside the step via env emptiness instead.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
