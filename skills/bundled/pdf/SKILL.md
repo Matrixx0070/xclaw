@@ -1,6 +1,9 @@
 ---
 name: pdf
 description: Read, create, and transform PDF files. Covers pulling text and tables out of PDFs, generating new PDFs, merging and splitting documents, rotating pages, watermarking, encrypting or removing passwords, extracting embedded images, running OCR on scanned documents, and filling out PDF forms including official tax forms. Apply this skill whenever a task involves a .pdf file as input or deliverable.
+user-invocable: true
+source: xclaw-bundled
+priority: 80
 ---
 
 # Working with PDFs

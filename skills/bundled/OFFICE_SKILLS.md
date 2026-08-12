@@ -41,3 +41,20 @@ python skills/bundled/pptx/scripts/inspect_slide.py unpacked/ --theme
 
 Full pptx template library is large; a few sample templates ship under `pptx/templates/`.  
 Host Grok skills at `/root/.grok/skills` are overridden by these bundled copies when both exist.
+
+## PDF (`skills/bundled/pdf/`)
+
+| Area | Coverage |
+|------|----------|
+| Read | text/tables via pdfplumber / pdftotext |
+| Create / transform | merge, split, rotate, watermark (pypdf / reportlab / qpdf) |
+| Forms | `forms.md` + fill/extract scripts under `scripts/` |
+| OCR / pages as images | convert + existing XClaw media OCR tools |
+
+```bash
+python skills/bundled/pdf/scripts/convert_pdf_to_images.py ...
+python skills/bundled/pdf/scripts/extract_form_structure.py ...
+python skills/bundled/pdf/scripts/fill_fillable_fields.py ...
+```
+
+Optional host packages: `pypdf`, `pdfplumber`, `reportlab`, `poppler-utils`, `qpdf`, `tesseract`.
