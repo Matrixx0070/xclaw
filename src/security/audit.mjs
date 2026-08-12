@@ -50,6 +50,32 @@ export function runSecurityAudit(cfg = {}) {
     add("security.autoApprove", "ok", "autoApprove off");
   }
 
+  // systemRunPlan binding (TOCTOU mitigation on exec approvals)
+  const bindPlan = cfg.security?.bindSystemRunPlan !== false;
+  if (!cfg.security?.autoApprove) {
+    if (bindPlan) {
+      add(
+        "security.systemRunPlan",
+        "ok",
+        "bindSystemRunPlan on (frozen argv/cwd/exe before approval)"
+      );
+    } else {
+      add(
+        "security.systemRunPlan",
+        "warn",
+        "bindSystemRunPlan=false — approvals are not pinned to a frozen plan",
+        "Set security.bindSystemRunPlan=true (default) for TOCTOU resistance"
+      );
+    }
+  }
+  if (cfg.security?.requirePinnedExe === true) {
+    add(
+      "security.requirePinnedExe",
+      "ok",
+      "requirePinnedExe=true (fail-closed when binary cannot be realpath'd)"
+    );
+  }
+
   if (cfg.profile === "prod" || process.env.XCLAW_PROFILE === "prod") {
     if (cfg.security?.autoApprove) {
       add("profile.prod", "error", "prod profile with autoApprove");

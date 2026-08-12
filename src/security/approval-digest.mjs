@@ -15,7 +15,14 @@ export function buildApprovalDigest(cfg) {
   for (const p of pending.slice(0, 15)) {
     const age = p.ageMs != null ? `${Math.round(p.ageMs / 1000)}s` : "?";
     const left = p.remainingMs != null ? `${Math.round(p.remainingMs / 1000)}s left` : "";
-    lines.push(`- ${p.id} ${p.tool} age=${age} ${left}`);
+    const fp = p.planFingerprint ? ` plan=${p.planFingerprint.slice(0, 12)}` : "";
+    const cmd =
+      p.plan?.command ||
+      p.args?.command ||
+      p.args?.cmd ||
+      "";
+    const cmdShort = cmd ? ` «${String(cmd).slice(0, 60)}»` : "";
+    lines.push(`- ${p.id} ${p.tool} age=${age} ${left}${fp}${cmdShort}`.trim());
   }
   if (!pending.length) lines.push("(none)");
   return {
