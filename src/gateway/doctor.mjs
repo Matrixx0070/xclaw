@@ -11,6 +11,7 @@ import { resolveProviderRoute } from "../providers/router.mjs";
 import { listImageProviders } from "../media/canvas.mjs";
 import { loadAllSkills } from "../skills/loader.mjs";
 import { defaultSessionsPath } from "../sessions/persist.mjs";
+import { computerEnginePolicySnapshot } from "./policy/computer-engine.mjs";
 
 /**
  * @returns {Promise<object>}
@@ -37,6 +38,35 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
       summary: "error",
       error: err.message,
       hint: "Check computer.host/port in config",
+    });
+  }
+
+  // computer engine policy (Strategy C4)
+  try {
+    const root = process.env.XCLAW_ROOT || process.cwd();
+    const snap = computerEnginePolicySnapshot(cfg, root);
+    const v = snap.validation || {};
+    const ok = v.ok !== false;
+    push("computer_engine", ok, {
+      summary: ok
+        ? `${snap.engine}${snap.isFallbackBundle ? " (explicit fallback)" : ""} · phase ${snap.strategyPhase}`
+        : v.reason || "policy fail",
+      severity: !ok ? "error" : snap.isFallbackBundle || v.warning ? "warn" : "ok",
+      engine: snap.engine,
+      entry: snap.entry,
+      entryExists: snap.entryExists,
+      isFallbackBundle: snap.isFallbackBundle,
+      strategyPhase: snap.strategyPhase,
+      validation: v,
+      hint: snap.isFallbackBundle
+        ? "Running legacy 16MB bundle — prefer native/generated when parity allows"
+        : null,
+    });
+  } catch (err) {
+    push("computer_engine", false, {
+      summary: "unavailable",
+      error: err.message,
+      severity: "warn",
     });
   }
 
