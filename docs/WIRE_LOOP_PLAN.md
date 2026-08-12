@@ -1,6 +1,8 @@
 # Wire loop.mjs to plan fingerprints
 
-After merging the secure-tool-call helper, apply this surgical change to `src/agent/loop.mjs`.
+**Status: applied** on branch `feat/wire-loop-plan-fingerprint`.
+
+After the secure-tool-call helper (`authorizeToolInLoop`), the following surgical change lands in `src/agent/loop.mjs`.
 
 ## 1. Import
 
@@ -71,4 +73,4 @@ In `finalizeToolTraceEntry(tracePartial, { ... })`, add:
           policy: sec.policy || undefined,
 ```
 
-This makes SSE security events and toolTrace receipts carry `planFingerprint`.
+This makes SSE security events and toolTrace receipts carry `planFingerprint` end-to-end.
