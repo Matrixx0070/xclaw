@@ -40,9 +40,10 @@ export function buildModelChain(cfg = {}, opts = {}) {
     if (!chain.includes(s)) chain.push(s);
   };
 
+  // Env beats file config (session override — repo convention), args beat both.
   if (opts.model) push(opts.model);
-  if (cfg.agent?.model) push(cfg.agent.model);
   if (process.env.XCLAW_MODEL) push(process.env.XCLAW_MODEL);
+  if (cfg.agent?.model) push(cfg.agent.model);
 
   const fromCfg =
     opts.fallbackModels ||

@@ -208,7 +208,7 @@ export async function runAgentLoop(options) {
   if (!provider && useFailover) {
     try {
       const fo = await createFailoverProvider(cfg, {
-        model: cfg.agent?.model || process.env.XCLAW_MODEL,
+        model: process.env.XCLAW_MODEL || cfg.agent?.model,
         onEvent,
         onRetry: onRetryProvider,
       });
@@ -235,8 +235,8 @@ export async function runAgentLoop(options) {
         message: String(err.message || err),
       });
       route = await resolveProviderRouteAsync(cfg, {
-        model: cfg.agent?.model || process.env.XCLAW_MODEL,
-        provider: cfg.agent?.provider || process.env.XCLAW_PROVIDER,
+        model: process.env.XCLAW_MODEL || cfg.agent?.model,
+        provider: process.env.XCLAW_PROVIDER || cfg.agent?.provider,
       });
       provider = createProvider({
         apiKey:
@@ -251,7 +251,7 @@ export async function runAgentLoop(options) {
           cfg.agent?.baseUrl ||
           process.env.XCLAW_API_BASE ||
           route.baseUrl,
-        model: route.model || cfg.agent?.model || process.env.XCLAW_MODEL || "gpt-4o-mini",
+        model: route.model || process.env.XCLAW_MODEL || cfg.agent?.model || "gpt-4o-mini",
         provider: route.provider,
         api: route.api,
         cfg,
@@ -263,8 +263,8 @@ export async function runAgentLoop(options) {
 
   if (!provider) {
     route = await resolveProviderRouteAsync(cfg, {
-      model: cfg.agent?.model || process.env.XCLAW_MODEL,
-      provider: cfg.agent?.provider || process.env.XCLAW_PROVIDER,
+      model: process.env.XCLAW_MODEL || cfg.agent?.model,
+      provider: process.env.XCLAW_PROVIDER || cfg.agent?.provider,
     });
     provider = createProvider({
       apiKey:
@@ -279,7 +279,7 @@ export async function runAgentLoop(options) {
         cfg.agent?.baseUrl ||
         process.env.XCLAW_API_BASE ||
         route.baseUrl,
-      model: route.model || cfg.agent?.model || process.env.XCLAW_MODEL || "gpt-4o-mini",
+      model: route.model || process.env.XCLAW_MODEL || cfg.agent?.model || "gpt-4o-mini",
       provider: route.provider,
       api: route.api,
       cfg,

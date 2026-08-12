@@ -456,3 +456,24 @@ ops.mjs. Pure mechanical move, behavior byte-identical; api.mjs deleted.
 RAN: suite 1255 total, 0 fail · LIVE smoke: sessions/transcripts/subagents/
 mcp/tools/media/providers/skills/memory/providers/route/checkpoints +
 /v1/sessions all 200.
+
+## 2026-08-12 — 3.85.2 install-hardening (Claude)
+
+STATUS: green
+CONTEXT: installed the CLI on this host (npm run install:local + npm link →
+/usr/bin/xclaw 3.85.1) and drove a REAL end-to-end agent turn. Install itself
+clean; found 3 latent bugs + 1 test-hermeticity gap in the process:
+BUILT: (1) doctor Phase-A bridge checks anchored on PACKAGE root (were cwd/
+XCLAW_ROOT → 6 spurious errors when `xclaw doctor` run outside the repo).
+(2) provider baseUrl scoping — agent.baseUrl/apiBase (loadConfig derives from
+agent.provider) applied even when XCLAW_PROVIDER selected a DIFFERENT provider,
+so ollama requests went to api.x.ai; now applied only when resolved provider ==
+agent.provider. (3) env-over-config precedence for XCLAW_MODEL/XCLAW_PROVIDER
+in resolver + chain builder (matches XCLAW_SSRF convention). (4) R11 cred-scoping
+tests isolate the auth-profile store to a temp dir (a real stored OAuth token
+on-disk was leaking into env-fallback assertions).
+RAN: suite 1255 total, 0 fail · eval:ci OK · LIVE: real Claude turn via the
+installed `xclaw agent` (Anthropic OAuth token, claude-sonnet-5) →
+"INSTALL-OK-CLAUDE", tokens in=99 out=17. Install is functionally live.
+NOTE: xclaw is now linked on PATH + an anthropic:default OAuth profile is
+stored in ~/.xclaw (8h expiry, refresh token present).

@@ -1030,7 +1030,14 @@ export async function runDoctor(opts = {}) {
 
   // A6-ops — Phase A enforcement plane (hooks / fabric / motor / chrome-args)
   try {
-    const root = process.env.XCLAW_ROOT || process.cwd();
+    // Resolve against the PACKAGE root first (this file lives at src/cli/), so
+    // the installed `xclaw` CLI passes from any cwd; XCLAW_ROOT/cwd stay as
+    // overrides for exotic layouts.
+    const pkgRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+    const candidates = [process.env.XCLAW_ROOT, pkgRoot, process.cwd()].filter(Boolean);
+    const root =
+      candidates.find((r) => fsSync.existsSync(path.join(r, "src/computer/hooks-bridge.mjs"))) ||
+      candidates[0];
     const bridgeFiles = [
       ["a.hooks_bridge", "src/computer/hooks-bridge.mjs"],
       ["a.motor_bridge", "src/computer/motor-bridge.mjs"],

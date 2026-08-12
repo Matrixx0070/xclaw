@@ -6,6 +6,12 @@ import path from "node:path";
 import { resolveProviderRouteAsync } from "../src/providers/registry.mjs";
 import { loadMemoryFiles } from "../src/skills/loader.mjs";
 
+// Hermetic: point the auth-profile store at an empty temp dir so a real
+// on-disk profile (e.g. a stored OAuth token on the dev machine) can't win
+// over the env-fallback paths these tests assert.
+const HERMETIC_STATE = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-cred-"));
+const isolate = (cfg) => ({ ...cfg, paths: { ...(cfg.paths || {}), configDir: HERMETIC_STATE } });
+
 describe("provider credential scoping (R11)", () => {
   it("does not ship another vendor's env credential to a provider", async () => {
     const saved = { ...process.env };
@@ -15,9 +21,9 @@ describe("provider credential scoping (R11)", () => {
         "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN",
       ]) delete process.env[k];
       process.env.ANTHROPIC_API_KEY = "sk-ant-should-not-leak";
-      const route = await resolveProviderRouteAsync({
+      const route = await resolveProviderRouteAsync(isolate({
         agent: { provider: "xai", model: "grok-4" },
-      });
+      }));
       assert.equal(route.apiKey || "", "", "xai route must not pick up ANTHROPIC_API_KEY");
     } finally {
       process.env = saved;
@@ -29,9 +35,9 @@ describe("provider credential scoping (R11)", () => {
     try {
       delete process.env.XAI_API_KEY;
       process.env.XCLAW_API_KEY = "explicit-generic";
-      const route = await resolveProviderRouteAsync({
+      const route = await resolveProviderRouteAsync(isolate({
         agent: { provider: "xai", model: "grok-4" },
-      });
+      }));
       assert.equal(route.apiKey, "explicit-generic");
     } finally {
       process.env = saved;
@@ -43,9 +49,9 @@ describe("provider credential scoping (R11)", () => {
     try {
       for (const k of ["XCLAW_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) delete process.env[k];
       process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-tok";
-      const route = await resolveProviderRouteAsync({
+      const route = await resolveProviderRouteAsync(isolate({
         agent: { provider: "anthropic", model: "claude-sonnet-5" },
-      });
+      }));
       assert.equal(route.apiKey, "oauth-tok");
     } finally {
       process.env = saved;

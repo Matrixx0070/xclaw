@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.85.2 — install-hardening: doctor cwd-independence, provider baseUrl scoping, env precedence
+
+Found while installing the CLI locally (`npm run install:local` + `npm link`) and driving a real end-to-end agent turn.
+
+- **Doctor false errors from any cwd**: the Phase-A bridge-file checks resolved repo paths against `cwd`/`XCLAW_ROOT`, so the installed `xclaw doctor` reported 6 spurious errors when run outside the repo (the very next check resolved the same files correctly via module path). Now anchored on the package root; passes from any directory.
+- **Provider baseUrl mis-scoping**: `agent.baseUrl`/`apiBase` (which `loadConfig` derives from the configured provider) were applied even when a *different* provider was selected via `XCLAW_PROVIDER` — so `XCLAW_PROVIDER=ollama` with `agent.provider=xai` aimed the ollama request at `api.x.ai` and failed. They now apply only when the resolved provider matches `agent.provider` (or none is configured).
+- **Env-over-config precedence**: `XCLAW_MODEL`/`XCLAW_PROVIDER` now beat file config in the route resolver and model-chain builder (matching the existing `XCLAW_SSRF`/`XCLAW_GATEWAY_HOST` convention) — a session override no longer loses to a baked config value.
+- **Test hermeticity**: the R11 credential-scoping tests now isolate the auth-profile store to a temp dir, so a real stored OAuth token on the dev machine can't leak into the env-fallback assertions.
+
+Behavior unchanged when provider/model aren't overridden. Suite 1255/0.
+
 ## 3.85.1 — split the catch-all routes/api.mjs into per-plane modules
 
 The broadest module from the 3.85.0 router split carried five unrelated planes in one file. Now: `routes/sessions.mjs` (sessions + transcripts + checkpoints), `routes/subagents.mjs`, `routes/mcp.mjs`, `routes/media.mjs`, with the three one-off context reads (`/skills`, `/memory`, `/providers/route`) joining the misc reads in `routes/ops.mjs`. Behavior byte-identical — pure mechanical move. Suite 1255/0; all groups + /v1 aliases live-smoked 200.

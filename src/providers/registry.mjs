@@ -260,7 +260,7 @@ export function parseModelRef(ref) {
 }
 
 export function inferProviderFromModel(model, cfg = {}) {
-  if (!model) return cfg.agent?.provider || process.env.XCLAW_PROVIDER || "xai";
+  if (!model) return process.env.XCLAW_PROVIDER || cfg.agent?.provider || "xai";
   const parsed = parseModelRef(model);
   if (parsed.provider) return parsed.provider;
   // cfg.providers.routes (documented in defaults) wins over the built-in
@@ -275,8 +275,8 @@ export function inferProviderFromModel(model, cfg = {}) {
   // agent.provider (explicit operator choice) still beats routes.default,
   // which in turn beats the hardcoded final fallback.
   return (
-    cfg.agent?.provider ||
     process.env.XCLAW_PROVIDER ||
+    cfg.agent?.provider ||
     cfgRoutes.default ||
     "xai"
   );
@@ -351,18 +351,20 @@ export function getProvider(cfg, providerId) {
  * Full route resolution used by agent loop + doctor.
  */
 export async function resolveProviderRouteAsync(cfg = {}, opts = {}) {
+  // Precedence: explicit call args > env (session override, repo convention:
+  // env wins over file config — see XCLAW_SSRF / XCLAW_GATEWAY_HOST) > config.
   const rawModel =
     opts.model ||
-    cfg.agent?.model ||
     process.env.XCLAW_MODEL ||
+    cfg.agent?.model ||
     null;
 
   const parsed = parseModelRef(rawModel);
   let provider =
     opts.provider ||
     parsed.provider ||
-    cfg.agent?.provider ||
     process.env.XCLAW_PROVIDER ||
+    cfg.agent?.provider ||
     inferProviderFromModel(parsed.model || rawModel, cfg);
 
   const modelOnly = parsed.model || rawModel;
@@ -410,10 +412,15 @@ export async function resolveProviderRouteAsync(cfg = {}, opts = {}) {
     }
   }
 
+  // agent.baseUrl / apiBase are the endpoint for the AGENT'S configured
+  // provider — they must not override the endpoint of a DIFFERENT provider the
+  // caller selected (e.g. XCLAW_PROVIDER=ollama while agent.provider=xai; else
+  // the ollama request is aimed at api.x.ai). Only honor them when the resolved
+  // provider matches agent.provider, or when no provider was configured.
+  const agentBaseApplies = !cfg.agent?.provider || cfg.agent.provider === provider;
   const baseUrl = (
     opts.baseUrl ||
-    cfg.agent?.baseUrl ||
-    cfg.agent?.apiBase ||
+    (agentBaseApplies ? cfg.agent?.baseUrl || cfg.agent?.apiBase : null) ||
     cfg.providers?.[provider]?.baseUrl ||
     def.baseUrl ||
     "https://api.openai.com/v1"
@@ -462,10 +469,15 @@ export function resolveProviderRoute(cfg = {}, opts = {}) {
     process.env.OPENAI_API_KEY ||
     "";
 
+  // agent.baseUrl / apiBase are the endpoint for the AGENT'S configured
+  // provider — they must not override the endpoint of a DIFFERENT provider the
+  // caller selected (e.g. XCLAW_PROVIDER=ollama while agent.provider=xai; else
+  // the ollama request is aimed at api.x.ai). Only honor them when the resolved
+  // provider matches agent.provider, or when no provider was configured.
+  const agentBaseApplies = !cfg.agent?.provider || cfg.agent.provider === provider;
   const baseUrl = (
     opts.baseUrl ||
-    cfg.agent?.baseUrl ||
-    cfg.agent?.apiBase ||
+    (agentBaseApplies ? cfg.agent?.baseUrl || cfg.agent?.apiBase : null) ||
     cfg.providers?.[provider]?.baseUrl ||
     def.baseUrl ||
     "https://api.openai.com/v1"
