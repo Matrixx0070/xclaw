@@ -1,6 +1,9 @@
 ---
 name: imagemagick
 description: Use this skill for image processing with ImageMagick — resize, crop, convert format, add watermark/text, composite, annotate, adjust colors, create thumbnails, batch process, make montages/collages, merge images into a strip, and manipulate PNG/JPG/GIF/WebP/SVG images. Note that PDF/PS/EPS processing is disabled by sandbox policy. Triggers on 'merge images into one', 'combine images side by side', 'create image strip', 'image grid', 'resize image', 'crop image', 'convert png to jpg', 'add watermark', 'make thumbnail', 'image collage', 'montage', 'batch convert images', 'compress image', 'rotate image', 'overlay images', 'annotate image', 'adjust brightness', 'imagemagick'.
+user-invocable: true
+source: xclaw-bundled
+priority: 80
 ---
 
 # ImageMagick Skill for Computer-Use Agents
