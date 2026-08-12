@@ -64,6 +64,8 @@ import {
 import { analyzeCacheByTool } from "../tokens/cache-by-tool.mjs";
 import { truncateToolResult, truncationOptsFromConfig } from "./truncate.mjs";
 import { guardToolPaths } from "../security/sandbox.mjs";
+import { guardToolEgress } from "../security/egress.mjs";
+import { registerSession, unregisterSession } from "./session-control.mjs";
 import { makeToolMessage, freezeRankSize } from "../tokens/rank-size.mjs";
 import { createAllLocalTools, localToolsAsOpenAI, executeLocalTool, localToolNames } from "../tools/registry.mjs";
 import { afterBrowserToolTruth } from "../browser/truth.mjs";
@@ -900,6 +902,30 @@ export async function runAgentLoop(options) {
           return;
         }
         args = sand.args || args;
+
+        const eg = guardToolEgress(cfg, name, args);
+        if (!eg.ok) {
+          const msg = eg.error || "egress denied";
+          onEvent({ type: "security", phase: "egress_denied", name, message: msg });
+          messages.push(
+            makeToolMessage({
+              tool_call_id: call.id,
+              content: msg,
+              source: "egress",
+            })
+          );
+          toolTrace.push(
+            finalizeToolTraceEntry(
+              beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
+              {
+                resultText: msg,
+                blocked: true,
+                policy: { phase: "egress", decision: "deny", reason: msg },
+              }
+            )
+          );
+          return;
+        }
 
         onEvent({ type: "tool", phase: "start", name, args });
         const tracePartial = beginToolTraceEntry({

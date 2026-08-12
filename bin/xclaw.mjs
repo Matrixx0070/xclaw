@@ -1127,6 +1127,22 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exit(1);
       break;
     }
+    case "stop-all":
+    case "kill-all": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const { killAll, listActiveSessions } = await import("../src/agent/session-control.mjs");
+      const cfg = await loadConfig();
+      const before = listActiveSessions();
+      const r = await killAll({ stopComputer: !args.includes("--keep-computer"), cfg });
+      console.log(JSON.stringify({ ...r, before }, null, 2));
+      break;
+    }
+    case "sessions-active": {
+      const { listActiveSessions } = await import("../src/agent/session-control.mjs");
+      console.log(JSON.stringify({ sessions: listActiveSessions() }, null, 2));
+      break;
+    }
+
     case "run": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const { runStreamCli } = await import("../src/cli/stream-run.mjs");

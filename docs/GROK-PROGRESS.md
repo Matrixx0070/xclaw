@@ -1,16 +1,16 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — Live golden-path e2e (xAI)
+## 2026-08-12 — Egress + kill-switch
 
 STATUS: green
 
-### RAN (this session, env XAI_API_KEY only — never committed)
-1. Chat-only: model `grok-4.5` → text `LIVE_OK` · turns=0 · ok
-2. Tools: `xclaw_bash` write+read `PROOF_LIVE` · disk match · turns=1 · ok
-3. Native thin computer auto-started healthy on :4243
+### BUILT
+- `src/security/egress.mjs` — allow / deny / allowlist (prod default deny)
+- Agent loop hooks `guardToolEgress` after sandbox
+- `src/agent/session-control.mjs` — register / kill / killAll
+- CLI: `xclaw stop-all`, `xclaw sessions-active`
+- Tests: egress + session-control 9/9
 
-### CI
-- `unit` + `unit-media` (apt ffmpeg) + `install-e2e` green as of `6afe2ab`
-
-### SECURITY
-Rotate any API key that was pasted in chat. Prefer GitHub Actions secret `XAI_API_KEY` for `live` job.
+### PRIOR
+- Live xAI e2e LIVE_OK + PROOF_LIVE
+- CI unit-media apt ffmpeg
