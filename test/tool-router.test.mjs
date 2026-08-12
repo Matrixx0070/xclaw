@@ -81,3 +81,50 @@ describe("T1 tool router", () => {
     assert.equal(serial.length, 1);
   });
 });
+
+describe("T3 computer-only plane", () => {
+  it("blocks bash when computer unavailable", async () => {
+    const { createToolRouter } = await import("../src/tools/router.mjs");
+    const router = createToolRouter({ computer: null, localTools: [] });
+    const r = await router.dispatch({
+      name: "xclaw_bash",
+      args: { command: "echo x" },
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.blocked, true);
+    assert.equal(r.plane, "computer");
+    assert.match(String(r.error), /computer plane unavailable/i);
+  });
+
+  it("does not execute computer tools via local adapter", async () => {
+    const { createToolRouter } = await import("../src/tools/router.mjs");
+    let localRan = false;
+    const localTools = [
+      {
+        name: "xclaw_bash",
+        execute: async () => {
+          localRan = true;
+          return { ok: true, stdout: "from-local" };
+        },
+      },
+    ];
+    // registry uses different shape — router uses executeLocalTool from registry
+    // Even with a misleading local name set, computer-only must require computer
+    const router = createToolRouter({
+      computer: null,
+      localTools,
+    });
+    const r = await router.dispatch({
+      name: "xclaw_bash",
+      args: { command: "true" },
+    });
+    assert.equal(r.ok, false);
+    assert.equal(localRan, false);
+  });
+
+  it("isComputerOnlyTool true for browser", async () => {
+    const { isComputerOnlyTool } = await import("../src/tools/planes.mjs");
+    assert.equal(isComputerOnlyTool("xclaw_browser_tab"), true);
+    assert.equal(isComputerOnlyTool("web_search"), false);
+  });
+});

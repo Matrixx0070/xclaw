@@ -7,7 +7,7 @@
 | **T0** Inventory + plane map + contract | **Done** (`src/tools/planes.mjs`) |
 | **T1** `router.mjs` + agent loop wire | **Done** |
 | **T2** Batch concurrency + abort | **Done** |
-| **T3** Computer-only for heavy tools | Planned |
+| **T3** Computer-only for heavy tools | **Done** |
 
 ## Flow (target)
 
@@ -82,3 +82,11 @@ Router **does not** replace approvals or plan binding. Order remains:
 - Cap: `cfg.tools.maxParallel` or `XCLAW_TOOLS_MAX_PARALLEL` (default **4**)
 - Parallel batches split into chunks; abort checked between chunks
 - Loop uses `runToolBatches(calls, { processFn, signal, cfg, onEvent })`
+
+
+## T3 computer-only
+
+- Bash, files, browser tools **must** use the computer plane
+- No in-process local fallback if computer is down → blocked error
+- `isComputerOnlyTool()` / `COMPUTER_ONLY_TOOLS` in `planes.mjs`
+- Doctor: `tools.computerOnly`

@@ -188,12 +188,33 @@ export function partitionByConcurrency(calls = []) {
  * @property {boolean} [blocked]
  */
 
+
+/** Tools that MUST run on the computer plane (never in-process local). */
+export const COMPUTER_ONLY_TOOLS = new Set(
+  Object.entries(TOOL_PLANE)
+    .filter(([, plane]) => plane === "computer")
+    .map(([name]) => name)
+);
+
+/**
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function isComputerOnlyTool(name) {
+  const n = String(name || "").toLowerCase();
+  if (COMPUTER_ONLY_TOOLS.has(n)) return true;
+  if (getPlane(n) === "computer") return true;
+  return false;
+}
+
 export default {
   TOOL_PLANE,
   PARALLEL_SAFE,
+  COMPUTER_ONLY_TOOLS,
   getPlane,
   getConcurrencyClass,
   classifyTool,
   partitionByConcurrency,
   inferPlane,
+  isComputerOnlyTool,
 };

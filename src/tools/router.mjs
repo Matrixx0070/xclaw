@@ -9,6 +9,7 @@ import {
   getConcurrencyClass,
   classifyTool,
   partitionByConcurrency,
+  isComputerOnlyTool,
 } from "./planes.mjs";
 import { executeLocalTool, localToolNames } from "./registry.mjs";
 
@@ -86,7 +87,29 @@ export function createToolRouter(ctx = {}) {
           };
         }
         result = await handler(args);
-      } else if (plane === "computer") {
+      } else if (plane === "computer" || isComputerOnlyTool(name)) {
+        // T3: heavy tools (bash/files/browser) NEVER fall back to in-process local
+        if (!computer?.callTool) {
+          return {
+            callId,
+            name,
+            plane: "computer",
+            ok: false,
+            blocked: true,
+            error:
+              "computer plane unavailable — start computer (xclaw gateway / xclaw computer). Heavy tools cannot run in-process.",
+            result: {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: "computer plane unavailable for " + name,
+                },
+              ],
+            },
+            durationMs: Date.now() - started,
+          };
+        }
         if (typeof beforeComputer === "function") {
           const gate = await beforeComputer(name, args);
           if (gate?.result !== undefined) {
@@ -94,24 +117,21 @@ export function createToolRouter(ctx = {}) {
           } else if (gate?.skip) {
             result = { ok: false, error: gate.error || "computer skipped" };
           } else {
-            const nextArgs = gate?.args || args;
-            if (!computer?.callTool) {
-              throw new Error("computer plane unavailable");
-            }
-            result = await computer.callTool(sessionId, name, nextArgs);
+            result = await computer.callTool(
+              sessionId,
+              name,
+              gate?.args || args
+            );
           }
         } else {
-          if (!computer?.callTool) {
-            throw new Error("computer plane unavailable");
-          }
           result = await computer.callTool(sessionId, name, args);
         }
       } else if (plane === "local" || plane === "search") {
-        // Search plane: prefer local search tools; fall back to computer if registered there
         if (localNames.has(name)) {
           result = await executeLocalTool(localTools, name, args);
           if (result == null) throw new Error(`Unknown local tool: ${name}`);
-        } else if (computer?.callTool) {
+        } else if (computer?.callTool && plane === "search") {
+          // search may optionally live on computer later; not for computer-only tools
           result = await computer.callTool(sessionId, name, args);
         } else {
           throw new Error(`No adapter for ${name} (plane=${plane})`);
@@ -120,17 +140,13 @@ export function createToolRouter(ctx = {}) {
         if (localNames.has(name)) {
           result = await executeLocalTool(localTools, name, args);
           if (result == null) throw new Error(`Unknown MCP tool: ${name}`);
-        } else if (computer?.callTool) {
-          result = await computer.callTool(sessionId, name, args);
         } else {
           throw new Error(`No MCP adapter for ${name}`);
         }
       } else {
-        // unknown → try local then computer
+        // unknown non-computer: local only (do not invent computer routing for unknowns)
         if (localNames.has(name)) {
           result = await executeLocalTool(localTools, name, args);
-        } else if (computer?.callTool) {
-          result = await computer.callTool(sessionId, name, args);
         } else {
           throw new Error(`Unknown tool: ${name}`);
         }
@@ -172,6 +188,7 @@ export function createToolRouter(ctx = {}) {
     getConcurrencyClass,
     classifyTool,
     partitionByConcurrency,
+    isComputerOnlyTool,
     classify: classifyTool,
   };
 }

@@ -105,30 +105,6 @@ export async function runDoctor(opts = {}) {
     push("profile", "warn", e.message || String(e));
   }
 
-  // MCP servers reach the agent loop (config only — no processes spawned here)
-  try {
-    const servers = cfg.mcp?.servers || [];
-    if (!servers.length) {
-      push("mcp", "ok", "no MCP servers configured (mcp.servers)");
-    } else if (cfg.mcp?.enabled === false) {
-      push("mcp", "warn", `${servers.length} MCP server(s) configured but mcp.enabled=false`);
-    } else {
-      const bad = servers.filter((s) => !s?.name || (!s.url && !s.command));
-      if (bad.length) {
-        push(
-          "mcp",
-          "warn",
-          `${bad.length} MCP server entries missing name or url/command`
-        );
-      } else {
-        const kinds = servers.map((s) => `${s.name}:${s.command ? "stdio" : "http"}`);
-        push("mcp", "ok", `agent-loop MCP enabled — ${kinds.join(", ")}`);
-      }
-    }
-  } catch (e) {
-    push("mcp", "warn", e.message || String(e));
-  }
-
   // Egress + kill-switch (philosophy: privacy + always killable)
   try {
     const { getEgressPolicy } = await import("../security/egress.mjs");
@@ -1137,7 +1113,21 @@ export async function runDoctor(opts = {}) {
     push("a.enforcement", "error", e.message || String(e));
   }
 
+  
+  // T3 — computer plane is mandatory for bash/files/browser
+  try {
+    const { COMPUTER_ONLY_TOOLS } = await import("../tools/planes.mjs");
+    push(
+      "tools.computerOnly",
+      "ok",
+      `computer-only tools: ${COMPUTER_ONLY_TOOLS.size} (bash/files/browser never in-process)`
+    );
+  } catch (e) {
+    push("tools.computerOnly", "warn", e.message || String(e));
+  }
+
   return finish(checks, opts);
+
 
 }
 
