@@ -69,6 +69,7 @@ import { registerSession, unregisterSession } from "./session-control.mjs";
 import { makeToolMessage, freezeRankSize } from "../tokens/rank-size.mjs";
 import { createAllLocalTools, localToolsAsOpenAI, executeLocalTool, localToolNames } from "../tools/registry.mjs";
 import { createToolRouter } from "../tools/router.mjs";
+import { createAgentMcpTools } from "./mcp-tools.mjs";
 import { afterBrowserToolTruth } from "../browser/truth.mjs";
 import { beforeNavigate, beforeInput } from "../browser/hooks.mjs";
 import { resolveRole } from "../browser/role-binding.mjs";
@@ -447,20 +448,36 @@ export async function runAgentLoop(options) {
         },
       });
     }
+    // MCP servers (cfg.mcp.servers) — discovered tools join the loop and are
+    // dispatched via the Tool Router's agent plane (same security path)
+    var mcpTools = await createAgentMcpTools({ cfg, onEvent });
+    tools.push(...mcpTools.toolDefs);
     onEvent({
       type: "tools",
       count: tools.length,
       names: tools.map((t) => t.function.name),
     });
   } catch (err) {
+    try {
+      mcpTools?.close?.();
+    } catch {
+      /* ignore */
+    }
     await computer.destroySession(sessionId).catch(() => {});
     throw new Error(`Failed to list computer tools: ${err.message}`);
   }
   if (typeof localTools === "undefined") localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId });
+  const mcpHandlers = {};
+  if (mcpTools?.enabled) {
+    for (const n of mcpTools.names) {
+      mcpHandlers[n] = (args) => mcpTools.callTool(n, args);
+    }
+  }
   const toolRouter = createToolRouter({
     computer,
     sessionId,
     localTools,
+    agentHandlers: mcpHandlers,
     cfg,
     workingDir,
   });
@@ -1197,6 +1214,11 @@ export async function runAgentLoop(options) {
   } finally {
     try {
       unregisterSession(sessionKey);
+    } catch {
+      /* ignore */
+    }
+    try {
+      mcpTools?.close?.();
     } catch {
       /* ignore */
     }

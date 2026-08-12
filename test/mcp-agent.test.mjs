@@ -175,12 +175,33 @@ describe("agent MCP adapter", () => {
 });
 
 describe("loop wiring", () => {
-  it("loop.mjs dispatches MCP tools and closes clients in finally", () => {
+  it("loop.mjs discovers MCP tools, routes them via agentHandlers, closes in finally", () => {
+    // Guards the T1-router regression that silently dropped MCP from the loop:
+    // discovery must feed tool defs, the router must receive MCP handlers,
+    // and stdio children must be closed on the way out.
     const src = fs.readFileSync(new URL("../src/agent/loop.mjs", import.meta.url), "utf8");
     assert.match(src, /createAgentMcpTools\(\{ cfg, onEvent \}\)/);
-    assert.match(src, /mcpTools\?\.names\?\.has\(name\)/);
-    assert.match(src, /mcpTools\.callTool\(name, args\)/);
+    assert.match(src, /tools\.push\(\.\.\.mcpTools\.toolDefs\)/);
+    assert.match(src, /agentHandlers: mcpHandlers/);
     assert.match(src, /mcpTools\?\.close\?\.\(\)/);
+  });
+
+  it("Tool Router dispatches MCP tools through agentHandlers end-to-end", async () => {
+    const { createToolRouter } = await import("../src/tools/router.mjs");
+    const m = await createAgentMcpTools({ cfg: { mcp: { servers: [stdioServer] } } });
+    try {
+      const handlers = {};
+      for (const n of m.names) handlers[n] = (args) => m.callTool(n, args);
+      const router = createToolRouter({ agentHandlers: handlers, localTools: [] });
+      const routed = await router.dispatch({
+        name: "mcp__echo__echo",
+        args: { text: "routed" },
+      });
+      assert.equal(routed.ok, true);
+      assert.equal(routed.result.content[0].text, "echo:routed");
+    } finally {
+      m.close();
+    }
   });
 
   it("sanitizeMcpName keeps provider-safe charset", () => {

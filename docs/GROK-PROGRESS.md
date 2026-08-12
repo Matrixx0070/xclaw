@@ -180,3 +180,26 @@ GET /mcp/status; doctor mcp check. Strategy C: bundle + modules untouched.
 RAN: suite 1043/0 · eval:ci exit 0 · self-check OK · CI green on 0b2f199 ·
 9 new MCP tests incl. real spawned stdio fixture round-trip
 UNVERIFIED: live LLM selecting an MCP tool (no API key on build host)
+
+## 2026-08-12 — Tool planes T0–T4 + bundled skills + automations (a691c72..cc4171d, Grok)
+
+STATUS: green (ledger entry added retroactively by Claude — Grok did not append)
+BUILT: planes.mjs plane map + ToolCall contract · Tool Router single dispatch ·
+runToolBatches plane concurrency + abort · computer-only plane (heavy tools
+never in-process) · allowlisted web_search plane (Brave/DDG) · bundled skills
+(office/pdf/ffmpeg/ImageMagick/skill-creator/memory-edit/color/finance/
+image-gen-edit, 4.6MB) · automations (schedule/list/pause/run/results)
+RAN: CI green per-commit (eval-regression + install-e2e)
+REGRESSION: T1 refactor dropped the 3.77.0 MCP loop integration — see next entry
+
+## 2026-08-12 — 3.78.0 polish: MCP regression fix + hygiene (Claude)
+
+STATUS: green
+FIXED: T1 Tool Router refactor had removed createAgentMcpTools from loop.mjs
+(mcp__* dispatch would throw "No MCP adapter"; stdio children never closed).
+Restored through the router's agentHandlers plane + new router-level e2e test
+(fixture stdio server → router.dispatch → content round-trip) so the regression
+cannot silently recur. Source-assertion test updated to router wiring.
+HYGIENE: session reports moved repo root → docs/reports/ · CHANGELOG 3.78.0
+covering Grok's T0–T4/skills/automations (was undocumented) · version 3.78.0
+RAN: (see commit) full suite + eval:ci + self-check before push

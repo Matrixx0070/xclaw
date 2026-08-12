@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.78.0 — Tool planes + bundled skills (Grok) · MCP-in-loop regression fix (Claude)
+
+- **Tool planes T0–T4** (Grok): plane map + ToolCall contract (`src/tools/planes.mjs`), Tool Router single dispatch path (`src/tools/router.mjs`), `runToolBatches` plane concurrency with maxParallel + abort, computer-only plane for bash/files/browser (heavy tools never run in-process), allowlisted `web_search` plane (Brave/DDG, HTTP only — never shell).
+- **Bundled skills** (Grok): docx/pptx/xlsx office, pdf (create/transform/forms/OCR), ffmpeg, ImageMagick, skill-creator/installer, memory-edit, color, finance, image-gen-edit (`skills/bundled/`, 4.6MB).
+- **Automations** (Grok): schedule prompts + list/pause/run/results + tasks skill.
+- **FIX — MCP regression**: the T1 router refactor dropped 3.77.0's MCP loop integration (no `createAgentMcpTools` discovery, no dispatch, no close — `mcp__*` calls would throw "No MCP adapter"). Restored via the router's own `agentHandlers` plane: discovery feeds tool defs, per-tool handlers dispatch to the MCP client, stdio children closed in `finally`. New router-level end-to-end test so this cannot silently regress again.
+- Hygiene: session reports (`MILESTONE-2026-08-12`, `PROCESS_GATEWAY_FAILURE`, `SHELL_STATUS`) moved from repo root to `docs/reports/`.
+
 ## 3.77.0 — MCP reaches the agent loop
 
 - **Agent-loop MCP** (closes the review's worst gap — memory/MCP 3/10): tools from `mcp.servers` are discovered at loop start and join the tool list as `mcp__<server>__<tool>`, dispatched through the SAME sandbox/egress/approval path as built-in tools. New `src/agent/mcp-tools.mjs` adapter; stdio clients closed in the loop's `finally`.
