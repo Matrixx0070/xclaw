@@ -35,6 +35,25 @@ jobs:
             test/oauth-browser.test.mjs \
             test/vault.test.mjs || true
 
+  # Media path: real ffmpeg so view_x_video is exercised (not skipped).
+  # Parallel to unit — does not block live; keeps main unit job thin.
+  unit-media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Setup FFmpeg (pinned)
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: "7.1"
+      - name: Verify ffmpeg
+        run: ffmpeg -version | head -2
+      - name: P1 media tools (view_x_video + images)
+        run: node --test test/p1-tools.test.mjs
+
   live:
     runs-on: ubuntu-latest
     timeout-minutes: 30
