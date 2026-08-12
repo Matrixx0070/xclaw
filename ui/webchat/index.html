@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XClaw — WebChat</title>
+  <link rel="stylesheet" href="/chat/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo">🦞</span>
+        <div>
+          <div class="brand-name">XClaw</div>
+          <div class="brand-sub">WebChat · Phase 7 · jobs</div>
+        </div>
+      </div>
+      <button id="btn-new" class="btn primary">New chat</button>
+      <div class="status-box" id="status-box">
+        <div class="status-row"><span>Gateway</span><span id="st-gw">…</span></div>
+        <div class="status-row"><span>Computer</span><span id="st-comp">…</span></div>
+        <div class="status-row"><span>Model</span><span id="st-model">…</span></div>
+      </div>
+      <div class="status-box" id="checkpoints-box" style="margin-top:0.75rem;">
+        <div style="font-size:0.75rem;opacity:0.8;margin-bottom:0.35rem;">Checkpoints</div>
+        <div id="cp-list" style="font-size:0.7rem;max-height:120px;overflow:auto;"></div>
+        <button type="button" id="btn-cp-refresh" class="btn" style="margin-top:0.35rem;font-size:0.7rem;">Refresh</button>
+      </div>
+      <div class="sidebar-foot">
+        <a href="/control/" target="_blank">Control</a>
+        ·
+        <a href="/health" target="_blank">Health</a>
+      </div>
+    </aside>
+
+    <main class="chat">
+      <header class="chat-header">
+        <div>
+          <h1>Chat</h1>
+          <p class="session-id" id="session-label">No session yet</p>
+        </div>
+      </header>
+
+      <div class="messages" id="messages">
+        <div class="empty" id="empty">
+          <div class="empty-icon">🦞</div>
+          <h2>Talk to XClaw</h2>
+          <p>Your personal assistant with a real computer — shell, files, and browser tools.</p>
+          <div class="suggestions">
+            <button type="button" data-prompt="List files in the current working directory">List files</button>
+            <button type="button" data-prompt="What is the current date and hostname?">System info</button>
+            <button type="button" data-prompt="Create a file /tmp/xclaw-hello.txt with the text Hello from XClaw WebChat">Write a file</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer-opts" style="display:flex;gap:0.75rem;align-items:center;padding:0.25rem 0.5rem;font-size:0.8rem;opacity:0.9;">
+        <label><input type="checkbox" id="mode-job" /> Job mode (verify + evidence)</label>
+        <p class="hint" style="font-size:0.75rem;opacity:0.7;margin:0.25rem 0 0;">Commands: /job /queue /pending /approve /resume /help</p>
+      </div>
+      <form class="composer" id="form">
+        <textarea id="input" rows="1" placeholder="Message XClaw…" autofocus></textarea>
+        <button type="submit" id="send" class="btn send" title="Send">➤</button>
+      </form>
+      <div class="hint">Enter to send · Shift+Enter for newline · Tools run on the Computer sandbox</div>
+    </main>
+  </div>
+  <script src="/chat/app.js"></script>
+</body>
+</html>
