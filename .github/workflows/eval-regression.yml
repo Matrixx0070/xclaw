@@ -39,7 +39,6 @@ jobs:
             test/vault.test.mjs || true
 
   # Media path: real ffmpeg so view_x_video is exercised (not skipped).
-  # Parallel to unit — does not block live; keeps main unit job thin.
   unit-media:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -48,7 +47,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # Cache .deb packages between runs (key bumps via version: when ffmpeg stack changes)
       - name: Cache apt packages (ffmpeg)
         uses: awalsh128/cache-apt-pkgs-action@v1.4.3
         with:
@@ -58,6 +56,32 @@ jobs:
         run: ffmpeg -version | head -2
       - name: P1 media tools (view_x_video + images)
         run: node --test test/p1-tools.test.mjs
+
+  # OS sandbox: real bubblewrap so bwrap path is exercised (not skipped).
+  unit-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Cache apt packages (bubblewrap)
+        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        with:
+          packages: bubblewrap
+          version: bwrap-ci-v1
+      - name: Verify bwrap
+        run: bwrap --version
+      - name: OS sandbox + spawn enforce
+        env:
+          XCLAW_OS_SANDBOX: bwrap
+          XCLAW_OS_SANDBOX_NET: deny
+        run: |
+          node --test \
+            test/os-sandbox.test.mjs \
+            test/spawn-enforce.test.mjs \
+            test/os-sandbox-bwrap-live.test.mjs
 
   live:
     runs-on: ubuntu-latest
