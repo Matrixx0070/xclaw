@@ -147,14 +147,21 @@ export function collectMergeCandidates(results = []) {
   const out = [];
   for (const r of results) {
     if (!r.ok) continue;
+    // Already merged after implement wave (option A) — skip double-apply
+    if (r.mergedToMain || (r.earlyMerge?.ok && !r.earlyMerge?.skipped)) continue;
+
+    const role = String(r.role || "").toLowerCase();
+    // P0: only implement nodes (or explicit merge:true) become candidates.
+    // verify/research/observer workspaces are often the main tree and produce
+    // false "corrupt patch" conflicts when diffed against themselves.
+    const explicit = r.merge === true || r.result?.merge === true;
+    if (role !== "implement" && !explicit) continue;
+
     const wt =
       r.workspace ||
       r.worktree?.path ||
       r.result?.worktree?.path ||
       r.result?.workspace;
-    // Prefer implement role; also allow any ok node with worktree-looking path
-    const isImpl = r.role === "implement";
-    if (!wt && !isImpl) continue;
     if (!wt) continue;
     out.push({
       nodeId: r.nodeId || r.id,
@@ -273,6 +280,7 @@ export async function planAndMaybeMerge(cfg, opts = {}) {
       checkOk: Boolean(check.ok),
       checkMethod: check.method,
       checkError: check.error || null,
+      code: check.code || null,
       conflicts: check.conflicts || [],
       patchPath: check.patchPath || null,
       applied: false,
@@ -287,13 +295,15 @@ export async function planAndMaybeMerge(cfg, opts = {}) {
         swarmId,
         nodeId: c.nodeId,
         error: check.error,
+        code: check.code || null,
       });
       continue;
     }
 
-    if (check.method === "noop") {
+    if (check.method === "noop" || check.method === "same-tree" || check.noop) {
       item.applied = false;
       item.noop = true;
+      item.checkMethod = check.method;
       itemResults.push(item);
       continue;
     }
@@ -306,6 +316,7 @@ export async function planAndMaybeMerge(cfg, opts = {}) {
       });
       item.applied = Boolean(apply.ok);
       item.applyError = apply.error || null;
+      item.code = apply.code || item.code;
       item.patchPath = apply.patchPath || item.patchPath;
       item.applyStat = apply.stat || null;
       if (apply.ok && policy.cleanupWorktree) {
@@ -318,6 +329,7 @@ export async function planAndMaybeMerge(cfg, opts = {}) {
         swarmId,
         nodeId: c.nodeId,
         error: item.applyError,
+        code: item.code || null,
       });
     }
 
@@ -335,7 +347,11 @@ export async function planAndMaybeMerge(cfg, opts = {}) {
 
   if (anyConflict && !anyApplied) {
     report.status = "conflict";
-    report.message = "one or more patches do not apply cleanly";
+    const codes = [...new Set(itemResults.filter((i) => !i.checkOk).map((i) => i.code).filter(Boolean))];
+    report.codes = codes;
+    report.message = codes.length
+      ? `one or more merges failed (${codes.join(", ")})`
+      : "one or more patches do not apply cleanly";
   } else if (anyPending) {
     report.status = "pending_approval";
     report.message = "patches check clean — awaiting owner approval";

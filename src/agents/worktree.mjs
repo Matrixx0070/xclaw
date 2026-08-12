@@ -234,16 +234,100 @@ export async function inspectRepoCleanliness(repoDir) {
  *   useIndex: git apply --index (stages + requires index≈worktree)
  * @returns {{ ok, method, conflicts?, stat?, error?, patchPath? }}
  */
+
+/** P1 — stable conflict / error codes for merge tooling */
+export const MERGE_ERROR_CODES = Object.freeze({
+  REPO_NOT_GIT: "REPO_NOT_GIT",
+  WORKTREE_NOT_GIT: "WORKTREE_NOT_GIT",
+  SAME_TREE: "SAME_TREE",
+  NOOP: "NOOP",
+  UNSAFE_PATH: "UNSAFE_PATH",
+  COPY_EXISTS: "COPY_EXISTS",
+  COPY_FAILED: "COPY_FAILED",
+  PATCH_CORRUPT: "PATCH_CORRUPT",
+  PATCH_REJECT: "PATCH_REJECT",
+  PATCH_APPLY_FAILED: "PATCH_APPLY_FAILED",
+  UNKNOWN: "UNKNOWN",
+});
+
+/**
+ * Classify git apply stderr into a stable code.
+ * @param {string} stderr
+ * @returns {string}
+ */
+export function classifyPatchError(stderr = "") {
+  const s = String(stderr || "").toLowerCase();
+  if (!s.trim()) return MERGE_ERROR_CODES.PATCH_REJECT;
+  if (/corrupt patch/.test(s)) return MERGE_ERROR_CODES.PATCH_CORRUPT;
+  if (/does not exist in index|no such file|can't find file|already exists in working directory/.test(s)) {
+    return MERGE_ERROR_CODES.PATCH_REJECT;
+  }
+  if (/patch does not apply|patch failed|hunks? failed|while searching for/.test(s)) {
+    return MERGE_ERROR_CODES.PATCH_REJECT;
+  }
+  if (/error:|fatal:/.test(s)) return MERGE_ERROR_CODES.PATCH_APPLY_FAILED;
+  return MERGE_ERROR_CODES.PATCH_REJECT;
+}
+
+/**
+ * Classify a single copy-conflict message.
+ * @param {string} msg
+ * @returns {string}
+ */
+export function classifyCopyError(msg = "") {
+  const s = String(msg || "").toLowerCase();
+  if (/unsafe path/.test(s)) return MERGE_ERROR_CODES.UNSAFE_PATH;
+  if (/eexist|already exists|file already exists|destination already exists/.test(s)) {
+    return MERGE_ERROR_CODES.COPY_EXISTS;
+  }
+  if (/enoent|permission|eacces|eperm/.test(s)) return MERGE_ERROR_CODES.COPY_FAILED;
+  return MERGE_ERROR_CODES.COPY_FAILED;
+}
+
+/**
+ * Prefer strongest code among a list of copy conflict messages.
+ */
+export function classifyCopyConflicts(conflicts = []) {
+  const codes = (conflicts || []).map(classifyCopyError);
+  if (codes.includes(MERGE_ERROR_CODES.UNSAFE_PATH)) return MERGE_ERROR_CODES.UNSAFE_PATH;
+  if (codes.includes(MERGE_ERROR_CODES.COPY_EXISTS)) return MERGE_ERROR_CODES.COPY_EXISTS;
+  if (codes.length) return MERGE_ERROR_CODES.COPY_FAILED;
+  return MERGE_ERROR_CODES.UNKNOWN;
+}
+
 export async function applyWorktreeMerge(
   repoDir,
   worktreePath,
   { checkOnly = false, useIndex = false } = {}
 ) {
   if (!(await isGitRepo(repoDir))) {
-    return { ok: false, error: "repoDir is not a git repository" };
+    return {
+      ok: false,
+      code: MERGE_ERROR_CODES.REPO_NOT_GIT,
+      error: "repoDir is not a git repository",
+    };
   }
   if (!(await isGitRepo(worktreePath))) {
-    return { ok: false, error: "worktreePath is not a git worktree" };
+    return {
+      ok: false,
+      code: MERGE_ERROR_CODES.WORKTREE_NOT_GIT,
+      error: "worktreePath is not a git worktree",
+    };
+  }
+
+  // P0: never diff/apply a tree onto itself (false corrupt-patch conflicts)
+  const mainResolved = path.resolve(repoDir);
+  const wtResolved = path.resolve(worktreePath);
+  if (mainResolved === wtResolved) {
+    return {
+      ok: true,
+      code: MERGE_ERROR_CODES.SAME_TREE,
+      method: "same-tree",
+      stat: "worktreePath === repoDir — nothing to merge",
+      conflicts: [],
+      copied: [],
+      noop: true,
+    };
   }
 
   const meta = await worktreeDiff(worktreePath);
@@ -251,7 +335,14 @@ export async function applyWorktreeMerge(
   const untracked = Array.isArray(meta.untracked) ? meta.untracked : [];
 
   if (!trackedDiff && !untracked.length) {
-    return { ok: true, method: "noop", stat: "no changes", conflicts: [], copied: [] };
+    return {
+      ok: true,
+      code: MERGE_ERROR_CODES.NOOP,
+      method: "noop",
+      stat: "no changes",
+      conflicts: [],
+      copied: [],
+    };
   }
 
   // --- untracked / new files: copy into main repo ---
@@ -286,6 +377,7 @@ export async function applyWorktreeMerge(
   if (copyConflicts.length && !trackedDiff) {
     return {
       ok: false,
+      code: classifyCopyConflicts(copyConflicts),
       method: "copy-untracked",
       error: copyConflicts.join("; "),
       conflicts: copyConflicts,
@@ -316,11 +408,13 @@ export async function applyWorktreeMerge(
       : ["apply", "--check", patchPath];
     const check = await run("git", checkArgs, repoDir);
     if (check.code !== 0) {
+      const errText = check.stderr || "patch does not apply cleanly";
       return {
         ok: false,
+        code: classifyPatchError(errText),
         method: useIndex ? "git-apply-index" : "git-apply",
-        error: check.stderr || "patch does not apply cleanly",
-        conflicts: [check.stderr || "conflict", ...copyConflicts],
+        error: errText,
+        conflicts: [errText, ...copyConflicts],
         patchPath,
         copied,
       };
@@ -339,11 +433,15 @@ export async function applyWorktreeMerge(
       : ["apply", patchPath];
     const apply = await run("git", applyArgs, repoDir);
     if (apply.code !== 0) {
+      const errText = apply.stderr || "apply failed";
       return {
         ok: false,
+        code: classifyPatchError(errText) === MERGE_ERROR_CODES.PATCH_REJECT
+          ? MERGE_ERROR_CODES.PATCH_APPLY_FAILED
+          : classifyPatchError(errText),
         method: useIndex ? "git-apply-index" : "git-apply",
-        error: apply.stderr || "apply failed",
-        conflicts: [apply.stderr, ...copyConflicts],
+        error: errText,
+        conflicts: [errText, ...copyConflicts],
         patchPath,
         copied,
       };
