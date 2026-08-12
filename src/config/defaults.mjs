@@ -116,11 +116,19 @@ export const DEFAULT_CONFIG = {
     telegramMode: "keyboard",
   },
   maxTurns: 15,
+    /**
+     * Tool-loop detection (OpenClaw-ported).
+     * Env: XCLAW_LOOP_GUARD=off | XCLAW_LOOP_GUARD_GLOBAL=60 | _CRITICAL | _WARNING
+     * Profiles adjust thresholds (lab higher, prod tighter).
+     */
     loopGuard: {
+      enabled: true,
       historySize: 30,
-      warningThreshold: 6,
-      criticalThreshold: 12,
-      circuitBreaker: 20,
+      warningThreshold: 10,
+      criticalThreshold: 20,
+      /** Alias accepted: circuitBreaker */
+      globalCircuitBreakerThreshold: 30,
+      circuitBreaker: 30,
       detectors: {
         genericRepeat: true,
         knownPollNoProgress: true,

@@ -55,7 +55,7 @@ export function resolveMergePolicy(cfg, input = {}) {
       : swarm.autoMerge != null
         ? Boolean(swarm.autoMerge)
         : profile === "lab" || profile === "dev"
-          ? Boolean(swarm.autoMergeLab ?? false)
+          ? Boolean(swarm.autoMergeLab ?? true) // lab: auto-merge implement worktrees by default
           : false;
 
   return {
@@ -455,11 +455,11 @@ export async function listMergeProposals(cfg, { status, limit = 30 } = {}) {
  * @returns {{ ok: true, repoDir: string, tried?: string[] } | { ok: false, code, error, hints, tried?, repoDir? }}
  */
 export async function resolveMergeRepoDir(rec, opts = {}) {
-  const candidates = [
-    opts.repoDir,
-    rec?.repoDir,
-    process.cwd(),
-  ].filter((p) => p != null && String(p).trim() !== "");
+  const explicit = [opts.repoDir, rec?.repoDir].filter(
+    (p) => p != null && String(p).trim() !== ""
+  );
+  const candidates =
+    explicit.length > 0 ? explicit : [process.cwd()].filter((p) => p != null && String(p).trim() !== "");
 
   const tried = [];
   for (const raw of candidates) {
@@ -469,6 +469,18 @@ export async function resolveMergeRepoDir(rec, opts = {}) {
     try {
       st = await fs.stat(repoDir);
     } catch {
+      if (explicit.length > 0) {
+        return {
+          ok: false,
+          code: "REPO_MISSING",
+          error: `repo path does not exist: ${repoDir}`,
+          tried,
+          hints: [
+            "xclaw merge approve <id> --repo /path/to/git/root",
+            "xclaw merge show <id>  # check repoDir",
+          ],
+        };
+      }
       continue;
     }
     if (!st.isDirectory()) {

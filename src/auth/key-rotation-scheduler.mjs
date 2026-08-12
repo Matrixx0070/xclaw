@@ -13,10 +13,7 @@ import {
   maybeAutoRotate,
   recordKeyUse,
   keyRotationStatus,
-  policy as keyPolicy,
 } from "./key-rotation.mjs";
-
-// policy is not exported — use maybeAutoRotate / evaluate only
 
 let timer = null;
 let running = false;

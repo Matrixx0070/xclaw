@@ -14,6 +14,7 @@ import {
   quarantineKeys,
   liftQuarantine,
   revokeKids,
+  rememberRevokedPublicKeys,
   recoverFromCompromise,
   recoveryStatus,
   assertCanSign,
@@ -231,9 +232,27 @@ async function runStep(cfg, step, ctx) {
           message: "no previous key in dual window",
         };
       }
+      let prevPub = null;
+      try {
+        const keys = await getVerificationKeys(cfg);
+        const prev = keys.find((k) => k.kid === before.dualWindow?.previousKid);
+        if (prev?.publicJwk) {
+          prevPub = {
+            kid: prev.kid,
+            generation: prev.generation,
+            publicJwk: prev.publicJwk,
+          };
+        }
+      } catch {
+        /* optional */
+      }
+      const rev = await revokeKids(cfg, { kids, generations, reason });
+      if (prevPub) {
+        await rememberRevokedPublicKeys(cfg, [prevPub]);
+      }
       return {
         ok: true,
-        ...(await revokeKids(cfg, { kids, generations, reason })),
+        ...rev,
       };
     }
 

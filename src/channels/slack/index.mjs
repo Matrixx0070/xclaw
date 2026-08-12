@@ -430,8 +430,9 @@ export function createSlackChannel(cfg) {
         stopped,
         lastError,
         lastOkAt,
-        heartbeatMs: conf.heartbeatMs ?? 90000,
+        heartbeatMs,
         socketMode: Boolean(socketMode && appToken),
+        mode: socketMode && appToken ? "socket" : "poll",
       };
     },
   };

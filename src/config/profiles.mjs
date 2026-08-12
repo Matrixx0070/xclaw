@@ -7,7 +7,17 @@ export const PROFILES = {
     gateway: { host: "127.0.0.1" },
     security: { autoApprove: true, approvalPolicy: "risky" },
     readiness: { requireComputer: false },
-    agent: { maxTurns: 15 },
+    agent: {
+      maxTurns: 15,
+      loopGuard: {
+        enabled: true,
+        historySize: 40,
+        warningThreshold: 12,
+        criticalThreshold: 20,
+        globalCircuitBreakerThreshold: 40,
+        circuitBreaker: 40,
+      },
+    },
     eval: { cron: { enabled: true } },
   },
   lab: {
@@ -18,7 +28,18 @@ export const PROFILES = {
     jobs: {
       structuredClaimsOnTags: ["campaign", "long"],
     },
-    agent: { maxTurns: 20 },
+    agent: {
+      maxTurns: 20,
+      // Repo/multi-step goals need headroom above 30 tool calls
+      loopGuard: {
+        enabled: true,
+        historySize: 80,
+        warningThreshold: 15,
+        criticalThreshold: 30,
+        globalCircuitBreakerThreshold: 60,
+        circuitBreaker: 60,
+      },
+    },
     eval: { cron: { enabled: true } },
   },
   prod: {
@@ -49,7 +70,17 @@ export const PROFILES = {
         "list_dir",
       ],
     },
-    agent: { maxTurns: 12 },
+    agent: {
+      maxTurns: 12,
+      loopGuard: {
+        enabled: true,
+        historySize: 30,
+        warningThreshold: 8,
+        criticalThreshold: 15,
+        globalCircuitBreakerThreshold: 25,
+        circuitBreaker: 25,
+      },
+    },
     retry: { retries: 3, strategy: "full", respectRetryAfter: true },
     eval: { cron: { enabled: false } }, // manual eval in prod
   },
@@ -71,6 +102,9 @@ export function applyProfile(cfg) {
   for (const [k, v] of Object.entries(prof)) {
     if (k === "description") continue;
     if (v && typeof v === "object" && !Array.isArray(v) && out[k] && typeof out[k] === "object") {
+      // Capture nested packs before shallow spread overwrites them
+      const prevAgentGuard =
+        k === "agent" ? { ...(out.agent?.loopGuard || {}) } : null;
       out[k] = { ...out[k], ...v };
       // nested security.requireApproval etc already shallow
       if (k === "security" && v.requireApproval) {
@@ -79,8 +113,15 @@ export function applyProfile(cfg) {
       if (k === "eval" && v.cron) {
         out.eval = { ...out.eval, cron: { ...(out.eval?.cron || {}), ...v.cron } };
       }
-      if (k === "agent") {
-        out.agent = { ...out.agent, ...v };
+      if (k === "agent" && v.loopGuard) {
+        out.agent.loopGuard = {
+          ...prevAgentGuard,
+          ...v.loopGuard,
+          detectors: {
+            ...(prevAgentGuard?.detectors || {}),
+            ...(v.loopGuard.detectors || {}),
+          },
+        };
       }
       if (k === "retry") {
         out.retry = { ...out.retry, ...v };
