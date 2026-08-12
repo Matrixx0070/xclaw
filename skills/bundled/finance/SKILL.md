@@ -1,6 +1,9 @@
 ---
 name: finance
 description: Use this skill when the user asks about stock prices, options, dividends, splits, ticker details, cryptocurrency prices, market caps, or any financial market data. Triggers include mentions of 'stock price', 'ticker', 'market data', 'options chain', 'dividends', 'crypto price', 'bitcoin price', or any request for financial market information.
+user-invocable: true
+source: xclaw-bundled
+priority: 60
 ---
 
 # Financial Market Data

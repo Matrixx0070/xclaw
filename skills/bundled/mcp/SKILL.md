@@ -1,6 +1,9 @@
 ---
 name: mcp
 description: You have access to connected apps despite the internet setting. Use the grok-mcp CLI to discover and send requests to connected apps (Linear, Slack, GitHub, Google Drive, Sharepoint, etc.). Trigger when the user mentions a connected app or keywords like email, calendar, drive, or uploading files.
+user-invocable: true
+source: xclaw-bundled
+priority: 60
 ---
 
 # MCP — Grok MCP CLI

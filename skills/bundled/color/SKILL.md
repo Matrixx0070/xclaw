@@ -1,6 +1,9 @@
 ---
 name: color
 description: Use this skill when the user needs help with color in any project — choosing palettes, checking accessibility/contrast, generating shade scales, avoiding perceptual pitfalls like chromostereopsis, reviewing color choices in designs, or auditing existing UIs.
+user-invocable: true
+source: xclaw-bundled
+priority: 60
 ---
 
 # Color: Best Practices, Accessibility & Perceptual Safety

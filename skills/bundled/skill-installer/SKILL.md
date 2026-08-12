@@ -1,6 +1,9 @@
 ---
 name: skill-installer
 description: Install skills from GitHub repositories into the local skills directory. Use when a user asks to install a skill, add a skill from a repo, list installable skills, or references a GitHub URL containing skills.
+user-invocable: true
+source: xclaw-bundled
+priority: 60
 ---
 
 # Skill Installer

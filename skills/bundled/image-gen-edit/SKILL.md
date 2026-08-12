@@ -1,6 +1,9 @@
 ---
 name: image-gen-edit
 description: Use this skill when replying with a generated or edited image — when a post asks to create, generate, edit, modify, restyle, combine, or stitch images, or whenever attaching a generated or edited image would strengthen the reply.
+user-invocable: true
+source: xclaw-bundled
+priority: 60
 ---
 
 ## Core principles
