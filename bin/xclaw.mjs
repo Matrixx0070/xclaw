@@ -1135,6 +1135,31 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "memory": {
+      const { previewProjectMemory } = await import("../src/skills/loader.mjs");
+      const cwd = process.cwd();
+      const sub = args[1] || "show";
+      if (sub === "show" || sub === "preview") {
+        const prev = await previewProjectMemory(cwd);
+        console.log("XClaw project memory (auto-injected when memory.enabled !== false)");
+        console.log("cwd:", cwd);
+        if (!prev.files.length) {
+          console.log("(none) — add XCLAW.md or AGENTS.md at repo root");
+          process.exitCode = 0;
+          break;
+        }
+        for (const f of prev.files) {
+          console.log(`- ${f.name}: ${f.path} (${f.body.length} chars)`);
+        }
+        console.log("\n--- injected section ---\n");
+        console.log(prev.sections || "(empty)");
+        break;
+      }
+      console.error("Usage: xclaw memory show");
+      process.exitCode = 1;
+      break;
+    }
+
     case "agent": {
 
       const message = args.slice(1).join(" ").trim();

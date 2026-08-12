@@ -178,13 +178,17 @@ export async function loadAllSkills({ configDir, cwd, cfg } = {}) {
 
 
 /**
- * Walk upward from cwd looking for XCLAW.md / AGENTS.md.
- * Returns concatenated memory text + paths found.
+ * Walk upward from cwd looking for project instruction files.
+ * Priority names (per directory): XCLAW.md, AGENTS.md, .xclaw/XCLAW.md
+ * Nearest directory wins attention (listed last in the prompt).
+ * Auto-injected into the agent system prompt when cfg.memory.enabled !== false.
  */
 export async function loadMemoryFiles(cwd = process.cwd()) {
   const found = [];
+  const seen = new Set();
   let dir = path.resolve(cwd);
   const root = path.parse(dir).root;
+  /** @type {string[]} */
   const names = ["XCLAW.md", "AGENTS.md"];
 
   while (true) {
@@ -192,7 +196,31 @@ export async function loadMemoryFiles(cwd = process.cwd()) {
       const fp = path.join(dir, name);
       const raw = await readIfExists(fp);
       if (raw && raw.trim()) {
-        found.push({ path: fp, name, body: raw.trim() });
+        const key = path.resolve(fp);
+        if (!seen.has(key)) {
+          seen.add(key);
+          found.push({
+            path: fp,
+            name,
+            body: raw.trim(),
+            source: "project",
+          });
+        }
+      }
+    }
+    // Optional nested path: <dir>/.xclaw/XCLAW.md
+    const nested = path.join(dir, ".xclaw", "XCLAW.md");
+    const nestedRaw = await readIfExists(nested);
+    if (nestedRaw && nestedRaw.trim()) {
+      const key = path.resolve(nested);
+      if (!seen.has(key)) {
+        seen.add(key);
+        found.push({
+          path: nested,
+          name: "XCLAW.md",
+          body: nestedRaw.trim(),
+          source: "project-dotxclaw",
+        });
       }
     }
     if (dir === root) break;
@@ -201,9 +229,22 @@ export async function loadMemoryFiles(cwd = process.cwd()) {
     dir = parent;
   }
 
-  // Nearest (deepest) first already; for prompt, put nearest last so it wins attention
+  // Walk collected deepest-first; reverse so nearest is last (wins model attention)
   found.reverse();
   return found;
+}
+
+/**
+ * Preview what would be injected (CLI / doctor).
+ */
+export async function previewProjectMemory(cwd = process.cwd(), opts = {}) {
+  const files = await loadMemoryFiles(cwd);
+  const sections = buildContextSections({
+    skills: [],
+    memoryFiles: files,
+    maxMemoryChars: opts.maxMemoryChars ?? 8000,
+  });
+  return { files, sections, chars: sections.length };
 }
 
 /**
@@ -225,7 +266,7 @@ export function buildContextSections({ skills = [], memoryFiles = [], maxSkillCh
       budget -= chunk.length;
     }
     if (blocks.length) {
-      parts.push(`## Project memory\nFollow these project instructions when relevant.\n\n${blocks.join("\n\n")}`);
+      parts.push(`## Project memory (auto-injected)\nThe following project instructions from XCLAW.md / AGENTS.md are authoritative for this workspace. Follow them unless the user explicitly overrides.\n\n${blocks.join("\n\n")}`);
     }
   }
 
