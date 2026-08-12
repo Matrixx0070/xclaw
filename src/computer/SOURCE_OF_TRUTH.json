@@ -2,118 +2,10 @@
   "phase": "A5",
   "completedAt": "2026-08-10",
   "verdict": "bundle_is_runtime_modules_are_edit_source",
-  "preBundleSourceInRepo": false,
-  "computerEntryDefault": "src/computer/xclaw-server.mjs",
-  "computerEntryConfigKey": "computer.entry",
-  "processOwner": {
-    "lifecycle": "src/computer/manager.mjs",
-    "ensure": "src/computer/ensure.mjs",
-    "runtimeBundle": "src/computer/xclaw-server.mjs",
-    "approxBundleBytes": 16830476
-  },
-  "chromeLaunchOwner": {
-    "class": "BrowserService",
-    "method": "ensureRunning",
-    "file": "src/computer/xclaw-server.mjs"
-  },
-  "cdpActuationOwner": {
-    "primaryTool": "xclaw_browser_tab",
-    "operations": [
-      "Target.createTarget",
-      "Page.navigate",
-      "Runtime.evaluate",
-      "screenshot",
-      "network summary"
-    ],
-    "file": "src/computer/xclaw-server.mjs"
-  },
-  "horizonLibraries": {
-    "path": "src/browser/",
-    "process": "gateway_agent",
-    "enforcementInComputerProcess": false
-  },
-  "hookTargetsForA2": [
-    {
-      "hook": "buildChromeArgs",
-      "site": "BrowserService.ensureRunning",
-      "file": "src/computer/xclaw-server.mjs"
-    },
-    {
-      "hook": "beforeNavigate",
-      "site": "xclaw_browser_tab \u2192 Page.navigate",
-      "file": "src/computer/xclaw-server.mjs"
-    },
-    {
-      "hook": "beforeInput",
-      "site": "Input.dispatch* paths if any",
-      "file": "src/computer/xclaw-server.mjs"
-    },
-    {
-      "hook": "afterAction",
-      "site": "xclaw_browser_tab call completion",
-      "file": "src/computer/xclaw-server.mjs"
-    }
-  ],
-  "notes": [
-    "Strategy C (2026-08-12): DO NOT hand-edit xclaw-server.mjs; modules are source; bundle is runtime build artifact.",
-    "xclaw-server.mjs is esbuild-style bundled output with inlined dependencies.",
-    "Horizon H0 flag patches were applied directly to the bundle.",
-    "No BrowserService source module exists outside the bundle in this repository.",
-    "manager.mjs injects MITM env at spawn; it does not own CDP.",
-    "Confirmed /app/grok-computer-server.mjs is sibling bundle (~16.82MB), not unbundled source.",
-    "XCLAW_COMPUTER_SERVER.zip contains only the same bundled xclaw-server.mjs + rebrand script."
-  ],
-  "preBundleSourceOnHost": false,
-  "lineage": {
-    "upstreamRuntime": "/app/grok-computer-server.mjs",
-    "upstreamBytes": 16820474,
-    "xclawRuntime": "src/computer/xclaw-server.mjs",
-    "xclawBytes": 16830476,
-    "BrowserServiceLine": 382692,
-    "ensureRunningLine": 382745,
-    "toolRename": {
-      "grok": "browser_tab",
-      "xclaw": "xclaw_browser_tab",
-      "grokNetwork": "browser_network_details",
-      "xclawNetwork": "xclaw_browser_network_details"
-    },
-    "docs": [
-      "/home/workdir/artifacts/GROK_COMPUTER_BROWSER_CONTROL.md",
-      "/home/workdir/artifacts/GROK_COMPUTER_SERVER_API_SCHEMA.md",
-      "/home/workdir/artifacts/GROK_COMPUTER_TOOL_IMPLEMENTATION.md"
-    ],
-    "note": "XClaw computer server is the same class of artifact as Grok computer server: a single bundled .mjs. Same BrowserService line numbers. XClaw adds renames (xclaw_ prefix) and Horizon patches (H0 flags, profile lock). No multi-file TypeScript/JS BrowserService source tree was found in-repo or under /app."
-  },
-  "editableModules": {
-    "browserService": "src/computer/browser-service.mjs",
-    "browserTabToolExtract": "src/computer/browser-tab-tool.extracted.mjs",
-    "runtimeStillBundle": true,
-    "note": "Clean BrowserService extracted and importable. Computer entry still executes inlined class in xclaw-server.mjs until A2 wires import/sync."
-  },
-  "fullBundleMap": "src/computer/MODULE_MAP.json",
-  "modulesDir": "src/computer/modules",
-  "version": "3.49.3",
-  "hooks": {
-    "module": "src/browser/hooks.mjs",
-    "bridge": "src/computer/hooks-bridge.mjs",
-    "navigateWired": true,
-    "env": [
-      "XCLAW_COMMIT_GATES",
-      "XCLAW_FABRIC_ENFORCE",
-      "XCLAW_ROOT",
-      "XCLAW_HOOKS_BRIDGE",
-      "XCLAW_AGENT_ID",
-      "XCLAW_AGENT_ROLE"
-    ]
-  },
-  "chromeArgs": {
-    "canonical": "src/computer/chrome-args.mjs",
-    "bridge": "src/computer/chrome-args-bridge.mjs",
-    "bundleWired": true,
-    "cleanBrowserServiceWired": true
-  },
   "strategy": "C",
-  "strategyPhase": "C2",
+  "strategyPhase": "C3",
+  "computerEntryDefault": "src/computer/xclaw-server.mjs",
+  "generatedEntry": "src/computer/generated/computer-server.mjs",
   "policy": {
     "handEditBundle": false,
     "bundlePath": "src/computer/xclaw-server.mjs",
@@ -138,5 +30,14 @@
       "xclaw_file_edit",
       "xclaw_browser_tab"
     ]
+  },
+  "notes": [
+    "Strategy C (2026-08-12): DO NOT hand-edit xclaw-server.mjs; modules are source; bundle is runtime build artifact."
+  ],
+  "processOwner": {
+    "lifecycle": "src/computer/manager.mjs",
+    "ensure": "src/computer/ensure.mjs",
+    "runtimeBundle": "src/computer/xclaw-server.mjs",
+    "approxBundleBytes": 16830476
   }
 }
