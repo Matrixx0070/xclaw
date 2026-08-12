@@ -1,0 +1,129 @@
+/**
+ * Gateway operator auth (P4.1).
+ * Token via cfg.gateway.token | XCLAW_GATEWAY_TOKEN
+ * Headers: Authorization: Bearer <token>  or  x-xclaw-token / x-api-key
+ */
+export function createGatewayAuth(cfg = {}) {
+  const token =
+    cfg.gateway?.token ||
+    cfg.gateway?.authToken ||
+    process.env.XCLAW_GATEWAY_TOKEN ||
+    null;
+  const required = Boolean(token);
+  const protectMetrics = cfg.gateway?.protectMetrics === true;
+  /** When true, all non-open paths require token if token is set */
+  const strict = cfg.gateway?.authStrict !== false;
+
+  const alwaysOpen = new Set([
+    "/",
+    "/health",
+    "/ready",
+    "/readiness",
+    "/version",
+    "/favicon.ico",
+    // Public JWKS for JWT verifiers (no private material)
+    "/xclaw/jwks.json",
+    "/.well-known/jwks.json",
+    "/jwks.json",
+  ]);
+
+  function isProtectedPath(p) {
+    if (alwaysOpen.has(p)) return false;
+    // static UI can stay open unless strictPublicUi is false
+    if (cfg.gateway?.publicUi === false) {
+      if (
+        p.startsWith("/control") ||
+        p.startsWith("/chat/") ||
+        p.startsWith("/ui/") ||
+        p.startsWith("/artifacts")
+      ) {
+        return required;
+      }
+    } else {
+      if (
+        p.startsWith("/control/") ||
+        p === "/control" ||
+        p.startsWith("/chat/") ||
+        p.startsWith("/ui/") ||
+        p === "/artifacts" ||
+        p === "/artifacts/"
+      ) {
+        return false;
+      }
+    }
+    if (p === "/metrics") return protectMetrics && required;
+    if (p.startsWith("/webhooks/")) return false; // signed webhooks later
+    if (!required) return false;
+    if (!strict) {
+      // legacy subset
+      return (
+        p.startsWith("/security/") ||
+        p.startsWith("/pairing/") ||
+        p.startsWith("/cron/") ||
+        p.startsWith("/subagents/") ||
+        p.startsWith("/mcp") ||
+        p === "/agent" ||
+        p.startsWith("/agent/") ||
+        p.startsWith("/jobs") ||
+        p.startsWith("/queue") ||
+        p.startsWith("/sessions") ||
+        p.startsWith("/config") ||
+        p === "/dashboard" ||
+        p === "/report" ||
+        p === "/xclaw/jwks/invalidate" ||
+        p === "/xclaw/jwks/cache" ||
+        p === "/xclaw/jwks/epoch" ||
+        p.startsWith("/swarm") ||
+        p.startsWith("/subagents")
+      );
+    }
+    // strict: protect API surface
+    return (
+      p.startsWith("/security/") ||
+      p.startsWith("/pairing/") ||
+      p.startsWith("/cron/") ||
+      p.startsWith("/subagents/") ||
+      p.startsWith("/mcp") ||
+      p === "/agent" ||
+      p.startsWith("/agent/") ||
+      p.startsWith("/jobs") ||
+      p.startsWith("/queue") ||
+      p.startsWith("/sessions") ||
+      p.startsWith("/config") ||
+      p === "/dashboard" ||
+      p === "/report" ||
+      p.startsWith("/channel/") ||
+      p.startsWith("/artifacts/list") ||
+      p.startsWith("/doctor") ||
+      p.startsWith("/seats") ||
+      p.startsWith("/models") ||
+      // JWKS operator endpoints (document itself is alwaysOpen)
+      p === "/xclaw/jwks/invalidate" ||
+      p === "/xclaw/jwks/cache" ||
+      p === "/xclaw/jwks/epoch" ||
+      p.startsWith("/swarm") ||
+      p.startsWith("/subagents")
+    );
+  }
+
+  function check(req) {
+    const p = (req.url || "/").split("?")[0];
+    if (!isProtectedPath(p)) return { ok: true, mode: "open" };
+    if (!token) return { ok: true, mode: "open" };
+    const hdr = req.headers?.authorization || req.headers?.Authorization || "";
+    const bearer = hdr.startsWith("Bearer ") ? hdr.slice(7).trim() : "";
+    const x = req.headers?.["x-xclaw-token"] || req.headers?.["x-api-key"];
+    const q = (() => {
+      try {
+        return new URL(req.url || "/", "http://local").searchParams.get("token");
+      } catch {
+        return null;
+      }
+    })();
+    const got = bearer || x || q || "";
+    if (got && got === token) return { ok: true, mode: "token" };
+    return { ok: false, mode: "token", error: "unauthorized" };
+  }
+
+  return { check, isProtectedPath, required, protectMetrics, strict };
+}
