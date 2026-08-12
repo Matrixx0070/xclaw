@@ -15,11 +15,12 @@ Self-hosted multi-LLM agent OS with computer tools, swarm DAG, receipts, and pro
 | Early merge (A) | Worktree untracked → main **before** verify → **PASS** |
 | Merge P0 | Implement-only candidates; same-tree noop |
 | Merge P1 | `PATCH_CORRUPT`, `PATCH_REJECT`, `UNSAFE_PATH`, `COPY_*` codes |
+| Strategy C1–C3 | Modules source; esbuild generated server; 16MB CDP retained |
 
 ## Git
 
-- Local commits include loop-guard presets + swarm merge work
-- Remote: https://github.com/Matrixx0070/xclaw (partial MCP push; full push needs PAT)
+- Remote: https://github.com/Matrixx0070/xclaw
+- Strategy C files pushed via GitHub MCP from sandbox
 
 ## How to run
 
@@ -27,24 +28,11 @@ Self-hosted multi-LLM agent OS with computer tools, swarm DAG, receipts, and pro
 export XAI_API_KEY=...
 export XCLAW_PROFILE=lab
 node bin/xclaw.mjs agent "your goal"
-# swarm (programmatic): runSwarmFanOut with role implement/verify
+npm run build:computer
+XCLAW_COMPUTER_ENGINE=generated  # modules-built
 ```
-
-## Known gaps
-
-- Full GitHub push from sandbox (no credentials)
-- True 3-way merge (P2) not implemented
-- Soak/eval not continuous CI yet
-- Bundle (16MB) vs thin computer parity not re-proven this session
-
-## Next after this freeze
-
-1. `git push origin main` with PAT
-2. CI job: `node --test test/merge-*.test.mjs test/swarm-early-merge.test.mjs`
-3. Optional P2 branch merge
 
 ## Soak (this freeze)
 
 - Script: scripts/soak-agent.mjs
-- Result: 3/3 pass (passRate 1.0), ~5.5-6.2s/goal, model grok-4.5
-- Clean swarm: no merge_conflict noise; verify PASS; main swarm-ok
+- Result: 3/3 pass (passRate 1.0)
