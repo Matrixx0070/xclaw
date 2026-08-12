@@ -118,6 +118,7 @@ node bin/xclaw.mjs status
 node bin/xclaw.mjs agent "your goal"
 node bin/xclaw.mjs gateway
 node bin/xclaw.mjs stop-all
+node bin/xclaw.mjs automations list
 node bin/xclaw.mjs sessions-active
 node bin/xclaw.mjs transcripts list
 

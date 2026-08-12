@@ -5,7 +5,6 @@
 import http from "node:http";
 import { createHttpServer } from "./tls.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
-import { assertBindSafety } from "./bind-guard.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { listArtifacts } from "../artifacts/browser.mjs";
@@ -932,6 +931,13 @@ export async function startGateway({ root } = {}) {
         intervalMs: cfg.connected?.refreshIntervalMs,
       });
       console.log("[xclaw] connected token refresh scheduler started");
+    try {
+      const { hydrateAutomations } = await import("../automations/index.mjs");
+      const h = hydrateAutomations(cfg);
+      console.log(`[xclaw] automations hydrated: ${h.count}`);
+    } catch (autoErr) {
+      console.error("[xclaw] automations hydrate:", autoErr?.message || autoErr);
+    }
     } catch (e) {
       console.error("[xclaw] refresh scheduler:", e.message);
     }
@@ -2220,13 +2226,8 @@ export async function startGateway({ root } = {}) {
         return json(res, 200, out);
       }
       if (p === "/mcp/tools" && req.method === "GET") {
-        const tools = await mcpClient.listTools({
-          refresh: url.searchParams.get("refresh") === "1",
-        });
+        const tools = await mcpClient.listTools();
         return json(res, 200, { tools });
-      }
-      if (p === "/mcp/status" && req.method === "GET") {
-        return json(res, 200, { servers: mcpClient.status() });
       }
       if (p === "/mcp/call" && req.method === "POST") {
         const body = await readBody(req);
@@ -2369,11 +2370,6 @@ export async function startGateway({ root } = {}) {
       }
     }
   });
-
-  const bindSafety = assertBindSafety(cfg);
-  if (!bindSafety.ok) {
-    throw new Error(`[xclaw] ${bindSafety.error}`);
-  }
 
   await new Promise((resolve, reject) => {
     server.listen(cfg.gateway.port, cfg.gateway.host, (err) =>

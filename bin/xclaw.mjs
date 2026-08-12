@@ -1127,6 +1127,76 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exit(1);
       break;
     }
+    case "automations":
+    case "automation":
+    case "tasks": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const auto = await import("../src/automations/index.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "list";
+      const json = args.includes("--json");
+      if (sub === "list") {
+        const rows = auto.listAutomations(cfg);
+        console.log(json ? JSON.stringify(rows, null, 2) : rows.map(a => `${a.enabled ? "ON " : "OFF"} ${a.id.slice(0,8)}  ${a.name}  last=${a.lastStatus || "—"}`).join("\n") || "(none)");
+        break;
+      }
+      if (sub === "add") {
+        // xclaw automations add --every 3600000 --name n -- prompt words...
+        let everyMs, cron, at, name, enabled = true;
+        const rest = [];
+        for (let i = 2; i < args.length; i++) {
+          if (args[i] === "--every" && args[i+1]) { everyMs = Number(args[++i]); continue; }
+          if (args[i] === "--cron" && args[i+1]) { cron = args[++i]; continue; }
+          if (args[i] === "--at" && args[i+1]) { at = args[++i]; continue; }
+          if (args[i] === "--name" && args[i+1]) { name = args[++i]; continue; }
+          if (args[i] === "--disabled") { enabled = false; continue; }
+          if (args[i] === "--") { rest.push(...args.slice(i+1)); break; }
+          rest.push(args[i]);
+        }
+        const prompt = rest.join(" ").trim();
+        if (!prompt) {
+          console.error("Usage: xclaw automations add [--every ms|--cron expr|--at ISO] [--name n] <prompt>");
+          process.exitCode = 1;
+          break;
+        }
+        const r = auto.createAutomation(cfg, { prompt, everyMs, cron, at, name, enabled });
+        console.log(JSON.stringify(r, null, 2));
+        process.exitCode = r.ok ? 0 : 1;
+        break;
+      }
+      if (sub === "pause" || sub === "resume") {
+        const id = args[2];
+        if (!id) { console.error("Usage: xclaw automations pause|resume <id>"); process.exitCode = 1; break; }
+        const r = auto.setEnabled(cfg, id, sub === "resume");
+        console.log(JSON.stringify(r, null, 2));
+        process.exitCode = r.ok ? 0 : 1;
+        break;
+      }
+      if (sub === "delete" || sub === "rm") {
+        const r = auto.deleteAutomation(cfg, args[2]);
+        console.log(JSON.stringify(r, null, 2));
+        break;
+      }
+      if (sub === "run") {
+        const r = await auto.executeAutomation(cfg, args[2], { mode: "manual" });
+        console.log(JSON.stringify(r, null, 2));
+        process.exitCode = r.ok ? 0 : 1;
+        break;
+      }
+      if (sub === "results") {
+        const rows = auto.listResults(cfg, { automationId: args[2] || null, limit: Number(args[3] || 10) });
+        console.log(JSON.stringify(rows, null, 2));
+        break;
+      }
+      if (sub === "hydrate") {
+        console.log(JSON.stringify(auto.hydrateAutomations(cfg), null, 2));
+        break;
+      }
+      console.error("Usage: xclaw automations <list|add|pause|resume|run|results|delete|hydrate>");
+      process.exitCode = 1;
+      break;
+    }
+
     case "stop-all":
     case "kill-all": {
       const { loadConfig } = await import("../src/config/load.mjs");
@@ -1786,6 +1856,7 @@ Commands:
   status [--json]      Gateway + computer + active sessions
   doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
   stop-all             Abort agent sessions + stop computer
+  automations          list|add|pause|resume|run|results|delete
   sessions-active      List in-process agent sessions
   transcripts          list | show <sessionId>
   eval                 Eval suite (--tag, --mock, --json)
