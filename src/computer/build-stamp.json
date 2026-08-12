@@ -1,14 +1,14 @@
 {
   "strategy": "C",
   "phase": "C3",
-  "builtAt": "2026-08-12T21:28:49.310Z",
+  "builtAt": "2026-08-12T21:37:03.682Z",
   "fullRebuild": false,
   "generatedEmit": true,
   "generatedPath": "src/computer/generated/computer-server.mjs",
   "generatedBytes": 48204,
   "legacyBundlePath": "src/computer/xclaw-server.mjs",
   "legacyBundleBytes": 16839070,
-  "legacyBundlePresent": false,
+  "legacyBundlePresent": true,
   "legacyOverwritten": false,
   "note": "C3 emits modules-built server to generated/. 16MB CDP bundle is an opt-in release artifact (npm run fetch:bundle), untracked in git.",
   "modulesChecked": [

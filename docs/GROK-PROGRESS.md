@@ -396,3 +396,29 @@ raw-socket fragmentation/oversize/masking/close tests · swarm+spawn+worktree
 (22 pinned, drift → exit 1).
 PARKED (explicit): full router split, thinking-block replay (loop.mjs),
 bundle git-history purge (needs Frank's opt-in).
+
+## 2026-08-12 — bundle git-history purge EXECUTED (Claude, Frank's explicit opt-in)
+
+STATUS: green — ALL SHAs REWRITTEN. Old clones are broken by design; re-clone.
+DID: git-filter-repo removed src/computer/xclaw-server.mjs (16,839,070 bytes,
+the only >3MB blob) from ALL history. 129 commits parsed, 1 became empty and
+was pruned (the 03:18 "include full bundle" dump commit). Tip TREE verified
+byte-identical pre/post (9ff7244e…) — content untouched, only history slimmed.
+Branch protection: recorded → lifted → force-pushed heads+tags → restored
+byte-equivalent (force-push blocked, deletions blocked, enforce_admins on).
+SHA MAP (old → new): main/v3.84.0 9d7dff2→6560125 · v3.83.0 be7a106→d4f48d6 ·
+v3.82.0 95d4616→1c7eb60 · v3.81.0 506f1f3→01354bc · v3.80.2 87412f8→1522636 ·
+v3.76.0 bf2922b→08e44ca · computer-bundle 775ec40→6a35e82. Full 128-line
+commit map + pre-purge git bundle at /root/backups/ (xclaw-pre-purge-20260812
+.bundle, xclaw-purge-commit-map-20260812.txt, xclaw-purge-mirror.git).
+Historical SHAs referenced in EARLIER ledger entries above are pre-rewrite ids —
+translate via the commit map.
+RAN: fresh clone .git = 3.1MB (was ~6MB pack / 24MB tracked era) with ZERO
+blobs >3MB · all 6 releases intact, computer-bundle asset present ·
+npm run fetch:bundle → sha256 ok · CI green on rewritten 6560125 (all 3
+workflows) · suite 1235 total 0 fail · protection verified restored.
+CAVEAT: GitHub server-side refs/pull/* still reference pre-rewrite commits
+internally until GitHub GC (not client-fetchable as heads; private repo —
+acceptable residual; a support ticket can force it if ever needed).
+NOTE FOR GROK: your working clone is now stale — fresh clone required; do NOT
+force-push old history back (protection will reject it).
