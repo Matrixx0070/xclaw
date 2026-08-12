@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XClaw Control</title>
+  <link rel="stylesheet" href="/control/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">X</span>
+      <div>
+        <h1>XClaw Control</h1>
+        <p class="sub">Phase X3 · swarm · admission · wait/abandon · gateway</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <a class="btn ghost" href="/chat/">Open WebChat</a>
+      <button id="btnRefresh" class="btn">Refresh</button>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <section class="card span2" id="cardSwarm">
+      <h2>Swarm runs <span id="swarmLiveStatus" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+      <div class="row" style="flex-wrap:wrap;gap:0.5rem;">
+        <button class="btn ghost" id="btnSwarmRefresh">Refresh</button>
+        <button class="btn ghost" id="btnMergeRefresh">Merges</button>
+        <input id="swarmGoal" placeholder="goal (optional)" style="flex:1;min-width:140px;" />
+        <input id="swarmTasks" placeholder='tasks JSON e.g. [{"id":"a","role":"research","task":"…"}]' style="flex:2;min-width:200px;" />
+        <button class="btn primary" id="btnSwarmRun">Run (JSON)</button>
+        <button class="btn" id="btnSwarmStream">Run + live SSE</button>
+        <button class="btn ghost" id="btnSwarmAbort" disabled>Abort stream</button>
+      </div>
+      <div class="table-wrap" style="margin-top:0.5rem;">
+        <table id="swarmTable">
+          <thead>
+            <tr>
+              <th>Id</th>
+              <th>Status</th>
+              <th>Goal</th>
+              <th>Waves</th>
+              <th>When</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <h3 style="margin:0.75rem 0 0.35rem;font-size:0.9rem;opacity:0.9;">Merge proposals</h3>
+      <div class="table-wrap">
+        <table id="mergeTable">
+          <thead>
+            <tr>
+              <th>Id</th>
+              <th>Status</th>
+              <th>Swarm</th>
+              <th>Repo</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <h3 style="margin:0.75rem 0 0.35rem;font-size:0.9rem;opacity:0.9;">Live stream</h3>
+      <pre id="swarmStreamOut" style="margin:0;max-height:220px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.75rem;border-radius:8px;">—</pre>
+      <pre id="swarmDetailOut" style="margin-top:0.5rem;max-height:160px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;display:none;"></pre>
+    </section>
+
+    <section class="card span2" id="cardCheckpoints">
+      <h2>Checkpoints (time-travel)</h2>
+      <div class="row">
+        <button class="btn ghost" id="btnCpRefresh">Refresh</button>
+        <input id="cpId" placeholder="job id" style="flex:1;min-width:120px;" />
+        <button class="btn primary" id="btnCpResume">Resume</button>
+      </div>
+      <div class="table-wrap" style="margin-top:0.5rem;">
+        <table id="cpTable">
+          <thead><tr><th>Id</th><th>Status</th><th>Goal</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <pre id="cpOut" style="margin-top:0.5rem;max-height:140px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;"></pre>
+    </section>
+
+    <section class="card span2" id="cardApprovals">
+      <h2>Approvals</h2>
+      <div class="row">
+        <button class="btn ghost" id="btnAprRefresh">Refresh</button>
+        <span id="aprPolicy" style="font-size:0.8rem;opacity:0.85;">—</span>
+      </div>
+      <div class="table-wrap" style="margin-top:0.5rem;">
+        <table id="aprTable">
+          <thead><tr><th>Tool</th><th>When</th><th>Actions</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <pre id="aprOut" style="margin-top:0.5rem;max-height:120px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;"></pre>
+    </section>
+
+    
+    <section class="card span2" id="cardScoreboard">
+      <h2>Autonomy scoreboard</h2>
+      <button class="btn ghost" id="btnScoreboard">Refresh</button>
+      <pre id="scoreOut" style="margin-top:0.5rem;max-height:200px;overflow:auto;font-size:0.72rem;background:#0d131b;padding:0.75rem;border-radius:8px;">—</pre>
+    </section>
+
+    <section class="card span2" id="cardDash">
+      <h2>Dashboard</h2>
+      <button class="btn ghost" id="btnDash">Refresh</button>
+      <pre id="dashOut" style="margin-top:0.5rem;max-height:220px;overflow:auto;font-size:0.72rem;background:#0d131b;padding:0.75rem;border-radius:8px;">—</pre>
+    </section>
+
+    <section class="card" id="cardDoctor">
+      <h2>Doctor</h2>
+      <button class="btn" id="btnDoctor">Run doctor</button>
+      <pre id="doctorOut" class="muted" style="margin-top:0.75rem;max-height:240px;overflow:auto;font-size:0.75rem;"></pre>
+    </section>
+
+    
+    <section class="card span2" id="cardQueue">
+      <h2>Job queue</h2>
+      <div class="row">
+        <input id="queueGoal" placeholder="Goal to enqueue…" style="flex:1;min-width:160px;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.4rem 0.6rem;" />
+        <button class="btn primary" id="btnQueueAdd">Enqueue</button>
+        <button class="btn ghost" id="btnQueueRefresh">Refresh</button>
+        <button class="btn ghost" id="btnQueuePause">Pause</button>
+        <button class="btn ghost" id="btnQueueResume">Resume</button>
+        <button class="btn ghost" id="btnQueueClear">Clear done</button>
+        <button class="btn ghost" id="btnQueueRetry">Retry failed</button>
+      </div>
+      <div id="admissionKv" class="kv-grid" style="margin-top:0.75rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.4rem;font-size:0.75rem;"></div>
+      <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.4rem;">
+        <span class="muted" style="font-size:0.75rem;">QED suggest:</span>
+        <input id="admA" placeholder="a (load)" style="width:80px;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.25rem 0.4rem;font-size:0.75rem;" />
+        <input id="admBeta" placeholder="β" value="1" style="width:48px;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.25rem 0.4rem;font-size:0.75rem;" />
+        <button class="btn ghost" id="btnAdmSuggest" style="font-size:0.75rem;">Suggest c</button>
+        <span id="admSuggestOut" class="muted" style="font-size:0.75rem;">—</span>
+        <button class="btn ghost" id="btnAdmRefresh" style="font-size:0.75rem;margin-left:auto;">Admission live</button>
+        <span id="admLiveStatus" class="pill" style="font-size:0.7rem;">—</span>
+      </div>
+      <div class="table-wrap" style="margin-top:0.75rem;">
+        <table id="queueTable">
+          <thead><tr><th>Status</th><th>Priority</th><th>Goal</th><th>Wait</th><th>When</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <pre id="queueOut" style="margin-top:0.5rem;max-height:160px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;"></pre>
+    </section>
+
+    <section class="card span2" id="cardJobs">
+      <h2>Job runner</h2>
+      <p class="muted" style="margin:0 0 0.5rem;font-size:0.8rem;">Runs a verified job (goal → tools → optional checks). Evidence listed below.</p>
+      <textarea id="jobGoal" rows="3" placeholder="Goal: Create hello.txt containing: hi" style="width:100%;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.6rem;font:inherit;"></textarea>
+      <div class="row" style="margin-top:0.5rem;">
+        <button class="btn primary" id="btnJobRun">Run job</button>
+        <span class="muted" id="jobMeta"></span>
+      </div>
+      <div class="row" style="margin-top:0.5rem;">
+        <button class="btn ghost" id="btnJobHistory">Refresh history</button>
+      </div>
+      <div class="table-wrap" style="margin-top:0.5rem;">
+        <table id="jobHistory">
+          <thead><tr><th>When</th><th>Status</th><th>Turns</th><th>Goal</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <pre id="jobOut" style="margin-top:0.75rem;max-height:320px;overflow:auto;font-size:0.72rem;background:#0d131b;padding:0.75rem;border-radius:8px;border:1px solid var(--border);"></pre>
+    </section>
+
+    <section class="card" id="cardStatus">
+      <h2>Gateway</h2>
+      <div class="kv" id="statusKv">Loading…</div>
+    </section>
+
+    <section class="card" id="cardComputer">
+      <h2>Computer</h2>
+      <div class="kv" id="computerKv">Loading…</div>
+      <div class="row">
+        <button class="btn" id="btnStartComputer">Start</button>
+        <button class="btn ghost" id="btnStopComputer">Stop</button>
+      </div>
+    </section>
+
+    <section class="card span2" id="cardCost">
+      <h2>Cost governor</h2>
+      <div class="kv" id="costGov">Loading…</div>
+      <div style="background:#1a2332;border-radius:6px;height:8px;margin:0.5rem 0;overflow:hidden;">
+        <div id="costBar" style="height:100%;width:0;background:#3b82f6;transition:width 0.3s;"></div>
+      </div>
+      <div class="row">
+        <button class="btn ghost" id="btnCostPause">Pause spend</button>
+        <button class="btn ghost" id="btnCostResume">Resume</button>
+      </div>
+      <h3 style="margin-top:1rem;font-size:0.9rem;">Ledger</h3>
+      <div class="kv" id="costSummary">Loading…</div>
+      <div class="table-wrap">
+        <table id="costTable">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Model</th>
+              <th>In</th>
+              <th>Out</th>
+              <th>Cached</th>
+              <th>USD</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    
+    
+    
+    <section class="card" id="cardProfile">
+      <h2>Profile</h2>
+      <button class="btn ghost" id="btnProfile">Refresh</button>
+      <div class="kv" id="profileKv" style="margin-top:0.5rem;">—</div>
+    </section>
+
+    <section class="card" id="cardEval">
+      <h2>Eval baseline</h2>
+      <button class="btn ghost" id="btnEvalBase">Load baseline</button>
+      <button class="btn ghost" id="btnEvalHist">History</button>
+      <button class="btn ghost" id="btnEvalSpend">Spend</button>
+      <pre id="evalBaseOut" style="margin-top:0.5rem;max-height:180px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;">—</pre>
+    </section>
+
+    <section class="card" id="cardSkills">
+      <h2>Skills stats</h2>
+      <button class="btn ghost" id="btnSkillsStats">Refresh</button>
+      <div class="kv" id="skillsKv" style="margin-top:0.5rem;">—</div>
+      <pre id="skillsOut" style="margin-top:0.5rem;max-height:160px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;"></pre>
+    </section>
+
+    <section class="card" id="cardChannels">
+      <h2>Channels</h2>
+      <div class="kv" id="channelsKv">Loading…</div>
+    </section>
+
+    <section class="card span2" id="cardCronLogs">
+      <h2>Cron logs</h2>
+      <div class="row">
+        <button class="btn" id="btnCronLogs">Refresh</button>
+        <span class="muted" id="cronLogMeta"></span>
+      </div>
+      <pre id="cronLogOut" style="margin-top:0.75rem;max-height:280px;overflow:auto;font-size:0.72rem;background:#0d131b;padding:0.75rem;border-radius:8px;border:1px solid var(--border);"></pre>
+    </section>
+
+    <section class="card span2" id="cardPairing">
+      <h2>Pairing</h2>
+      <div class="row">
+        <select id="pairChannel">
+          <option value="telegram">telegram</option>
+          <option value="discord">discord</option>
+        </select>
+        <button class="btn" id="btnPairRefresh">Refresh</button>
+        <input id="pairCode" placeholder="Approve code" style="flex:1;min-width:120px;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.4rem 0.6rem;" />
+        <button class="btn primary" id="btnPairApprove">Approve</button>
+      </div>
+      <div class="table-wrap" style="margin-top:0.75rem;">
+        <table id="pairTable">
+          <thead>
+            <tr><th>Status</th><th>Id</th><th>Code</th><th>When</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" id="cardEviction">
+      <h2>Eviction / LRU</h2>
+      <div class="kv" id="evictionKv">Loading…</div>
+    </section>
+
+    <section class="card span2" id="cardEvictionLive">
+      <h2>Live eviction <span id="evictLiveStatus" class="muted">connecting…</span></h2>
+
+      <div class="viz-grid">
+        <div class="viz-panel">
+          <div class="viz-label">Context pressure</div>
+          <div class="gauge-wrap">
+            <div class="gauge-track">
+              <div class="gauge-fill" id="vizPressureFill"></div>
+              <div class="gauge-mark" style="left:95%" title="near"></div>
+              <div class="gauge-mark stress" style="left:105%; max-width:0"></div>
+            </div>
+            <div class="gauge-scale">
+              <span>0</span><span>0.95</span><span>1.05</span><span>1.5+</span>
+            </div>
+          </div>
+          <div class="viz-value" id="vizPressureVal">—</div>
+        </div>
+
+        <div class="viz-panel">
+          <div class="viz-label">wSize (size weight)</div>
+          <div class="gauge-wrap">
+            <div class="gauge-track">
+              <div class="gauge-fill size" id="vizWSizeFill"></div>
+            </div>
+            <div class="gauge-scale"><span>0.25</span><span>0.5</span><span>0.75</span><span>0.9</span></div>
+          </div>
+          <div class="viz-value" id="vizWSizeVal">—</div>
+        </div>
+
+        <div class="viz-panel">
+          <div class="viz-label">Last pass actions</div>
+          <div class="bars" id="vizActionBars">
+            <div class="bar-row"><span>trunc</span><div class="bar-track"><div class="bar-fill trunc" id="barTrunc"></div></div><span id="barTruncN">0</span></div>
+            <div class="bar-row"><span>stub</span><div class="bar-track"><div class="bar-fill stub" id="barStub"></div></div><span id="barStubN">0</span></div>
+            <div class="bar-row"><span>drop</span><div class="bar-track"><div class="bar-fill drop" id="barDrop"></div></div><span id="barDropN">0</span></div>
+          </div>
+        </div>
+
+        <div class="viz-panel">
+          <div class="viz-label">State</div>
+          <div class="pills" id="vizPills">
+            <span class="pill" id="pillTrack">track —</span>
+            <span class="pill" id="pillStress">stress —</span>
+            <span class="pill" id="pillPolicy">policy —</span>
+          </div>
+          <div class="viz-meta muted" id="vizMeta">No events yet</div>
+        </div>
+      </div>
+
+      <div class="spark-wrap">
+        <div class="viz-label">Pressure &amp; wSize (last 40)</div>
+        <svg id="sparkSvg" viewBox="0 0 400 80" preserveAspectRatio="none" class="spark">
+          <polyline id="sparkPressure" fill="none" stroke="#3d8bfd" stroke-width="1.5" points="" />
+          <polyline id="sparkWSize" fill="none" stroke="#3dd68c" stroke-width="1.5" points="" />
+          <line x1="0" y1="40" x2="400" y2="40" stroke="#1e2a36" stroke-dasharray="4 4" />
+        </svg>
+        <div class="spark-legend">
+          <span class="lg p">pressure</span>
+          <span class="lg w">wSize</span>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="evictTable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Source</th>
+              <th>Policy</th>
+              <th>Trunc</th>
+              <th>Drop</th>
+              <th>Chars</th>
+              <th>wSize</th>
+              <th>Pressure</th>
+              <th>Track</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card span2" id="cardSessions">
+      <h2>WebChat sessions</h2>
+      <div class="table-wrap">
+        <table id="sessionsTable">
+          <thead>
+            <tr>
+              <th>Id</th>
+              <th>Title</th>
+              <th>Updated</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card span2" id="cardAgent">
+      <h2>Quick agent run</h2>
+      <textarea id="agentMsg" rows="3" placeholder="Message to agent…"></textarea>
+      <div class="row">
+        <button class="btn primary" id="btnRun">Run</button>
+        <span id="agentStatus" class="muted"></span>
+      </div>
+      <pre id="agentOut" class="log"></pre>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>XClaw Computer Server</span>
+    <span id="footMeta" class="muted"></span>
+  </footer>
+  <script src="/control/app.js"></script>
+</body>
+</html>
