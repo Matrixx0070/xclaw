@@ -1,4 +1,4 @@
-# XClaw 1.0 — production image
+# XClaw 1.0 — production-slim image
 FROM node:22-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -17,7 +17,11 @@ COPY INSTALL.md CHANGELOG.md README.md XCLAW.md ./
 
 ENV NODE_ENV=production \
     XCLAW_HOME=/data \
-    HOME=/data
+    HOME=/data \
+    XCLAW_GATEWAY_HOST=0.0.0.0 \
+    XCLAW_GATEWAY_PORT=18790 \
+    XCLAW_COMPUTER_HOST=0.0.0.0 \
+    XCLAW_COMPUTER_PORT=4243
 
 RUN mkdir -p /data && chown -R node:node /app /data
 USER node
