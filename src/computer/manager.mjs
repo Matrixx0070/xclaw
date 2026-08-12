@@ -282,6 +282,14 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
       XCLAW_COMPUTER_HOST: cfg.computer?.host || "127.0.0.1",
       XCLAW_ROOT: process.env.XCLAW_ROOT || workRoot,
       XCLAW_COMPUTER_ENGINE: engine,
+      // Forward the SSRF policy so the native browser_tab enforces the same
+      // guard as web_fetch (cloud metadata stays blocked in every mode).
+      ...(process.env.XCLAW_SSRF || cfg.security?.ssrf?.mode
+        ? { XCLAW_SSRF: process.env.XCLAW_SSRF || String(cfg.security.ssrf.mode) }
+        : {}),
+      ...(process.env.XCLAW_SSRF_ALLOW_PRIVATE === "1" || cfg.security?.ssrf?.allowPrivate === true
+        ? { XCLAW_SSRF_ALLOW_PRIVATE: "1" }
+        : {}),
     };
     const logPath = computerLogPath(cfg);
     await fsp.mkdir(path.dirname(logPath), { recursive: true });

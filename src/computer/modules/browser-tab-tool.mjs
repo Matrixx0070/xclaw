@@ -11,9 +11,7 @@
  * @see docs/BROWSER_UNBUNDLE.md
  */
 
-import http from "node:http";
-import https from "node:https";
-import { URL } from "node:url";
+import { safeFetch } from "../../security/ssrf.mjs";
 
 /** @type {Map<string, { id: string, url: string, title: string, text: string, links: object[], status: number, at: string }>} */
 const tabs = new Map();
@@ -25,80 +23,48 @@ function nextId() {
 }
 
 /**
- * GET with redirect follow (max 5).
+ * SSRF policy for the native browser. The computer server runs in its own
+ * process, so policy arrives via env (the manager forwards it from config):
+ *   XCLAW_SSRF=off|block            — guard mode (default block)
+ *   XCLAW_SSRF_ALLOW_PRIVATE=1      — permit loopback/private (lab dev)
+ * Cloud-metadata endpoints stay blocked in EVERY mode (metadataFloor).
  */
-function fetchUrl(urlStr, timeoutMs = 15000, redirectsLeft = 5) {
-  return new Promise((resolve, reject) => {
-    let u;
-    try {
-      u = new URL(urlStr);
-    } catch (e) {
-      reject(e);
-      return;
-    }
-    if (u.protocol !== "http:" && u.protocol !== "https:") {
-      reject(new Error(`Unsupported protocol: ${u.protocol}`));
-      return;
-    }
-    const lib = u.protocol === "https:" ? https : http;
-    const req = lib.request(
-      urlStr,
-      {
-        method: "GET",
-        headers: {
-          "user-agent":
-            "XClawNativeBrowser/3.75 (+https://github.com/Matrixx0070/xclaw; native-fetch)",
-          accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "accept-language": "en-US,en;q=0.9",
-        },
-        timeout: timeoutMs,
+function ssrfCfg() {
+  return {
+    security: {
+      ssrf: {
+        allowPrivate: process.env.XCLAW_SSRF_ALLOW_PRIVATE === "1",
       },
-      (res) => {
-        const status = res.statusCode || 0;
-        if (
-          redirectsLeft > 0 &&
-          status >= 300 &&
-          status < 400 &&
-          res.headers.location
-        ) {
-          res.resume();
-          let next;
-          try {
-            next = new URL(res.headers.location, urlStr).href;
-          } catch (e) {
-            reject(e);
-            return;
-          }
-          fetchUrl(next, timeoutMs, redirectsLeft - 1).then(resolve, reject);
-          return;
-        }
-        const chunks = [];
-        let size = 0;
-        const max = 2_000_000;
-        res.on("data", (c) => {
-          if (size < max) {
-            chunks.push(c);
-            size += c.length;
-          }
-        });
-        res.on("end", () => {
-          resolve({
-            status,
-            headers: res.headers,
-            body: Buffer.concat(chunks).toString("utf8"),
-            finalUrl: urlStr,
-          });
-        });
-      }
-    );
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy();
-      reject(Object.assign(new Error("fetch timeout"), { code: "ETIMEDOUT" }));
-    });
-    req.end();
-  });
+    },
+  };
+}
+
+/**
+ * GET with SSRF-validated redirect follow (each hop re-checked, connection
+ * pinned to the validated IP; cloud metadata unconditionally blocked).
+ */
+async function fetchUrl(urlStr, timeoutMs = 15000) {
+  const res = await safeFetch(
+    urlStr,
+    {
+      headers: {
+        "user-agent":
+          "XClawNativeBrowser/3.75 (+https://github.com/Matrixx0070/xclaw; native-fetch)",
+        accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9",
+      },
+      timeoutMs,
+      maxBytes: 2_000_000,
+    },
+    ssrfCfg(),
+    { metadataFloor: true }
+  );
+  return {
+    status: res.status,
+    body: await res.text(),
+    finalUrl: res.url || urlStr,
+  };
 }
 
 function extractTitle(html) {
@@ -223,7 +189,18 @@ export async function runBrowserTab(input = {}) {
     };
   }
 
-  const res = await fetchUrl(input.url);
+  let res;
+  try {
+    res = await fetchUrl(input.url);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err?.message || String(err),
+      code: err?.code || null,
+      url: input.url,
+      engine: "native-fetch",
+    };
+  }
   const title = extractTitle(res.body);
   const description = extractMetaDescription(res.body);
   const text = htmlToText(res.body);

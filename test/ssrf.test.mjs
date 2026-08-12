@@ -170,3 +170,55 @@ describe("requestPinned — connection is pinned to the validated IP", () => {
     assert.equal(typeof (await res.text()), "string");
   });
 });
+
+describe("SSRF metadata floor", () => {
+  it("isMetadataIp classifies metadata endpoints across encodings", async () => {
+    const { isMetadataIp } = await import("../src/security/ssrf.mjs");
+    for (const ip of [
+      "169.254.169.254",
+      "169.254.0.1", // whole link-local range
+      "100.100.100.200", // Alibaba
+      "fd00:ec2::254", // AWS IPv6
+      "::ffff:169.254.169.254", // mapped
+    ]) {
+      assert.equal(isMetadataIp(ip), true, ip);
+    }
+    for (const ip of ["127.0.0.1", "10.0.0.1", "8.8.8.8", "2606:4700::1111"]) {
+      assert.equal(isMetadataIp(ip), false, ip);
+    }
+  });
+
+  it("blocks metadata literal even with allowPrivate", async () => {
+    const cfg = { security: { ssrf: { allowPrivate: true } } };
+    const r = await assertUrlAllowed("http://169.254.169.254/latest/", cfg, {
+      metadataFloor: true,
+    });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /metadata/i);
+  });
+
+  it("blocks metadata hostname even with mode=off", async () => {
+    const cfg = { security: { ssrf: { mode: "off" } } };
+    const r = await assertUrlAllowed("http://metadata.google.internal/x", cfg, {
+      metadataFloor: true,
+    });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /metadata/i);
+  });
+
+  it("allowPrivate + floor still permits loopback (floor is metadata-only)", async () => {
+    const cfg = { security: { ssrf: { allowPrivate: true } } };
+    const r = await assertUrlAllowed("http://127.0.0.1:9/", cfg, { metadataFloor: true });
+    assert.equal(r.ok, true);
+    assert.equal(r.pinIp, null); // bypassed lookups don't pin
+  });
+
+  it("default policy without floor is unchanged (regression guard)", async () => {
+    const r = await assertUrlAllowed("http://169.254.169.254/");
+    assert.equal(r.ok, false); // still blocked by the private-range check
+    const ok = await assertUrlAllowed("http://127.0.0.1/", {
+      security: { ssrf: { allowPrivate: true } },
+    });
+    assert.equal(ok.ok, true);
+  });
+});

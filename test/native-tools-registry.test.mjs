@@ -22,6 +22,7 @@ describe("maintained registry + thin server browser", () => {
     });
     await new Promise((r) => server.listen(0, "127.0.0.1", r));
     const { port } = server.address();
+    process.env.XCLAW_SSRF_ALLOW_PRIVATE = "1"; // loopback fixture needs lab bypass
     try {
       const out = await executeMaintainedTool("xclaw_browser_tab", {
         url: `http://127.0.0.1:${port}/`,
@@ -30,6 +31,7 @@ describe("maintained registry + thin server browser", () => {
       assert.equal(out.title, "Reg");
       assert.equal(out.engine, "native-fetch");
     } finally {
+      delete process.env.XCLAW_SSRF_ALLOW_PRIVATE;
       server.close();
     }
   });

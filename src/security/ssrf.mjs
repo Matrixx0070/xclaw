@@ -52,6 +52,35 @@ function ipv4ToInt(ip) {
   return n >>> 0;
 }
 
+/**
+ * Cloud-metadata endpoints. These are blocked UNCONDITIONALLY when the caller
+ * requests the metadata floor (opts.metadataFloor) — even under mode=off /
+ * allowPrivate / allowHosts. Credential-issuing endpoints have no legitimate
+ * lab-browsing use.
+ */
+const METADATA_HOSTS = ["metadata.google.internal", "metadata.goog"];
+
+/** True when an IP literal is a cloud-metadata endpoint (v4 link-local metadata
+ *  range, Alibaba 100.100.100.200, AWS IPv6 fd00:ec2::254, incl. mapped forms). */
+export function isMetadataIp(ip) {
+  const fam = net.isIP(ip);
+  if (fam === 4) {
+    const n = ipv4ToInt(ip);
+    if (n == null) return true;
+    const inRange = (a, bits) => (n >>> (32 - bits)) === (ipv4ToInt(a) >>> (32 - bits));
+    return inRange("169.254.0.0", 16) || ip === "100.100.100.200";
+  }
+  if (fam === 6) {
+    let v = ip.toLowerCase();
+    if (v.startsWith("[") && v.endsWith("]")) v = v.slice(1, -1);
+    if (v === "fd00:ec2::254") return true;
+    const m = v.match(/(?:::ffff:|::)((?:\d{1,3}\.){3}\d{1,3})$/i);
+    if (m) return isMetadataIp(m[1]);
+    return false;
+  }
+  return true; // not a valid IP literal → unsafe
+}
+
 /** True when an IP literal is loopback/private/link-local/ULA/metadata/etc. */
 export function isPrivateIp(ip) {
   const fam = net.isIP(ip);
@@ -92,11 +121,14 @@ export function isPrivateIp(ip) {
  * (closes the DNS-rebind window between validation and connect); it is null
  * when the guard is bypassed (off / allowPrivate / allowHosts) and the caller
  * should fall back to normal resolution.
+ * `opts.metadataFloor` keeps cloud-metadata endpoints blocked even when the
+ * policy would otherwise bypass (off / allowPrivate / allowHosts).
  * @returns {Promise<{ ok: true, addresses: string[], pinIp: string|null } | { ok: false, error: string }>}
  */
-export async function assertUrlAllowed(rawUrl, cfg = {}) {
+export async function assertUrlAllowed(rawUrl, cfg = {}, opts = {}) {
+  const floor = opts.metadataFloor === true;
   const policy = getSsrfPolicy(cfg);
-  if (policy.mode === "off") return { ok: true, addresses: [], pinIp: null };
+  if (policy.mode === "off" && !floor) return { ok: true, addresses: [], pinIp: null };
 
   let u;
   try {
@@ -108,15 +140,22 @@ export async function assertUrlAllowed(rawUrl, cfg = {}) {
     return { ok: false, error: `blocked scheme ${u.protocol} (http/https only)` };
   }
   const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (policy.allowHosts.includes(host)) return { ok: true, addresses: [], pinIp: null };
-  if (policy.allowPrivate) return { ok: true, addresses: [], pinIp: null };
+  if (floor && METADATA_HOSTS.includes(host)) {
+    return { ok: false, error: `blocked cloud-metadata host ${host}` };
+  }
+  const bypass =
+    policy.mode === "off" || policy.allowHosts.includes(host) || policy.allowPrivate;
+  if (bypass && !floor) return { ok: true, addresses: [], pinIp: null };
 
   // Literal IP in the URL — classify directly (no DNS needed).
   if (net.isIP(host)) {
-    if (isPrivateIp(host)) {
+    if (floor && isMetadataIp(host)) {
+      return { ok: false, error: `blocked cloud-metadata address ${host}` };
+    }
+    if (!bypass && isPrivateIp(host)) {
       return { ok: false, error: `blocked private/loopback address ${host}` };
     }
-    return { ok: true, addresses: [host], pinIp: host };
+    return { ok: true, addresses: [host], pinIp: bypass ? null : host };
   }
 
   // Hostname — resolve and block if ANY address is private (DNS-rebind safe).
@@ -129,13 +168,17 @@ export async function assertUrlAllowed(rawUrl, cfg = {}) {
   }
   if (!addrs.length) return { ok: false, error: `no addresses for ${host}` };
   for (const a of addrs) {
-    if (isPrivateIp(a)) {
+    if (floor && isMetadataIp(a)) {
+      return { ok: false, error: `${host} resolves to cloud-metadata ${a} — blocked` };
+    }
+    if (!bypass && isPrivateIp(a)) {
       return { ok: false, error: `${host} resolves to private/loopback ${a} — blocked` };
     }
   }
   // Pin the connection to the first validated address so a rebind after this
-  // point can't redirect the socket to a private target.
-  return { ok: true, addresses: addrs, pinIp: addrs[0] };
+  // point can't redirect the socket to a private target. Bypassed lookups keep
+  // pinIp null — the caller falls back to normal resolution.
+  return { ok: true, addresses: addrs, pinIp: bypass ? null : addrs[0] };
 }
 
 /** Wrap a node:http response into the minimal fetch-Response shape callers use. */
@@ -183,7 +226,7 @@ function decodeBody(encoding, buf) {
  * Does NOT follow redirects (safeFetch re-validates each hop).
  * @returns {Promise<object>} fetch-Response-like
  */
-export function requestPinned(rawUrl, { method = "GET", headers = {}, signal, ip, timeoutMs = 25_000 } = {}) {
+export function requestPinned(rawUrl, { method = "GET", headers = {}, signal, ip, timeoutMs = 25_000, maxBytes = 0 } = {}) {
   return new Promise((resolve, reject) => {
     let u;
     try {
@@ -211,9 +254,25 @@ export function requestPinned(rawUrl, { method = "GET", headers = {}, signal, ip
       { method, headers: reqHeaders, lookup, servername: u.hostname },
       (res) => {
         const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => resolve(toResponseLike(res, u.toString(), Buffer.concat(chunks))));
-        res.on("error", reject);
+        let size = 0;
+        let truncated = false;
+        const finish = () => resolve(toResponseLike(res, u.toString(), Buffer.concat(chunks)));
+        res.on("data", (c) => {
+          chunks.push(c);
+          size += c.length;
+          if (maxBytes > 0 && size >= maxBytes && !truncated) {
+            truncated = true; // cap the buffer; resolve with what we have on close
+            res.destroy();
+          }
+        });
+        res.on("end", finish);
+        res.on("close", () => {
+          if (truncated) finish();
+        });
+        res.on("error", (err) => {
+          if (truncated) return finish();
+          reject(err);
+        });
       }
     );
 
@@ -234,17 +293,21 @@ export function requestPinned(rawUrl, { method = "GET", headers = {}, signal, ip
  * SSRF-safe fetch: validates the URL and every redirect hop, pinning each
  * connection to the exact IP that passed validation (rebind-proof).
  * Returns a fetch-Response-like object ({ status, ok, url, headers.get, text, json }).
+ * `opts.metadataFloor` keeps cloud-metadata endpoints blocked on every hop even
+ * when the policy is off/allowPrivate/allowHosts (used by the native browser).
  * @param {string} rawUrl
- * @param {{ method?: string, headers?: object, signal?: AbortSignal }} [init]
+ * @param {{ method?: string, headers?: object, signal?: AbortSignal, timeoutMs?: number, maxBytes?: number }} [init]
  * @param {object} [cfg]
+ * @param {{ metadataFloor?: boolean }} [opts]
  */
-export async function safeFetch(rawUrl, init = {}, cfg = {}) {
+export async function safeFetch(rawUrl, init = {}, cfg = {}, opts = {}) {
   const policy = getSsrfPolicy(cfg);
-  if (policy.mode === "off") return fetch(rawUrl, init);
+  const floor = opts.metadataFloor === true;
+  if (policy.mode === "off" && !floor) return fetch(rawUrl, init);
 
   let current = rawUrl;
   for (let hop = 0; hop <= policy.maxRedirects; hop++) {
-    const check = await assertUrlAllowed(current, cfg);
+    const check = await assertUrlAllowed(current, cfg, opts);
     if (!check.ok) {
       const e = new Error(`SSRF blocked: ${check.error}`);
       e.code = "SSRF_BLOCKED";
@@ -255,6 +318,8 @@ export async function safeFetch(rawUrl, init = {}, cfg = {}) {
       headers: init.headers || {},
       signal: init.signal,
       ip: check.pinIp,
+      ...(init.timeoutMs ? { timeoutMs: init.timeoutMs } : {}),
+      ...(init.maxBytes ? { maxBytes: init.maxBytes } : {}),
     });
     const loc = res.headers.get("location");
     if (res.status >= 300 && res.status < 400 && loc) {
@@ -268,4 +333,4 @@ export async function safeFetch(rawUrl, init = {}, cfg = {}) {
   throw e;
 }
 
-export default { getSsrfPolicy, isPrivateIp, assertUrlAllowed, requestPinned, safeFetch };
+export default { getSsrfPolicy, isPrivateIp, isMetadataIp, assertUrlAllowed, requestPinned, safeFetch };

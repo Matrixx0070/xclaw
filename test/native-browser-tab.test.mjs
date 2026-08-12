@@ -15,7 +15,7 @@ describe("native browser_tab", () => {
     assert.equal(r.engine, "native-fetch");
   });
 
-  it("navigates local http fixture and extracts title/links", async () => {
+  it("navigates local http fixture and extracts title/links (allowPrivate)", async () => {
     _resetTabsForTests();
     const server = http.createServer((req, res) => {
       res.writeHead(200, { "content-type": "text/html" });
@@ -27,6 +27,7 @@ describe("native browser_tab", () => {
     });
     await new Promise((r) => server.listen(0, "127.0.0.1", r));
     const { port } = server.address();
+    process.env.XCLAW_SSRF_ALLOW_PRIVATE = "1";
     try {
       const r = await runBrowserTab({ url: `http://127.0.0.1:${port}/` });
       assert.equal(r.ok, true);
@@ -38,7 +39,53 @@ describe("native browser_tab", () => {
       assert.equal(read.ok, true);
       assert.equal(read.title, "Hello XClaw");
     } finally {
+      delete process.env.XCLAW_SSRF_ALLOW_PRIVATE;
       server.close();
+    }
+  });
+
+  it("SSRF: blocks loopback navigation by default (no allowPrivate)", async () => {
+    _resetTabsForTests();
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end("<html><title>secret</title></html>");
+    });
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address();
+    delete process.env.XCLAW_SSRF_ALLOW_PRIVATE;
+    try {
+      const r = await runBrowserTab({ url: `http://127.0.0.1:${port}/` });
+      assert.equal(r.ok, false);
+      assert.equal(r.code, "SSRF_BLOCKED");
+      assert.match(r.error, /private|loopback/i);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("SSRF: cloud metadata blocked even with allowPrivate (floor)", async () => {
+    _resetTabsForTests();
+    process.env.XCLAW_SSRF_ALLOW_PRIVATE = "1";
+    try {
+      const r = await runBrowserTab({ url: "http://169.254.169.254/latest/meta-data/" });
+      assert.equal(r.ok, false);
+      assert.equal(r.code, "SSRF_BLOCKED");
+      assert.match(r.error, /metadata/i);
+    } finally {
+      delete process.env.XCLAW_SSRF_ALLOW_PRIVATE;
+    }
+  });
+
+  it("SSRF: cloud metadata blocked even with guard off (floor)", async () => {
+    _resetTabsForTests();
+    process.env.XCLAW_SSRF = "off";
+    try {
+      const r = await runBrowserTab({ url: "http://metadata.google.internal/computeMetadata/v1/" });
+      assert.equal(r.ok, false);
+      assert.equal(r.code, "SSRF_BLOCKED");
+      assert.match(r.error, /metadata/i);
+    } finally {
+      delete process.env.XCLAW_SSRF;
     }
   });
 

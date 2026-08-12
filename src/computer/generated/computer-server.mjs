@@ -858,81 +858,283 @@ var FileEditTool = {
   }
 };
 
-// src/computer/modules/browser-tab-tool.mjs
+// src/security/ssrf.mjs
+import dns from "node:dns/promises";
+import net from "node:net";
 import http from "node:http";
 import https from "node:https";
-import { URL as URL2 } from "node:url";
+import zlib from "node:zlib";
+var DEFAULT_MAX_REDIRECTS = 5;
+function getSsrfPolicy(cfg = {}) {
+  const s = cfg?.security?.ssrf || {};
+  const env = String(process.env.XCLAW_SSRF || "").toLowerCase();
+  let mode = env || String(s.mode || "").toLowerCase() || "block";
+  if (!["block", "off"].includes(mode)) mode = "block";
+  return {
+    mode,
+    allowPrivate: s.allowPrivate === true,
+    allowHosts: (s.allowHosts || []).map((h) => String(h).toLowerCase()),
+    maxRedirects: Number.isFinite(s.maxRedirects) ? s.maxRedirects : DEFAULT_MAX_REDIRECTS
+  };
+}
+function ipv4ToInt(ip) {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const p of parts) {
+    const o = Number(p);
+    if (!Number.isInteger(o) || o < 0 || o > 255) return null;
+    n = n * 256 + o;
+  }
+  return n >>> 0;
+}
+var METADATA_HOSTS = ["metadata.google.internal", "metadata.goog"];
+function isMetadataIp(ip) {
+  const fam = net.isIP(ip);
+  if (fam === 4) {
+    const n = ipv4ToInt(ip);
+    if (n == null) return true;
+    const inRange = (a, bits) => n >>> 32 - bits === ipv4ToInt(a) >>> 32 - bits;
+    return inRange("169.254.0.0", 16) || ip === "100.100.100.200";
+  }
+  if (fam === 6) {
+    let v = ip.toLowerCase();
+    if (v.startsWith("[") && v.endsWith("]")) v = v.slice(1, -1);
+    if (v === "fd00:ec2::254") return true;
+    const m = v.match(/(?:::ffff:|::)((?:\d{1,3}\.){3}\d{1,3})$/i);
+    if (m) return isMetadataIp(m[1]);
+    return false;
+  }
+  return true;
+}
+function isPrivateIp(ip) {
+  const fam = net.isIP(ip);
+  if (fam === 4) {
+    const n = ipv4ToInt(ip);
+    if (n == null) return true;
+    const inRange = (a, bits) => n >>> 32 - bits === ipv4ToInt(a) >>> 32 - bits;
+    return inRange("0.0.0.0", 8) || // "this host"
+    inRange("10.0.0.0", 8) || inRange("100.64.0.0", 10) || // CGNAT
+    inRange("127.0.0.0", 8) || // loopback
+    inRange("169.254.0.0", 16) || // link-local + cloud metadata
+    inRange("172.16.0.0", 12) || inRange("192.0.0.0", 24) || inRange("192.168.0.0", 16) || inRange("198.18.0.0", 15) || // benchmarking
+    n >= ipv4ToInt("224.0.0.0") >>> 0;
+  }
+  if (fam === 6) {
+    let v = ip.toLowerCase();
+    if (v.startsWith("[") && v.endsWith("]")) v = v.slice(1, -1);
+    if (v === "::1" || v === "::") return true;
+    if (v.startsWith("fe80") || v.startsWith("fc") || v.startsWith("fd")) return true;
+    const m = v.match(/(?:::ffff:|::)((?:\d{1,3}\.){3}\d{1,3})$/i);
+    if (m) return isPrivateIp(m[1]);
+    if (v.startsWith("2002:")) return true;
+    return false;
+  }
+  return true;
+}
+async function assertUrlAllowed(rawUrl, cfg = {}, opts = {}) {
+  const floor = opts.metadataFloor === true;
+  const policy = getSsrfPolicy(cfg);
+  if (policy.mode === "off" && !floor) return { ok: true, addresses: [], pinIp: null };
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return { ok: false, error: `invalid URL: ${rawUrl}` };
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return { ok: false, error: `blocked scheme ${u.protocol} (http/https only)` };
+  }
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (floor && METADATA_HOSTS.includes(host)) {
+    return { ok: false, error: `blocked cloud-metadata host ${host}` };
+  }
+  const bypass = policy.mode === "off" || policy.allowHosts.includes(host) || policy.allowPrivate;
+  if (bypass && !floor) return { ok: true, addresses: [], pinIp: null };
+  if (net.isIP(host)) {
+    if (floor && isMetadataIp(host)) {
+      return { ok: false, error: `blocked cloud-metadata address ${host}` };
+    }
+    if (!bypass && isPrivateIp(host)) {
+      return { ok: false, error: `blocked private/loopback address ${host}` };
+    }
+    return { ok: true, addresses: [host], pinIp: bypass ? null : host };
+  }
+  let addrs;
+  try {
+    const results = await dns.lookup(host, { all: true, verbatim: true });
+    addrs = results.map((r) => r.address);
+  } catch (err) {
+    return { ok: false, error: `DNS resolution failed for ${host}: ${err.message}` };
+  }
+  if (!addrs.length) return { ok: false, error: `no addresses for ${host}` };
+  for (const a of addrs) {
+    if (floor && isMetadataIp(a)) {
+      return { ok: false, error: `${host} resolves to cloud-metadata ${a} \u2014 blocked` };
+    }
+    if (!bypass && isPrivateIp(a)) {
+      return { ok: false, error: `${host} resolves to private/loopback ${a} \u2014 blocked` };
+    }
+  }
+  return { ok: true, addresses: addrs, pinIp: bypass ? null : addrs[0] };
+}
+function toResponseLike(res, finalUrl, bodyBuf) {
+  const h = /* @__PURE__ */ new Map();
+  for (const [k, v] of Object.entries(res.headers)) {
+    h.set(k.toLowerCase(), Array.isArray(v) ? v.join(", ") : v);
+  }
+  return {
+    status: res.statusCode,
+    ok: res.statusCode >= 200 && res.statusCode < 300,
+    url: finalUrl,
+    headers: { get: (k) => h.get(String(k).toLowerCase()) ?? null },
+    async text() {
+      return decodeBody(res.headers["content-encoding"], bodyBuf).toString("utf8");
+    },
+    async json() {
+      return JSON.parse(decodeBody(res.headers["content-encoding"], bodyBuf).toString("utf8"));
+    },
+    async arrayBuffer() {
+      const b = decodeBody(res.headers["content-encoding"], bodyBuf);
+      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+    }
+  };
+}
+function decodeBody(encoding, buf) {
+  const enc = String(encoding || "").toLowerCase();
+  try {
+    if (enc === "gzip") return zlib.gunzipSync(buf);
+    if (enc === "deflate") return zlib.inflateSync(buf);
+    if (enc === "br") return zlib.brotliDecompressSync(buf);
+  } catch {
+  }
+  return buf;
+}
+function requestPinned(rawUrl, { method = "GET", headers = {}, signal, ip, timeoutMs = 25e3, maxBytes = 0 } = {}) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try {
+      u = new URL(rawUrl);
+    } catch (err) {
+      return reject(err);
+    }
+    if (signal?.aborted) return reject(new Error("aborted"));
+    const mod = u.protocol === "https:" ? https : http;
+    const family = ip ? net.isIP(ip) : 0;
+    const lookup = ip ? (hostname, opts, cb) => {
+      const callback = typeof opts === "function" ? opts : cb;
+      if (opts && typeof opts === "object" && opts.all) {
+        return callback(null, [{ address: ip, family }]);
+      }
+      callback(null, ip, family);
+    } : void 0;
+    const reqHeaders = { "Accept-Encoding": "identity", ...headers };
+    const req = mod.request(
+      u,
+      { method, headers: reqHeaders, lookup, servername: u.hostname },
+      (res) => {
+        const chunks = [];
+        let size = 0;
+        let truncated = false;
+        const finish = () => resolve(toResponseLike(res, u.toString(), Buffer.concat(chunks)));
+        res.on("data", (c) => {
+          chunks.push(c);
+          size += c.length;
+          if (maxBytes > 0 && size >= maxBytes && !truncated) {
+            truncated = true;
+            res.destroy();
+          }
+        });
+        res.on("end", finish);
+        res.on("close", () => {
+          if (truncated) finish();
+        });
+        res.on("error", (err) => {
+          if (truncated) return finish();
+          reject(err);
+        });
+      }
+    );
+    const onAbort = () => {
+      req.destroy(new Error("aborted"));
+    };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`request timed out after ${timeoutMs}ms`)));
+    req.on("error", (err) => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      reject(err);
+    });
+    req.end();
+  });
+}
+async function safeFetch(rawUrl, init = {}, cfg = {}, opts = {}) {
+  const policy = getSsrfPolicy(cfg);
+  const floor = opts.metadataFloor === true;
+  if (policy.mode === "off" && !floor) return fetch(rawUrl, init);
+  let current = rawUrl;
+  for (let hop = 0; hop <= policy.maxRedirects; hop++) {
+    const check = await assertUrlAllowed(current, cfg, opts);
+    if (!check.ok) {
+      const e2 = new Error(`SSRF blocked: ${check.error}`);
+      e2.code = "SSRF_BLOCKED";
+      throw e2;
+    }
+    const res = await requestPinned(current, {
+      method: init.method || "GET",
+      headers: init.headers || {},
+      signal: init.signal,
+      ip: check.pinIp,
+      ...init.timeoutMs ? { timeoutMs: init.timeoutMs } : {},
+      ...init.maxBytes ? { maxBytes: init.maxBytes } : {}
+    });
+    const loc = res.headers.get("location");
+    if (res.status >= 300 && res.status < 400 && loc) {
+      current = new URL(loc, current).toString();
+      continue;
+    }
+    return res;
+  }
+  const e = new Error(`SSRF blocked: too many redirects (>${policy.maxRedirects})`);
+  e.code = "SSRF_BLOCKED";
+  throw e;
+}
+
+// src/computer/modules/browser-tab-tool.mjs
 var tabs = /* @__PURE__ */ new Map();
 var seq = 0;
 function nextId() {
   seq += 1;
   return `tab_${seq}_${Date.now().toString(36)}`;
 }
-function fetchUrl(urlStr, timeoutMs = 15e3, redirectsLeft = 5) {
-  return new Promise((resolve, reject) => {
-    let u;
-    try {
-      u = new URL2(urlStr);
-    } catch (e) {
-      reject(e);
-      return;
-    }
-    if (u.protocol !== "http:" && u.protocol !== "https:") {
-      reject(new Error(`Unsupported protocol: ${u.protocol}`));
-      return;
-    }
-    const lib = u.protocol === "https:" ? https : http;
-    const req = lib.request(
-      urlStr,
-      {
-        method: "GET",
-        headers: {
-          "user-agent": "XClawNativeBrowser/3.75 (+https://github.com/Matrixx0070/xclaw; native-fetch)",
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "accept-language": "en-US,en;q=0.9"
-        },
-        timeout: timeoutMs
-      },
-      (res) => {
-        const status = res.statusCode || 0;
-        if (redirectsLeft > 0 && status >= 300 && status < 400 && res.headers.location) {
-          res.resume();
-          let next;
-          try {
-            next = new URL2(res.headers.location, urlStr).href;
-          } catch (e) {
-            reject(e);
-            return;
-          }
-          fetchUrl(next, timeoutMs, redirectsLeft - 1).then(resolve, reject);
-          return;
-        }
-        const chunks = [];
-        let size = 0;
-        const max = 2e6;
-        res.on("data", (c) => {
-          if (size < max) {
-            chunks.push(c);
-            size += c.length;
-          }
-        });
-        res.on("end", () => {
-          resolve({
-            status,
-            headers: res.headers,
-            body: Buffer.concat(chunks).toString("utf8"),
-            finalUrl: urlStr
-          });
-        });
+function ssrfCfg() {
+  return {
+    security: {
+      ssrf: {
+        allowPrivate: process.env.XCLAW_SSRF_ALLOW_PRIVATE === "1"
       }
-    );
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy();
-      reject(Object.assign(new Error("fetch timeout"), { code: "ETIMEDOUT" }));
-    });
-    req.end();
-  });
+    }
+  };
+}
+async function fetchUrl(urlStr, timeoutMs = 15e3) {
+  const res = await safeFetch(
+    urlStr,
+    {
+      headers: {
+        "user-agent": "XClawNativeBrowser/3.75 (+https://github.com/Matrixx0070/xclaw; native-fetch)",
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9"
+      },
+      timeoutMs,
+      maxBytes: 2e6
+    },
+    ssrfCfg(),
+    { metadataFloor: true }
+  );
+  return {
+    status: res.status,
+    body: await res.text(),
+    finalUrl: res.url || urlStr
+  };
 }
 function extractTitle(html) {
   const m = String(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i);
@@ -957,7 +1159,7 @@ function extractLinks(html, baseUrl, limit = 30) {
     let href = m[1];
     const label = m[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
     try {
-      href = new URL2(href, baseUrl).href;
+      href = new URL(href, baseUrl).href;
     } catch {
       continue;
     }
@@ -1028,7 +1230,18 @@ async function runBrowserTab(input = {}) {
       engine: "native-fetch"
     };
   }
-  const res = await fetchUrl(input.url);
+  let res;
+  try {
+    res = await fetchUrl(input.url);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err?.message || String(err),
+      code: err?.code || null,
+      url: input.url,
+      engine: "native-fetch"
+    };
+  }
   const title = extractTitle(res.body);
   const description = extractMetaDescription(res.body);
   const text = htmlToText(res.body);
