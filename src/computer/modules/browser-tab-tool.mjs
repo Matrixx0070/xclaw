@@ -271,4 +271,29 @@ export function _resetTabsForTests() {
   seq = 0;
 }
 
-export default { runBrowserTab };
+export const BrowserTabTool = {
+  name: "xclaw_browser_tab",
+  description:
+    "Lightweight native browser: navigate/fetch URL, list/read tabs, extract title/text/links. jsCode and screenshot require CDP bundle (see docs/BROWSER_UNBUNDLE.md).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        description: "navigate | list | read (default: navigate if url set)",
+      },
+      url: { type: "string" },
+      tabId: { type: "string" },
+      jsCode: { type: "string" },
+      screenshot: { type: "string" },
+      includeNetwork: { type: "boolean" },
+    },
+  },
+  isReadOnly: () => true,
+  async call(input, _context = {}) {
+    const data = await runBrowserTab(input || {});
+    return { data };
+  },
+};
+
+export default BrowserTabTool;

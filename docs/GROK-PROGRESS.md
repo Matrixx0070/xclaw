@@ -1,18 +1,13 @@
 # GROK-PROGRESS
 
-## 2026-08-12 — Phase 1.8 native browser P1
+## 2026-08-12 — Phase 1.9 registry + thin browser hard-wire
 
 STATUS: green (partial)
 
 ### BUILT
-- Native `browser-tab-tool`: redirects, list/read/navigate, links + meta description
-- Clear CDP errors for jsCode/screenshot
-- CLI: `xclaw transcripts list|show`
-- Tests: native-browser-tab + transcript
+- `BrowserTabTool` export on native module (registry-compatible)
+- Registry + thin-server health expose `xclaw_browser_tab`
+- Tests: native-tools-registry
 
 ### RAN
-node --test test/native-browser-tab.test.mjs test/transcript-persist.test.mjs → 6/6
-
-### NOT DONE
-- Full CDP in native (still bundle)
-- Live Anthropic stream e2e
+node --test test/native-tools-registry.test.mjs test/native-browser-tab.test.mjs → 6/6
