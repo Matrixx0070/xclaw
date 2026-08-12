@@ -544,3 +544,20 @@ models (CLI + UI): xai:apikey/xai:oauth→7, anthropic:oauth/anthropic:apikey→
 (model listing needs no credit — the anthropic apikey has none but lists fine).
 STATE: 4 creds all separate + verified: xai:apikey★ xai:oauth, anthropic:oauth★
 anthropic:apikey (renamed from anthropic:default). Parity complete.
+
+## 2026-08-12 — 3.87.0 Ollama one-command install + cloud API-key credential (Claude)
+
+STATUS: green
+BUILT: (1) src/providers/ollama-install.mjs — oneClickInstall (installRuntime via
+official script if missing → ensureDaemon → pullModel → localModels), idempotent;
+wired as `xclaw providers install ollama [--model M]`. (2) Ollama cloud credential:
+`providers set --provider ollama --api-key <ollama.com key>` → ollama:apikey;
+registry ollamaEffectiveDefault + discovery route ollama to ollama.com/v1 when a
+key resolves, 127.0.0.1:11434 when not (cfg per-provider baseUrl still overrides;
+OLLAMA_CLOUD_BASE_URL override). manage inventory shows the effective endpoint.
+RAN: suite 1284/0 · LIVE: `providers install ollama` (runtime detected, daemon up,
+llama3.2 pulled) · cloud key → 18 cloud models fetched · real xclaw turn via
+ollama cloud gpt-oss:120b → OLLAMA-CLOUD-XCLAW-OK · providers list shows ollama
+https://ollama.com/v1 (key present). Routing unit tests (registry+discovery).
+STATE: 3 providers configured — xai(apikey★+oauth), anthropic(oauth★+apikey),
+ollama(apikey=cloud, local=no-key). User provided the ollama.com cloud key.

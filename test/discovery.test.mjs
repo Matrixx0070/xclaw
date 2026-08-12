@@ -100,3 +100,22 @@ describe("discovery resolveApiKey provider-scoping (3.86.2 leak fix)", () => {
     assert.equal(key, "sk-ant-oat01-ACTIVE");
   });
 });
+
+describe("ollama local/cloud routing", () => {
+  it("discovery uses local daemon when no key, ollama.com when key present", async () => {
+    const D = await import("../src/providers/discovery.mjs");
+    // We can't hit the network here; assert the base-URL choice via a spy on fetch.
+    const realFetch = globalThis.fetch;
+    let lastUrl = null;
+    globalThis.fetch = async (u) => { lastUrl = String(u); throw new Error("stop"); };
+    try {
+      await D.fetchLiveModels({ paths:{configDir:"/tmp/xclaw-none"} }, "ollama", { force:true }).catch(()=>{});
+      assert.match(lastUrl || "", /127\.0\.0\.1:11434/, "no-key ollama → local daemon");
+      lastUrl = null;
+      await D.fetchLiveModels({ agent:{provider:"ollama", apiKey:"ollama-cloud-key"}, paths:{configDir:"/tmp/xclaw-none"} }, "ollama", { force:true }).catch(()=>{});
+      assert.match(lastUrl || "", /ollama\.com/, "keyed ollama → cloud");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});

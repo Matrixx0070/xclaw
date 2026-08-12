@@ -47,11 +47,18 @@ export async function providerInventory(cfg = {}) {
     const hasEnvKey = Boolean(envKey && process.env[envKey]);
     const oauthProfiles = profiles.filter((p) => p.mode === "oauth");
     const keyProfiles = profiles.filter((p) => p.mode !== "oauth" && p.hasSecret);
+    // Ollama routes to its cloud endpoint when a key is present (see
+    // registry.ollamaEffectiveDefault) — show the endpoint requests actually go to.
+    const hasAnyKey = keyProfiles.length > 0 || hasEnvKey;
+    const effectiveDefault =
+      id === "ollama" && hasAnyKey
+        ? process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/v1"
+        : def.baseUrl || null;
     rows.push({
       id,
       name: def.name || id,
-      baseUrl: customBase || def.baseUrl || null,
-      baseUrlDefault: def.baseUrl || null,
+      baseUrl: customBase || effectiveDefault || null,
+      baseUrlDefault: effectiveDefault || null,
       baseUrlCustom: Boolean(customBase),
       envKey,
       hasEnvKey,

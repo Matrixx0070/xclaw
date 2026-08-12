@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.87.0 — Ollama: one-command install + separate cloud API-key credential
+
+Ollama now fits the same per-provider credential model as xAI/Anthropic — a local runtime you install in one command, plus a **separate cloud API key** that routes to ollama.com.
+
+**One-command install** — `xclaw providers install ollama [--model M]` (`src/providers/ollama-install.mjs`): installs the runtime via the official script if missing, starts the daemon if down, pulls a default model (llama3.2), and reports readiness + local models. Every step idempotent and safe to re-run. Linux/macOS auto-install; Windows prints the download link.
+
+**Cloud key as a second credential**: store an ollama.com API key with `xclaw providers set --provider ollama --api-key <key>` (profile `ollama:apikey`). The `ollama` provider now routes by credential — **local daemon (`127.0.0.1:11434`) when no key, ollama.com cloud (`https://ollama.com/v1`) when a key is present** — in both the agent loop (registry `ollamaEffectiveDefault`) and live model discovery. A user-set per-provider baseUrl still overrides both; `OLLAMA_CLOUD_BASE_URL` overrides the cloud host. `providers list` / the UI inventory show the endpoint requests actually go to.
+
+Verified live: one-command install (runtime detected, daemon ensured, llama3.2 pulled); cloud key fetches **18 cloud models** and runs real inference (`gpt-oss:120b` → completion through xclaw's agent loop); local path unchanged (127.0.0.1). Suite 1284/0.
+
 ## 3.86.2 — fix cross-provider credential leak in model discovery (third site)
 
 Found while verifying live-model discovery for all four configured credentials (xAI apikey+oauth, Anthropic apikey+oauth) through the web-UI panel: xAI's model-fetch returned HTTP 400 because `discovery.mjs`'s own `resolveApiKey` still used `cfg.agent.apiKey` (the ACTIVE provider's cached key — Anthropic's) for *any* provider. So `fetchLiveModels("xai")` sent the Anthropic key to `api.x.ai/models`.

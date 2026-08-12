@@ -224,6 +224,14 @@ export const BUILTIN_PROVIDERS = {
   },
 };
 
+/** Ollama routes to its cloud endpoint (ollama.com) when an API key is present,
+ *  else the local daemon. A user-set per-provider baseUrl still overrides both. */
+const OLLAMA_CLOUD_BASE = process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/v1";
+function ollamaEffectiveDefault(provider, apiKey, defBase) {
+  if (provider === "ollama" && apiKey) return OLLAMA_CLOUD_BASE;
+  return defBase;
+}
+
 /** Prefix heuristics when model has no provider/ prefix */
 const PREFIX_ROUTES = [
   ["grok-", "xai"],
@@ -426,7 +434,7 @@ export async function resolveProviderRouteAsync(cfg = {}, opts = {}) {
     opts.baseUrl ||
     (agentBaseApplies ? cfg.agent?.baseUrl || cfg.agent?.apiBase : null) ||
     cfg.providers?.[provider]?.baseUrl ||
-    def.baseUrl ||
+    ollamaEffectiveDefault(provider, apiKey, def.baseUrl) ||
     "https://api.openai.com/v1"
   ).replace(/\/$/, "");
 
@@ -483,7 +491,7 @@ export function resolveProviderRoute(cfg = {}, opts = {}) {
     opts.baseUrl ||
     (agentBaseApplies ? cfg.agent?.baseUrl || cfg.agent?.apiBase : null) ||
     cfg.providers?.[provider]?.baseUrl ||
-    def.baseUrl ||
+    ollamaEffectiveDefault(provider, apiKey, def.baseUrl) ||
     "https://api.openai.com/v1"
   ).replace(/\/$/, "");
 

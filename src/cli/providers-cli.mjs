@@ -525,7 +525,43 @@ const USAGE = `Usage:
   xclaw providers set --provider X [--base-url URL] [--api-key KEY] [--reset-url]
   xclaw providers oauth --provider anthropic|xai|openai [--name N]
   xclaw providers use [X] [model]            set active (no args = interactive picker)
-  xclaw providers setup                      sequential wizard across every provider`;
+  xclaw providers setup                      sequential wizard across every provider
+  xclaw providers install ollama [--model M] one-command local Ollama (install + serve + pull)`;
+
+/**
+ * `xclaw providers install ollama [--model M]` — one-command local Ollama:
+ * install the runtime if missing, start the daemon, pull a default model. The
+ * SEPARATE Ollama cloud key is added via `providers set --provider ollama
+ * --api-key <ollama.com key>` (routes to ollama.com automatically).
+ */
+async function cmdInstall(args) {
+  const target = (args[1] && !args[1].startsWith("--") ? args[1] : "ollama").toLowerCase();
+  if (target !== "ollama") {
+    console.error(`Only 'ollama' supports one-command install right now (got: ${target}).`);
+    return 1;
+  }
+  const model = flag(args, "--model") || "llama3.2";
+  const noPull = args.includes("--no-pull");
+  const { oneClickInstall } = await import("../providers/ollama-install.mjs");
+  console.log("Installing local Ollama (runtime → daemon → model). Idempotent; safe to re-run.\n");
+  const r = await oneClickInstall({ model, pull: !noPull, onLog: (m) => console.log("  • " + m) });
+  if (!r.ok) {
+    console.error(`\n✗ install failed: ${r.error}`);
+    if (r.steps?.install?.out) console.error(r.steps.install.out);
+    return 1;
+  }
+  const s = r.steps;
+  console.log(
+    `\n✓ Ollama ready — runtime ${s.install.alreadyInstalled ? "already installed" : "installed"}, ` +
+      `daemon ${s.daemon.alreadyUp ? "already up" : "started"}${
+        s.pull ? (s.pull.ok ? `, model ${model} pulled` : `, model pull skipped (${s.pull.error})`) : ""
+      }.`
+  );
+  console.log(`  local models: ${(r.models || []).join(", ") || "(none yet — `ollama pull <model>`)"}`);
+  console.log(`  use it:  xclaw providers use ollama ${model}`);
+  console.log(`  cloud:   xclaw providers set --provider ollama --api-key <ollama.com key>  (adds the cloud credential → routes to ollama.com)`);
+  return 0;
+}
 
 export async function runProvidersCli(args = [], _ctx = {}) {
   const sub = args[0] || "list";
@@ -535,6 +571,7 @@ export async function runProvidersCli(args = [], _ctx = {}) {
   else if (sub === "oauth") code = await cmdOauth(args);
   else if (sub === "use") code = await cmdUse(args);
   else if (sub === "setup") code = await cmdSetup();
+  else if (sub === "install") code = await cmdInstall(args);
   else {
     console.error(USAGE);
     code = sub === "help" ? 0 : 1;
