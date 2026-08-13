@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.97.2 — SECURITY: MCP tools no longer bypass the approval gate
+
+MCP audit finding #1: under the default `risky` approval policy, only tools on the
+requireApproval name list (bash/file_write) ever paused for approval — every
+`mcp__<server>__<tool>` auto-ran unapproved, no matter how destructive. MCP tools
+are third-party code the operator never vetted tool-by-tool, so they now default
+to requiring approval. Opt-outs: `security.safeAuto` for specific tools,
+`security.mcpAutoApprove: true` for all (explicit choice). Plus per-server
+`allowTools`/`denyTools` config filters enforced in the client — filtered tools
+never reach the agent, the UI listing, or callTool. Tool annotations/outputSchema
+now survive discovery for future use. Suite 1413/0.
+
 ## 3.97.1 — eviction stream: operator token out of the URL
 
 Security-review follow-up on 3.97.0: the eviction live stream carried the operator

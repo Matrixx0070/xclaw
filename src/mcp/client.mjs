@@ -90,15 +90,34 @@ export function createMcpClient(opts = {}) {
     c.initialized = true;
   }
 
+  /**
+   * Per-server tool filter: config `allowTools: ["a", …]` exposes ONLY those;
+   * `denyTools: ["b", …]` hides those. Filtered tools never reach the agent,
+   * the UI, or callTool (which resolves through this list).
+   */
+  function toolPermitted(server, rawName) {
+    if (Array.isArray(server.allowTools) && server.allowTools.length) {
+      if (!server.allowTools.includes(rawName)) return false;
+    }
+    if (Array.isArray(server.denyTools) && server.denyTools.includes(rawName)) {
+      return false;
+    }
+    return true;
+  }
+
   function namespacedTools(server, tools) {
-    return (tools || []).map((t) => ({
-      server: server.name,
-      name: `mcp__${sanitizeMcpName(server.name)}__${sanitizeMcpName(t.name)}`,
-      description: t.description || t.name,
-      inputSchema:
-        t.inputSchema || t.parameters || { type: "object", properties: {} },
-      _mcp: { server: server.name, tool: t.name },
-    }));
+    return (tools || [])
+      .filter((t) => toolPermitted(server, t.name))
+      .map((t) => ({
+        server: server.name,
+        name: `mcp__${sanitizeMcpName(server.name)}__${sanitizeMcpName(t.name)}`,
+        description: t.description || t.name,
+        inputSchema:
+          t.inputSchema || t.parameters || { type: "object", properties: {} },
+        annotations: t.annotations || null,
+        outputSchema: t.outputSchema || null,
+        _mcp: { server: server.name, tool: t.name },
+      }));
   }
 
   /**

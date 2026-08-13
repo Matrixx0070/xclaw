@@ -142,6 +142,13 @@ export function createApprovalGate(cfg = {}) {
     if (policy === "never") return false;
     if (safeAuto.has(n)) return false;
     if (policy === "always") return true;
+    // MCP tools (mcp__<server>__<tool>) are third-party code the operator
+    // never vetted tool-by-tool — risky by default. Before this rule, the
+    // "risky" policy only matched the requireApproval list (bash/file_write
+    // names), so EVERY MCP tool auto-ran unapproved (2026-08-13 audit).
+    // Operators opt specific tools out via security.safeAuto, or all of them
+    // via security.mcpAutoApprove: true.
+    if (n.startsWith("mcp__")) return security.mcpAutoApprove !== true;
     // risky (default): only listed tools
     return requireApproval.has(n) || requireApproval.has(name);
   }
