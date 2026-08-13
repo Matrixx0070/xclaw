@@ -1804,10 +1804,21 @@ function chanFieldInput(chId, f) {
 
 function chanRenderRow(ch) {
   const hint = CHAN_HINTS[ch.id] ? `<div class="prov-sub muted">${CHAN_HINTS[ch.id]}</div>` : "";
-  const running =
-    ch.status && (ch.status.running || ch.status.ok)
-      ? ` <span class="pill on">running</span>`
-      : "";
+  // Live status (channelManager.status() merge — was silently broken by an
+  // array-vs-map mismatch until 3.95.4, so these pills never showed).
+  let running = "";
+  if (ch.status) {
+    const st = ch.status;
+    if (st.running || st.ok) {
+      const msgs = st.messagesHandled != null ? ` · ${st.messagesHandled} msg` : "";
+      running = ` <span class="pill on" title="${esc(st.username ? "@" + st.username : ch.id)}${st.lastOkAt ? " · last ok " + esc(st.lastOkAt) : ""}">running${msgs}</span>`;
+    } else if (ch.enabled) {
+      running = ` <span class="pill danger" title="${esc(st.lastError || "not running")}">stopped</span>`;
+    }
+    if (st.lastError && (st.running || st.ok)) {
+      running += ` <span class="pill warn" title="${esc(st.lastError)}">err</span>`;
+    }
+  }
   const cfgBadge = ch.configured
     ? `<span class="pill on">configured</span>`
     : `<span class="pill">needs setup</span>`;

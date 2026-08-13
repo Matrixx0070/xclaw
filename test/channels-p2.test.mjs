@@ -27,3 +27,28 @@ describe("P2 channels", () => {
     assert.ok(n.length >= 10, `templates ${n.length}`);
   });
 });
+
+describe("mergeStatus array/map shapes", () => {
+  // Regression (3.95.4): channelManager.status() returns an ARRAY of
+  // {name, running, …}, but mergeStatus indexed it like a map keyed by id —
+  // array["telegram"] was always undefined, so live status silently never
+  // reached the Channels panel (no running/stopped/lastError pills) since
+  // the panel shipped in 3.90.0.
+  it("merges the real array shape from channelManager.status()", async () => {
+    const { mergeStatus } = await import("../src/channels/manage.mjs");
+    const inv = { channels: [{ id: "telegram" }, { id: "slack" }] };
+    mergeStatus(inv, [
+      { name: "telegram", running: true, messagesHandled: 7, lastError: null },
+    ]);
+    assert.equal(inv.channels[0].status.running, true);
+    assert.equal(inv.channels[0].status.messagesHandled, 7);
+    assert.equal(inv.channels[1].status, undefined);
+  });
+
+  it("still accepts a map keyed by id", async () => {
+    const { mergeStatus } = await import("../src/channels/manage.mjs");
+    const inv = { channels: [{ id: "discord" }] };
+    mergeStatus(inv, { discord: { running: false, lastError: "boom" } });
+    assert.equal(inv.channels[0].status.lastError, "boom");
+  });
+});

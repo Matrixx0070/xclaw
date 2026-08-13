@@ -163,8 +163,17 @@ export async function setChannelEnabled(id, enabled) {
 
 /** Merge live manager status (from the gateway) into an inventory. */
 export function mergeStatus(inv, statusMap = {}) {
+  // channelManager.status() returns an ARRAY of {name, running, …} — this
+  // helper indexed it like a map keyed by id, so `array["telegram"]` was
+  // always undefined and live status silently never merged (the Channels
+  // panel showed config only, no running/lastError, since 3.90.0).
+  const byId = Array.isArray(statusMap)
+    ? Object.fromEntries(
+        statusMap.filter((s) => s && (s.name || s.id)).map((s) => [s.name || s.id, s])
+      )
+    : statusMap || {};
   for (const ch of inv.channels) {
-    const st = statusMap[ch.id];
+    const st = byId[ch.id];
     if (st) ch.status = st;
   }
   return inv;

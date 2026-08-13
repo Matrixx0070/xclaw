@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.95.4 — Channels panel: live status pills were silently broken since 3.90.0
+
+Checking the Channels section on the operator display: config management was complete (all 5 channels, per-field saves, secrets never echoed, Restart) — but no live status anywhere. Root cause: `channelManager.status()` returns an **array** of `{name, running, …}` while `mergeStatus` indexed it like a **map** keyed by id — `array["telegram"]` is always undefined, so the status merge silently never happened and the UI's (already-written!) running pill never rendered. `mergeStatus` now accepts both shapes; the row shows **running · N msg** (green, with bot username + last-ok tooltip), **stopped** (red, with the last error) for enabled-but-dead channels, and an **err** pill when a running channel carries a lastError. 2 regression tests. Live-verified on the display: Telegram shows "running · 0 msg" (@xxclaw_bot). Suite 1397/0.
+
 ## 3.95.3 — fix: the test suite was making a real paid grok-4.5 call on every run
 
 Found by looking at the new Logs section on the operator display: recurring `noop` grok-4.5 rows at ~10.8K prompt tokens each lined up exactly with `npm test` runs. `test/session-kill-loop.test.mjs` assumed deleting `XAI_API_KEY` meant no credential — but since credentials moved into the profile store (3.86.0), the key resolved from `~/.xclaw` anyway, so every suite run executed a REAL grok-4.5 request and wrote it to the REAL cost ledger. Tally before it was caught: **38 calls · 402K tokens · $0.55**.
