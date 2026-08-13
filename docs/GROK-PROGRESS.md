@@ -593,3 +593,20 @@ test added.
 PENDING: user nvapi- key to store nvidia:apikey + verify inference.
 STATE: providers — xai(apikey★+oauth), anthropic(oauth★+apikey), ollama(local),
 ollama-cloud(apikey), nvidia(no key yet, discovery live).
+
+## 2026-08-13 — 3.89.0 polish providers CLI/TUI/UI (Claude, 2 forks)
+
+STATUS: green
+BUILT: CLI providers list — endpoint elide + plain-text padding (google/nvidia
+no longer break alignment), grouped active→configured→"not configured" dim,
+MODELS count column, clean `↳ oauth★ apikey` cred line, N/12 footer. TUI —
+reformatted wizard/picker headers, inline status, ollama one-command install
+option, non-TTY + live-models spine intact. Web UI — grouping mirror, per-
+provider hints (ollama local/ollama-cloud key/nvidia public), key→models→Use
+spine finished, credential badges (★prefer/×remove), loading/empty/error/busy
+states, esc() XSS + token on every call.
+RAN: suite 1285/0 · LIVE CLI list aligned across 12 providers · gateway panel:
+12 providers, nvidia 90 public models via /providers/manage/models, no-token
+401, /control/ 200, esc()×12. providers-cli 12/12, gateway route/split 22/22.
+STATE: 5 providers configured (xai apikey★+oauth, anthropic oauth★+apikey,
+nvidia apikey, ollama-cloud apikey, ollama local); 12 total selectable.

@@ -380,9 +380,11 @@
     <section class="card span2" id="cardProviders">
       <h2>Providers</h2>
       <p class="muted">
-        Paste an API key → the model list fills with the provider's <b>live</b> models → pick one → Use.
+        Paste an API key → the model list fills with the provider's <b>live</b> models → pick one → <b>Use</b>.
+        Each provider holds its own key / OAuth / base URL; a credential badge shows the mode
+        (<span class="pill on">apikey</span> <span class="pill on">oauth</span>, ★ = preferred, × removes).
         OAuth logins are CLI-side: <code>xclaw providers oauth --provider &lt;id&gt;</code>.
-        Changes apply to new agent runs.
+        Configured providers sort to the top; changes apply to new agent runs.
       </p>
       <div class="row">
         <button class="btn" id="btnProvRefresh">Refresh</button>

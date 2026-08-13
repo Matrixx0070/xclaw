@@ -15,7 +15,7 @@
  */
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { loadConfig, getConfigPath } from "../config/load.mjs";
+import { loadConfig } from "../config/load.mjs";
 import {
   providerInventory,
   setProviderBaseUrl,
@@ -67,44 +67,95 @@ function isInteractive() {
 const NON_TTY_MSG =
   "Interactive mode needs a terminal. Run in an interactive terminal, or use `xclaw providers set --provider X --api-key ... --base-url ...` / `xclaw providers use X model`.";
 
-/** Render the provider table (pure — returns lines, used by list + tests). */
+/** Column widths (visible chars). Padding is applied on PLAIN text so ANSI
+ *  colour codes never throw off alignment. */
+const COL = { id: 14, ep: 32, key: 4, oauth: 8, models: 7 };
+
+/** Endpoint shown compactly: drop the scheme, elide to fit the column. */
+function shortEndpoint(url) {
+  let s = String(url || "-").replace(/^https?:\/\//, "");
+  const MAX = COL.ep - 4; // leave room for a possible " [custom]" on short URLs
+  if (s.length > MAX) s = s.slice(0, MAX - 1) + "…";
+  return s;
+}
+
+/** Pad a cell to `width` by the PLAIN text length, keeping any ANSI wrapper. */
+function padCell(plain, width, colored) {
+  return (colored ?? plain) + " ".repeat(Math.max(1, width - String(plain).length));
+}
+
+/**
+ * Render the provider table (pure — returns lines, used by list + tests).
+ * Layout: active provider first, then other configured providers, then a
+ * dim "not configured" section — so what's ready to use is up top.
+ */
 export function renderProviderTable(inv, { ansi = true } = {}) {
   const c = color(ansi);
   const lines = [];
+
   lines.push(
-    c(ANSI.bold, "  provider     endpoint                                   key  oauth    active")
+    c(
+      ANSI.bold,
+      "  " +
+        "PROVIDER".padEnd(COL.id) +
+        "ENDPOINT".padEnd(COL.ep) +
+        "KEY".padEnd(COL.key) +
+        "OAUTH".padEnd(COL.oauth) +
+        "MODELS".padEnd(COL.models) +
+        "ACTIVE"
+    )
   );
-  for (const p of inv.providers) {
+
+  const renderRow = (p, { dim = false } = {}) => {
+    const d = (s) => (dim ? c(ANSI.dim, s) : s);
     const marker = p.isActive ? c(ANSI.green, "*") : " ";
-    const base = `${p.baseUrl || "-"}${p.baseUrlCustom ? " [custom]" : ""}`;
-    const key = p.hasKey ? c(ANSI.green, "Y") : "-";
-    const oauth = p.hasOAuth
-      ? p.oauthExpired
-        ? c(ANSI.yellow, "expired")
-        : c(ANSI.green, "Y")
-      : "-";
-    const active = p.isActive ? c(ANSI.green, inv.active.model || p.defaultModel || "") : "";
-    const row = `${marker} ${p.id.padEnd(12)} ${base.padEnd(42)} ${key.padEnd(
-      ansi ? 12 : 4
-    )} ${oauth.padEnd(ansi ? 16 : 8)} ${active}`;
-    lines.push(p.configured ? row : c(ANSI.dim, row));
-    // Both credential kinds can coexist (<provider>:apikey + <provider>:oauth);
-    // show them with the preferred (auth-order-first) one starred.
+    const ep = shortEndpoint(p.baseUrl) + (p.baseUrlCustom ? " [custom]" : "");
+    const keyPlain = p.hasKey ? "Y" : "-";
+    const oauthPlain = p.hasOAuth ? (p.oauthExpired ? "expired" : "Y") : "-";
+    const nModels = (p.models || []).length;
+    const modelsPlain = nModels ? String(nModels) : "-";
+    const activePlain = p.isActive ? inv.active.model || p.defaultModel || "" : "";
+    const row =
+      `${marker} ` +
+      padCell(p.id, COL.id, d(p.id)) +
+      padCell(ep, COL.ep, d(ep)) +
+      padCell(keyPlain, COL.key, p.hasKey ? c(ANSI.green, "Y") : d("-")) +
+      padCell(
+        oauthPlain,
+        COL.oauth,
+        p.hasOAuth ? (p.oauthExpired ? c(ANSI.yellow, "expired") : c(ANSI.green, "Y")) : d("-")
+      ) +
+      padCell(modelsPlain, COL.models, d(modelsPlain)) +
+      (p.isActive ? c(ANSI.green, activePlain) : "");
+    lines.push(row);
+    // Coexisting credentials (<provider>:apikey + <provider>:oauth …) shown
+    // compactly under the row; the auth-order-first one is starred.
     if ((p.profiles || []).length) {
       const creds = p.profiles
-        .map(
-          (pr) =>
-            `${pr.id}(${pr.mode || "key"}${pr.expired ? ",expired" : ""})${pr.orderIndex === 0 ? "★" : ""}`
-        )
+        .map((pr) => {
+          const short = pr.id.includes(":") ? pr.id.slice(pr.id.indexOf(":") + 1) : pr.id;
+          return `${short}${pr.expired ? "(expired)" : ""}${pr.orderIndex === 0 ? "★" : ""}`;
+        })
         .join("  ");
-      lines.push(c(ANSI.dim, `    creds: ${creds}`));
+      lines.push(c(ANSI.dim, `    ↳ ${creds}`));
     }
+  };
+
+  const active = inv.providers.filter((p) => p.isActive);
+  const configured = inv.providers.filter((p) => p.configured && !p.isActive);
+  const rest = inv.providers.filter((p) => !p.configured && !p.isActive);
+  for (const p of [...active, ...configured]) renderRow(p);
+  if (rest.length) {
+    lines.push(c(ANSI.dim, "  — not configured —"));
+    for (const p of rest) renderRow(p, { dim: true });
   }
+
   lines.push("");
   lines.push(
     c(
       ANSI.dim,
-      `config: ${getConfigPath()} · secrets: auth-profile store · "xclaw providers setup" walks every provider`
+      `  ${active.length + configured.length}/${inv.providers.length} configured · ★ preferred credential · ` +
+        `secrets in the auth-profile store · "xclaw providers setup" to configure`
     )
   );
   return lines;
@@ -436,11 +487,16 @@ async function cmdSetup() {
       ]
         .filter(Boolean)
         .join(", ");
+      const isOllamaLocal = p.id === "ollama";
       console.log(
-        `\n─ ${p.id} (${p.name}) ${status ? `— ${status}` : "— not configured"}\n  endpoint: ${p.baseUrl || "-"}`
+        `\n─── ${p.id} (${p.name}) ${
+          status ? `— ${status}` : "— not configured"
+        }\n    endpoint: ${p.baseUrl || "-"}`
       );
       console.log(
-        "  [1] skip  [2] set API key  [3] OAuth login  [4] set custom base URL  [5] reset base URL  [s] skip all remaining  [q] quit"
+        "    [1] skip   [2] API key   [3] OAuth login   [4] custom base URL   [5] reset base URL" +
+          (isOllamaLocal ? "\n    [6] one-command install (runtime + daemon + model)" : "") +
+          "\n    [s] skip all remaining   [q] quit"
       );
       let handled = false;
       while (!handled) {
@@ -500,8 +556,19 @@ async function cmdSetup() {
           console.log("  reset to default.");
           break;
         }
+        if (ans === "6" && isOllamaLocal) {
+          const { oneClickInstall } = await import("../providers/ollama-install.mjs");
+          console.log("  installing local Ollama (runtime → daemon → model)…");
+          const r = await oneClickInstall({ onLog: (m) => console.log("    • " + m) });
+          console.log(
+            r.ok
+              ? `  ✓ ready — local models: ${(r.models || []).slice(0, 4).join(", ") || "(none)"}`
+              : `  ✗ install failed: ${r.error}`
+          );
+          break;
+        }
         handled = false;
-        console.log("  enter 1-5, s, or q");
+        console.log(`  enter 1-${isOllamaLocal ? "6" : "5"}, s, or q`);
       }
     }
     const pick = (await rl.question("\nPick the active provider now? [y/N] ")).trim().toLowerCase();
@@ -526,7 +593,11 @@ const USAGE = `Usage:
   xclaw providers oauth --provider anthropic|xai|openai [--name N]
   xclaw providers use [X] [model]            set active (no args = interactive picker)
   xclaw providers setup                      sequential wizard across every provider
-  xclaw providers install ollama [--model M] one-command local Ollama (install + serve + pull)`;
+  xclaw providers install ollama [--model M] one-command local Ollama (install + serve + pull)
+
+Credentials (api key + oauth) live per-provider and coexist; paste a key/token and
+the wizard fetches that provider's LIVE model list to pick from. Cloud vs local
+Ollama are separate entries: 'ollama' (local) and 'ollama-cloud' (ollama.com key).`;
 
 /**
  * `xclaw providers install ollama [--model M]` — one-command local Ollama:

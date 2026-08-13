@@ -1404,7 +1404,8 @@ loadMerges().catch(() => {});
 
 // ── Providers panel ─────────────────────────────────────────────────────────
 // Spine: paste API key → POST key → auto-fetch the provider's LIVE model list
-// → dropdown fills with real models → pick → Use.
+// → dropdown fills with real models → pick → Use. Every provider renders the
+// same shape; configured ones float to the top.
 const _provLiveModels = {}; // provider id -> [modelId] (live-fetched)
 
 // Escape untrusted values before HTML interpolation (model ids, base URLs,
@@ -1413,6 +1414,14 @@ const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
   );
+
+// Per-provider one-liners surfaced under the name (local daemon, public
+// catalog, etc.). Keeps the paste-key flow honest where it differs.
+const PROV_HINTS = {
+  ollama: "local daemon · no key · install: <code>xclaw providers install ollama</code>",
+  "ollama-cloud": "ollama.com cloud · needs an ollama.com API key",
+  nvidia: "public catalog — models list without a key; key needed to run",
+};
 
 function provHeaders(jsonBody) {
   const h = jsonBody ? { "Content-Type": "application/json" } : {};
@@ -1426,11 +1435,19 @@ function provHeaders(jsonBody) {
 function provSetStatus(text, isErr) {
   const el = $("provStatus");
   if (!el) return;
-  el.textContent = text || "";
-  el.className = isErr ? "muted" : "muted";
+  let msg = text || "";
   if (isErr && /unauthorized|401/i.test(String(text))) {
-    el.textContent = "operator token required — set localStorage.xclaw_token";
+    msg = "operator token required — set localStorage.xclaw_token";
   }
+  el.textContent = msg;
+  el.className = isErr ? "muted err" : "muted";
+}
+
+// Disable a row's controls while a request is in flight (prevents double-submit
+// and gives visible feedback).
+function provBusy(tr, on) {
+  if (!tr) return;
+  tr.classList.toggle("prov-busy", !!on);
 }
 
 async function provCall(path, method, body) {
@@ -1446,41 +1463,47 @@ async function provCall(path, method, body) {
   return out;
 }
 
-async function provFetchModels(id) {
+async function provFetchModels(id, tr) {
+  const sel = tr?.querySelector(".prov-model");
+  if (sel) { sel.innerHTML = `<option>fetching live models…</option>`; sel.disabled = true; }
   provSetStatus(`fetching live models for ${id}…`);
-  const r = await provCall("/providers/manage/models", "POST", { provider: id });
-  if (r.ok && r.models && r.models.length) {
-    _provLiveModels[id] = r.models;
-    provSetStatus(`${id}: ${r.models.length} live models`);
-  } else {
-    provSetStatus(`${id}: live model fetch failed (${r.error || "empty"}) — using static list`, true);
+  try {
+    const r = await provCall("/providers/manage/models", "POST", { provider: id });
+    if (r.ok && r.models && r.models.length) {
+      _provLiveModels[id] = r.models;
+      provSetStatus(`${id}: ${r.models.length} live models`);
+    } else {
+      provSetStatus(`${id}: live fetch failed (${r.error || "empty"}) — using built-in list`, true);
+    }
+    return r;
+  } finally {
+    if (sel) sel.disabled = false;
   }
-  return r;
 }
 
 function provModelOptions(row) {
   const live = _provLiveModels[row.id];
   const models = live && live.length ? live : row.models || [];
-  const current = row.isActive && window.__provActiveModel ? window.__provActiveModel : null;
+  const current = row.isActive && window.__provActiveModel ? window.__provActiveModel : row.defaultModel;
   const opts = models
     .map((m) => `<option value="${esc(m)}"${m === current ? " selected" : ""}>${esc(m)}</option>`)
     .join("");
-  const tag = live && live.length ? " (live)" : models.length ? " (static)" : "";
-  return { opts, tag, count: models.length };
+  const tag = live && live.length ? `live · ${models.length}` : models.length ? `built-in · ${models.length}` : "none";
+  return { opts: opts || `<option value="">(no models)</option>`, tag };
 }
 
 function provRenderRow(row) {
-  const { opts, tag, count } = provModelOptions(row);
+  const { opts, tag } = provModelOptions(row);
   // One badge per stored credential (api-key and OAuth are SEPARATE profiles —
-  // "<id>:apikey" vs "<id>:default"); click a badge to prefer that credential.
+  // "<id>:apikey" vs "<id>:oauth"); click to prefer, × to remove.
   const credBadges = (row.profiles || [])
     .map((pr) => {
-      const kind = pr.mode === "oauth" ? "oauth" : "apikey";
+      const kind = pr.mode === "oauth" ? "oauth" : pr.mode === "token" ? "token" : "apikey";
       const cls = pr.expired ? "pill warn" : "pill on";
       const pref = pr.orderIndex === 0 ? " ★" : "";
-      const exp = pr.expired ? " (expired)" : "";
-      return `<span class="${cls} prov-cred" data-profile="${esc(pr.id)}" style="cursor:pointer"
-        title="profile ${esc(pr.id)} — click to prefer">${kind}${exp}${pref}</span>`;
+      const exp = pr.expired ? " · expired" : "";
+      return `<span class="${cls} prov-cred" data-profile="${esc(pr.id)}"
+        title="${esc(pr.id)} — click to prefer">${kind}${exp}${pref}<span class="prov-cred-del" data-profile="${esc(pr.id)}" title="remove ${esc(pr.id)}">×</span></span>`;
     })
     .join(" ");
   const envBadge = row.hasEnvKey
@@ -1489,105 +1512,133 @@ function provRenderRow(row) {
   const noCred = !credBadges && !envBadge ? `<span class="pill">no credential</span>` : "";
   const oauthHint = row.hasOAuth
     ? ""
-    : `<span class="muted" title="configure via CLI">oauth: <code>xclaw providers oauth --provider ${esc(row.id)}</code></span>`;
+    : `<div class="prov-sub muted">oauth via <code>xclaw providers oauth --provider ${esc(row.id)}</code></div>`;
+  const hint = PROV_HINTS[row.id] ? `<div class="prov-sub muted">${PROV_HINTS[row.id]}</div>` : "";
   const active = row.isActive ? ` <span class="pill on">active</span>` : "";
-  return `<tr data-prov="${esc(row.id)}" class="${row.isActive ? "prov-active" : ""}">
-    <td><b>${esc(row.name)}</b>${active}<br /><span class="muted">${esc(row.id)}</span></td>
-    <td>
+  // Local ollama needs no credential to be usable.
+  const usable = row.configured || row.id === "ollama";
+  return `<tr data-prov="${esc(row.id)}" class="${row.isActive ? "prov-active" : ""}${row.configured ? "" : " prov-dim"}">
+    <td class="prov-name"><b>${esc(row.name)}</b>${active}<br /><span class="muted">${esc(row.id)}</span>${hint}</td>
+    <td class="prov-ep">
       <input type="text" class="prov-base" value="${row.baseUrlCustom ? esc(row.baseUrl) : ""}"
-        placeholder="${esc(row.baseUrlDefault || "https://…")}" />
-      <button class="btn prov-base-save" title="Save base URL (https, or http to loopback)">Save</button>
-      ${row.baseUrlCustom ? `<button class="btn ghost prov-base-reset" title="Reset to default">Reset</button>` : ""}
+        placeholder="${esc(row.baseUrlDefault || "https://…")}" spellcheck="false" />
+      <div class="prov-btnrow">
+        <button class="btn prov-base-save" title="Save base URL (https, or http to loopback)">Save</button>
+        ${row.baseUrlCustom ? `<button class="btn ghost prov-base-reset" title="Reset to default">Reset</button>` : ""}
+      </div>
     </td>
-    <td>
-      ${credBadges} ${envBadge} ${noCred}<br />
-      <input type="password" class="prov-key" placeholder="paste API key…" autocomplete="off" />
-      <button class="btn prov-key-save">Add</button><br />
+    <td class="prov-creds">
+      <div class="prov-badges">${credBadges} ${envBadge} ${noCred}</div>
+      <div class="prov-btnrow">
+        <input type="password" class="prov-key" placeholder="paste API key…" autocomplete="off" />
+        <button class="btn prov-key-save">Add</button>
+      </div>
       ${oauthHint}
     </td>
-    <td>
-      <select class="prov-model" title="${count} models${esc(tag)}">${opts}</select>
-      <input type="text" class="prov-model-custom" placeholder="custom model…" />
-      <button class="btn ghost prov-models-refresh" title="Fetch live model list">↻</button>
+    <td class="prov-model-cell">
+      <select class="prov-model" title="${esc(tag)}">${opts}</select>
+      <div class="prov-btnrow">
+        <input type="text" class="prov-model-custom" placeholder="custom model…" />
+        <button class="btn ghost prov-models-refresh" title="Fetch live model list">↻</button>
+      </div>
+      <span class="prov-sub muted">${esc(tag)}</span>
     </td>
-    <td><button class="btn primary prov-use" ${row.configured ? "" : "disabled title='add a key first'"}>Use</button></td>
+    <td><button class="btn primary prov-use" ${usable ? "" : "disabled title='add a key first'"}>Use</button></td>
   </tr>`;
 }
 
 async function loadProviders() {
   const tbody = document.querySelector("#provTable tbody");
   if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="5" class="muted">loading providers…</td></tr>`;
   try {
     const inv = await provCall("/providers/manage");
     window.__provActiveModel = inv.active?.model || null;
-    tbody.innerHTML = inv.providers.map(provRenderRow).join("");
-    provSetStatus(
-      `active: ${inv.active?.provider || "—"} / ${inv.active?.model || "—"}`
-    );
-    provWireRows(inv);
+    const list = (inv.providers || []).slice();
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">no providers</td></tr>`;
+      return;
+    }
+    // Configured first (active pinned to top of that group), unconfigured below.
+    const rank = (p) => (p.isActive ? 0 : p.configured ? 1 : 2);
+    list.sort((a, b) => rank(a) - rank(b));
+    const firstUnconfigured = list.findIndex((p) => !p.configured);
+    const rows = list.map((p, i) => {
+      const divider =
+        i === firstUnconfigured && firstUnconfigured > 0
+          ? `<tr class="prov-divider"><td colspan="5">not configured</td></tr>`
+          : "";
+      return divider + provRenderRow(p);
+    });
+    tbody.innerHTML = rows.join("");
+    provSetStatus(`active: ${inv.active?.provider || "—"} / ${inv.active?.model || "—"}`);
+    provWireRows();
   } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="muted err">${esc(e.message || e)}</td></tr>`;
     provSetStatus(String(e.message || e), true);
   }
 }
 
-function provWireRows(inv) {
+function provWireRows() {
   document.querySelectorAll("#provTable tr[data-prov]").forEach((tr) => {
     const id = tr.getAttribute("data-prov");
+    // Wrap a handler so it disables the row, surfaces errors, and refreshes.
+    const guard = (fn) => async () => {
+      provBusy(tr, true);
+      try { await fn(); } catch (e) { provSetStatus(String(e.message || e), true); }
+      finally { provBusy(tr, false); }
+    };
 
-    tr.querySelector(".prov-base-save")?.addEventListener("click", async () => {
+    tr.querySelector(".prov-base-save")?.addEventListener("click", guard(async () => {
       const url = tr.querySelector(".prov-base").value.trim();
-      try {
-        await provCall("/providers/manage/base-url", "POST", { provider: id, url: url || null });
-        provSetStatus(`${id}: base URL ${url ? "set" : "cleared"}`);
-        loadProviders();
-      } catch (e) { provSetStatus(String(e.message || e), true); }
-    });
-    tr.querySelector(".prov-base-reset")?.addEventListener("click", async () => {
-      try {
-        await provCall("/providers/manage/base-url", "POST", { provider: id, url: null });
-        provSetStatus(`${id}: base URL reset to default`);
-        loadProviders();
-      } catch (e) { provSetStatus(String(e.message || e), true); }
-    });
+      await provCall("/providers/manage/base-url", "POST", { provider: id, url: url || null });
+      provSetStatus(`${id}: base URL ${url ? "set" : "cleared"}`);
+      await loadProviders();
+    }));
+    tr.querySelector(".prov-base-reset")?.addEventListener("click", guard(async () => {
+      await provCall("/providers/manage/base-url", "POST", { provider: id, url: null });
+      provSetStatus(`${id}: base URL reset to default`);
+      await loadProviders();
+    }));
 
-    tr.querySelector(".prov-key-save")?.addEventListener("click", async () => {
+    tr.querySelector(".prov-key-save")?.addEventListener("click", guard(async () => {
       const input = tr.querySelector(".prov-key");
       const apiKey = input.value.trim();
       if (!apiKey) return provSetStatus(`${id}: paste a key first`, true);
-      try {
-        await provCall("/providers/manage/key", "POST", { provider: id, apiKey });
-        input.value = ""; // never keep the secret in the DOM
-        provSetStatus(`${id}: key stored — fetching live models…`);
-        await provFetchModels(id); // the spine: key → real models
-        loadProviders();
-      } catch (e) { provSetStatus(String(e.message || e), true); }
-    });
+      await provCall("/providers/manage/key", "POST", { provider: id, apiKey });
+      input.value = ""; // never keep the secret in the DOM
+      provSetStatus(`${id}: key stored — fetching live models…`);
+      await provFetchModels(id, tr); // the spine: key → real models
+      await loadProviders();
+    }));
 
-    tr.querySelector(".prov-models-refresh")?.addEventListener("click", async () => {
-      try { await provFetchModels(id); loadProviders(); }
-      catch (e) { provSetStatus(String(e.message || e), true); }
-    });
+    tr.querySelector(".prov-models-refresh")?.addEventListener("click", guard(async () => {
+      await provFetchModels(id, tr);
+      await loadProviders();
+    }));
 
     tr.querySelectorAll(".prov-cred").forEach((badge) => {
-      badge.addEventListener("click", async () => {
+      // Click the badge body → prefer this credential. Click its × → remove it.
+      badge.addEventListener("click", guard(async (ev) => {
         const profileId = badge.getAttribute("data-profile");
-        try {
+        if (ev && ev.target && ev.target.classList.contains("prov-cred-del")) {
+          await provCall("/providers/manage/key", "DELETE", { provider: id, profileId });
+          provSetStatus(`${id}: removed ${profileId}`);
+        } else {
           await provCall("/providers/manage/prefer", "POST", { provider: id, profileId });
           provSetStatus(`${id}: preferring ${profileId}`);
-          loadProviders();
-        } catch (e) { provSetStatus(String(e.message || e), true); }
-      });
+        }
+        await loadProviders();
+      }));
     });
 
-    tr.querySelector(".prov-use")?.addEventListener("click", async () => {
+    tr.querySelector(".prov-use")?.addEventListener("click", guard(async () => {
       const custom = tr.querySelector(".prov-model-custom").value.trim();
       const model = custom || tr.querySelector(".prov-model").value || undefined;
-      try {
-        const r = await provCall("/providers/manage/use", "POST", { provider: id, model });
-        provSetStatus(`now using ${r.provider} / ${r.model} — ${r.note || ""}`);
-        loadProviders();
-      } catch (e) { provSetStatus(String(e.message || e), true); }
-    });
+      const r = await provCall("/providers/manage/use", "POST", { provider: id, model });
+      provSetStatus(`now using ${r.provider} / ${r.model} — ${r.note || ""}`);
+      await loadProviders();
+    }));
   });
 }
 

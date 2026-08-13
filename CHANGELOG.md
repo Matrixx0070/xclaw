@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.89.0 — polish the providers surface (CLI · TUI · web UI) for all providers
+
+A consistency + clarity pass across every provider (now 12: xai, openai, anthropic, google, nvidia, openrouter, deepseek, groq, mistral, together, ollama, ollama-cloud).
+
+**CLI `providers list`**
+- Fixed column alignment — endpoints drop the scheme and elide to a fixed width, so wide URLs (google/nvidia/ollama-cloud) no longer break the table. Padding is computed on plain text so ANSI colors never skew columns.
+- Grouped + sorted: active provider first, then other configured, then a dim "— not configured —" divider, then the rest dimmed — what's ready to use is on top.
+- New MODELS column (per-provider model count); tidy uppercase header; footer shows `N/12 configured`.
+- Cleaner credential line: `↳ oauth★  apikey` (dropped the redundant `<provider>:` prefix; kept ★preferred + expired).
+
+**TUI** (setup wizard + use picker): reformatted section headers, spaced numbered menus, per-provider status shown inline; `ollama` gains a one-command **install** option in the wizard. Non-TTY guards + the paste-credential→live-models spine intact.
+
+**Web UI (control panel)**: active/configured grouping mirrors the CLI; per-provider hints (ollama = local daemon/no key/install hint, ollama-cloud = needs ollama.com key, nvidia = public catalog); the key→models→Use spine finished (masked key input, "fetching live models…" state, live/built-in count tag, error fallback); credential badges (apikey/oauth/token, ★ preferred click-to-prefer, × remove); loading/empty/error/busy states; endpoint wraps in-cell (no page scroll). Security kept: `esc()` on every interpolation, operator token on every call, 401 → clear message.
+
+Verified live: aligned CLI list across all 12 providers; gateway panel serves 12 providers, nvidia's 90 public models load without a key, auth gate 401, control UI 200. Suite 1285/0.
+
 ## 3.88.0 — add NVIDIA NIM provider (free model catalog)
 
 NVIDIA offers a large catalog of models free through its OpenAI-compatible API (build.nvidia.com → `integrate.api.nvidia.com/v1`). Added as the `nvidia` provider — same per-provider credential model as the rest.
