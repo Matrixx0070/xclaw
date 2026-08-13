@@ -668,3 +668,14 @@ photos after text (cap 10).
 RAN: suite 1308/0 · LIVE: sent the earlier generated logo to chat 8087386717 →
 sendPhoto ok message_id 70 (user received it). pm2 gateway restarted so future
 generate_image auto-delivers the picture.
+
+## 2026-08-13 — 3.90.4 strip claims grounding block from channel replies (Claude)
+
+STATUS: green
+CONTEXT: user's telegram screenshot showed the raw {"claims":…,"evidence_ids":…}
+json block leaking into the bot's reply (BASE_SYSTEM_PROMPT asks the model to emit
+it for grounding).
+FIXED: stripClaimsBlock(text) in loop.mjs removes trailing fenced OR bare claims
+object; applied to the user-facing `text` return field only (raw finalText/
+replyText kept for verify/claims consumers); unrelated json untouched.
+RAN: suite 1311/0 · pm2 gateway restarted so replies are clean.

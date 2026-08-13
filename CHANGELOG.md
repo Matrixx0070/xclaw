@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.90.4 — hide the {"claims"} grounding block from channel replies
+
+The system prompt asks the model to append a ```json {"claims":…,"evidence_ids":…} ``` block for internal grounding, but it was leaking verbatim into user-facing replies (Telegram, etc.). `stripClaimsBlock` now removes the trailing fenced or bare claims object from the presented `text` field only — the raw reply is kept for internal verification/claims consumers. Unrelated JSON (e.g. a config example) is left untouched.
+
 ## 3.90.3 — deliver agent-generated images to Telegram (was text-only)
 
 The bot could generate an image but only sent the text description — the picture stayed on the server, because the Telegram outbound path had no local-file photo upload (only voice used multipart).

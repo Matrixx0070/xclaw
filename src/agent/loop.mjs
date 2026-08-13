@@ -74,6 +74,21 @@ import { afterBrowserToolTruth } from "../browser/truth.mjs";
 import { beforeNavigate, beforeInput } from "../browser/hooks.mjs";
 import { resolveRole } from "../browser/role-binding.mjs";
 
+/**
+ * The model is asked to append a ```json {"claims":…,"evidence_ids":…} ``` block
+ * for internal grounding — strip it (and a bare trailing claims object) from the
+ * user-facing reply so channels don't show the verification scaffold. The raw
+ * finalText is kept for internal consumers; only the presented `text` is cleaned.
+ */
+export function stripClaimsBlock(text) {
+  let s = String(text ?? "");
+  // fenced ```json { "claims": … } ``` at the end
+  s = s.replace(/\n*```(?:json)?\s*\{[\s\S]*?"claims"[\s\S]*?\}\s*```\s*$/i, "");
+  // bare trailing {"claims":…,"evidence_ids":…} object (no fence)
+  s = s.replace(/\n*\{\s*"claims"\s*:[\s\S]*?"evidence_ids"\s*:[\s\S]*?\}\s*$/i, "");
+  return s.trimEnd();
+}
+
 const BASE_SYSTEM_PROMPT = `You are XClaw, a personal AI assistant with a real computer.
 When stating what you did, prefer a final structured block:
 \`\`\`json
@@ -1386,7 +1401,7 @@ export async function runAgentLoop(options) {
   }
 
   return {
-    text: finalText || "(no response)",
+    text: stripClaimsBlock(finalText) || "(no response)",
     turns,
     toolTrace,
     model: provider?.model,
