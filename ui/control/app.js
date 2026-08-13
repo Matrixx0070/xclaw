@@ -1,5 +1,30 @@
 const $ = (id) => document.getElementById(id);
 
+// Every same-origin gateway call carries the operator token (if set).
+// Call sites used to attach it ad-hoc — exactly 1 of ~35 did — so
+// operator-gated panels (swarm merges, providers, channels) showed
+// "unauthorized" in an otherwise-authorized session. Central wrapper so
+// future call sites are covered automatically. (WS uses the subprotocol
+// carrier; that path already handled the token.)
+const _rawFetch = window.fetch.bind(window);
+window.fetch = (url, opts = {}) => {
+  try {
+    const u = String(url);
+    const sameOrigin = u.startsWith("/") || u.startsWith(location.origin);
+    const tok = localStorage.getItem("xclaw_token");
+    if (sameOrigin && tok) {
+      if (opts.headers instanceof Headers) {
+        if (!opts.headers.has("x-xclaw-token")) opts.headers.set("x-xclaw-token", tok);
+      } else {
+        opts = { ...opts, headers: { "x-xclaw-token": tok, ...(opts.headers || {}) } };
+      }
+    }
+  } catch {
+    /* storage unavailable — send unauthenticated as before */
+  }
+  return _rawFetch(url, opts);
+};
+
 function kvHtml(rows) {
   return rows
     .map(([k, v, cls]) => {

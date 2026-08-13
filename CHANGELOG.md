@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.93.2 — fix: control UI sent the operator token on 1 of ~35 gateway calls
+
+Found by actually putting the control UI on a screen: exactly one call site attached `x-xclaw-token`, so every operator-gated panel (swarm merges, providers, channels, queue controls, …) showed "unauthorized" even with a valid token in `localStorage.xclaw_token`. Now a central same-origin `fetch` wrapper attaches the token for every gateway call — existing and future call sites alike (the WS events path already carried it via the subprotocol; unchanged).
+
+Operational note from the same session, for anyone hosting UIs on this box: do **not** open xclaw UI tabs inside the sudo-ai grok-oracle warm browser (CDP :9223) — that browser is actively driven by another agent's synthetic clicks/typing, which will wander your tab and press your buttons (observed: an unintended 2-node swarm run started by a stray click on "Run + live SSE"). The control UI gets its own dedicated Chrome instance/profile instead.
+
 ## 3.93.1 — fix: Telegram same-channel approval deadlock (poll loop blocked by the pending turn)
 
 Found by live-testing the 3.92.0 approval flow over real Telegram: the getUpdates poll loop `await`ed every update handler inline, so a turn blocked on human approval (up to 120s) froze the loop — the owner's `/approve` (or the inline Allow tap) could not even be *read* until the SLA had already denied the approval, which then failed with `unknown_pending`. Same-channel approval was structurally impossible over polling (webhook transport was unaffected — independent HTTP requests).
