@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.88.0 — add NVIDIA NIM provider (free model catalog)
+
+NVIDIA offers a large catalog of models free through its OpenAI-compatible API (build.nvidia.com → `integrate.api.nvidia.com/v1`). Added as the `nvidia` provider — same per-provider credential model as the rest.
+
+- **`nvidia`** — `https://integrate.api.nvidia.com/v1`, OpenAI-compatible, `NVIDIA_API_KEY` (an `nvapi-…` key from build.nvidia.com). Default model `meta/llama-3.3-70b-instruct`; 10 popular models seeded (Nemotron 70B/340B, DeepSeek R1, gpt-oss-120b, Qwen2.5 Coder, Mistral Large 2, Codestral, Phi 3.5 MoE).
+- The catalog is **public** — `providers list` + live model discovery show all **90 chat models** even before a key is added; a key is only needed for inference. Add it with `xclaw providers set --provider nvidia --api-key nvapi-…`.
+
+Verified: nvidia appears in `providers list`; live discovery returns 90 models from the public catalog. Suite 1285/0.
+
 ## 3.87.1 — split Ollama into two entries: `ollama` (local) + `ollama-cloud`
 
 Follow-up to 3.87.0: instead of routing one `ollama` provider by whether a key is present, Ollama is now **two independent, always-visible provider entries** — cleaner and matching the per-credential model of the others.

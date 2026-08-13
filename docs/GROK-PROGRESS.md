@@ -579,3 +579,17 @@ llama3.2 OK (0.5s). NB: local agent-turn slow (large sysprompt × small model
 on CPU) — routing fine, latency only.
 STATE: providers now — xai(apikey★+oauth), anthropic(oauth★+apikey),
 ollama(local no-key), ollama-cloud(apikey).
+
+## 2026-08-13 — 3.88.0 add NVIDIA NIM provider (Claude)
+
+STATUS: green
+BUILT: nvidia builtin provider — baseUrl integrate.api.nvidia.com/v1,
+openai-completions, envKey NVIDIA_API_KEY, defaultModel meta/llama-3.3-70b-
+instruct, 10 seeded popular models. NVIDIA catalog is PUBLIC (200 no key) so
+live discovery works keyless; key (nvapi-) only for inference.
+RAN: suite 1285/0 · LIVE: providers list shows nvidia; fetchLiveModels(nvidia)
+→ 90 chat models keyless (integrate.api.nvidia.com/v1/models public). Routing
+test added.
+PENDING: user nvapi- key to store nvidia:apikey + verify inference.
+STATE: providers — xai(apikey★+oauth), anthropic(oauth★+apikey), ollama(local),
+ollama-cloud(apikey), nvidia(no key yet, discovery live).

@@ -111,3 +111,14 @@ describe("ollama local vs ollama-cloud (two entries)", () => {
     assert.match(cloud.baseUrl, /ollama\.com/);
   });
 });
+
+describe("nvidia provider (free NIM catalog)", () => {
+  it("resolves the integrate.api.nvidia.com endpoint", async () => {
+    const { resolveProviderRouteAsync, BUILTIN_PROVIDERS } = await import("../src/providers/registry.mjs");
+    assert.ok(BUILTIN_PROVIDERS.nvidia, "nvidia provider exists");
+    assert.equal(BUILTIN_PROVIDERS.nvidia.envKey, "NVIDIA_API_KEY");
+    const r = await resolveProviderRouteAsync({ paths:{configDir:"/tmp/xclaw-none"} }, { provider:"nvidia", model:"meta/llama-3.3-70b-instruct" });
+    assert.match(r.baseUrl, /integrate\.api\.nvidia\.com/);
+    assert.equal(r.api, "openai-completions");
+  });
+});
