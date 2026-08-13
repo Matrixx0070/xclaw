@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.95.1 — security: /cost·/usage·/logs were strict-mode-only protected
+
+Automated review of the 3.95.0 commit caught that the new `/cost`, `/cost/pause`, `/usage` and `/logs` paths were added only to the STRICT auth list — on a non-strict deployment with a token set, `POST /cost/pause` (state-changing: pauses ALL spend) and the session-preview-exposing usage/logs reads were unauthenticated. Now protected in both branches, with a matrix test asserting token-required + token-accepted across strict AND legacy modes for all five paths. Suite 1395/0.
+
 ## 3.95.0 — Usage & Logs: per-provider analytics console (xAI-console style)
 
 New "Usage & Logs" section in the Control UI, modeled on the xAI console's Usage/Logs pages — with **provider separation as the organizing principle**: a provider chip bar (All · xai · anthropic · nvidia · …) rescopes every chart, breakdown, model table and log row together, so one provider's traffic can never be confused with another's.

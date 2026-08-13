@@ -98,7 +98,15 @@ export function createGatewayAuth(cfg = {}) {
         // rewrite would aim the stored Bearer token at an attacker host
         p.startsWith("/providers") ||
         // channel management writes config + channel secrets (bot tokens etc.)
-        p.startsWith("/channels")
+        p.startsWith("/channels") ||
+        // POST /cost/pause is state-changing (pauses ALL spend); usage/logs
+        // expose session previews — protected in BOTH branches, not just
+        // strict (flagged by review: strict-only left legacy deployments open)
+        p === "/cost" ||
+        p.startsWith("/cost/") ||
+        p === "/usage" ||
+        p === "/logs" ||
+        p.startsWith("/logs/")
       );
     }
     // strict: protect API surface
