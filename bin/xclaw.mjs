@@ -951,8 +951,97 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     }
 
     case "mcp": {
-      const { runMcpStdio } = await import("../src/mcp/stdio.mjs");
-      await runMcpStdio({});
+      const rest = args.slice(1); // args[0] is "mcp" itself
+      const sub = rest[0];
+      // bare `xclaw mcp` / `xclaw mcp serve` = stdio MCP server (back-compat:
+      // external clients wire this as their server command).
+      if (!sub || sub === "serve") {
+        const { runMcpStdio } = await import("../src/mcp/stdio.mjs");
+        const { loadConfig } = await import("../src/config/load.mjs");
+        await runMcpStdio({ cfg: await loadConfig() });
+        break;
+      }
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const cfg = await loadConfig();
+      const manage = await import("../src/mcp/manage.mjs");
+      const flag = (n) => {
+        const i = rest.indexOf(`--${n}`);
+        return i >= 0 ? rest[i + 1] : undefined;
+      };
+      if (sub === "list") {
+        console.log(JSON.stringify({ servers: manage.listMcpServers(cfg) }, null, 2));
+        break;
+      }
+      if (sub === "add") {
+        const name = rest[1];
+        const def = {
+          name,
+          url: flag("url"),
+          command: flag("command"),
+          args: flag("args") ? flag("args").split(" ") : undefined,
+          apiKey: flag("api-key"),
+          allowTools: flag("allow") ? flag("allow").split(",") : undefined,
+          denyTools: flag("deny") ? flag("deny").split(",") : undefined,
+        };
+        const out = await manage.addMcpServer(cfg, def, { replace: rest.includes("--replace") });
+        console.log(JSON.stringify(out, null, 2));
+        break;
+      }
+      if (sub === "remove") {
+        console.log(JSON.stringify(await manage.removeMcpServer(cfg, rest[1]), null, 2));
+        break;
+      }
+      if (sub === "test") {
+        const out = await manage.testMcpServer(cfg, rest[1]);
+        console.log(JSON.stringify(out, null, 2));
+        process.exitCode = out.ok ? 0 : 1;
+        break;
+      }
+      if (sub === "login") {
+        // OAuth runs through the gateway (it hosts the browser callback).
+        const name = rest[1];
+        const base = `http://${cfg.gateway?.host || "127.0.0.1"}:${cfg.gateway?.port || 8790}`;
+        const headers = {
+          "Content-Type": "application/json",
+          ...(cfg.gateway?.token ? { "x-xclaw-token": cfg.gateway.token } : {}),
+        };
+        const start = await fetch(`${base}/mcp/oauth/start`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ server: name }),
+        }).then((r) => r.json());
+        if (!start.ok) {
+          console.error("login start failed:", start.error);
+          process.exitCode = 1;
+          break;
+        }
+        console.log(`Open this URL, sign in, approve access:\n\n  ${start.authorizeUrl}\n`);
+        console.log("Waiting for the callback to land on the gateway…");
+        const until = Date.now() + 5 * 60_000;
+        let granted = false;
+        while (Date.now() < until) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const st = await fetch(`${base}/mcp/oauth/status`, { headers })
+            .then((r) => r.json())
+            .catch(() => ({ grants: [] }));
+          if (st.grants?.some((g) => g.server === name)) {
+            granted = true;
+            break;
+          }
+        }
+        console.log(granted ? `authorized: ${name}` : "timed out waiting for authorization");
+        process.exitCode = granted ? 0 : 1;
+        break;
+      }
+      if (sub === "logout") {
+        const { dropMcpGrant } = await import("../src/mcp/oauth.mjs");
+        dropMcpGrant(cfg, rest[1]);
+        console.log(JSON.stringify({ ok: true }));
+        break;
+      }
+      console.log(
+        "usage: xclaw mcp [serve|list|add <name> --url <u>|--command <c> [--api-key k] [--allow a,b] [--deny x] [--replace]|remove <name>|test <name>|login <name>|logout <name>]"
+      );
       break;
     }
 

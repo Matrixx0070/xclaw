@@ -37,7 +37,33 @@ export function createStdioTransport(server = {}, opts = {}) {
     } catch {
       return; // ignore non-JSON noise (some servers log to stdout)
     }
-    if (body?.id == null) return; // notification from server — ignored
+    // Messages WITH a method come FROM the server: notifications (no id) or
+    // server-initiated requests (id + method — sampling/elicitation/ping).
+    // The old code matched any id against `pending`, so server requests were
+    // silently dropped and could never be answered.
+    if (body?.method) {
+      if (body.id != null) {
+        const reply =
+          body.method === "ping"
+            ? { jsonrpc: "2.0", id: body.id, result: {} }
+            : {
+                jsonrpc: "2.0",
+                id: body.id,
+                error: {
+                  code: -32601,
+                  message: `xclaw client does not support ${body.method}`,
+                },
+              };
+        try {
+          child?.stdin.write(JSON.stringify(reply) + "\n");
+        } catch {}
+      }
+      try {
+        opts.onServerMessage?.(body, server);
+      } catch {}
+      return;
+    }
+    if (body?.id == null) return;
     const p = pending.get(body.id);
     if (!p) return;
     pending.delete(body.id);

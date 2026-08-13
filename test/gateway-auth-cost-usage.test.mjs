@@ -53,6 +53,20 @@ describe("cost/usage/logs auth coverage", () => {
         true,
         `/webhooks/pagerduty must stay open for signed deliveries (strict=${strict})`
       );
+      // MCP OAuth: the AS browser redirect can't carry the operator token —
+      // callback stays open (state-authenticated); start/complete stay gated.
+      assert.equal(
+        a.check({ url: "/mcp/oauth/callback?code=x&state=y", headers: {} }).ok,
+        true,
+        `/mcp/oauth/callback must stay open for AS redirects (strict=${strict})`
+      );
+      for (const g of ["/mcp/oauth/start", "/mcp/oauth/complete", "/mcp/oauth/status"]) {
+        assert.equal(
+          a.check({ url: g, headers: {} }).ok,
+          false,
+          `${g} must require a token (strict=${strict})`
+        );
+      }
     });
   }
 });

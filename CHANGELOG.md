@@ -1,5 +1,40 @@
 # Changelog
 
+## 3.98.0 — MCP overhaul: Streamable HTTP, OAuth 2.1, resources/prompts, spec server, full management surface
+
+Closes the remaining 6 findings of the 2026-08-13 MCP audit (finding #1 shipped as 3.97.2):
+
+- **Streamable HTTP client transport** (2025-03-26+): POSTs accept SSE-stream *or*
+  JSON answers, sessions ride `Mcp-Session-Id` (DELETE teardown on close), the
+  negotiated revision is echoed as `MCP-Protocol-Version`, notifications expect 202,
+  legacy JSON-POST servers still work. clientInfo now reports the real package version.
+- **OAuth 2.1 for remote servers**: RFC 9728 protected-resource discovery → RFC 8414
+  AS metadata → RFC 7591 dynamic registration → PKCE S256 authorize with RFC 8707
+  resource binding → token exchange + auto-refresh; per-server grants in
+  `~/.xclaw/mcp-oauth.json` (0600). Browser callback at `/mcp/oauth/callback`
+  (state-authenticated, auth-exempt — pinned in the matrix test); `xclaw mcp login`
+  drives the flow from the CLI and polls for the grant.
+- **Resources + prompts client-side**: resources/list+read and prompts/list+get
+  across servers, gateway routes, and a Resources & Prompts browser in the UI.
+- **Spec-compliant server**: newline-delimited stdio framing (was LSP Content-Length),
+  notifications no longer get replies, protocol-version negotiation echoes supported
+  revisions, real serverInfo version. Tool surface grew from 2 to 5 (skills_list,
+  status_get, job_run w/ destructive annotation) and transcripts + memory files are
+  exposed as `xclaw://` resources.
+- **Server-initiated traffic**: stdio client answers server `ping` requests and
+  surfaces notifications; `tools/list_changed` invalidates the tool cache via a
+  generation counter (a timestamp-zeroing first cut lost the race against an
+  in-flight list — caught by an intermittent test, fixed properly).
+- **Management surface**: `xclaw mcp list/add/remove/test/login/logout` CLI,
+  /mcp/servers CRUD + /mcp/servers/test + /mcp/status routes, and an MCP servers
+  editor card in the Control UI (add stdio/http servers, API keys write-only,
+  allowTools filters, live Test, OAuth login, remove). The gateway's MCP client now
+  reads the live config, so UI/CLI edits apply without a restart — proven by adding
+  xclaw's own `mcp serve` as a server through the UI and calling its tools + reading
+  a real transcript resource end-to-end on the operator display.
+
+Suite 1419/0 (5 env-gated skips).
+
 ## 3.97.2 — SECURITY: MCP tools no longer bypass the approval gate
 
 MCP audit finding #1: under the default `risky` approval policy, only tools on the

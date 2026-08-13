@@ -45,6 +45,7 @@ export async function createAgentMcpTools({ cfg = {}, onEvent = () => {} } = {})
 
   const client = createMcpClient({
     servers,
+    cfg, // enables stored OAuth grants for url servers
     requestTimeoutMs: cfg.mcp?.requestTimeoutMs,
     listTtlMs: cfg.mcp?.listTtlMs,
   });

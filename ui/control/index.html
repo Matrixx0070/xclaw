@@ -640,6 +640,31 @@
     <!-- ═══ MCP ═══ -->
     <div class="view" data-view="mcp">
       <div class="grid">
+        <section class="card span2" id="cardMcpServers">
+          <h2>MCP servers</h2>
+          <p class="muted">
+            Connect Model Context Protocol servers — their tools join every agent run
+            (approval-gated by default). Remote servers speak Streamable HTTP with
+            <b>OAuth login</b> or an API key; local ones are spawned commands.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="mcpSrvName" placeholder="name" style="width:110px;" />
+            <input id="mcpSrvUrl" placeholder="https://… (remote) or command (local)" style="flex:2;min-width:220px;" />
+            <input id="mcpSrvKey" type="password" placeholder="API key (optional)" autocomplete="off" style="width:150px;" />
+            <input id="mcpSrvAllow" placeholder="allowTools a,b (optional)" style="width:170px;" />
+            <button class="btn primary" id="btnMcpSrvAdd">Add</button>
+            <button class="btn ghost" id="btnMcpSrvRefresh">Refresh</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="mcpSrvTable">
+              <thead><tr><th>Server</th><th>Transport</th><th>Credentials</th><th>Filters</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="mcpOauthFlow" style="display:none;margin-top:0.5rem;" class="muted"></div>
+          <pre id="mcpSrvOut" class="log" style="max-height:180px;">—</pre>
+        </section>
+
         <section class="card span2" id="cardMcpTools">
           <h2>MCP tools <span id="mcpCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
           <p class="muted">Tools exposed by the MCP servers in <code>mcp.servers</code> config.
@@ -661,6 +686,21 @@
           </div>
           <textarea id="mcpArgs" rows="4" placeholder='arguments JSON, e.g. {"path": "/tmp"}' style="margin-top:0.5rem;">{}</textarea>
           <pre id="mcpOut" class="log" style="max-height:280px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardMcpResources">
+          <h2>Resources &amp; prompts</h2>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn ghost" id="btnMcpRes">List resources</button>
+            <button class="btn ghost" id="btnMcpPrompts">List prompts</button>
+          </div>
+          <div class="table-wrap" style="max-height:220px;margin-top:0.5rem;">
+            <table id="mcpResTable">
+              <thead><tr><th>Server</th><th>Name / URI</th><th></th></tr></thead>
+              <tbody><tr><td colspan="3" class="muted">List resources or prompts to browse what connected servers expose.</td></tr></tbody>
+            </table>
+          </div>
+          <pre id="mcpResOut" class="log" style="max-height:260px;">—</pre>
         </section>
       </div>
     </div>

@@ -2473,6 +2473,121 @@ $("btnSklRefresh")?.addEventListener("click", () => {
 });
 if ($("sklTable")) { loadSkillCatalog().catch(() => {}); loadSkillProposals().catch(() => {}); }
 
+/* ── MCP servers (config CRUD + OAuth + live test) ───────────────── */
+async function loadMcpServers() {
+  const tbody = $("mcpSrvTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/mcp/servers");
+    const list = data.servers || [];
+    tbody.innerHTML = list
+      .map((s) => {
+        const creds = [
+          s.hasApiKey ? '<span class="pill on">apikey</span>' : "",
+          s.hasOAuth
+            ? `<span class="pill on" title="expires ${s.oauthExpiresAt ? new Date(s.oauthExpiresAt).toLocaleString() : "never"}">oauth</span>`
+            : "",
+        ].filter(Boolean).join(" ") ||
+          (s.transport === "stdio"
+            ? '<span class="pill">local</span>'
+            : '<span class="pill">none</span>');
+        const filters = [
+          s.allowTools?.length ? `allow: ${s.allowTools.join(", ")}` : "",
+          s.denyTools?.length ? `deny: ${s.denyTools.join(", ")}` : "",
+        ].filter(Boolean).join(" · ") || "—";
+        return `<tr data-srv="${esc(s.name)}">
+          <td><b>${esc(s.name)}</b><br /><span class="muted" style="font-size:0.7rem;">${esc(s.url || s.command || "")}</span></td>
+          <td><span class="pill">${esc(s.transport)}</span></td>
+          <td>${creds}</td>
+          <td style="font-size:0.75rem;">${esc(filters)}</td>
+          <td class="row" style="gap:0.25rem;flex-wrap:wrap;">
+            <button class="btn ghost mcp-srv-test" data-srv="${esc(s.name)}">Test</button>
+            ${s.transport === "http" ? `<button class="btn ghost mcp-srv-oauth" data-srv="${esc(s.name)}">OAuth login</button>` : ""}
+            <button class="btn ghost mcp-srv-del" data-srv="${esc(s.name)}" title="remove">×</button>
+          </td>
+        </tr>`;
+      })
+      .join("") || `<tr><td colspan="5" class="muted">No MCP servers configured — add one above.</td></tr>`;
+
+    tbody.querySelectorAll(".mcp-srv-test").forEach((b) => {
+      b.onclick = async () => {
+        $("mcpSrvOut").textContent = `testing ${b.dataset.srv}…`;
+        try {
+          const r = await postJSON("/mcp/servers/test", { name: b.dataset.srv });
+          $("mcpSrvOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) { $("mcpSrvOut").textContent = String(e.message || e); }
+      };
+    });
+    tbody.querySelectorAll(".mcp-srv-del").forEach((b) => {
+      b.onclick = async () => {
+        if (!confirm(`Remove MCP server "${b.dataset.srv}"?`)) return;
+        try {
+          await getJSON("/mcp/servers", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: b.dataset.srv }),
+          });
+          await loadMcpServers(); await loadMcpTools();
+        } catch (e) { $("mcpSrvOut").textContent = String(e.message || e); }
+      };
+    });
+    tbody.querySelectorAll(".mcp-srv-oauth").forEach((b) => {
+      b.onclick = async () => {
+        const flow = $("mcpOauthFlow");
+        flow.style.display = "block";
+        flow.textContent = `discovering authorization server for ${b.dataset.srv}…`;
+        try {
+          const start = await postJSON("/mcp/oauth/start", { server: b.dataset.srv });
+          window.open(start.authorizeUrl, "_blank", "noopener");
+          flow.innerHTML =
+            `A sign-in tab opened — approve access there. The server authorizes automatically when the callback lands. ` +
+            `<a href="${esc(start.authorizeUrl)}" target="_blank" rel="noopener">reopen login</a>`;
+          // poll for the grant landing via the callback
+          for (let i = 0; i < 90; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+            const st = await getJSON("/mcp/oauth/status").catch(() => ({ grants: [] }));
+            if (st.grants?.some((g) => g.server === b.dataset.srv)) {
+              flow.textContent = `${b.dataset.srv}: authorized ✓`;
+              await loadMcpServers(); await loadMcpTools();
+              return;
+            }
+          }
+          flow.textContent = `${b.dataset.srv}: still waiting — reopen the login and approve, then Refresh.`;
+        } catch (e) {
+          flow.textContent = `OAuth: ${e.message || e}`;
+        }
+      };
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+$("btnMcpSrvRefresh")?.addEventListener("click", () => loadMcpServers().catch(console.error));
+$("btnMcpSrvAdd")?.addEventListener("click", async () => {
+  const name = $("mcpSrvName").value.trim();
+  const target = $("mcpSrvUrl").value.trim();
+  if (!name || !target) { $("mcpSrvOut").textContent = "name and url/command are required"; return; }
+  const def = { name };
+  if (/^https?:\/\//i.test(target)) def.url = target;
+  else {
+    const parts = target.split(/\s+/);
+    def.command = parts[0];
+    if (parts.length > 1) def.args = parts.slice(1);
+  }
+  const key = $("mcpSrvKey").value.trim();
+  if (key) def.apiKey = key;
+  const allow = $("mcpSrvAllow").value.trim();
+  if (allow) def.allowTools = allow.split(",").map((s) => s.trim()).filter(Boolean);
+  try {
+    const r = await postJSON("/mcp/servers", def);
+    $("mcpSrvKey").value = ""; // never keep the secret in the DOM
+    $("mcpSrvOut").textContent = JSON.stringify(r, null, 2);
+    $("mcpSrvName").value = ""; $("mcpSrvUrl").value = ""; $("mcpSrvAllow").value = "";
+    await loadMcpServers(); await loadMcpTools();
+  } catch (e) { $("mcpSrvOut").textContent = String(e.message || e); }
+});
+if ($("mcpSrvTable")) loadMcpServers().catch(() => {});
+
 /* ── MCP ─────────────────────────────────────────────────────────── */
 async function loadMcpTools() {
   const tbody = $("mcpTable")?.querySelector("tbody");
@@ -2511,6 +2626,45 @@ $("btnMcpCall")?.addEventListener("click", async () => {
   } catch (e) { $("mcpOut").textContent = String(e.message || e); }
 });
 if ($("mcpTable")) loadMcpTools().catch(() => {});
+
+/* MCP resources & prompts browser */
+function mcpResRender(rows, kind) {
+  const tbody = $("mcpResTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = rows
+    .map((r) => {
+      if (r.error) {
+        return `<tr><td>${esc(r.server)}</td><td colspan="2" class="muted">${esc(r.error)}</td></tr>`;
+      }
+      const label = kind === "resource" ? r.uri || r.name : r.name;
+      return `<tr>
+        <td>${esc(r.server)}</td>
+        <td><b>${esc(r.name || "")}</b> <span class="muted" style="font-size:0.7rem;">${esc(r.uri || r.description || "")}</span></td>
+        <td><button class="btn ghost mcp-res-open" data-kind="${kind}" data-server="${esc(r.server)}" data-ref="${esc(label)}">${kind === "resource" ? "Read" : "Get"}</button></td>
+      </tr>`;
+    })
+    .join("") || `<tr><td colspan="3" class="muted">none exposed</td></tr>`;
+  tbody.querySelectorAll(".mcp-res-open").forEach((b) => {
+    b.onclick = async () => {
+      $("mcpResOut").textContent = "loading…";
+      try {
+        const out =
+          b.dataset.kind === "resource"
+            ? await postJSON("/mcp/resources/read", { server: b.dataset.server, uri: b.dataset.ref })
+            : await postJSON("/mcp/prompts/get", { server: b.dataset.server, name: b.dataset.ref });
+        $("mcpResOut").textContent = JSON.stringify(out, null, 2).slice(0, 8000);
+      } catch (e) { $("mcpResOut").textContent = String(e.message || e); }
+    };
+  });
+}
+$("btnMcpRes")?.addEventListener("click", async () => {
+  try { mcpResRender((await getJSON("/mcp/resources")).resources || [], "resource"); }
+  catch (e) { $("mcpResOut").textContent = String(e.message || e); }
+});
+$("btnMcpPrompts")?.addEventListener("click", async () => {
+  try { mcpResRender((await getJSON("/mcp/prompts")).prompts || [], "prompt"); }
+  catch (e) { $("mcpResOut").textContent = String(e.message || e); }
+});
 
 /* ── Images (media jobs) ─────────────────────────────────────────── */
 function mediaRenderResult(job) {

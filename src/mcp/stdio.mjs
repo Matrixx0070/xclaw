@@ -45,9 +45,10 @@ async function handleBody(server, raw) {
     return;
   }
   const out = await server.handleRequest(body);
-  // notifications may have null id — still reply for simplicity
-  const payload = JSON.stringify(out);
-  process.stdout.write(
-    `Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`
-  );
+  // Notifications get NO reply (out === null) — replying is spec-invalid.
+  if (out == null) return;
+  // Spec stdio framing is newline-delimited JSON. The old Content-Length
+  // (LSP-style) replies confused strict clients; our own stdio client reads
+  // both, so this stays interoperable in both directions.
+  process.stdout.write(JSON.stringify(out) + "\n");
 }

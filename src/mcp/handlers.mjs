@@ -48,13 +48,26 @@ export function createMcpToolHandlers(tools = []) {
   return { listTools, callTool, byName };
 }
 
+/** Protocol revisions this server can speak (echoed back when requested). */
+const SUPPORTED_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18"];
+const LATEST_VERSION = "2025-06-18";
+
 /**
- * Handle a single JSON-RPC MCP request body.
+ * Handle a single JSON-RPC MCP message.
+ * Returns `null` for notifications — JSON-RPC/MCP clients MUST NOT receive a
+ * reply to a notification (the old handler replied, which is spec-invalid and
+ * confuses strict clients).
  */
-export async function handleMcpJsonRpc(handlers, body) {
-  const id = body?.id ?? null;
+export async function handleMcpJsonRpc(handlers, body, ctx = {}) {
+  const id = body?.id;
   const method = body?.method;
   const params = body?.params || {};
+  const isNotification = id === undefined || id === null;
+
+  if (isNotification) {
+    // notifications/initialized, notifications/cancelled, … — accept silently.
+    return null;
+  }
 
   const ok = (result) => ({ jsonrpc: "2.0", id, result });
   const fail = (code, message) => ({
@@ -65,20 +78,36 @@ export async function handleMcpJsonRpc(handlers, body) {
 
   try {
     if (method === "initialize") {
+      // Version negotiation: echo the client's revision when we support it,
+      // otherwise answer with our latest (spec behavior).
+      const requested = String(params.protocolVersion || "");
+      const protocolVersion = SUPPORTED_VERSIONS.includes(requested)
+        ? requested
+        : LATEST_VERSION;
       return ok({
-        protocolVersion: "2024-11-05",
-        capabilities: { tools: {} },
-        serverInfo: { name: "xclaw-mcp", version: "0.6.0" },
+        protocolVersion,
+        capabilities: {
+          tools: { listChanged: false },
+          ...(handlers.listResources ? { resources: {} } : {}),
+          ...(handlers.listPrompts ? { prompts: {} } : {}),
+        },
+        serverInfo: ctx.serverInfo || { name: "xclaw-mcp", version: "0.0.0" },
       });
-    }
-    if (method === "notifications/initialized" || method === "initialized") {
-      return ok({});
     }
     if (method === "tools/list") {
       return ok(await handlers.listTools());
     }
     if (method === "tools/call") {
       return ok(await handlers.callTool(params));
+    }
+    if (method === "resources/list" && handlers.listResources) {
+      return ok(await handlers.listResources(params));
+    }
+    if (method === "resources/read" && handlers.readResource) {
+      return ok(await handlers.readResource(params));
+    }
+    if (method === "prompts/list" && handlers.listPrompts) {
+      return ok(await handlers.listPrompts(params));
     }
     if (method === "ping") {
       return ok({});

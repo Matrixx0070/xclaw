@@ -1036,8 +1036,8 @@ export async function startGateway({ root } = {}) {
 
   const channelPolicy = createChannelPolicy(cfg);
   const approvalGate = resetSharedApprovalGate(cfg);
-  const mcpClient = createMcpClient({ servers: cfg.mcp?.servers || [] });
-  const mcpServer = createMcpServer({});
+  const mcpClient = createMcpClient({ getServers: () => cfg.mcp?.servers || [], cfg });
+  const mcpServer = createMcpServer({ cfg });
   const pairingStore = createPairingStore({});
   const gatewayAuth = createGatewayAuth(cfg);
   resetSharedAlerter(cfg);

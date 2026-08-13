@@ -43,6 +43,9 @@ export function createGatewayAuth(cfg = {}) {
     "/xclaw/jwks.json",
     "/.well-known/jwks.json",
     "/jwks.json",
+    // MCP OAuth browser redirect — the AS sends the user here with only
+    // code+state; authenticated by the one-time state, not the operator token.
+    "/mcp/oauth/callback",
   ]);
 
   function isProtectedPath(p) {
