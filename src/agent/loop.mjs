@@ -71,6 +71,7 @@ import { makeToolMessage, freezeRankSize } from "../tokens/rank-size.mjs";
 import { createAllLocalTools, localToolsAsOpenAI, executeLocalTool, localToolNames } from "../tools/registry.mjs";
 import { createToolRouter } from "../tools/router.mjs";
 import { createAgentMcpTools } from "./mcp-tools.mjs";
+import { getSharedHookManager } from "../hooks/manager.mjs";
 import { afterBrowserToolTruth } from "../browser/truth.mjs";
 import { beforeNavigate, beforeInput } from "../browser/hooks.mjs";
 import { resolveRole } from "../browser/role-binding.mjs";
@@ -170,6 +171,11 @@ export async function runAgentLoop(options) {
     onEventCb(e);
   };
 
+  // Lifecycle hook manager (cfg.hooks / docs/HOOKS.md). Injectable for tests;
+  // every executeAll below is failure-isolated — a broken hook never crashes
+  // the run.
+  const hooks = options.hookManager || getSharedHookManager(cfg);
+
   const maxTurns = cfg.agent?.maxTurns ?? 15;
   const runBudget = createRunBudget(cfg);
   const skillsEnabled = cfg.skills?.enabled !== false;
@@ -179,7 +185,8 @@ export async function runAgentLoop(options) {
   try {
   const computer = createComputerClient(cfg);
   const useFailover = cfg.router?.enabled !== false;
-  let provider;
+  // Injected provider (tests / embedders) skips router resolution entirely
+  let provider = options.provider || undefined;
   let route;
   let roleRouterMeta = null;
   const onRetryProvider = (info) => {
@@ -195,7 +202,7 @@ export async function runAgentLoop(options) {
   };
 
   // Role router (draft / act / verify) when configured
-  try {
+  if (!provider) try {
     const rr = await createRoleRouter(cfg, { onEvent, onRetry: onRetryProvider });
     if (rr.enabled && rr.provider) {
       provider = rr.provider;
@@ -561,10 +568,37 @@ export async function runAgentLoop(options) {
     }
   }
   const priorCapped = prior.length > maxHistory ? prior.slice(-maxHistory) : prior;
+
+  // ── Hook: pre_process — system/trusted hooks may rewrite the incoming
+  // message; a system-tier hook may abort the run before any model call.
+  let hookAbort = null;
+  let effectiveMessage = userMessage;
+  {
+    const hr = await hooks.executeAll(
+      "pre_process",
+      {
+        message: userMessage,
+        sessionKey,
+        channel: channel || null,
+        userId: userId || null,
+        workingDir,
+        cfg,
+      },
+      { mutable: ["message"] }
+    );
+    if (typeof hr.context.message === "string") effectiveMessage = hr.context.message;
+    if (hr.abort) {
+      hookAbort = hr.abort;
+      onEvent({ type: "hook", phase: "abort", category: "pre_process", message: hookAbort });
+    } else if (effectiveMessage !== userMessage) {
+      onEvent({ type: "hook", phase: "mutated", category: "pre_process" });
+    }
+  }
+
   let messages = [
     optimized.systemMessage,
     ...priorCapped,
-    { role: "user", content: userMessage },
+    { role: "user", content: effectiveMessage },
   ];
   if (priorCapped.length) {
     onEvent({
@@ -629,7 +663,10 @@ export async function runAgentLoop(options) {
   let prevWeights = null;
 
   try {
-    for (turns = 0; turns < maxTurns; turns++) {
+    if (hookAbort && !finalText) {
+      finalText = `Run blocked by hook: ${hookAbort}`;
+    }
+    for (turns = 0; !hookAbort && turns < maxTurns; turns++) {
       if (signal?.aborted) throw new Error("aborted");
 
       // Unattended-operation caps (cfg.agent.budget) — graceful stop, the
@@ -712,6 +749,15 @@ export async function runAgentLoop(options) {
         tools,
         ...(turnRole ? { role: turnRole } : {}),
       };
+      // ── Hook: on_request — observers see turn metadata; system tier also
+      // gets the live messages array.
+      await hooks.executeAll("on_request", {
+        turn: turns + 1,
+        model: provider.model,
+        messageCount: messages.length,
+        messages,
+        cfg,
+      });
       const completion =
         preferStream && typeof provider.chatStream === "function"
           ? await provider.chatStream({
@@ -738,6 +784,15 @@ export async function runAgentLoop(options) {
         turn: turns + 1,
         finishReason: completion.finishReason,
         hasTools: Boolean(assistant.tool_calls?.length),
+      });
+      // ── Hook: on_response — after every model reply
+      await hooks.executeAll("on_response", {
+        turn: turns + 1,
+        finishReason: completion.finishReason || null,
+        hasToolCalls: Boolean(assistant.tool_calls?.length),
+        content:
+          typeof assistant.content === "string" ? assistant.content.slice(0, 2000) : null,
+        cfg,
       });
 
       if (tokensEnabled) {
@@ -1262,6 +1317,29 @@ export async function runAgentLoop(options) {
     if (turns >= maxTurns && !finalText) {
       finalText = `Stopped after ${maxTurns} turns (maxTurns).`;
     }
+
+    // ── Hook: post_process — system/trusted hooks may transform the final
+    // text; runs before the transcript save (finally) so redactions persist.
+    if (finalText) {
+      const hr = await hooks.executeAll(
+        "post_process",
+        { text: finalText, turns, sessionKey, cfg },
+        { mutable: ["text"] }
+      );
+      if (typeof hr.context.text === "string" && hr.context.text !== finalText) {
+        finalText = hr.context.text;
+        onEvent({ type: "hook", phase: "mutated", category: "post_process" });
+      }
+    }
+  } catch (err) {
+    // ── Hook: on_error — observe loop failures; the error still propagates.
+    await hooks.executeAll("on_error", {
+      error: String(err?.message || err),
+      turn: turns,
+      sessionKey,
+      cfg,
+    });
+    throw err;
   } finally {
     try {
       unregisterSession(sessionKey);

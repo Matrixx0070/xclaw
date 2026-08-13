@@ -1,5 +1,39 @@
 # Changelog
 
+## 3.99.0 — lifecycle hook system (dynamic, tiered, failure-isolated)
+
+New `HookManager` (src/hooks/manager.mjs) with five lifecycle categories wired
+into the agent loop: `pre_process` (may rewrite the incoming message or —
+system tier — abort the run before any model call), `on_request` /
+`on_response` (every turn), `post_process` (may transform the final text,
+runs BEFORE the transcript save so redactions persist), `on_error` (observes
+loop failures; the error still propagates).
+
+- **Registration API**: registerHook/removeHook/listHooks/history with hard
+  validation (category, callable, single-context-arg arity, tier).
+- **Permission tiers**: system (full context incl. cfg + live messages, may
+  mutate + abort) · trusted (redacted context, may mutate whitelisted fields)
+  · user (read-only sanitized copy, returns ignored). Config-loaded modules
+  are capped at the tier the OPERATOR assigns in `hooks.modules[]` — a module
+  claiming system is clamped and the attempt logged.
+- **Isolation**: per-hook try/catch + timeout (hooks.timeoutMs, default 2 s);
+  a throwing or hanging hook is recorded and skipped, never crashes the run;
+  executeAll never rejects.
+- **Logging**: every registration/execution in a 200-entry ring buffer +
+  stdout lines (hooks.log).
+- **Config**: hooks.enabled global kill-switch, per-category disables,
+  module loading from xclaw.json.
+- **Examples** (src/hooks/examples.mjs, one per tier): redact-secrets
+  (system, post_process), timestamp-context (trusted, pre_process),
+  timing-logger (user, request/response). Docs: docs/HOOKS.md.
+- runAgentLoop now accepts injected `provider` and `hookManager` options
+  (hermetic tests / embedders).
+
+Live-verified on the real gateway: a config-loaded module fired on a real
+agent run (timing logged per turn), and its self-claimed system hook was
+clamped to user tier — its attempted output hijack was ignored (reply stayed
+intact). 21 new tests; suite 1440/0.
+
 ## 3.98.1 — real-world remote MCP proven (DeepWiki + GitHub) + SSE CRLF fix
 
 First contact with real third-party remote MCP servers, driven end-to-end through

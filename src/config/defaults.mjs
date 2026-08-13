@@ -503,6 +503,19 @@ export const DEFAULT_CONFIG = {
   mcp: {
     servers: [],
   },
+  /** Lifecycle hook system (docs/HOOKS.md) */
+  hooks: {
+    enabled: true,
+    /** per-category kill switches, e.g. { pre_process: false } */
+    categories: {},
+    /** per-hook execution budget */
+    timeoutMs: 2000,
+    /** log hook executions to stdout */
+    log: true,
+    /** ESM modules exporting register(manager); tier is OPERATOR-assigned:
+     *  [{ path: "/abs/my-hooks.mjs", tier: "trusted" }] (default tier: user) */
+    modules: [],
+  },
   providers: {
     routes: {
       "grok-": "xai",
