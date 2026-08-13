@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.94.3 — provider page: live credential health check + unknown-provider validation
+
+Two gaps found auditing the Providers page for robustness:
+
+**Live health check (the "is this key actually working?" feature).** Every provider row gains a **Test** button and a status dot. `POST /providers/manage/verify` first confirms a credential resolves, then makes a forced, uncached, real `/models` call — credential *resolving* is not the same as *authenticating* (the 2026-08-13 outage had a resolving-but-dead token). Dot goes grey (untested) → amber (testing) → green (`live · N models`) or red (`no credential` / `auth failed`), with the failure reason in the tooltip. Live-verified: Anthropic green with 10 models via the OAuth profile, a keyless provider red at the credential stage.
+
+**Unknown-provider validation.** `POST /providers/manage/key` (and `base-url`, `use`, `verify`) accepted any provider string — POSTing a key for `"notreal"` returned `ok:true` and wrote an orphan `notreal:default` profile to disk that never showed in the inventory. All create/mutate paths now reject providers not in the known list (`400 unknown provider`); delete/prefer already no-op on non-existent profiles. 5 new route tests. Also updated the panel copy (OAuth is in-UI now, not CLI-only).
+
+Suite 1380/0.
+
 ## 3.94.2 — OAuth login from the web UI (was CLI-only)
 
 The Providers page could store API keys but OAuth said "use the CLI". Now the whole flow runs in the browser:

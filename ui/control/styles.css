@@ -312,6 +312,18 @@ textarea {
   padding: 0.5rem; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02);
 }
 
+/* ── provider health dot ─────────────────────────── */
+.prov-health { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; }
+.prov-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted); flex: 0 0 auto;
+}
+.prov-dot.testing { background: var(--warn); animation: flash 0.9s ease infinite; }
+.prov-dot.ok { background: var(--good); box-shadow: 0 0 6px rgba(61, 214, 140, 0.6); }
+.prov-dot.bad { background: var(--bad); }
+.prov-health-txt.ok { color: var(--good); }
+.prov-health-txt.bad { color: var(--bad); }
+
 /* ── channels panel ──────────────────────────────── */
 .chan-field { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin: 0.15rem 0; }
 .chan-flabel { min-width: 8.5rem; font-size: 0.85em; color: var(--muted); }

@@ -36,10 +36,24 @@ import {
   setProviderBaseUrl,
   setActiveProvider,
   checkProviderCredential,
+  manageableProviderIds,
 } from "../../providers/manage.mjs";
 import { loginApiKey, removeProfile, setAuthOrder, listProfiles } from "../../auth/profiles.mjs";
 
 const APPLIES_NOTE = "applies to new agent runs (running loops keep their boot config)";
+
+/**
+ * Is `id` a provider this gateway actually knows? Mutating a credential/base
+ * URL for an unknown provider used to succeed silently — it wrote an orphan
+ * "<id>:default" profile to disk that never showed in the inventory (found
+ * auditing the panel: POST key {provider:"notreal"} → ok:true). Reject at the
+ * edge so bad input can't accrete on-disk state.
+ */
+function knownProvider(cfg, id) {
+  const norm = String(id || "").toLowerCase();
+  if (!norm) return false;
+  return manageableProviderIds(cfg).map((x) => x.toLowerCase()).includes(norm);
+}
 
 // Pending web-OAuth flows: state → { provider, name, built, at }.
 // The PKCE verifier lives ONLY here; single-use, TTL-swept, size-capped.
@@ -101,6 +115,10 @@ export async function tryHandleProvidersRoute({ p, method, req, res, cfg, json, 
         json(res, 400, { error: "provider required" });
         return true;
       }
+      if (!knownProvider(cfg, body.provider)) {
+        json(res, 400, { error: `unknown provider: ${body.provider}` });
+        return true;
+      }
       const raw = body.url ?? null;
       if (raw !== null && String(raw).trim()) {
         const problem = baseUrlProblem(String(raw).trim());
@@ -120,6 +138,10 @@ export async function tryHandleProvidersRoute({ p, method, req, res, cfg, json, 
         json(res, 400, { error: "provider and apiKey required" });
         return true;
       }
+      if (!knownProvider(cfg, body.provider)) {
+        json(res, 400, { error: `unknown provider: ${body.provider}` });
+        return true;
+      }
       // Stored under its own profile name so an API key NEVER clobbers an
       // OAuth login (OAuth lives at "<provider>:default"; keys at
       // "<provider>:apikey") — the two credentials coexist per provider.
@@ -135,6 +157,10 @@ export async function tryHandleProvidersRoute({ p, method, req, res, cfg, json, 
 
     if (p === "/providers/manage/use" && method === "POST") {
       const body = await readBody(req);
+      if (body.provider && !knownProvider(cfg, body.provider)) {
+        json(res, 400, { error: `unknown provider: ${body.provider}` });
+        return true;
+      }
       const out = await setActiveProvider(cfg, {
         provider: body.provider,
         model: body.model,
@@ -167,6 +193,52 @@ export async function tryHandleProvidersRoute({ p, method, req, res, cfg, json, 
         return true;
       }
       json(res, 200, await checkProviderCredential(cfg, body.provider));
+      return true;
+    }
+
+    // Live health check for the UI's per-provider status dot: does the stored
+    // credential ACTUALLY authenticate? (checkProviderCredential above only
+    // proves it resolves — the 2026-08-13 outage had a resolving-but-dead
+    // token.) A forced, uncached, real /models call is the true signal.
+    if (p === "/providers/manage/verify" && method === "POST") {
+      const body = await readBody(req);
+      if (!body.provider) {
+        json(res, 400, { error: "provider required" });
+        return true;
+      }
+      if (!knownProvider(cfg, body.provider)) {
+        json(res, 400, { error: `unknown provider: ${body.provider}` });
+        return true;
+      }
+      const cred = await checkProviderCredential(cfg, body.provider);
+      if (!cred.ok) {
+        json(res, 200, {
+          ok: false,
+          provider: body.provider,
+          stage: "credential",
+          error: cred.error || "no credential resolves",
+        });
+        return true;
+      }
+      try {
+        const { fetchLiveModels } = await import("../../providers/discovery.mjs");
+        const live = await fetchLiveModels(cfg, body.provider, { force: true, timeoutMs: 8000 });
+        json(res, 200, {
+          ok: Boolean(live.ok),
+          provider: body.provider,
+          stage: "live",
+          models: live.count ?? 0,
+          source: cred.source || null,
+          error: live.ok ? null : live.error || "live call failed",
+        });
+      } catch (e) {
+        json(res, 200, {
+          ok: false,
+          provider: body.provider,
+          stage: "live",
+          error: e.message || String(e),
+        });
+      }
       return true;
     }
 

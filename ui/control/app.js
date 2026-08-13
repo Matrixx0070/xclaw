@@ -1571,10 +1571,16 @@ function provRenderRow(row) {
       </div>
     </td>
     <td class="prov-creds">
-      <div class="prov-badges">${credBadges} ${envBadge} ${noCred}</div>
+      <div class="prov-badges">
+        <span class="prov-health" title="Not tested — click Test">
+          <span class="prov-dot"></span><span class="prov-health-txt muted">untested</span>
+        </span>
+        ${credBadges} ${envBadge} ${noCred}
+      </div>
       <div class="prov-btnrow">
         <input type="password" class="prov-key" placeholder="paste API key…" autocomplete="off" />
         <button class="btn prov-key-save">Add</button>
+        <button class="btn ghost prov-test" title="Live-test the stored credential">Test</button>
       </div>
       ${oauthHint}
     </td>
@@ -1658,6 +1664,27 @@ function provWireRows() {
     tr.querySelector(".prov-models-refresh")?.addEventListener("click", guard(async () => {
       await provFetchModels(id, tr);
       await loadProviders();
+    }));
+
+    tr.querySelector(".prov-test")?.addEventListener("click", guard(async () => {
+      const health = tr.querySelector(".prov-health");
+      const dot = tr.querySelector(".prov-dot");
+      const txt = tr.querySelector(".prov-health-txt");
+      dot.className = "prov-dot testing";
+      txt.textContent = "testing…";
+      txt.className = "prov-health-txt muted";
+      const r = await provCall("/providers/manage/verify", "POST", { provider: id });
+      if (r.ok) {
+        dot.className = "prov-dot ok";
+        txt.textContent = `live · ${r.models} models`;
+        txt.className = "prov-health-txt ok";
+        health.title = `credential resolves (${r.source || "?"}) and the live API answered`;
+      } else {
+        dot.className = "prov-dot bad";
+        txt.textContent = r.stage === "credential" ? "no credential" : "auth failed";
+        txt.className = "prov-health-txt bad";
+        health.title = r.error || "verification failed";
+      }
     }));
 
     tr.querySelector(".prov-oauth")?.addEventListener("click", guard(async () => {

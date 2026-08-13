@@ -222,6 +222,59 @@ describe("gateway providers management routes", () => {
     assert.match(out.body.error, /unknown provider/);
   });
 
+  // Gap found auditing the panel (3.94.3): storing a key for an unknown
+  // provider used to return ok:true and write an orphan "<id>:default"
+  // profile to disk that never appeared in the inventory.
+  it("POST key for an unknown provider is rejected (no orphan profile)", async () => {
+    const post = makeArgs({
+      p: "/providers/manage/key",
+      method: "POST",
+      body: { provider: "notreal", apiKey: "sk-whatever" },
+    });
+    assert.equal(await tryHandleProvidersRoute(post.args), true);
+    assert.equal(post.out.status, 400);
+    assert.match(post.out.body.error, /unknown provider/);
+
+    // and it must not have leaked into inventory
+    const get = makeArgs({ p: "/providers/manage" });
+    await tryHandleProvidersRoute(get.args);
+    assert.equal(get.out.body.providers.some((r) => r.id === "notreal"), false);
+  });
+
+  it("POST base-url for an unknown provider is rejected", async () => {
+    const { args, out } = makeArgs({
+      p: "/providers/manage/base-url",
+      method: "POST",
+      body: { provider: "notreal", url: "https://evil.example" },
+    });
+    assert.equal(await tryHandleProvidersRoute(args), true);
+    assert.equal(out.status, 400);
+    assert.match(out.body.error, /unknown provider/);
+  });
+
+  it("verify: unknown provider → 400", async () => {
+    const { args, out } = makeArgs({
+      p: "/providers/manage/verify",
+      method: "POST",
+      body: { provider: "notreal" },
+    });
+    assert.equal(await tryHandleProvidersRoute(args), true);
+    assert.equal(out.status, 400);
+    assert.match(out.body.error, /unknown provider/);
+  });
+
+  it("verify: known provider with no credential → ok:false at credential stage", async () => {
+    const { args, out } = makeArgs({
+      p: "/providers/manage/verify",
+      method: "POST",
+      body: { provider: "mistral" }, // known, but no key stored in the temp home
+    });
+    assert.equal(await tryHandleProvidersRoute(args), true);
+    assert.equal(out.status, 200);
+    assert.equal(out.body.ok, false);
+    assert.equal(out.body.stage, "credential");
+  });
+
   it("unmatched paths return false", async () => {
     const { args } = makeArgs({ p: "/providers/route" });
     assert.equal(await tryHandleProvidersRoute(args), false);
