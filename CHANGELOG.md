@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.90.0 — channel management via CLI · TUI · web UI (mirrors providers)
+
+Every channel (Telegram, Slack, Discord, Email, WebChat) is now manageable the same way as providers — CLI, interactive TUI, and the control-UI panel — instead of hand-editing config.
+
+**Shared core** `src/channels/manage.mjs`: declarative `CHANNEL_SPECS` (per-channel fields with secret/required/type), `channelInventory(cfg)` (enabled + configured + per-field set/not-set, **secrets always redacted to booleans — values never returned**), `setChannelField(id,key,value|null)`, `setChannelEnabled(id,bool)`. Secrets stay inline in `cfg.channels.<id>` by existing design (config is chmod 600); writes go through `saveConfigPatch`.
+
+**CLI** `xclaw channels`: `list` (aligned table — enabled channels first, then a `— disabled —` divider; per-channel status + which fields are set, secrets shown as `set` never values), `set --channel X --field K --value V [--clear]` (validated; secret fields confirm "stored — not echoed"; dot-paths like `email.imap.pass` nest; list fields split comma strings), `enable`/`disable`, and a sequential `setup` wizard over all five channels.
+
+**Web UI** (control panel): a Channels card mirroring Providers — per-channel enable toggle, configured/running badges, per-field inputs (secrets = masked + Save/×, text/list/bool typed), per-channel hints, Restart button (live channel manager). `esc()` on every interpolation, operator token on every call, 401 → clear message.
+
+**Gateway** `routes/channels.mjs`: `GET /channels/manage` (inventory + live `channelManager.status()` merge, no secrets), `POST /channels/manage/field|enabled|restart`. `/channels` is operator-token gated in both auth branches (channel secrets are bot tokens — writes must not be unauthenticated). The existing `/channels/status` keeps working.
+
+Verified live: auth gate 401 without token; inventory returns 5 channels with zero secret values leaked; `/channels/status` 200; control UI serves; `xclaw channels` table renders. Suite 1304/0.
+
 ## 3.89.0 — polish the providers surface (CLI · TUI · web UI) for all providers
 
 A consistency + clarity pass across every provider (now 12: xai, openai, anthropic, google, nvidia, openrouter, deepseek, groq, mistral, together, ollama, ollama-cloud).

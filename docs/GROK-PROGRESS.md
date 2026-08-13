@@ -610,3 +610,21 @@ RAN: suite 1285/0 · LIVE CLI list aligned across 12 providers · gateway panel:
 401, /control/ 200, esc()×12. providers-cli 12/12, gateway route/split 22/22.
 STATE: 5 providers configured (xai apikey★+oauth, anthropic oauth★+apikey,
 nvidia apikey, ollama-cloud apikey, ollama local); 12 total selectable.
+
+## 2026-08-13 — 3.90.0 channel management CLI/TUI/UI (Claude, 2 forks)
+
+STATUS: green
+BUILT: src/channels/manage.mjs core (CHANNEL_SPECS declarative fields,
+channelInventory secrets-redacted, setChannelField/setChannelEnabled via
+saveConfigPatch). CLI src/cli/channels-cli.mjs — list(aligned table,
+enabled-first)/set/enable/disable/setup wizard, mirrors providers-cli. Gateway
+routes/channels.mjs — GET /channels/manage (+live status merge) + POST field/
+enabled/restart; /channels operator-token gated in auth.mjs both branches.
+Control-UI Channels panel (enable toggle, masked secret inputs, badges, restart)
+mirrors Providers. 5 channels: telegram/slack/discord/email/webchat.
+RAN: suite 1285→1304/0 · channels-cli 11/11 · gateway-channels+split 21/21 ·
+LIVE: no-token /channels/manage 401, inventory 5 channels NO secret values
+leaked, /channels/status 200, /control/ 200, chan panel present. CLI list
+aligned (enabled webchat first, disabled below).
+STATE: channels now manageable same as providers across CLI/TUI/UI. webchat on;
+telegram/slack/discord/email need setup (tokens).

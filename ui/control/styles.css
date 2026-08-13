@@ -313,3 +313,10 @@ textarea {
   letter-spacing: 0.08em; text-transform: uppercase;
   padding: 0.5rem; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02);
 }
+
+/* Channels panel — field rows reuse provider styling tokens */
+.chan-field { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin: 0.15rem 0; }
+.chan-flabel { min-width: 8.5rem; font-size: 0.85em; color: var(--muted, #9aa); }
+.chan-field input[type="text"], .chan-field input[type="password"] { flex: 1 1 12rem; min-width: 8rem; }
+.chan-cfg { max-width: 34rem; }
+.chan-toggle { display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; }

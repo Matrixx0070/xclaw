@@ -406,6 +406,32 @@
       </div>
     </section>
 
+    <section class="card span2" id="cardChannels">
+      <h2>Channels</h2>
+      <p class="muted">
+        Enable a messaging channel and set its credentials (bot tokens, IMAP/SMTP) — the same
+        as <code>xclaw channels …</code>. Secrets are stored in the (mode&nbsp;600) config, never
+        shown back. Changes apply on the next gateway start / channel restart.
+      </p>
+      <div class="row">
+        <button class="btn" id="btnChanRefresh">Refresh</button>
+        <span id="chanStatus" class="muted"></span>
+      </div>
+      <div class="table-wrap" style="max-height: 420px; margin-top: 0.5rem;">
+        <table id="chanTable">
+          <thead>
+            <tr>
+              <th>Channel</th>
+              <th>Enabled</th>
+              <th>Configuration</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="card span2" id="cardAgent">
       <h2>Quick agent run</h2>
       <textarea id="agentMsg" rows="3" placeholder="Message to agent…"></textarea>

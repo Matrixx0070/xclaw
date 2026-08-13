@@ -352,6 +352,11 @@ Enable with seats.enabled: true in config`);
       await runProvidersCli(args.slice(1), { root });
       break;
     }
+    case "channels": {
+      const { runChannelsCli } = await import("../src/cli/channels-cli.mjs");
+      await runChannelsCli(args.slice(1), { root });
+      break;
+    }
     case "models": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const cfg = await loadConfig();
@@ -1897,6 +1902,7 @@ Commands:
   stop-all             Abort agent sessions + stop computer
   automations          list|add|pause|resume|run|results|delete
   providers            list | setup (wizard) | set | oauth | use [X] [model]
+  channels             list | setup (wizard) | set | enable X | disable X
   sessions-active      List in-process agent sessions
   transcripts          list | show <sessionId>
   eval                 Eval suite (--tag, --mock, --json)

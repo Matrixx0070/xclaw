@@ -1644,3 +1644,158 @@ function provWireRows() {
 
 $("btnProvRefresh")?.addEventListener("click", () => loadProviders().catch(console.error));
 loadProviders().catch(() => {});
+
+// ── Channels panel ─────────────────────────────────────────────────────────
+// Same shape as Providers: manage every channel (enable + credentials) from the
+// UI, mirroring `xclaw channels …`. Secrets are write-only (POST /field); the
+// inventory only reports set/not-set. Reuses esc()/provHeaders/provCall.
+const CHAN_HINTS = {
+  webchat: "built-in browser chat at <code>/chat/</code> — no credentials",
+  telegram: "bot token from <code>@BotFather</code>",
+  slack: "bot token <code>xoxb-…</code> (+ app token for socket mode)",
+  discord: "bot token from the Discord developer portal",
+  email: "IMAP inbox to read, SMTP to reply",
+};
+
+function chanSetStatus(text, isErr) {
+  const el = $("chanStatus");
+  if (!el) return;
+  let msg = text || "";
+  if (isErr && /unauthorized|401/i.test(String(text))) {
+    msg = "operator token required — set localStorage.xclaw_token";
+  }
+  el.textContent = msg;
+  el.className = isErr ? "muted err" : "muted";
+}
+
+function chanFieldInput(chId, f) {
+  const idAttr = `data-ch="${esc(chId)}" data-key="${esc(f.key)}"`;
+  const label = `<label class="chan-flabel" title="${esc(f.key)}">${esc(f.label)}${f.required ? " *" : ""}</label>`;
+  if (f.type === "bool") {
+    return `<div class="chan-field">${label}
+      <input type="checkbox" class="chan-bool" ${idAttr} ${f.set && f.value ? "checked" : ""} /></div>`;
+  }
+  if (f.secret) {
+    // Write-only: never render the value. Show whether it's set.
+    const state = f.set ? `<span class="pill on">set</span>` : `<span class="pill">not set</span>`;
+    return `<div class="chan-field">${label} ${state}
+      <input type="password" class="chan-secret" ${idAttr} placeholder="${f.set ? "replace…" : "paste…"}" autocomplete="off" />
+      <button class="btn chan-secret-save" ${idAttr}>Save</button>
+      ${f.set ? `<button class="btn ghost chan-secret-clear" ${idAttr} title="clear">×</button>` : ""}</div>`;
+  }
+  const val = f.value == null ? "" : Array.isArray(f.value) ? f.value.join(",") : String(f.value);
+  return `<div class="chan-field">${label}
+    <input type="text" class="chan-text" ${idAttr} value="${esc(val)}" placeholder="${esc(f.type === "list" ? "comma,list" : "")}" spellcheck="false" />
+    <button class="btn chan-text-save" ${idAttr}>Save</button></div>`;
+}
+
+function chanRenderRow(ch) {
+  const hint = CHAN_HINTS[ch.id] ? `<div class="prov-sub muted">${CHAN_HINTS[ch.id]}</div>` : "";
+  const running =
+    ch.status && (ch.status.running || ch.status.ok)
+      ? ` <span class="pill on">running</span>`
+      : "";
+  const cfgBadge = ch.configured
+    ? `<span class="pill on">configured</span>`
+    : `<span class="pill">needs setup</span>`;
+  const note = ch.note ? `<div class="prov-sub muted">${esc(ch.note)}</div>` : "";
+  const fields = ch.fields && ch.fields.length
+    ? ch.fields.map((f) => chanFieldInput(ch.id, f)).join("")
+    : `<span class="muted">no credentials</span>`;
+  const restart = `<button class="btn ghost chan-restart" data-ch="${esc(ch.id)}" title="restart this channel">Restart</button>`;
+  return `<tr data-ch="${esc(ch.id)}" class="${ch.enabled ? "" : "prov-dim"}">
+    <td class="prov-name"><b>${esc(ch.name)}</b>${running}<br /><span class="muted">${esc(ch.id)}</span>${hint}</td>
+    <td>
+      <label class="chan-toggle"><input type="checkbox" class="chan-enabled" data-ch="${esc(ch.id)}" ${ch.enabled ? "checked" : ""} /> ${cfgBadge}</label>
+    </td>
+    <td class="chan-cfg">${fields}${note}</td>
+    <td>${restart}</td>
+  </tr>`;
+}
+
+async function loadChannels() {
+  const tbody = document.querySelector("#chanTable tbody");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="4" class="muted">loading channels…</td></tr>`;
+  try {
+    const inv = await provCall("/channels/manage");
+    const list = (inv.channels || []).slice();
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">no channels</td></tr>`;
+      return;
+    }
+    // Enabled first, then the rest.
+    list.sort((a, b) => (b.enabled ? 1 : 0) - (a.enabled ? 1 : 0));
+    tbody.innerHTML = list.map(chanRenderRow).join("");
+    const on = list.filter((c) => c.enabled).map((c) => c.id);
+    chanSetStatus(on.length ? `enabled: ${on.join(", ")}` : "no channels enabled");
+    chanWireRows();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted err">${esc(e.message || e)}</td></tr>`;
+    chanSetStatus(String(e.message || e), true);
+  }
+}
+
+function chanWireRows() {
+  document.querySelectorAll("#chanTable tr[data-ch]").forEach((tr) => {
+    const id = tr.getAttribute("data-ch");
+    const guard = (fn) => async (ev) => {
+      provBusy(tr, true);
+      try { await fn(ev); } catch (e) { chanSetStatus(String(e.message || e), true); }
+      finally { provBusy(tr, false); }
+    };
+
+    tr.querySelector(".chan-enabled")?.addEventListener("change", guard(async (ev) => {
+      const enabled = !!ev.target.checked;
+      await provCall("/channels/manage/enabled", "POST", { channel: id, enabled });
+      chanSetStatus(`${id}: ${enabled ? "enabled" : "disabled"} — applies on restart`);
+      await loadChannels();
+    }));
+
+    tr.querySelectorAll(".chan-secret-save").forEach((btn) => {
+      btn.addEventListener("click", guard(async () => {
+        const key = btn.getAttribute("data-key");
+        const input = tr.querySelector(`.chan-secret[data-key="${CSS.escape(key)}"]`);
+        const value = input.value.trim();
+        if (!value) return chanSetStatus(`${id}.${key}: paste a value first`, true);
+        await provCall("/channels/manage/field", "POST", { channel: id, key, value });
+        input.value = ""; // never keep the secret in the DOM
+        chanSetStatus(`${id}.${key}: saved`);
+        await loadChannels();
+      }));
+    });
+    tr.querySelectorAll(".chan-secret-clear").forEach((btn) => {
+      btn.addEventListener("click", guard(async () => {
+        const key = btn.getAttribute("data-key");
+        await provCall("/channels/manage/field", "POST", { channel: id, key, value: null });
+        chanSetStatus(`${id}.${key}: cleared`);
+        await loadChannels();
+      }));
+    });
+    tr.querySelectorAll(".chan-text-save").forEach((btn) => {
+      btn.addEventListener("click", guard(async () => {
+        const key = btn.getAttribute("data-key");
+        const input = tr.querySelector(`.chan-text[data-key="${CSS.escape(key)}"]`);
+        const raw = input.value.trim();
+        await provCall("/channels/manage/field", "POST", { channel: id, key, value: raw || null });
+        chanSetStatus(`${id}.${key}: saved`);
+        await loadChannels();
+      }));
+    });
+    tr.querySelectorAll(".chan-bool").forEach((box) => {
+      box.addEventListener("change", guard(async () => {
+        const key = box.getAttribute("data-key");
+        await provCall("/channels/manage/field", "POST", { channel: id, key, value: !!box.checked });
+        chanSetStatus(`${id}.${key}: ${box.checked}`);
+      }));
+    });
+
+    tr.querySelector(".chan-restart")?.addEventListener("click", guard(async () => {
+      const r = await provCall("/channels/manage/restart", "POST", { channel: id });
+      chanSetStatus(r.restarted ? `${id}: restarted` : `${id}: ${r.note || r.error || "not running"}`);
+    }));
+  });
+}
+
+$("btnChanRefresh")?.addEventListener("click", () => loadChannels().catch(console.error));
+loadChannels().catch(() => {});

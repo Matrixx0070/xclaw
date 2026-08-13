@@ -18,6 +18,7 @@ const MODULES = [
   ["mcp", "tryHandleMcpRoute"],
   ["media", "tryHandleMediaRoute"],
   ["providers", "tryHandleProvidersRoute"],
+  ["channels", "tryHandleChannelsRoute"],
 ];
 
 describe("gateway routes modules (split)", () => {

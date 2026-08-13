@@ -96,7 +96,9 @@ export function createGatewayAuth(cfg = {}) {
         p.startsWith("/subagents") ||
         // provider management writes config + stores credentials; a base-url
         // rewrite would aim the stored Bearer token at an attacker host
-        p.startsWith("/providers")
+        p.startsWith("/providers") ||
+        // channel management writes config + channel secrets (bot tokens etc.)
+        p.startsWith("/channels")
       );
     }
     // strict: protect API surface
@@ -125,7 +127,8 @@ export function createGatewayAuth(cfg = {}) {
       p === "/xclaw/jwks/epoch" ||
       p.startsWith("/swarm") ||
       p.startsWith("/subagents") ||
-      p.startsWith("/providers")
+      p.startsWith("/providers") ||
+      p.startsWith("/channels")
     );
   }
 
