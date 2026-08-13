@@ -127,4 +127,95 @@ describe("T3 computer-only plane", () => {
     assert.equal(isComputerOnlyTool("xclaw_browser_tab"), true);
     assert.equal(isComputerOnlyTool("web_search"), false);
   });
+
+  // Regression: strict-zod computer engines (the CDP bundle) reject unknown
+  // input keys — every live bash call failed with InputValidationError on the
+  // injected systemRunPlan until the router learned to enforce + strip it.
+  describe("systemRunPlan vs plan-incapable computer", () => {
+    it("strips the key and still forwards a valid plan's command", async () => {
+      const { buildSystemRunPlan } = await import(
+        "../src/security/system-run-plan.mjs"
+      );
+      const built = buildSystemRunPlan({
+        tool: "xclaw_bash",
+        args: { command: "echo plan-ok" },
+      });
+      assert.equal(built.ok, true);
+      let seen;
+      const computer = {
+        async callTool(_s, _n, args) {
+          seen = args;
+          return { ok: true, stdout: "ran" };
+        },
+      };
+      const router = createToolRouter({
+        computer,
+        sessionId: "s",
+        computerAcceptsRunPlan: false,
+      });
+      const r = await router.dispatch({
+        name: "xclaw_bash",
+        args: { command: "echo plan-ok" },
+        plan: built.plan,
+      });
+      assert.equal(r.ok, true);
+      assert.ok(seen, "computer was called");
+      assert.equal("systemRunPlan" in seen, false, "key stripped");
+      assert.equal(seen.command, "echo plan-ok");
+    });
+
+    it("denies a drifted plan gateway-side without calling the computer", async () => {
+      const { buildSystemRunPlan } = await import(
+        "../src/security/system-run-plan.mjs"
+      );
+      const built = buildSystemRunPlan({
+        tool: "xclaw_bash",
+        args: { command: "echo frozen" },
+      });
+      assert.equal(built.ok, true);
+      let called = false;
+      const computer = {
+        async callTool() {
+          called = true;
+          return { ok: true };
+        },
+      };
+      const router = createToolRouter({
+        computer,
+        sessionId: "s",
+        computerAcceptsRunPlan: false,
+      });
+      const r = await router.dispatch({
+        name: "xclaw_bash",
+        // live command mutated after the plan was frozen
+        args: { command: "echo mutated" },
+        plan: built.plan,
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.blocked, true);
+      assert.match(String(r.error), /spawn enforce/);
+      assert.equal(called, false, "computer never reached");
+    });
+
+    it("passes the key through when the engine declares support", async () => {
+      let seen;
+      const computer = {
+        async callTool(_s, _n, args) {
+          seen = args;
+          return { ok: true };
+        },
+      };
+      const router = createToolRouter({
+        computer,
+        sessionId: "s",
+        computerAcceptsRunPlan: true,
+      });
+      await router.dispatch({
+        name: "xclaw_bash",
+        args: { command: "true" },
+        plan: { fingerprint: "abc", command: "true" },
+      });
+      assert.equal(seen.systemRunPlan.fingerprint, "abc");
+    });
+  });
 });

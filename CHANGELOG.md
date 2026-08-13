@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.91.1 — fix: every live bash call rejected by the bundle engine + 21 browser tools born broken
+
+Two live-bot-breaking bugs, both found from the running gateway's own logs (`ALRIGHT RECHECK AGAIN` turn, 2026-08-13 01:43):
+
+**1. `xclaw_bash` failed on every call with `InputValidationError: unrecognized key 'systemRunPlan'`.**
+The approval path freezes a `systemRunPlan` and the loop/router inject it into exec-tool args so the computer plane can enforce it at spawn (3.81.0 design). The module engines accept the key — but the opt-in CDP **bundle** engine validates input with strict zod and rejected the whole call. With `security.autoApprove` + plan binding active, that meant *every* bash call through the live bot died before running.
+
+- `modules/bash-tool.mjs` now declares `systemRunPlan` in its input schema, so engines built from modules *advertise* support.
+- The loop reads that advertisement from `listTools` and passes `computerAcceptsRunPlan` to the tool router.
+- When the engine can't accept the key, the router runs the same `assertPlanAtSpawn` gate the module engine would run — gateway-side, fail-closed — then strips the key before forwarding. Plan enforcement is preserved, not dropped: a drifted plan is denied without the computer ever being called (regression-tested).
+- Second latent bug this surfaced: plans were frozen against `security.planRoot || process.cwd()` (the gateway's launch dir), so the spawn-time cwd pin *always* drifted from the session workspace (`cwd drift at spawn (plan=/root/xclaw live=/root/.xclaw/workspaces)`) — masked until now because the bundle rejected the key before any cwd check ran. The loop now binds exec plans against the run's `workingDir` (model-supplied `cwd`/`workingDir` still wins).
+
+**2. 21 browser tools were born broken — `fabric_status` → `fabricStatus is not defined`.**
+`src/tools/browser-tools.mjs` (single Grok bulk commit) only ever imported the mitm helpers; the lease/gate/fabric/sense/truth/timetravel/role tools referenced 22 identifiers from six modules that were never imported. Every `execute` of `tab_lease`, `commit_gate`, `fabric_status`, `session_role`, `browser_assert` (mitm-on path), `mitm_policy`/`mitm_export`, `trace_replay`/`trace_score` was a guaranteed ReferenceError. The suite stayed green because nothing invoked them — closed with imports plus `test/browser-tools-integrity.test.mjs` executing the previously-broken read-only paths.
+
+Verified live end-to-end through the running gateway (webchat → agent loop → router → bundle computer): `xclaw_bash` returns real output with a bound plan, `fabric_status` returns a real fabric snapshot. Suite 1319 tests / 0 fail.
+
 ## 3.91.0 — full doctor: Providers + Channels + Services sections
 
 `xclaw doctor` now covers the provider/channel subsystems and the live bot, not just config/security/computer/runtime:

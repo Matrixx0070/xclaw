@@ -198,6 +198,11 @@ export const BashTool = {
       command: { type: "string", description: "Bash command to run" },
       timeout: { type: "number", description: "Timeout seconds" },
       background: { type: "boolean" },
+      systemRunPlan: {
+        type: "object",
+        description:
+          "Frozen run plan injected by the gateway approval path for spawn-time enforcement (not model-supplied)",
+      },
     },
     required: ["command"],
   },

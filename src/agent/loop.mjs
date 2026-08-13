@@ -398,6 +398,13 @@ export async function runAgentLoop(options) {
   try {
     const computerTools = await computer.listTools(sessionId);
     tools = toOpenAITools(computerTools);
+    // Does this engine's bash accept the injected systemRunPlan key?
+    // The strict-zod CDP bundle doesn't — the router then enforces the
+    // plan gateway-side and strips the key before forwarding.
+    var computerAcceptsRunPlan = Boolean(
+      computerTools.find((t) => t.name === "xclaw_bash")?.inputSchema
+        ?.properties?.systemRunPlan
+    );
     // Local tools (not on computer server)
     const spawnTool = createSpawnTool({
       cfg,
@@ -495,6 +502,10 @@ export async function runAgentLoop(options) {
     agentHandlers: mcpHandlers,
     cfg,
     workingDir,
+    computerAcceptsRunPlan:
+      typeof computerAcceptsRunPlan === "boolean"
+        ? computerAcceptsRunPlan
+        : true,
   });
 
 
@@ -806,8 +817,15 @@ export async function runAgentLoop(options) {
           onEvent({ type: "guard", ...verdict });
         }
 
-        // Security: allowlist + optional human approval
-        const auth = await approvalGate.authorize(name, args, {
+        // Security: allowlist + optional human approval.
+        // Bind the plan against this run's workingDir — the shared gate's
+        // planRoot is the gateway's process.cwd(), and a plan pinned there
+        // fails the spawn-time cwd check in the session workspace.
+        const authArgs =
+          isExecTool(name) && !args.cwd && !args.workingDir
+            ? { ...args, cwd: workingDir }
+            : args;
+        const auth = await approvalGate.authorize(name, authArgs, {
           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
           onPending: (info) => {
             onEvent({
