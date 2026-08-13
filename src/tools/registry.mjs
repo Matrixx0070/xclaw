@@ -20,7 +20,7 @@ export function createAllLocalTools(ctx = {}) {
     ...createHostUtilsTools(),
     ...createMediaTools({ workingDir, cfg }),
     ...createFinanceTools(),
-    ...createImageTools({ workingDir }),
+    ...createImageTools({ workingDir, cfg }),
     ...createXTools(),
     ...createConnectedTools({ workingDir, cfg }),
     ...createBrowserTools({ workingDir, cfg, computer: ctx.computer, sessionId: ctx.sessionId }),

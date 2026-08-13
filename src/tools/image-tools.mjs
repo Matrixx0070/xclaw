@@ -6,6 +6,23 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { resolveImagineMatrix } from "../media/imagine-models.mjs";
+import { resolveProviderToken } from "../auth/profiles.mjs";
+
+/**
+ * xAI credential for the images API. Prefers the provider credential store
+ * (xai:apikey / xai:oauth — configured via `xclaw providers`), so image
+ * generation uses the same key as chat instead of a separate XAI_API_KEY env
+ * var. Env vars stay as a fallback for legacy/CI setups.
+ */
+async function resolveXaiKey(cfg = {}) {
+  try {
+    const tok = await resolveProviderToken(cfg, "xai", {});
+    if (tok?.token) return tok.token;
+  } catch {
+    /* fall through to env */
+  }
+  return process.env.XAI_API_KEY || process.env.XCLAW_API_KEY || "";
+}
 
 function textResult(text, extra = {}) {
   return { content: [{ type: "text", text: String(text ?? "") }], ...extra };
@@ -204,11 +221,11 @@ export function createSearchImagesTool({ workingDir }) {
 }
 
 /** P1.3 generate_image */
-export function createGenerateImageTool({ workingDir }) {
+export function createGenerateImageTool({ workingDir, cfg }) {
   return {
     name: "generate_image",
     description:
-      "Generate image from prompt via xAI images API (XAI_API_KEY). Saves under artifacts/imagine_images/.",
+      "Generate image from prompt via the xAI images API (uses the configured xai provider credential). Saves under artifacts/imagine_images/.",
     parameters: {
       type: "object",
       properties: {
@@ -221,10 +238,10 @@ export function createGenerateImageTool({ workingDir }) {
     async execute(args = {}) {
       const prompt = String(args.prompt || "").trim();
       if (!prompt) return errorResult("prompt required");
-      const key = process.env.XAI_API_KEY || process.env.XCLAW_API_KEY;
+      const key = await resolveXaiKey(cfg);
       if (!key) {
         return errorResult(
-          "XAI_API_KEY not set. Cannot generate images. Use search_images as fallback."
+          "No xAI credential for image generation. Add one with `xclaw providers set --provider xai --api-key <key>` (or `xclaw providers oauth --provider xai`). Falls back to search_images."
         );
       }
       const outDir = path.join(workingDir || process.cwd(), "artifacts", "imagine_images");
@@ -285,7 +302,7 @@ export function createGenerateImageTool({ workingDir }) {
 }
 
 /** P1.4 edit_image — semantic via API if possible, else structured Magick ops from prompt keywords */
-export function createEditImageTool({ workingDir }) {
+export function createEditImageTool({ workingDir, cfg }) {
   return {
     name: "edit_image",
     description:
@@ -312,8 +329,8 @@ export function createEditImageTool({ workingDir }) {
       const id = crypto.randomBytes(4).toString("hex");
       const dest = path.join(outDir, `edit_${id}${path.extname(p) || ".png"}`);
 
-      // Try API edit (OpenAI-style images/edits) if key present
-      const key = process.env.XAI_API_KEY || process.env.XCLAW_API_KEY;
+      // Try API edit (OpenAI-style images/edits) if a credential resolves
+      const key = await resolveXaiKey(cfg);
       if (key && args.prompt) {
         try {
           // Many providers lack edits; attempt once
@@ -378,9 +395,10 @@ export function createEditImageTool({ workingDir }) {
 
 export function createImageTools(ctx = {}) {
   const workingDir = ctx.workingDir || process.cwd();
+  const cfg = ctx.cfg || {};
   return [
     createSearchImagesTool({ workingDir }),
-    createGenerateImageTool({ workingDir }),
-    createEditImageTool({ workingDir }),
+    createGenerateImageTool({ workingDir, cfg }),
+    createEditImageTool({ workingDir, cfg }),
   ];
 }

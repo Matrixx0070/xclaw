@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.90.2 — image generation uses the xai provider credential (not XAI_API_KEY env) + current models
+
+Image generation failed with "XAI_API_KEY not set" even when an xAI key was configured, because `generate_image`/`edit_image` read the `XAI_API_KEY` env var directly instead of the provider credential store.
+
+- The image tools now resolve the xAI key via `resolveProviderToken(cfg, "xai")` — the same `xai:apikey`/`xai:oauth` credential configured through `xclaw providers` (env vars remain a fallback). `cfg` is threaded from the tool registry → `createImageTools` → the generate/edit tools.
+- Fixed the stale image-model matrix: the retired `grok-2-image*` ids are replaced by the current `grok-imagine-image` / `grok-imagine-image-2.0` / `grok-imagine-image-quality` (old ids kept as fallbacks).
+
+Verified live: `generate_image` produces a real PNG using the stored `xai:apikey` profile with no `XAI_API_KEY` env set. Suite 1306/0.
+
 ## 3.90.1 — telegram dmPolicy manageable + live @xxclaw_bot setup
 
 - Added `dmPolicy` (open|allowlist|pairing) to the Telegram channel spec so DM access control is manageable via `xclaw channels set --channel telegram --field dmPolicy` and the UI, alongside `allowedChatIds`. `allowlist` + a populated `allowedChatIds` hard-locks DMs to specific chat ids (others denied outright); the default `pairing` offers strangers a pairing request; empty `allowedChatIds` with `pairing` is open.

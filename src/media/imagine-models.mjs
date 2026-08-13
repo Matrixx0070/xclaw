@@ -3,10 +3,13 @@
  * Override via cfg.image.models or env XCLAW_IMAGE_MODELS=comma,list
  */
 export const DEFAULT_IMAGINE_MODELS = [
+  // Current xAI image models (2026) — the grok-2-image* ids were retired.
+  "grok-imagine-image",
+  "grok-imagine-image-2.0",
+  "grok-imagine-image-quality",
+  // Legacy fallbacks (older accounts / gateways may still serve these).
   "grok-2-image",
   "grok-2-image-1212",
-  "grok-imagine",
-  "grok-2-vision-1212", // some gateways misuse; still try last for gen endpoints only if listed
 ];
 
 export const DEFAULT_IMAGINE_ENDPOINTS = [

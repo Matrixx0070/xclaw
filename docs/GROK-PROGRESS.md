@@ -641,3 +641,17 @@ reboot-persistent. Live-verified end-to-end: user DM'd bot → Claude reply
 (anthropic:oauth active). 3.90.1 shipped the dmPolicy spec field.
 NOTE: user hit generate_image fail via bot — image-gen reads XAI_API_KEY env
 directly (not the xai:apikey profile); env not set → images fail. Separate gap.
+
+## 2026-08-13 — 3.90.2 image-gen reads provider credential + current models (Claude)
+
+STATUS: green
+CONTEXT: user's telegram bot hit generate_image "XAI_API_KEY not set" — the image
+tools read the env var directly, not the xai:apikey profile.
+FIXED: image-tools.mjs resolveXaiKey → resolveProviderToken(cfg,"xai") (env
+fallback); cfg threaded registry→createImageTools→generate/edit tools;
+description degeneric-ized. Also imagine-models.mjs matrix: grok-2-image* retired
+→ grok-imagine-image / -2.0 / -quality (verified via /v1/models on the account),
+old ids kept as fallback.
+RAN: suite 1306/0 · LIVE: generate_image produced a real 60KB PNG via
+profile:xai:apikey with XAI_API_KEY unset. Regression test added. pm2 gateway
+restarted to pick up the fix so @xxclaw_bot can now generate images.
