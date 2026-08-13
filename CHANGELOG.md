@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.94.0 — the new WebChat: streaming markdown, live tool timeline, inline approvals, in-chat images
+
+Full rewrite of `ui/webchat/` (zero dependencies, ES modules) — the front end finally shows what the backend already does:
+
+- **Streaming-first**: `model/delta` events render as progressive markdown with a caret, throttled via rAF; Stop button aborts the stream mid-turn.
+- **Safe markdown + code**: new `ui/webchat/markdown.mjs` — escape-first renderer (headings, lists with nesting, tables, blockquotes, fenced code with a zero-dep syntax highlighter for js/py/sh/sql families, protocol-filtered links) with 16 unit tests including XSS cases (script tags, event-handler attributes, `javascript:` and protocol-relative links).
+- **Live tool timeline**: every `tool start/end` event becomes an expandable card — status dot (running-pulse/ok/fail), args, duration, result preview.
+- **Inline approvals**: `security/approval_required` renders an amber card with the exact command and Allow/Deny buttons wired to `/security/decide` — approve guarded bash without leaving the conversation. Budget/guard events render as notices.
+- **In-chat images**: generated images from the tool trace render inline via the new `GET /artifacts/file` route — strict workspace containment (traversal + symlink-escape tested, extension allowlist, size cap; `src/gateway/artifact-file.mjs`, 7 tests).
+- **Sessions sidebar**: history list with message counts and relative times, switch/restore, New chat; status dots (gateway/computer), model + version chips; message actions (copy/retry), suggestion chips with the preserved shown/tapped feedback loop; empty-tool-turn replies fall back to the last tool output instead of "(no response)"; responsive down to mobile with a slide-in sidebar.
+
+**Security fix (found during the build): `/gateway/info` leaked the operator token.** The route returned `gateway: cfg.gateway` verbatim — token included — while being deliberately reachable without auth (UIs poll it for status). Any unauthenticated loopback caller got the key to every token-gated API. Now a sanitized subset (`tokenSet`/`authStrict` booleans, host/port); regression test asserts no token-shaped value in the payload.
+
+**Also fixed**: the static server had no MIME entry for `.mjs` (`application/octet-stream` → browsers hard-refuse ES module imports — would have broken any module-based UI); stop button visible when hidden.
+
+Suite 1372/0 (24 new tests). Live-verified end-to-end on display :10: streamed markdown tour (tables/code/quotes), guarded bash approved via the inline Allow button (card → ✓ allowed → tool card 26ms → output), generated image rendered in-chat via `/artifacts/file`.
+
 ## 3.93.3 — webchat token support + origin-check hardening of the 3.93.2 fetch wrapper
 
 Two follow-ups from actually using the UIs on a screen:

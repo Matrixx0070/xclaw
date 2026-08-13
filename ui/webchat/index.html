@@ -1,71 +1,85 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>XClaw — WebChat</title>
-  <link rel="stylesheet" href="/chat/styles.css" />
+  <meta name="color-scheme" content="dark" />
+  <title>XClaw</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦞</text></svg>" />
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="logo">🦞</span>
-        <div>
-          <div class="brand-name">XClaw</div>
-          <div class="brand-sub">WebChat · Phase 7 · jobs</div>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="side-head">
+        <div class="brand">
+          <span class="brand-mark">🦞</span>
+          <div class="brand-text">
+            <span class="brand-name">XClaw</span>
+            <span class="brand-sub" id="brand-sub">gateway</span>
+          </div>
         </div>
+        <button id="btn-collapse" class="icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar">⟨</button>
       </div>
-      <button id="btn-new" class="btn primary">New chat</button>
-      <div class="status-box" id="status-box">
-        <div class="status-row"><span>Gateway</span><span id="st-gw">…</span></div>
-        <div class="status-row"><span>Computer</span><span id="st-comp">…</span></div>
-        <div class="status-row"><span>Model</span><span id="st-model">…</span></div>
-      </div>
-      <div class="status-box" id="checkpoints-box" style="margin-top:0.75rem;">
-        <div style="font-size:0.75rem;opacity:0.8;margin-bottom:0.35rem;">Checkpoints</div>
-        <div id="cp-list" style="font-size:0.7rem;max-height:120px;overflow:auto;"></div>
-        <button type="button" id="btn-cp-refresh" class="btn" style="margin-top:0.35rem;font-size:0.7rem;">Refresh</button>
-      </div>
-      <div class="sidebar-foot">
-        <a href="/control/" target="_blank">Control</a>
-        ·
-        <a href="/health" target="_blank">Health</a>
+
+      <button id="btn-new" class="new-chat">＋&nbsp; New chat</button>
+
+      <nav id="session-list" class="session-list" aria-label="Sessions"></nav>
+
+      <div class="side-foot">
+        <div class="status-grid" id="status-grid">
+          <div class="st"><span class="st-dot" id="st-gw"></span>Gateway</div>
+          <div class="st"><span class="st-dot" id="st-comp"></span>Computer</div>
+          <div class="st st-model" id="st-model" title="model">—</div>
+        </div>
+        <div class="side-links">
+          <a href="/control/" target="_blank" rel="noopener">Control</a>
+          <span>·</span>
+          <a href="/health" target="_blank" rel="noopener">Health</a>
+        </div>
       </div>
     </aside>
 
-    <main class="chat">
-      <header class="chat-header">
-        <div>
-          <h1>Chat</h1>
-          <p class="session-id" id="session-label">No session yet</p>
+    <main id="main">
+      <header id="chat-head">
+        <button id="btn-sidebar" class="icon-btn only-mobile" aria-label="Sessions">☰</button>
+        <div class="head-title">
+          <span id="head-session">New conversation</span>
+          <span id="head-meta" class="head-meta"></span>
         </div>
+        <label class="job-toggle" title="Job mode: verify + evidence">
+          <input type="checkbox" id="mode-job" />
+          <span>Job mode</span>
+        </label>
       </header>
 
-      <div class="messages" id="messages">
-        <div class="empty" id="empty">
-          <div class="empty-icon">🦞</div>
-          <h2>Talk to XClaw</h2>
-          <p>Your personal assistant with a real computer — shell, files, and browser tools.</p>
-          <div class="suggestions">
-            <button type="button" data-prompt="List files in the current working directory">List files</button>
-            <button type="button" data-prompt="What is the current date and hostname?">System info</button>
-            <button type="button" data-prompt="Create a file /tmp/xclaw-hello.txt with the text Hello from XClaw WebChat">Write a file</button>
+      <div id="scroll" class="scroll">
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div id="landing" class="landing">
+          <div class="landing-mark">🦞</div>
+          <h1>What should XClaw do?</h1>
+          <p class="landing-sub">Shell, files, browser, images, finance — with approvals, budgets and receipts.</p>
+          <div class="landing-chips" id="landing-chips">
+            <button class="chip" data-q="List the files in your workspace and describe what's there.">List files</button>
+            <button class="chip" data-q="Show system info: OS, uptime, disk and memory usage — in a table.">System info</button>
+            <button class="chip" data-q="Generate an image of a crimson lobster piloting a spaceship.">Generate an image</button>
+            <button class="chip" data-q="What tools do you have? Group them by what they're for.">What can you do?</button>
           </div>
         </div>
       </div>
 
-      <div class="composer-opts" style="display:flex;gap:0.75rem;align-items:center;padding:0.25rem 0.5rem;font-size:0.8rem;opacity:0.9;">
-        <label><input type="checkbox" id="mode-job" /> Job mode (verify + evidence)</label>
-        <p class="hint" style="font-size:0.75rem;opacity:0.7;margin:0.25rem 0 0;">Commands: /job /queue /pending /approve /resume /help</p>
-      </div>
-      <form class="composer" id="form">
-        <textarea id="input" rows="1" placeholder="Message XClaw…" autofocus></textarea>
-        <button type="submit" id="send" class="btn send" title="Send">➤</button>
-      </form>
-      <div class="hint">Enter to send · Shift+Enter for newline · Tools run on the Computer sandbox</div>
+      <footer id="composer-wrap">
+        <div id="composer">
+          <textarea id="input" rows="1" placeholder="Message XClaw…  ( / for commands )" aria-label="Message"></textarea>
+          <button id="btn-stop" class="stop-btn" hidden title="Stop">■</button>
+          <button id="send" class="send-btn" title="Send" aria-label="Send">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+        <div class="composer-hint">Enter to send · Shift+Enter for newline · <code>/pending</code> <code>/approve</code> <code>/help</code></div>
+      </footer>
     </main>
   </div>
-  <script src="/chat/app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

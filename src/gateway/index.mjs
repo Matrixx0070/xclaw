@@ -138,10 +138,15 @@ const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
+  // Browsers hard-refuse ES module imports served without a JS MIME type —
+  // octet-stream kills every `import "./x.mjs"` in the UIs.
+  ".mjs": "application/javascript; charset=utf-8",
   ".json": "application/json",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".ico": "image/x-icon",
+  ".webp": "image/webp",
+  ".woff2": "font/woff2",
 };
 
 async function serveStatic(res, filePath) {
@@ -1436,6 +1441,29 @@ export async function startGateway({ root } = {}) {
         const workspace = cfg.agent?.workingDir || cfg.workspace || process.cwd();
         const listing = await listArtifacts(workspace);
         return json(res, 200, listing);
+      }
+      // Inline artifact bytes for the webchat UI (images etc.) — strict
+      // workspace containment + extension allowlist (src/gateway/artifact-file.mjs)
+      if (p === "/artifacts/file" && req.method === "GET") {
+        const { resolveArtifactFile } = await import("./artifact-file.mjs");
+        const roots = [
+          cfg.paths?.workspaces,
+          cfg.agent?.workingDir || cfg.workspace || process.cwd(),
+        ].filter(Boolean);
+        const rf = await resolveArtifactFile(roots, url.searchParams.get("path"));
+        if (!rf.ok) {
+          const code = rf.code === "not_found" ? 404 : rf.code === "type_not_allowed" ? 415 : 400;
+          return json(res, code, { error: rf.error, code: rf.code });
+        }
+        const data = await fs.readFile(rf.abs);
+        res.writeHead(200, {
+          "Content-Type": rf.mime,
+          "Content-Length": data.length,
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(data);
+        return;
       }
       if (p === "/artifacts" || p === "/artifacts/") {
         const htmlPath = path.join(root, "ui", "artifacts", "index.html");

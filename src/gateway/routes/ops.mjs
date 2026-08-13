@@ -122,7 +122,18 @@ export async function tryHandleOpsRoute({
       name: "XClaw Gateway",
       version: XCLAW_VERSION,
       phase: XCLAW_PHASE,
-      gateway: cfg.gateway,
+      // Sanitized subset — this route is intentionally reachable without a
+      // token (the UIs poll it for status chips), so it must never include
+      // one. It used to dump cfg.gateway verbatim, WITH the operator token:
+      // any unauthenticated loopback caller got the key to every gate.
+      gateway: {
+        host: cfg.gateway?.host,
+        port: cfg.gateway?.port,
+        authStrict: Boolean(cfg.gateway?.authStrict),
+        requireAuth: Boolean(cfg.gateway?.requireAuth),
+        tokenSet: Boolean(cfg.gateway?.token),
+        publicUi: cfg.gateway?.publicUi !== false,
+      },
       computer: {
         host: cfg.computer.host,
         port: cfg.computer.port,

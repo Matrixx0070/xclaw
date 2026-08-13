@@ -1,366 +1,574 @@
-(() => {
-  // Same-origin gateway calls carry the operator token when one is set
-  // (localStorage.xclaw_token). With gateway.authStrict the /channel/ API
-  // is token-gated and this client had NO token support at all — every
-  // send failed 401. Tokenless lab setups are unaffected (nothing is sent
-  // when no token is stored). Mirrors the control UI's central wrapper.
-  const _rawFetch = window.fetch.bind(window);
-  window.fetch = (url, opts = {}) => {
-    try {
-      // Resolve the real target origin — naive prefix checks leak the token:
-      // "//evil.com/x" starts with "/", and "http://host:port.evil.com"
-      // starts with location.origin as a plain string.
-      const raw = typeof url === "string" ? url : url?.url != null ? url.url : String(url);
-      const sameOrigin = new URL(raw, location.href).origin === location.origin;
-      const tok = localStorage.getItem("xclaw_token");
-      if (sameOrigin && tok) {
-        if (opts.headers instanceof Headers) {
-          if (!opts.headers.has("x-xclaw-token")) opts.headers.set("x-xclaw-token", tok);
-        } else {
-          opts = { ...opts, headers: { "x-xclaw-token": tok, ...(opts.headers || {}) } };
-        }
-      }
-    } catch {
-      /* unresolvable URL or storage unavailable — send unauthenticated */
-    }
-    return _rawFetch(url, opts);
-  };
+/**
+ * XClaw WebChat — streaming-first client.
+ *
+ * Renders the loop's real event stream: markdown deltas, live tool cards,
+ * INLINE approval cards (Allow/Deny resolve /security/decide), budget
+ * notices, suggestion chips, generated images (via /artifacts/file),
+ * per-message usage. Zero dependencies.
+ */
+import { renderMarkdown, escapeHtml } from "./markdown.mjs";
 
-  const $ = (sel) => document.querySelector(sel);
-  const messagesEl = $("#messages");
-  const emptyEl = $("#empty");
-  const form = $("#form");
-  const input = $("#input");
-  const sendBtn = $("#send");
-  const sessionLabel = $("#session-label");
-
-  let sessionId = localStorage.getItem("xclaw_session") || null;
-  let busy = false;
-
-  function setSession(id) {
-    sessionId = id;
-    if (id) localStorage.setItem("xclaw_session", id);
-    else localStorage.removeItem("xclaw_session");
-    sessionLabel.textContent = id ? `session ${id.slice(0, 8)}…` : "No session yet";
-  }
-
-  function clearMessages() {
-    messagesEl.innerHTML = "";
-    messagesEl.appendChild(emptyEl);
-    emptyEl.style.display = "";
-  }
-
-  function hideEmpty() {
-    emptyEl.style.display = "none";
-  }
-
-  function addBubble(role, content, meta) {
-    hideEmpty();
-    const div = document.createElement("div");
-    div.className = `bubble ${role}`;
-    div.textContent = content;
-    if (meta) {
-      const m = document.createElement("div");
-      m.className = "meta";
-      m.textContent = meta;
-      div.appendChild(m);
-    }
-    messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    return div;
-  }
-
-  /** Post-turn follow-up chips (same idea as Telegram ↳ buttons) */
-  function renderSuggestionChips(items) {
-    if (!items || !items.length) return;
-    hideEmpty();
-    // remove previous chip row
-    messagesEl.querySelectorAll(".chip-row").forEach((el) => el.remove());
-    const row = document.createElement("div");
-    row.className = "chip-row";
-    items.slice(0, 4).forEach((s) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "chip";
-      btn.textContent = "↳ " + (s.label || s.prompt || "Next");
-      btn.title = s.prompt || "";
-      btn.addEventListener("click", () => {
-        recordChipFeedback(s, "tapped");
-        row.remove();
-        sendMessage(s.prompt || s.label);
-      });
-      row.appendChild(btn);
-      recordChipFeedback(s, "shown");
-    });
-    messagesEl.appendChild(row);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  function recordChipFeedback(s, event) {
-    try {
-      fetch("/channel/webchat/suggestions/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event,
-          source: s.source,
-          kind: s.kind,
-          prompt: s.prompt,
-          suggestionId: s.id,
-          sessionId,
-        }),
-      }).catch(() => {});
-    } catch {
-      /* optional */
-    }
-  }
-
-  function setBusy(v) {
-    busy = v;
-    sendBtn.disabled = v;
-    input.disabled = v;
-  }
-
-  async function refreshStatus() {
-    try {
-      const r = await fetch("/gateway/info");
-      const j = await r.json();
-      const gw = $("#st-gw");
-      const comp = $("#st-comp");
-      const model = $("#st-model");
-      gw.textContent = "UP";
-      gw.className = "up";
-      const ok = j.computer?.healthy;
-      comp.textContent = ok ? "UP" : "DOWN";
-      comp.className = ok ? "up" : "down";
-      model.textContent = j.agent?.model || "—";
-    } catch {
-      $("#st-gw").textContent = "DOWN";
-      $("#st-gw").className = "down";
-      $("#st-comp").textContent = "?";
-      $("#st-model").textContent = "—";
-    }
-  }
-
-  /**
-   * Parse SSE stream from fetch body.
-   * Calls onEvent(eventName, dataObj) for each event; resolves with result payload.
-   */
-  async function consumeSSE(response, onEvent) {
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let resultPayload = null;
-    let errorPayload = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() || "";
-
-      for (const chunk of parts) {
-        if (!chunk.trim() || chunk.startsWith(":")) continue; // comment / ping
-        let eventName = "message";
-        const dataLines = [];
-        for (const line of chunk.split("\n")) {
-          if (line.startsWith("event:")) eventName = line.slice(6).trim();
-          else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
-        }
-        if (!dataLines.length) continue;
-        let data;
-        try {
-          data = JSON.parse(dataLines.join("\n"));
-        } catch {
-          data = { raw: dataLines.join("\n") };
-        }
-        onEvent(eventName, data);
-        if (eventName === "result") resultPayload = data;
-        if (eventName === "error") errorPayload = data;
-      }
-    }
-    if (errorPayload) throw new Error(errorPayload.error || "stream error");
-    return resultPayload;
-  }
-
-  async function sendMessage(text) {
-    if (!text.trim() || busy) return;
-    setBusy(true);
-    addBubble("user", text.trim());
-    input.value = "";
-    autoSize();
-
-    const thinking = addBubble("thinking", "Connecting…");
-    let toolsBubble = null;
-
-    try {
-      const r = await fetch("/channel/webchat/message/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({
-          message: text.trim(),
-          sessionId,
-          mode: document.getElementById("mode-job")?.checked ? "job" : undefined,
-        }),
-      });
-
-      if (!r.ok) {
-        const errBody = await r.text();
-        thinking.remove();
-        addBubble("assistant", `Error ${r.status}: ${errBody.slice(0, 300)}`);
-        return;
-      }
-
-      const result = await consumeSSE(r, (eventName, data) => {
-        if (eventName === "lifecycle" && data.phase === "start") {
-          thinking.textContent = "Thinking…";
-        }
-        if (eventName === "model" && data.phase === "request") {
-          thinking.textContent = `Model turn ${data.turn || "…"}…`;
-        }
-        if (eventName === "tool" && data.phase === "start") {
-          thinking.textContent = `Running ${data.name}…`;
-          const line = `→ ${data.name}${data.args ? " " + JSON.stringify(data.args).slice(0, 80) : ""}`;
-          if (!toolsBubble) {
-            toolsBubble = addBubble("tools", line);
-          } else {
-            toolsBubble.textContent += "\n" + line;
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-          }
-        }
-        if (eventName === "tool" && data.phase === "end") {
-          if (toolsBubble && data.preview) {
-            toolsBubble.textContent += `\n← ${data.preview.slice(0, 120)}`;
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-          }
-        }
-        if (eventName === "guard") {
-          addBubble("tools", `! guard [${data.level}] ${data.message || ""}`);
-        }
-        if (eventName === "suggestions" || (eventName === "message" && data.type === "suggestions")) {
-          const items = data.items || data.suggestions || [];
-          if (items.length) {
-            // stash for result if result omits them
-            window.__xclawPendingChips = items;
-          }
-        }
-        if (eventName === "turn_state" || (data && data.type === "turn_state")) {
-          thinking.textContent = data.summary || data.phase || thinking.textContent;
-        }
-      });
-
-      thinking.remove();
-      if (!result || result.ok === false) {
-        addBubble("assistant", result?.error || "No result from stream");
-        return;
-      }
-      if (result.sessionId) setSession(result.sessionId);
-      const content = result.reply?.content || result.text || "(empty)";
-      const u = result.usage || result.reply?.usage;
-      const meta = [
-        result.model && `model ${result.model}`,
-        result.turns != null && `${result.turns} turns`,
-        result.job && `job ${result.job.status}${result.job.pass ? " ✓" : ""}`,
-        u?.hasRealUsage && `in ${u.promptTokens} / out ${u.completionTokens}`,
-        !u?.hasRealUsage && u?.estimatedPromptTokens != null && `~${u.estimatedPromptTokens} tok`,
-        "SSE",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      addBubble("assistant", content, meta);
-      const chips =
-        result.suggestions ||
-        result.reply?.suggestions ||
-        window.__xclawPendingChips ||
-        [];
-      window.__xclawPendingChips = null;
-      renderSuggestionChips(chips);
-      if (result.turnState?.phase) {
-        const phase = result.turnState.phase;
-        if (phase === "blocked" || phase === "failed") {
-          addBubble("tools", `phase: ${phase}` + (result.turnState.summary ? ` · ${result.turnState.summary}` : ""));
-        }
-      }
-    } catch (err) {
-      thinking.remove();
-      addBubble("assistant", `Error: ${err.message}`);
-    } finally {
-      setBusy(false);
-      input.focus();
-    }
-  }
-
-  function autoSize() {
-    input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 160) + "px";
-  }
-
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    sendMessage(input.value);
-  });
-
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input.value);
-    }
-  });
-  input.addEventListener("input", autoSize);
-
-  $("#btn-new").addEventListener("click", () => {
-    setSession(null);
-    clearMessages();
-  });
-
-  document.querySelectorAll(".suggestions button").forEach((btn) => {
-    btn.addEventListener("click", () => sendMessage(btn.dataset.prompt));
-  });
-
-  setSession(sessionId);
-  refreshStatus();
-  setInterval(refreshStatus, 15000);
-})();
-
-
-async function loadCheckpoints() {
-  const box = document.getElementById("cp-list");
-  if (!box) return;
+// Same-origin gateway calls carry the operator token when one is set
+// (localStorage.xclaw_token). Strict URL-origin resolution — naive prefix
+// checks leak the token (see 3.93.3).
+const _rawFetch = window.fetch.bind(window);
+window.fetch = (url, opts = {}) => {
   try {
-    const r = await fetch("/checkpoints?limit=8");
-    if (!r.ok) throw new Error("checkpoints " + r.status);
-    const data = await r.json();
-    const list = data.checkpoints || [];
-    if (!list.length) {
-      box.textContent = "None yet";
-      return;
+    const raw = typeof url === "string" ? url : url?.url != null ? url.url : String(url);
+    const sameOrigin = new URL(raw, location.href).origin === location.origin;
+    const tok = localStorage.getItem("xclaw_token");
+    if (sameOrigin && tok) {
+      if (opts.headers instanceof Headers) {
+        if (!opts.headers.has("x-xclaw-token")) opts.headers.set("x-xclaw-token", tok);
+      } else {
+        opts = { ...opts, headers: { "x-xclaw-token": tok, ...(opts.headers || {}) } };
+      }
     }
-    box.innerHTML = "";
-    for (const c of list) {
-      const row = document.createElement("div");
-      row.style.marginBottom = "0.35rem";
-      row.innerHTML = `<div>${(c.goal || c.id || "").slice(0, 36)}</div>`;
-      const btn = document.createElement("button");
-      btn.textContent = "Resume";
-      btn.className = "btn";
-      btn.style.fontSize = "0.65rem";
-      btn.onclick = async () => {
-        const res = await fetch("/checkpoints/resume", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: c.id }),
-        });
-        const j = await res.json();
-        alert(j.pass ? "PASS " + j.id : (j.error || j.status || JSON.stringify(j)));
-        loadCheckpoints();
-      };
-      row.appendChild(btn);
-      box.appendChild(row);
-    }
-  } catch (e) {
-    box.textContent = String(e.message || e);
+  } catch { /* unresolvable URL or storage unavailable */ }
+  return _rawFetch(url, opts);
+};
+
+const $ = (id) => document.getElementById(id);
+const messagesEl = $("messages");
+const scrollEl = $("scroll");
+const landingEl = $("landing");
+const input = $("input");
+const sendBtn = $("send");
+const stopBtn = $("btn-stop");
+
+let sessionId = localStorage.getItem("xclaw_session") || null;
+let streaming = false;
+let abortCtl = null;
+
+// ——— helpers ————————————————————————————————————————————————————————
+
+const nearBottom = () => scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 140;
+const scrollDown = (force = false) => {
+  if (force || nearBottom()) scrollEl.scrollTop = scrollEl.scrollHeight;
+};
+
+function el(tag, cls, html) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html != null) n.innerHTML = html;
+  return n;
+}
+
+function hideLanding() { if (landingEl) landingEl.style.display = "none"; }
+
+function fmtDuration(ms) {
+  if (ms == null) return "";
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+function relTime(ts) {
+  const d = Date.now() - new Date(ts).getTime();
+  const m = Math.round(d / 60000);
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+// ——— message rows ———————————————————————————————————————————————————
+
+function addUserRow(text) {
+  hideLanding();
+  const row = el("div", "row user");
+  row.append(el("div", "avatar", "You".slice(0, 1)));
+  const body = el("div", "body");
+  body.append(el("div", "who", "You"));
+  body.append(el("div", "content", renderMarkdown(text)));
+  row.append(body);
+  messagesEl.append(row);
+  scrollDown(true);
+  return row;
+}
+
+function addBotRow() {
+  hideLanding();
+  const row = el("div", "row bot");
+  row.append(el("div", "avatar", "🦞"));
+  const body = el("div", "body");
+  body.append(el("div", "who", "XClaw"));
+  const thinking = el("div", "thinking", `<span class="spin"></span><span class="t-label">Thinking…</span>`);
+  const timeline = el("div", "timeline");
+  const content = el("div", "content");
+  body.append(thinking, timeline, content);
+  row.append(body);
+  messagesEl.append(row);
+  scrollDown(true);
+  return { row, body, thinking, timeline, content };
+}
+
+function setThinking(ctx, label) {
+  const t = ctx.thinking.querySelector(".t-label");
+  if (t) t.textContent = label;
+}
+
+// tool cards
+function addToolCard(ctx, name, args) {
+  const card = el("div", "tcard");
+  const argsStr = args ? JSON.stringify(args) : "";
+  card.innerHTML =
+    `<div class="tcard-head"><span class="tdot run"></span>` +
+    `<span class="tname">${escapeHtml(name)}</span>` +
+    `<span class="targ">${escapeHtml(argsStr.slice(0, 140))}</span>` +
+    `<span class="tdur"></span></div>` +
+    `<div class="tcard-body">${escapeHtml(argsStr)}</div>`;
+  card.querySelector(".tcard-head").addEventListener("click", () => card.classList.toggle("open"));
+  card.dataset.started = String(Date.now());
+  ctx.timeline.append(card);
+  scrollDown();
+  return card;
+}
+
+function endToolCard(card, { preview, error } = {}) {
+  if (!card) return;
+  const dot = card.querySelector(".tdot");
+  dot.classList.remove("run");
+  dot.classList.add(error ? "bad" : "ok");
+  const dur = Date.now() - Number(card.dataset.started || Date.now());
+  card.querySelector(".tdur").textContent = fmtDuration(dur);
+  if (preview) {
+    const body = card.querySelector(".tcard-body");
+    body.textContent = `${body.textContent}\n\n— result —\n${preview}`;
   }
 }
-document.getElementById("btn-cp-refresh")?.addEventListener("click", loadCheckpoints);
-loadCheckpoints();
+
+// approval cards
+function addApprovalCard(ctx, { pendingId, name, args }) {
+  const card = el("div", "apr");
+  const cmd = args?.command || JSON.stringify(args || {});
+  card.innerHTML =
+    `<div class="apr-title">Approval required — <code>${escapeHtml(name)}</code></div>` +
+    `<div class="apr-cmd">${escapeHtml(String(cmd))}</div>` +
+    `<div class="apr-actions">` +
+    `<button class="apr-btn apr-allow">Allow</button>` +
+    `<button class="apr-btn apr-deny">Deny</button>` +
+    `<span class="apr-state"></span></div>`;
+  const state = card.querySelector(".apr-state");
+  const resolve = async (approved) => {
+    state.textContent = "…";
+    try {
+      const r = await fetch("/security/decide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: pendingId, approved }),
+      });
+      const j = await r.json().catch(() => ({}));
+      card.classList.add("resolved");
+      card.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      state.textContent = r.ok ? (approved ? "✓ allowed" : "✗ denied") : `error: ${j.error || r.status}`;
+    } catch (e) {
+      state.textContent = `error: ${e.message}`;
+    }
+  };
+  card.querySelector(".apr-allow").addEventListener("click", () => resolve(true));
+  card.querySelector(".apr-deny").addEventListener("click", () => resolve(false));
+  ctx.timeline.append(card);
+  scrollDown(true);
+  return card;
+}
+
+// generated images
+const IMG_RE = /\.(png|jpe?g|webp|gif)$/i;
+function traceImagePaths(toolTrace) {
+  const out = new Set();
+  for (const t of toolTrace || []) {
+    for (const a of t.artifacts || []) {
+      const ref = a?.ref || a?.path || "";
+      if (typeof ref === "string" && IMG_RE.test(ref)) out.add(ref);
+    }
+    const res = typeof t.result === "string" ? t.result : "";
+    for (const m of res.matchAll(/(?:^|[\s"'`(])(\/[^\s"'`()]+\.(?:png|jpe?g|webp|gif))/gi)) {
+      out.add(m[1]);
+    }
+  }
+  return [...out];
+}
+
+async function renderImages(ctx, paths) {
+  if (!paths.length) return;
+  const wrap = el("div", "shots");
+  let any = false;
+  for (const p of paths.slice(0, 6)) {
+    try {
+      const r = await fetch(`/artifacts/file?path=${encodeURIComponent(p)}`);
+      if (!r.ok) continue;
+      const blob = await r.blob();
+      if (!blob.type.startsWith("image/")) continue;
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(blob);
+      img.alt = p.split("/").pop();
+      img.title = p;
+      wrap.append(img);
+      any = true;
+    } catch { /* skip */ }
+  }
+  if (any) {
+    ctx.content.after(wrap);
+    scrollDown();
+  }
+}
+
+// footer: usage + actions
+function addFooter(ctx, { usage, model, userText }) {
+  const foot = el("div", "msg-foot");
+  const bits = [];
+  if (model) bits.push(escapeHtml(model));
+  if (usage?.totalTokens) bits.push(`${usage.totalTokens} tok`);
+  if (usage?.costUsdFormatted) bits.push(escapeHtml(usage.costUsdFormatted));
+  foot.innerHTML = `<span>${bits.join(" · ")}</span>`;
+  const actions = el("div", "msg-actions");
+  const copyBtn = el("button", "act-btn", "Copy");
+  copyBtn.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(ctx.content.innerText).catch(() => {});
+    copyBtn.textContent = "Copied ✓";
+    setTimeout(() => (copyBtn.textContent = "Copy"), 1200);
+  });
+  actions.append(copyBtn);
+  if (userText) {
+    const retryBtn = el("button", "act-btn", "Retry");
+    retryBtn.addEventListener("click", () => sendMessage(userText));
+    actions.append(retryBtn);
+  }
+  foot.append(actions);
+  ctx.body.append(foot);
+}
+
+function recordChipFeedback(s, event) {
+  // Suggestion-learning loop: shown/tapped feedback feeds the durable
+  // suggestion model server-side. Best-effort — never blocks the UI.
+  try {
+    fetch("/channel/webchat/suggestions/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event,
+        source: s.source,
+        kind: s.kind,
+        prompt: s.prompt,
+        suggestionId: s.id,
+        sessionId,
+      }),
+    }).catch(() => {});
+  } catch { /* optional */ }
+}
+
+function renderSuggestionChips(ctx, items) {
+  if (!items?.length) return;
+  const wrap = el("div", "chip-row");
+  for (const it of items.slice(0, 4)) {
+    const s = typeof it === "string" ? { prompt: it } : it;
+    const text = s.prompt || s.label || s.text || "";
+    if (!text) continue;
+    const chip = el("button", "chip", escapeHtml(text.slice(0, 70)));
+    chip.addEventListener("click", () => {
+      recordChipFeedback(s, "tapped");
+      sendMessage(text);
+    });
+    wrap.append(chip);
+    recordChipFeedback(s, "shown");
+  }
+  if (wrap.children.length) ctx.body.append(wrap);
+}
+
+// ——— SSE consumption ————————————————————————————————————————————————
+
+async function consumeSSE(resp, onEvent) {
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let result = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const parts = buf.split("\n\n");
+    buf = parts.pop() || "";
+    for (const chunk of parts) {
+      if (!chunk.trim()) continue;
+      let event = "message";
+      const dataLines = [];
+      for (const line of chunk.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      if (!dataLines.length) continue;
+      let data;
+      try { data = JSON.parse(dataLines.join("\n")); } catch { continue; }
+      if (event === "result" || data?.type === "result") result = data;
+      else onEvent(event, data);
+    }
+  }
+  return result;
+}
+
+// ——— send ————————————————————————————————————————————————————————————
+
+async function sendMessage(raw) {
+  const text = String(raw ?? input.value).trim();
+  if (!text || streaming) return;
+  input.value = "";
+  autoSize();
+  streaming = true;
+  sendBtn.disabled = true;
+  stopBtn.hidden = false;
+
+  addUserRow(text);
+  const ctx = addBotRow();
+  const liveText = { buf: "", raf: 0 };
+  const toolCards = new Map(); // name -> most recent running card
+  abortCtl = new AbortController();
+
+  const paintLive = () => {
+    liveText.raf = 0;
+    ctx.content.innerHTML = renderMarkdown(liveText.buf) + `<span class="caret"></span>`;
+    scrollDown();
+  };
+
+  try {
+    const r = await fetch("/channel/webchat/message/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({
+        message: text,
+        sessionId,
+        mode: $("mode-job")?.checked ? "job" : undefined,
+      }),
+      signal: abortCtl.signal,
+    });
+    if (!r.ok) {
+      const errBody = await r.text();
+      ctx.thinking.remove();
+      ctx.content.innerHTML = renderMarkdown(`**Error ${r.status}** — ${errBody.slice(0, 400)}`);
+      return;
+    }
+
+    const result = await consumeSSE(r, (event, data) => {
+      const type = data?.type || event;
+      const phase = data?.phase;
+
+      if (type === "model" && phase === "delta" && data.content) {
+        ctx.thinking.style.display = "none";
+        liveText.buf += data.content;
+        if (!liveText.raf) liveText.raf = requestAnimationFrame(paintLive);
+        return;
+      }
+      if (type === "model" && phase === "request") {
+        setThinking(ctx, data.turn > 1 ? `Turn ${data.turn}…` : "Thinking…");
+        return;
+      }
+      if (type === "tool" && phase === "start") {
+        setThinking(ctx, `Running ${data.name}…`);
+        toolCards.set(data.name, addToolCard(ctx, data.name, data.args));
+        return;
+      }
+      if (type === "tool" && phase === "end") {
+        endToolCard(toolCards.get(data.name), { preview: data.preview });
+        toolCards.delete(data.name);
+        return;
+      }
+      if (type === "security" && phase === "approval_required") {
+        setThinking(ctx, "Waiting for your approval…");
+        addApprovalCard(ctx, { pendingId: data.pendingId, name: data.name, args: data.args });
+        return;
+      }
+      if (type === "security" && (phase === "approved" || phase === "plan_revalidated")) {
+        setThinking(ctx, "Approved — running…");
+        return;
+      }
+      if (type === "security" && /denied|deny/.test(phase || "")) {
+        ctx.timeline.append(el("div", "notice warn", `Security: ${escapeHtml(data.message || phase)}`));
+        return;
+      }
+      if (type === "budget" && phase === "exceeded") {
+        ctx.timeline.append(
+          el("div", "notice warn",
+            `Budget cap hit — ${escapeHtml(data.reason || "")} (${data.used}/${data.limit})`)
+        );
+        return;
+      }
+      if (type === "guard") {
+        ctx.timeline.append(el("div", "notice", `Guard: ${escapeHtml(data.message || data.level || "")}`));
+        return;
+      }
+      if (type === "turn_state" && data.summary) {
+        setThinking(ctx, data.summary);
+      }
+    });
+
+    if (liveText.raf) cancelAnimationFrame(liveText.raf);
+    ctx.thinking.remove();
+
+    if (!result || result.ok === false) {
+      if (!liveText.buf) ctx.content.innerHTML = renderMarkdown(result?.error || "*No result from stream.*");
+      else ctx.content.innerHTML = renderMarkdown(liveText.buf);
+      return;
+    }
+    if (result.sessionId && result.sessionId !== sessionId) {
+      sessionId = result.sessionId;
+      localStorage.setItem("xclaw_session", sessionId);
+      refreshSessions();
+    }
+    let final = result.reply?.content || result.text || liveText.buf || "";
+    // The model sometimes ends a tool turn with no prose (the server stores
+    // "(no response)") — surface the last tool result instead of a shrug.
+    if (!final || final === "(no response)") {
+      const trace = result.reply?.toolTrace || [];
+      const lastResult = [...trace].reverse().find((t) => typeof t.result === "string" && t.result.trim());
+      final = lastResult
+        ? "```\n" + lastResult.result.trim().slice(0, 2000) + "\n```"
+        : "*Done.*";
+    }
+    ctx.content.innerHTML = renderMarkdown(final);
+    wireCopyButtons(ctx.content);
+    $("head-session").textContent = `Session ${String(sessionId || "").slice(0, 8)}`;
+    addFooter(ctx, {
+      usage: result.usage || result.reply?.usage,
+      model: result.model || result.reply?.model,
+      userText: text,
+    });
+    renderSuggestionChips(ctx, result.suggestions);
+    await renderImages(ctx, traceImagePaths(result.reply?.toolTrace));
+    scrollDown();
+  } catch (e) {
+    ctx.thinking?.remove?.();
+    if (e.name === "AbortError") {
+      ctx.content.innerHTML = renderMarkdown(liveText.buf + "\n\n*— stopped —*");
+    } else {
+      ctx.content.innerHTML = renderMarkdown(`**Error** — ${e.message}`);
+    }
+  } finally {
+    streaming = false;
+    sendBtn.disabled = false;
+    stopBtn.hidden = true;
+    abortCtl = null;
+    input.focus();
+  }
+}
+
+function wireCopyButtons(scope) {
+  scope.querySelectorAll(".copy-code").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const code = btn.closest(".codeblock")?.querySelector("code")?.innerText || "";
+      await navigator.clipboard.writeText(code).catch(() => {});
+      btn.textContent = "Copied ✓";
+      setTimeout(() => (btn.textContent = "Copy"), 1200);
+    });
+  });
+}
+
+// ——— sessions sidebar ———————————————————————————————————————————————
+
+async function refreshSessions() {
+  try {
+    const r = await fetch("/channel/webchat/sessions");
+    if (!r.ok) return;
+    const { sessions } = await r.json();
+    const list = $("session-list");
+    list.innerHTML = "";
+    const sorted = [...(sessions || [])].sort(
+      (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)
+    );
+    for (const s of sorted.slice(0, 30)) {
+      const btn = el(
+        "button",
+        "session-item" + (s.id === sessionId ? " active" : ""),
+        `Session ${escapeHtml(s.id.slice(0, 8))}` +
+          `<span class="s-meta">${s.messageCount} messages · ${relTime(s.updatedAt)}</span>`
+      );
+      btn.addEventListener("click", () => switchSession(s.id));
+      list.append(btn);
+    }
+  } catch { /* sidebar is best-effort */ }
+}
+
+async function switchSession(id) {
+  if (streaming) return;
+  sessionId = id;
+  localStorage.setItem("xclaw_session", id);
+  messagesEl.innerHTML = "";
+  hideLanding();
+  $("head-session").textContent = `Session ${id.slice(0, 8)}`;
+  try {
+    const r = await fetch(`/channel/webchat/history?sessionId=${encodeURIComponent(id)}`);
+    if (r.ok) {
+      const hist = await r.json();
+      for (const m of hist.messages || []) {
+        if (m.role === "user") addUserRow(m.content);
+        else if (m.role === "assistant") {
+          const ctx = addBotRow();
+          ctx.thinking.remove();
+          const text = !m.content || m.content === "(no response)" ? "*Done.*" : m.content;
+          ctx.content.innerHTML = renderMarkdown(text);
+          wireCopyButtons(ctx.content);
+        }
+      }
+    }
+  } catch { /* */ }
+  refreshSessions();
+  scrollDown(true);
+}
+
+function newChat() {
+  if (streaming) return;
+  sessionId = null;
+  localStorage.removeItem("xclaw_session");
+  messagesEl.innerHTML = "";
+  if (landingEl) landingEl.style.display = "";
+  $("head-session").textContent = "New conversation";
+  refreshSessions();
+  input.focus();
+}
+
+// ——— status chips ———————————————————————————————————————————————————
+
+async function refreshStatus() {
+  try {
+    const r = await fetch("/gateway/info");
+    if (!r.ok) throw new Error(String(r.status));
+    const info = await r.json();
+    $("st-gw").className = "st-dot up";
+    $("st-comp").className = "st-dot " + (info.computer?.healthy ? "up" : "down");
+    $("st-model").textContent = info.agent?.model || "—";
+    $("st-model").title = info.agent?.model || "";
+    $("brand-sub").textContent = `v${info.version || "?"}`;
+    $("head-meta").textContent = info.agent?.model || "";
+  } catch {
+    $("st-gw").className = "st-dot down";
+    $("st-comp").className = "st-dot down";
+  }
+}
+
+// ——— composer wiring ————————————————————————————————————————————————
+
+function autoSize() {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 220) + "px";
+}
+input.addEventListener("input", autoSize);
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+sendBtn.addEventListener("click", () => sendMessage());
+stopBtn.addEventListener("click", () => abortCtl?.abort());
+$("btn-new").addEventListener("click", newChat);
+$("btn-collapse")?.addEventListener("click", () => $("sidebar").classList.toggle("collapsed"));
+$("btn-sidebar")?.addEventListener("click", () => $("sidebar").classList.toggle("open"));
+document.querySelectorAll("#landing-chips .chip").forEach((c) =>
+  c.addEventListener("click", () => sendMessage(c.dataset.q))
+);
+
+// ——— boot ————————————————————————————————————————————————————————————
+
+refreshStatus();
+setInterval(refreshStatus, 20_000);
+refreshSessions();
+if (sessionId) switchSession(sessionId);
+input.focus();
