@@ -119,6 +119,9 @@ export function createGatewayAuth(cfg = {}) {
       p.startsWith("/channel/") ||
       p.startsWith("/artifacts/list") ||
       p.startsWith("/doctor") ||
+      // spend-pause + budget state is an operator control
+      p === "/cost" ||
+      p.startsWith("/cost/") ||
       p.startsWith("/seats") ||
       p.startsWith("/models") ||
       // JWKS operator endpoints (document itself is alwaysOpen)

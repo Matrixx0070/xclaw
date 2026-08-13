@@ -42,6 +42,24 @@ export async function tryHandleTokensRoute({ p, method, req, res, url, cfg, json
     return true;
   }
 
+  // Cost governor (daily soft/hard USD caps + spend pause). The control UI's
+  // governor card and Pause/Resume buttons called these since day one — the
+  // routes never existed ("Cost governor: not found" in the panel).
+  if (p === "/cost" && method === "GET") {
+    const { getCostGovernorStatus } = await import("../../tokens/cost-governor.mjs");
+    json(res, 200, await getCostGovernorStatus(cfg));
+    return true;
+  }
+  if (p === "/cost/pause" && method === "POST") {
+    const body = await readBody(req);
+    const { setCostGovernorPaused, getCostGovernorStatus } = await import(
+      "../../tokens/cost-governor.mjs"
+    );
+    await setCostGovernorPaused(cfg, body.paused !== false);
+    json(res, 200, { ok: true, ...(await getCostGovernorStatus(cfg)) });
+    return true;
+  }
+
   if (p === "/tokens/cost" && method === "GET") {
     const ledger = cfg.tokens?.ledgerPath || defaultLedgerPath();
     const since = url.searchParams.get("since");

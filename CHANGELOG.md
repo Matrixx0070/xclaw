@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.94.5 — Cost & Evals: inbound/outbound token columns + governor card were dead
+
+Operator report: the ledger's In/Out token columns were all dashes and the governor section empty. Three defects, one view:
+
+- **In/Out columns + summary read wrong field names.** The ledger API emits `promptTokens`/`completionTokens` per row and `runs`/`costUsd`/`path` at the top level; the panel read `inputTokens`/`prompt_tokens`/`count`/`totalUsd`/`ledgerPath` — none of which exist. The data was in the payload the whole time. Now mapped correctly, with thousands separators, an `~` marker on estimate-only rows, and a richer summary: runs, total tokens in (prompt), total tokens out (completion), total USD, ledger file.
+- **Cost governor card said "not found" and Pause/Resume were dead.** The card called `GET /cost` and the buttons `POST /cost/pause` — routes that never existed, while a full governor implementation (`src/tokens/cost-governor.mjs`: daily soft/hard USD caps, spend ledger, pause) sat unwired. Both routes now exist (in routes/tokens.mjs), token-gated via the strict auth list. Live-verified: card shows $5/$15 caps + spend + pressure; Pause→paused:true→Resume→false round-trip through the real buttons.
+- 3 route tests including a contract guard on the row field names the UI binds to.
+
+Suite 1386/0.
+
 ## 3.94.4 — fix: running gateway never refreshed the active OAuth token mid-flight (the outage, not fully closed)
 
 The "did auto-refresh work?" question surfaced that 3.92.1 only half-fixed the 2026-08-13 outage. The refresh *logic* worked — but the running gateway never reached it for the **active** provider, so it was only masked by frequent restarts (each `loadConfig` refreshes).

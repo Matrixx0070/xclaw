@@ -135,28 +135,36 @@ async function loadCost() {
   try {
     await loadCostGovernor();
     const data = await getJSON("/tokens/cost?limit=30");
-    const sum = data.summary || data;
+    // The ledger API's real field names are promptTokens/completionTokens/
+    // cachedTokens per row and runs/promptTokens/completionTokens/costUsd/path
+    // at the top level — this loader used to read inputTokens/prompt_tokens
+    // etc., so the In/Out columns and the whole summary rendered as "—"
+    // while the data sat right there in the payload.
+    const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString());
     $("costSummary").innerHTML = kvHtml([
-      ["Entries", sum.count ?? data.entries?.length ?? "—"],
-      ["Total USD", sum.totalUsd != null ? `$${Number(sum.totalUsd).toFixed(6)}` : sum.totalFormatted || "—"],
-      ["Ledger", sum.ledgerPath || data.ledgerPath || "—"],
+      ["Runs", fmt(data.runs)],
+      ["Tokens in (prompt)", fmt(data.promptTokens)],
+      ["Tokens out (completion)", fmt(data.completionTokens)],
+      ["Total USD", data.costUsdFormatted || (data.costUsd != null ? `$${Number(data.costUsd).toFixed(4)}` : "—")],
+      ["Ledger", (data.path || "—").split("/").pop()],
     ]);
     const tbody = $("costTable").querySelector("tbody");
-    const rows = data.entries || data.rows || data.recent || [];
+    const rows = data.rows || data.entries || [];
     tbody.innerHTML = rows
       .slice()
       .reverse()
       .slice(0, 25)
       .map((e) => {
-        const when = e.ts || e.time || e.at || "";
+        const when = e.at || e.ts || e.time || "";
         const d = when ? new Date(when).toLocaleString() : "—";
+        const est = e.hasRealUsage === false ? ' <span class="muted" title="estimated (no provider usage in response)">~</span>' : "";
         return `<tr>
           <td>${d}</td>
           <td>${e.model || "—"}</td>
-          <td>${e.inputTokens ?? e.prompt_tokens ?? "—"}</td>
-          <td>${e.outputTokens ?? e.completion_tokens ?? "—"}</td>
-          <td>${e.cachedTokens ?? e.cached_tokens ?? "—"}</td>
-          <td>${e.costUsd != null ? "$" + Number(e.costUsd).toFixed(6) : e.usd || "—"}</td>
+          <td>${fmt(e.promptTokens ?? e.inputTokens)}${est}</td>
+          <td>${fmt(e.completionTokens ?? e.outputTokens)}</td>
+          <td>${fmt(e.cachedTokens)}</td>
+          <td>${e.costUsdFormatted || (e.costUsd != null ? "$" + Number(e.costUsd).toFixed(6) : "—")}</td>
         </tr>`;
       })
       .join("");
