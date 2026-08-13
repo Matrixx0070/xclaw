@@ -1235,6 +1235,84 @@ export async function runDoctor(opts = {}) {
     push("tools.computerOnly", "warn", e.message || String(e));
   }
 
+  // ── Providers ── credential + endpoint per configured provider + active model
+  try {
+    const { providerInventory, checkProviderCredential } = await import("../providers/manage.mjs");
+    const inv = await providerInventory(cfg);
+    const configured = inv.providers.filter((p) => p.configured);
+    push(
+      "providers.summary",
+      "ok",
+      `${configured.length}/${inv.providers.length} configured · active: ${inv.active.provider || "(none)"}/${inv.active.model || "?"}`
+    );
+    for (const p of configured) {
+      const cred = await checkProviderCredential(cfg, p.id);
+      const creds = (p.profiles || []).map((x) => (x.id.includes(":") ? x.id.slice(x.id.indexOf(":") + 1) : x.id)).join("+") || (p.hasEnvKey ? "env" : "?");
+      if (cred.ok) {
+        push(`providers.${p.id}`, "ok", `${p.id}: ${creds} → resolves (${cred.source || "?"}) · ${p.baseUrl}`);
+      } else {
+        push(`providers.${p.id}`, "warn", `${p.id}: credential does not resolve (${cred.error || "no token"})`);
+      }
+    }
+    // image-gen capability (xai key)
+    const xai = await checkProviderCredential(cfg, "xai");
+    push("providers.imageGen", xai.ok ? "ok" : "warn",
+      xai.ok ? "image generation ready (xai credential resolves)" : "image generation needs an xai credential");
+  } catch (e) {
+    push("providers.summary", "warn", e.message || String(e));
+  }
+
+  // ── Channels ── enabled/configured + live reachability
+  try {
+    const { channelInventory } = await import("../channels/manage.mjs");
+    const inv = channelInventory(cfg);
+    const enabled = inv.channels.filter((c) => c.enabled);
+    push("channels.summary", "ok", `${enabled.length}/${inv.channels.length} enabled: ${enabled.map((c) => c.id).join(", ") || "(none)"}`);
+    for (const c of inv.channels) {
+      if (!c.enabled && !c.fields.some((f) => f.set)) continue; // skip untouched channels
+      const setFields = c.fields.filter((f) => f.set).map((f) => f.key).join(",");
+      const state = c.enabled ? (c.configured ? "enabled+ready" : "enabled but MISSING required config") : "configured (disabled)";
+      push(`channels.${c.id}`, c.enabled && !c.configured ? "warn" : "ok", `${c.id}: ${state}${setFields ? " · " + setFields : ""}`);
+    }
+    // live telegram bot reachability (if a token is configured)
+    const tgToken = cfg.channels?.telegram?.token;
+    if (tgToken) {
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${tgToken}/getMe`, { signal: AbortSignal.timeout(8000) });
+        const j = await res.json();
+        push("channels.telegram.api", j.ok ? "ok" : "warn",
+          j.ok ? `bot @${j.result.username} reachable (id ${j.result.id})` : `getMe failed: ${j.description || res.status}`);
+      } catch (e) {
+        push("channels.telegram.api", "warn", `telegram API unreachable: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    push("channels.summary", "warn", e.message || String(e));
+  }
+
+  // ── Services ── pm2-managed gateway (the running bot)
+  try {
+    const { execFile } = await import("node:child_process");
+    const pm2 = await new Promise((resolve) => {
+      execFile("pm2", ["jlist"], { timeout: 6000 }, (err, out) => {
+        if (err) return resolve(null);
+        try { resolve(JSON.parse(out)); } catch { resolve(null); }
+      });
+    });
+    if (pm2) {
+      const gw = pm2.find((p) => p.name === "xclaw-gateway");
+      if (gw) {
+        const st = gw.pm2_env?.status;
+        push("service.gateway", st === "online" ? "ok" : "warn",
+          `pm2 xclaw-gateway: ${st} (restarts=${gw.pm2_env?.restart_time ?? "?"}, uptime=${gw.pm2_env?.pm_uptime ? Math.round((Date.now() - gw.pm2_env.pm_uptime) / 1000) + "s" : "?"})`);
+      } else {
+        push("service.gateway", "ok", "no pm2 xclaw-gateway (run under pm2 for a persistent bot)");
+      }
+    }
+  } catch {
+    /* pm2 optional */
+  }
+
   return finish(checks, opts);
 
 
@@ -1268,6 +1346,8 @@ function doctorGroup(id) {
     s.startsWith("a.")
   )
     return "Computer";
+  if (s.startsWith("providers")) return "Providers";
+  if (s.startsWith("channels") || s.startsWith("service")) return "Channels";
   if (
     s.startsWith("gateway") ||
     s.startsWith("bind") ||
@@ -1310,7 +1390,7 @@ function finish(checks, opts) {
       console.log(JSON.stringify(report, null, 2));
     } else {
       console.log("XClaw doctor\n");
-      const order = ["Config", "Security", "Computer", "Runtime", "Other"];
+      const order = ["Config", "Security", "Providers", "Channels", "Computer", "Runtime", "Other"];
       for (const g of order) {
         const list = grouped[g];
         if (!list?.length) continue;

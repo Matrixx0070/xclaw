@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.91.0 — full doctor: Providers + Channels + Services sections
+
+`xclaw doctor` now covers the provider/channel subsystems and the live bot, not just config/security/computer/runtime:
+
+- **Providers**: summary (N/12 configured + active provider/model), per-configured-provider credential resolution (does the `apikey`/`oauth` profile actually resolve, and via which source) + endpoint, and an image-generation readiness check (xai credential).
+- **Channels**: summary (enabled/total), per-channel enabled/configured state + which fields are set, and live Telegram bot reachability (`getMe`) when a token is configured.
+- **Services**: pm2 `xclaw-gateway` status (online/restarts/uptime) so the persistent bot's health shows in the report.
+
+New display groups (Providers, Channels) slot between Security and Computer. No secrets are printed — only resolution booleans and sources.
+
 ## 3.90.4 — hide the {"claims"} grounding block from channel replies
 
 The system prompt asks the model to append a ```json {"claims":…,"evidence_ids":…} ``` block for internal grounding, but it was leaking verbatim into user-facing replies (Telegram, etc.). `stripClaimsBlock` now removes the trailing fenced or bare claims object from the presented `text` field only — the raw reply is kept for internal verification/claims consumers. Unrelated JSON (e.g. a config example) is left untouched.

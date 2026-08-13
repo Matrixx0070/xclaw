@@ -679,3 +679,15 @@ FIXED: stripClaimsBlock(text) in loop.mjs removes trailing fenced OR bare claims
 object; applied to the user-facing `text` return field only (raw finalText/
 replyText kept for verify/claims consumers); unrelated json untouched.
 RAN: suite 1311/0 · pm2 gateway restarted so replies are clean.
+
+## 2026-08-13 — 3.91.0 full doctor (Providers/Channels/Services) (Claude)
+
+STATUS: green
+BUILT: xclaw doctor extended — Providers section (providerInventory +
+checkProviderCredential per configured provider, active model, image-gen
+readiness), Channels section (channelInventory enabled/configured + live
+telegram getMe), Services section (pm2 xclaw-gateway status). doctorGroup +
+order updated (Providers, Channels between Security and Computer). No secrets.
+RAN: suite 1311/0 · LIVE doctor: 0 err 8 warn — Providers 4/12 all resolve +
+imageGen ready, Channels 2/5 (telegram bot @xxclaw_bot reachable), pm2
+xclaw-gateway online.
