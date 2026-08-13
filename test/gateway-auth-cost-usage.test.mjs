@@ -8,7 +8,12 @@ import { createGatewayAuth } from "../src/gateway/auth.mjs";
 // session-preview-exposing usage/logs reads unauthenticated. Both branches
 // must protect them.
 
-const PATHS = ["/cost", "/cost/pause", "/usage", "/logs", "/logs/run?id=x"];
+const PATHS = [
+  "/cost", "/cost/pause", "/usage", "/logs", "/logs/run?id=x",
+  // pairing is state-changing (approve grants a sender DM access) — a
+  // review flagged it; both auth branches had it all along, pinned here.
+  "/pairing/pending", "/pairing/approve", "/pairing/revoke",
+];
 
 describe("cost/usage/logs auth coverage", () => {
   for (const strict of [true, false]) {
