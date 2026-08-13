@@ -3,11 +3,32 @@
  *
  * Handles: 409 conflict (clear webhook), 429 Retry-After, network backoff,
  * empty batches, writer-lock heartbeat, graceful stop.
+ *
+ * Dispatch policy (the approval-deadlock fix): the loop must NEVER be blocked
+ * by a long-running agent turn. With the original `await onUpdate(u)` a turn
+ * pending human approval (up to 120s) froze the loop, so the owner's
+ * `/approve` — or the inline Allow callback — could not even be READ until
+ * the SLA had already denied the approval (`Failed: unknown_pending`, live
+ * incident 2026-08-13). Now:
+ *   - callback_query updates and slash-command messages ("/approve", …) are
+ *     handled inline (they are fast — no LLM) so they can overtake a
+ *     blocked turn;
+ *   - everything else is dispatched to a per-chat serial queue: ordering
+ *     within a chat is preserved, but the loop returns to getUpdates
+ *     immediately.
  */
 import {
   classifyTelegramError,
   backoffMsFromClassification,
 } from "./errors.mjs";
+
+/** Commands and button callbacks must be able to overtake a blocked turn. */
+export function isFastLaneUpdate(u) {
+  if (u?.callback_query) return true;
+  const msg = u?.message || u?.edited_message;
+  const text = msg?.text ?? msg?.caption ?? "";
+  return typeof text === "string" && text.trim().startsWith("/");
+}
 
 /**
  * @param {object} opts
@@ -53,6 +74,25 @@ export async function runTelegramPollLoop(opts) {
 
   let attempt = 0;
   let consecutiveEmpty = 0;
+  /** chatId → tail of that chat's serial dispatch chain */
+  const chatQueues = new Map();
+
+  function dispatchQueued(u) {
+    const msg = u?.message || u?.edited_message;
+    const chatId = String(msg?.chat?.id ?? "global");
+    const prev = chatQueues.get(chatId) || Promise.resolve();
+    const next = prev
+      .then(() => onUpdate(u))
+      .catch((err) => {
+        const c = classifyTelegramError(err);
+        onError?.({ phase: "update", ...c, err });
+        console.error(`[telegram] update error:`, c.message);
+      });
+    chatQueues.set(chatId, next);
+    next.finally(() => {
+      if (chatQueues.get(chatId) === next) chatQueues.delete(chatId);
+    });
+  }
 
   console.log(
     `[telegram] long-poll starting (@${botUsername || "?"}) timeout=${timeoutSec}s limit=${limit}`
@@ -81,12 +121,17 @@ export async function runTelegramPollLoop(opts) {
         if (u?.update_id != null) {
           setOffset?.(Number(u.update_id) + 1);
         }
-        try {
-          await onUpdate(u);
-        } catch (err) {
-          const c = classifyTelegramError(err);
-          onError?.({ phase: "update", ...c, err });
-          console.error(`[telegram] update error:`, c.message);
+        if (isFastLaneUpdate(u)) {
+          // Inline await is safe here: commands/callbacks never run the LLM.
+          try {
+            await onUpdate(u);
+          } catch (err) {
+            const c = classifyTelegramError(err);
+            onError?.({ phase: "update", ...c, err });
+            console.error(`[telegram] update error:`, c.message);
+          }
+        } else {
+          dispatchQueued(u);
         }
       }
     } catch (err) {

@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.93.1 — fix: Telegram same-channel approval deadlock (poll loop blocked by the pending turn)
+
+Found by live-testing the 3.92.0 approval flow over real Telegram: the getUpdates poll loop `await`ed every update handler inline, so a turn blocked on human approval (up to 120s) froze the loop — the owner's `/approve` (or the inline Allow tap) could not even be *read* until the SLA had already denied the approval, which then failed with `unknown_pending`. Same-channel approval was structurally impossible over polling (webhook transport was unaffected — independent HTTP requests).
+
+`poll-loop.mjs` dispatch policy: callback_query updates and slash-command messages are handled inline (fast — no LLM) so they overtake a blocked turn; all other messages go to per-chat serial queues, preserving in-chat ordering while the loop returns to getUpdates immediately. Different chats may now process concurrently (previously global-serial) — for the DM-locked single-owner deployment this is effectively unchanged.
+
+4 new tests including a faithful reproduction of the deadlock (approve arrives mid-blocked-turn, must complete before the turn does). Live-verified over real Telegram end-to-end: bash request → approval prompt with Allow/Deny buttons → `/approve` from the same chat while pending → `Approved` + command output delivered 15s after the request (previously: 120s SLA deny). Suite 1353/1348 pass.
+
 ## 3.93.0 — ship-readiness closeout: outage-proof doctor, automations locking, tool execute-smoke sweep
 
 Closes the three gaps identified in a ship-readiness review after 3.92.1: doctor could go green through an outage, the automations store had a lost-update race, and nothing exercised tool bodies to catch the "shipped with a missing import" bug class generically.
