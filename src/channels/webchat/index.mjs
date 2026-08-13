@@ -84,6 +84,7 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
     });
     if (cmd.handled) {
       const assistantMsg = {
+        id: randomUUID(),
         role: "assistant",
         content: cmd.reply || "OK",
         at: Date.now(),
@@ -91,6 +92,7 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
       session.messages.push(assistantMsg);
       return {
         sessionId: session.id,
+        reply: assistantMsg,
         text: cmd.reply || "OK",
         command: true,
         messages: session.messages,

@@ -6,6 +6,13 @@
 import { randomUUID } from "node:crypto";
 import { loadStore, saveStore, automationsPath } from "./store.mjs";
 import {
+  DEFAULT_MAX_TICKS,
+  initialGoalState,
+  buildGoalPrompt,
+  parseGoalState,
+  applyGoalTick,
+} from "./goal.mjs";
+import {
   addJob,
   updateJob,
   cancelJob,
@@ -42,11 +49,15 @@ function parseSchedule(input = {}) {
  * @param {number} [opts.everyMs]
  * @param {string} [opts.at] ISO time
  * @param {boolean} [opts.enabled]
+ * @param {string} [opts.mode] "prompt" (default) or "goal" — goal mode keeps
+ *   persistent plan/progress state and re-plans every tick until done/maxTicks.
+ * @param {number} [opts.maxTicks] goal mode only (default 20)
  */
 export function createAutomation(cfg, opts = {}) {
+  const mode = opts.mode === "goal" ? "goal" : "prompt";
   const prompt = String(opts.prompt || opts.message || opts.goal || "").trim();
   if (!prompt) {
-    return { ok: false, error: "prompt_required" };
+    return { ok: false, error: mode === "goal" ? "goal_required" : "prompt_required" };
   }
   const id = opts.id || randomUUID();
   const schedule = parseSchedule(opts);
@@ -56,6 +67,7 @@ export function createAutomation(cfg, opts = {}) {
   const record = {
     id,
     name,
+    mode,
     prompt,
     schedule,
     enabled: opts.enabled !== false,
@@ -64,6 +76,13 @@ export function createAutomation(cfg, opts = {}) {
     lastRunAt: null,
     lastStatus: null,
   };
+  if (mode === "goal") {
+    record.goal = String(opts.goal || prompt).trim();
+    const mt = Number(opts.maxTicks);
+    record.maxTicks =
+      Number.isFinite(mt) && mt > 0 ? Math.floor(mt) : DEFAULT_MAX_TICKS;
+    record.state = initialGoalState();
+  }
   store.automations = store.automations.filter((a) => a.id !== id);
   store.automations.push(record);
   saveStore(cfg, store);
@@ -104,7 +123,7 @@ function registerAutomationJob(cfg, record) {
 /**
  * Run agent turn for an automation and append result.
  */
-export async function executeAutomation(cfg, id, { mode = "manual" } = {}) {
+export async function executeAutomation(cfg, id, { mode = "manual", runner = null } = {}) {
   const store = loadStore(cfg);
   const auto = store.automations.find((a) => a.id === id);
   if (!auto) return { ok: false, error: "not_found" };
@@ -113,14 +132,19 @@ export async function executeAutomation(cfg, id, { mode = "manual" } = {}) {
   let status = "ok";
   let summary = "";
   let error = null;
+  let goalTick = null;
 
   try {
-    // Prefer lightweight agent runner if available
-    const { runAgentOnce } = await import("../agent/run-once.mjs").catch(() => ({}));
+    // Prefer lightweight agent runner if available (injectable for tests)
+    const runAgentOnce =
+      runner ||
+      (await import("../agent/run-once.mjs").catch(() => ({}))).runAgentOnce;
     if (typeof runAgentOnce === "function") {
+      const isGoal = auto.mode === "goal";
+      const message = isGoal ? buildGoalPrompt(auto) : auto.prompt;
       const out = await runAgentOnce({
         cfg,
-        message: auto.prompt,
+        message,
         goal: auto.prompt,
         source: "automation",
         automationId: id,
@@ -132,6 +156,23 @@ export async function executeAutomation(cfg, id, { mode = "manual" } = {}) {
       if (out?.ok === false) {
         status = "error";
         error = out.error || "agent_failed";
+      } else if (isGoal) {
+        // Fold the tick into persistent goal state; stop when done/exhausted
+        const parsed = parseGoalState(typeof out === "string" ? out : out?.text);
+        goalTick = applyGoalTick(auto, parsed);
+        auto.state = goalTick.state;
+        const note = goalTick.state.progress.slice(-1)[0] || "";
+        summary = `[tick ${goalTick.state.tick}${
+          goalTick.finished ? ` · finished:${goalTick.reason}` : ""
+        }] ${note}`.slice(0, 2000);
+        if (goalTick.finished) {
+          auto.enabled = false;
+          try {
+            cancelJob(auto.id);
+          } catch {
+            /* not scheduled in this process */
+          }
+        }
       }
     } else {
       // Fallback: emit via announce path / mark scheduled
@@ -164,6 +205,11 @@ export async function executeAutomation(cfg, id, { mode = "manual" } = {}) {
     startedAt,
     finishedAt: new Date().toISOString(),
   };
+  if (goalTick) {
+    result.tick = goalTick.state.tick;
+    result.goalFinished = goalTick.finished;
+    result.goalReason = goalTick.reason;
+  }
 
   store.results.push(result);
   auto.lastRunAt = result.finishedAt;

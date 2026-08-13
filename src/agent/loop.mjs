@@ -31,6 +31,7 @@ import {
   loadTranscriptHistory,
 } from "../sessions/transcript.mjs";
 import { revalidatePlan, isExecTool } from "../security/system-run-plan.mjs";
+import { createRunBudget } from "./run-budget.mjs";
 import { resolveProviderRoute, resolveProviderRouteAsync } from "../providers/router.mjs";
 import { createSpawnTool, spawnSubagent } from "../agents/spawn.mjs";
 import { createSwarmRunTool } from "../agents/swarm-run.mjs";
@@ -170,6 +171,7 @@ export async function runAgentLoop(options) {
   };
 
   const maxTurns = cfg.agent?.maxTurns ?? 15;
+  const runBudget = createRunBudget(cfg);
   const skillsEnabled = cfg.skills?.enabled !== false;
   const memoryEnabled = cfg.memory?.enabled !== false;
 
@@ -629,6 +631,22 @@ export async function runAgentLoop(options) {
   try {
     for (turns = 0; turns < maxTurns; turns++) {
       if (signal?.aborted) throw new Error("aborted");
+
+      // Unattended-operation caps (cfg.agent.budget) — graceful stop, the
+      // post-run pipeline (verify, metrics, receipts) still runs.
+      if (runBudget.enabled) {
+        const bx = runBudget.check({
+          toolCalls: toolTrace.length,
+          totalTokens: usageTracker.snapshot()?.totalTokens || 0,
+        });
+        if (bx) {
+          onEvent({ type: "budget", phase: "exceeded", ...bx });
+          if (!finalText) {
+            finalText = `Stopped: run budget exceeded (${bx.reason}: ${bx.used}/${bx.limit}).`;
+          }
+          break;
+        }
+      }
 
       onEvent({ type: "model", phase: "request", turn: turns + 1 });
       const stab = assertPrefixStable(messages, prefixHash, tools);

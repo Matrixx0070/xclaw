@@ -912,6 +912,14 @@ export async function startGateway({ root } = {}) {
   console.log(`[xclaw] XClaw Gateway starting (Phase 7 · hardening)…`);
   console.log(`[xclaw] Config: ${cfg.paths.configFile}`);
 
+  // Config-driven commit gates: consumers (browser hooks, fabric, doctor,
+  // computer child via env inheritance) all read XCLAW_COMMIT_GATES — export
+  // it from config here so the knob is declarative. Env always wins.
+  if (cfg.security?.commitGates && process.env.XCLAW_COMMIT_GATES == null) {
+    process.env.XCLAW_COMMIT_GATES = "1";
+    console.log(`[xclaw] commit gates enabled (security.commitGates)`);
+  }
+
   if (cfg.computer.autoStart) {
     try {
       await startComputer({ root, foreground: false });

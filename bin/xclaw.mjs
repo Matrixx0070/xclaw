@@ -1151,8 +1151,8 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         break;
       }
       if (sub === "add") {
-        // xclaw automations add --every 3600000 --name n -- prompt words...
-        let everyMs, cron, at, name, enabled = true;
+        // xclaw automations add --every 3600000 --name n [--goal [--max-ticks N]] -- prompt words...
+        let everyMs, cron, at, name, enabled = true, mode = "prompt", maxTicks;
         const rest = [];
         for (let i = 2; i < args.length; i++) {
           if (args[i] === "--every" && args[i+1]) { everyMs = Number(args[++i]); continue; }
@@ -1160,16 +1160,18 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
           if (args[i] === "--at" && args[i+1]) { at = args[++i]; continue; }
           if (args[i] === "--name" && args[i+1]) { name = args[++i]; continue; }
           if (args[i] === "--disabled") { enabled = false; continue; }
+          if (args[i] === "--goal") { mode = "goal"; continue; }
+          if (args[i] === "--max-ticks" && args[i+1]) { maxTicks = Number(args[++i]); continue; }
           if (args[i] === "--") { rest.push(...args.slice(i+1)); break; }
           rest.push(args[i]);
         }
         const prompt = rest.join(" ").trim();
         if (!prompt) {
-          console.error("Usage: xclaw automations add [--every ms|--cron expr|--at ISO] [--name n] <prompt>");
+          console.error("Usage: xclaw automations add [--every ms|--cron expr|--at ISO] [--name n] [--goal [--max-ticks N]] <prompt-or-goal>");
           process.exitCode = 1;
           break;
         }
-        const r = auto.createAutomation(cfg, { prompt, everyMs, cron, at, name, enabled });
+        const r = auto.createAutomation(cfg, { prompt, goal: mode === "goal" ? prompt : undefined, mode, maxTicks, everyMs, cron, at, name, enabled });
         console.log(JSON.stringify(r, null, 2));
         process.exitCode = r.ok ? 0 : 1;
         break;

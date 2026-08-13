@@ -1167,10 +1167,14 @@ export async function runDoctor(opts = {}) {
       cfg.profile === "prod" ||
       process.env.XCLAW_ENFORCEMENT_STRICT === "1";
     if (isProd) {
-      if (!(process.env.XCLAW_COMMIT_GATES === "1" || process.env.XCLAW_COMMIT_GATES === "true")) {
-        push("a.prod_commit_gates", "error", "prod profile requires XCLAW_COMMIT_GATES=1");
+      const commitGatesOn =
+        process.env.XCLAW_COMMIT_GATES === "1" ||
+        process.env.XCLAW_COMMIT_GATES === "true" ||
+        cfg.security?.commitGates === true;
+      if (!commitGatesOn) {
+        push("a.prod_commit_gates", "error", "prod profile requires XCLAW_COMMIT_GATES=1 (or security.commitGates)");
       } else {
-        push("a.prod_commit_gates", "ok", "XCLAW_COMMIT_GATES enabled");
+        push("a.prod_commit_gates", "ok", "commit gates enabled");
       }
       if (!(process.env.XCLAW_FABRIC_ENFORCE === "1" || process.env.XCLAW_FABRIC_ENFORCE === "true")) {
         push("a.prod_fabric", "warn", "prod recommended XCLAW_FABRIC_ENFORCE=1");

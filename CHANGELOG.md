@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.92.0 — unattended-operation guardrails: approval mode live, commit gates config knob, per-run budgets, goal-mode automations
+
+Frank opted into "full autonomy prep." Three slices, each flag-gated and default-compatible:
+
+**1. Approval guardrails applied + config-driven commit gates.**
+- The live host config now runs `security.autoApprove: false` — the `requireApproval` list (bash, file writes) actually gates: the tool call pends, the owner resolves it with the existing `/pending` + `/approve <id>` channel commands (Telegram inline keyboards included), SLA timeout denies. Live-verified round-trip: bash pended → `/approve` → executed.
+- New `security.commitGates: true` config knob — the gateway exports `XCLAW_COMMIT_GATES=1` at startup (env still wins) so browser fabric commit gates are declarative instead of env-only. Doctor's prod check accepts either.
+- FIX: webchat slash commands crashed the non-stream HTTP route ("Cannot read properties of undefined (reading 'content')") — the command branch returned no `reply` field. Every `/pending`, `/approve`, `/help` via `POST /channel/webchat/message` 500'd; Telegram/stream were unaffected, so it hid.
+
+**2. Per-run budget caps** (`src/agent/run-budget.mjs`): `cfg.agent.budget = { maxToolCalls, maxTokens, maxWallMs }` — each optional, active when > 0, checked at every turn boundary. On exceed the run stops gracefully (`budget` event + "Stopped: run budget exceeded" final text; post-run pipeline still runs). Tokens come from the existing usage tracker (real usage or estimates). Off by default. Includes the source-assertion tripwire against refactor drops.
+
+**3. Goal-mode automations** (`src/automations/goal.mjs`): `xclaw automations add --goal [--max-ticks N] -- <goal>` creates a `mode: "goal"` automation. Each scheduled tick composes a prompt from the goal + persisted state (plan, last progress notes, tick count), the agent does one useful step and ends with a fenced `xclaw-goal-state` JSON block (`plan` / `progressNote` / `done`), and the automation folds it into durable state. It self-disables on `done: true` or maxTicks (default 20). Unparsable replies burn a tick with a marker note — no infinite loops. Plain prompt automations are byte-for-byte untouched. This closes the "automations can't pursue open-ended goals across self-directed steps" gap; combined with approval mode + budgets, long unattended loops now have re-planning, spend ceilings, and human checkpoints.
+
+Suite 1332/0 (13 new tests).
+
 ## 3.91.2 — fix: browser dead on root-run hosts (Chrome refused to start without --no-sandbox)
 
 The live bot self-reported "my browser is navigate + read-only, no click/type/screenshots" — wrong diagnosis, real symptom. The bundle engine's full CDP browser was configured and advertised (`jsCode`, `screenshot`), but every launch died with `Browser exited before getting port`: Chrome hard-refuses to start as root without `--no-sandbox`, and `chrome-args.mjs` only added the flag for CI / docker / explicit `XCLAW_BROWSER_NO_SANDBOX`. Bare-metal root hosts (this one) got a browser that could never start.
