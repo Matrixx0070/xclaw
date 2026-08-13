@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.95.3 — fix: the test suite was making a real paid grok-4.5 call on every run
+
+Found by looking at the new Logs section on the operator display: recurring `noop` grok-4.5 rows at ~10.8K prompt tokens each lined up exactly with `npm test` runs. `test/session-kill-loop.test.mjs` assumed deleting `XAI_API_KEY` meant no credential — but since credentials moved into the profile store (3.86.0), the key resolved from `~/.xclaw` anyway, so every suite run executed a REAL grok-4.5 request and wrote it to the REAL cost ledger. Tally before it was caught: **38 calls · 402K tokens · $0.55**.
+
+The test is now hermetic: temp HOME + `XCLAW_STATE_DIR` (no stored credential can resolve), baseUrl pinned to a dead loopback port (nothing can escape even if one does), ledger disabled, env restored and temp dir cleaned in `finally`. Proven: full suite run adds **zero** ledger rows. The 38 historical rows stay in the ledger — the spend was real and the ledger is truthful.
+
 ## 3.95.2 — Usage & Logs: provider selection live-syncs across open Control windows
 
 Observed on the operator display with two Control surfaces open: both share the persisted provider selection but didn't live-sync — one window could show anthropic while the other showed nvidia, exactly the cross-provider confusion this section exists to prevent. A storage-event listener now converges every open window on the same selection instantly.

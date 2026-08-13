@@ -18,18 +18,37 @@ describe("session kill integration", () => {
   });
 
   it("runAgentLoop registers and unregisters session", async () => {
-    // Minimal mock: import loop and inspect register via list during a sync fail path
-    // Without API key the provider may fail fast — still register/unregister in finally
+    // HERMETIC: this test once assumed "delete XAI_API_KEY = no credential →
+    // fast failure". After credentials moved into the profile store, the key
+    // resolved from ~/.xclaw anyway and every `npm test` made a REAL paid
+    // grok-4.5 call and wrote it to the REAL cost ledger (38 calls / $0.55
+    // before the Logs UI made it visible, 2026-08-13). Isolate HOME/state so
+    // no stored credential can resolve, pin the baseUrl to a dead loopback
+    // port so nothing can escape even if one does, and disable the ledger.
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-kill-loop-"));
+    const savedHome = process.env.HOME;
+    const savedState = process.env.XCLAW_STATE_DIR;
+    process.env.HOME = tmpHome;
+    process.env.XCLAW_STATE_DIR = path.join(tmpHome, ".xclaw");
+
     const { runAgentLoop } = await import("../src/agent/loop.mjs");
     const before = listActiveSessions().length;
     const cfg = {
       profile: "lab",
       security: { autoApprove: true },
-      agent: { model: "xai/grok-4.5", maxTurns: 1 },
+      agent: {
+        model: "xai/grok-4.5",
+        maxTurns: 1,
+        baseUrl: "http://127.0.0.1:1", // dead port — no request can succeed
+      },
+      tokens: { ledger: false },
+      paths: { configDir: process.env.XCLAW_STATE_DIR },
       computer: { enabled: false },
       router: { enabled: false },
     };
-    // Ensure no key → fail quickly but finally still runs
     const prev = process.env.XAI_API_KEY;
     delete process.env.XAI_API_KEY;
     delete process.env.XCLAW_API_KEY;
@@ -42,6 +61,10 @@ describe("session kill integration", () => {
       }).catch(() => null);
     } finally {
       if (prev) process.env.XAI_API_KEY = prev;
+      process.env.HOME = savedHome;
+      if (savedState === undefined) delete process.env.XCLAW_STATE_DIR;
+      else process.env.XCLAW_STATE_DIR = savedState;
+      fs.rmSync(tmpHome, { recursive: true, force: true });
     }
     // After return, session should be unregistered
     const still = listActiveSessions().filter((s) => s.sessionId === "test-register-wire");
