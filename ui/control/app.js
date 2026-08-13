@@ -9,8 +9,11 @@ const $ = (id) => document.getElementById(id);
 const _rawFetch = window.fetch.bind(window);
 window.fetch = (url, opts = {}) => {
   try {
-    const u = String(url);
-    const sameOrigin = u.startsWith("/") || u.startsWith(location.origin);
+    // Resolve the real target origin — naive prefix checks leak the token:
+    // "//evil.com/x" starts with "/", and "http://host:port.evil.com"
+    // starts with location.origin as a plain string.
+    const raw = typeof url === "string" ? url : url?.url != null ? url.url : String(url);
+    const sameOrigin = new URL(raw, location.href).origin === location.origin;
     const tok = localStorage.getItem("xclaw_token");
     if (sameOrigin && tok) {
       if (opts.headers instanceof Headers) {
@@ -20,7 +23,7 @@ window.fetch = (url, opts = {}) => {
       }
     }
   } catch {
-    /* storage unavailable — send unauthenticated as before */
+    /* unresolvable URL or storage unavailable — send unauthenticated */
   }
   return _rawFetch(url, opts);
 };

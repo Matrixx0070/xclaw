@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.93.3 — webchat token support + origin-check hardening of the 3.93.2 fetch wrapper
+
+Two follow-ups from actually using the UIs on a screen:
+
+**WebChat had zero token support.** With `gateway.authStrict` (this host's config) the `/channel/` API is token-gated, and the webchat client never sent one — every message failed `401 unauthorized`. The same central same-origin fetch wrapper as the control UI now attaches `localStorage.xclaw_token` when present; tokenless lab setups are unchanged (nothing is sent when nothing is stored). Live-verified: message sent through the real UI, streamed reply rendered.
+
+**Security: the 3.93.2 wrapper's origin check was bypassable** (caught by automated review of the pushed commit). `u.startsWith("/")` matches protocol-relative URLs (`//evil.example/x`), and `u.startsWith(location.origin)` is prefix-spoofable (`http://host:port.evil.example`) — both would have sent the operator token cross-origin if a call site ever fetched an attacker-influenced URL. Both wrappers now resolve the real target via `new URL(raw, location.href)` and compare `.origin` strictly; `Request` objects are unwrapped via `.url`. Verified in-page: both bypass shapes now resolve to non-same-origin (no token), relative and absolute same-origin still pass.
+
 ## 3.93.2 — fix: control UI sent the operator token on 1 of ~35 gateway calls
 
 Found by actually putting the control UI on a screen: exactly one call site attached `x-xclaw-token`, so every operator-gated panel (swarm merges, providers, channels, queue controls, …) showed "unauthorized" even with a valid token in `localStorage.xclaw_token`. Now a central same-origin `fetch` wrapper attaches the token for every gateway call — existing and future call sites alike (the WS events path already carried it via the subprotocol; unchanged).

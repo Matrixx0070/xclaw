@@ -1,4 +1,31 @@
 (() => {
+  // Same-origin gateway calls carry the operator token when one is set
+  // (localStorage.xclaw_token). With gateway.authStrict the /channel/ API
+  // is token-gated and this client had NO token support at all — every
+  // send failed 401. Tokenless lab setups are unaffected (nothing is sent
+  // when no token is stored). Mirrors the control UI's central wrapper.
+  const _rawFetch = window.fetch.bind(window);
+  window.fetch = (url, opts = {}) => {
+    try {
+      // Resolve the real target origin — naive prefix checks leak the token:
+      // "//evil.com/x" starts with "/", and "http://host:port.evil.com"
+      // starts with location.origin as a plain string.
+      const raw = typeof url === "string" ? url : url?.url != null ? url.url : String(url);
+      const sameOrigin = new URL(raw, location.href).origin === location.origin;
+      const tok = localStorage.getItem("xclaw_token");
+      if (sameOrigin && tok) {
+        if (opts.headers instanceof Headers) {
+          if (!opts.headers.has("x-xclaw-token")) opts.headers.set("x-xclaw-token", tok);
+        } else {
+          opts = { ...opts, headers: { "x-xclaw-token": tok, ...(opts.headers || {}) } };
+        }
+      }
+    } catch {
+      /* unresolvable URL or storage unavailable — send unauthenticated */
+    }
+    return _rawFetch(url, opts);
+  };
+
   const $ = (sel) => document.querySelector(sel);
   const messagesEl = $("#messages");
   const emptyEl = $("#empty");
