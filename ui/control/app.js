@@ -2103,3 +2103,19 @@ if ($("ulProviders")) {
     .then(() => Promise.all([ulLoadUsage(), ulLoadLogs()]))
     .catch(console.error);
 }
+
+// Two open Control windows share localStorage but chips didn't live-sync —
+// window A could show "anthropic" while B shows "nvidia" (observed on the
+// operator display with both surfaces open). Follow storage events so every
+// window converges on the same provider selection.
+window.addEventListener("storage", (e) => {
+  if (e.key !== "xclaw_ul_provider" || !$("ulProviders")) return;
+  const next = e.newValue || "all";
+  if (next === ulProvider) return;
+  ulProvider = next;
+  document.querySelectorAll(".ul-prov-chip").forEach((c) =>
+    c.classList.toggle("active", c.dataset.prov === ulProvider)
+  );
+  ulLoadUsage().catch(console.error);
+  ulLoadLogs().catch(console.error);
+});

@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.95.2 — Usage & Logs: provider selection live-syncs across open Control windows
+
+Observed on the operator display with two Control surfaces open: both share the persisted provider selection but didn't live-sync — one window could show anthropic while the other showed nvidia, exactly the cross-provider confusion this section exists to prevent. A storage-event listener now converges every open window on the same selection instantly.
+
 ## 3.95.1 — security: /cost·/usage·/logs were strict-mode-only protected
 
 Automated review of the 3.95.0 commit caught that the new `/cost`, `/cost/pause`, `/usage` and `/logs` paths were added only to the STRICT auth list — on a non-strict deployment with a token set, `POST /cost/pause` (state-changing: pauses ALL spend) and the session-preview-exposing usage/logs reads were unauthenticated. Now protected in both branches, with a matrix test asserting token-required + token-accepted across strict AND legacy modes for all five paths. Suite 1395/0.
