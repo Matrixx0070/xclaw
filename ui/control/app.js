@@ -433,7 +433,6 @@ async function loadEvictionHistory() {
 }
 
 /** SSE reconnect with exponential backoff + lastEventId resume */
-let _evictES = null;
 let _evictAttempt = 0;
 let _evictLastId = "";
 let _evictTimer = null;
@@ -445,60 +444,75 @@ function _evictBackoffMs(attempt) {
   return Math.floor(Math.random() * exp);
 }
 
-function connectEvictionStream() {
+// fetch-based SSE reader instead of EventSource: /events/* is token-protected
+// and EventSource can't set headers — a ?token= carrier would put the operator
+// token in URLs (access logs, proxies; flagged by security review). fetch
+// sends it as a header via the global wrapper, like every other call. Same
+// frame parsing as the agent/swarm stream readers.
+let _evictAbortCtl = null;
+async function connectEvictionStream() {
   const status = $("evictLiveStatus");
   if (!status) return;
   if (_evictTimer) {
     clearTimeout(_evictTimer);
     _evictTimer = null;
   }
+  try { _evictAbortCtl?.abort(); } catch {}
+  const ac = new AbortController();
+  _evictAbortCtl = ac;
+  status.textContent = _evictAttempt === 0 ? "connecting…" : ("reconnecting · try " + _evictAttempt);
   try {
-    if (_evictES) {
-      try { _evictES.close(); } catch {}
-      _evictES = null;
-    }
-    // EventSource can't set headers, and /events/* is token-protected — carry
-    // the operator token as a query param (auth.check accepts ?token=).
-    const params = new URLSearchParams();
-    if (_evictLastId) params.set("lastEventId", _evictLastId);
-    try {
-      const tok = localStorage.getItem("xclaw_token");
-      if (tok) params.set("token", tok);
-    } catch {}
-    const qs = params.toString();
-    const url = "/events/eviction/stream" + (qs ? "?" + qs : "");
-    status.textContent = _evictAttempt === 0 ? "connecting…" : ("reconnecting · try " + _evictAttempt);
-    const es = new EventSource(url);
-    _evictES = es;
-
-    es.addEventListener("ready", (msg) => {
-      _evictAttempt = 0;
-      try {
-        const j = JSON.parse(msg.data);
-        status.textContent = j.resumedFrom
-          ? ("live · resumed " + (j.replayed || 0))
-          : "live";
-      } catch {
-        status.textContent = "live";
+    const url =
+      "/events/eviction/stream" +
+      (_evictLastId ? "?lastEventId=" + encodeURIComponent(_evictLastId) : "");
+    const r = await fetch(url, {
+      headers: { Accept: "text/event-stream" },
+      signal: ac.signal,
+    });
+    if (!r.ok || !r.body) throw new Error("stream " + r.status);
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop() || "";
+      for (const chunk of parts) {
+        if (!chunk.trim()) continue;
+        let event = "message";
+        let id = null;
+        const dataLines = [];
+        for (const line of chunk.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+          else if (line.startsWith("id:")) id = line.slice(3).trim();
+        }
+        const data = dataLines.join("\n");
+        if (id) _evictLastId = id;
+        if (event === "ready") {
+          _evictAttempt = 0;
+          try {
+            const j = JSON.parse(data);
+            status.textContent = j.resumedFrom
+              ? ("live · resumed " + (j.replayed || 0))
+              : "live";
+          } catch {
+            status.textContent = "live";
+          }
+        } else if (event === "eviction") {
+          try {
+            prependEvict(JSON.parse(data));
+            status.textContent = "live · " + new Date().toLocaleTimeString();
+          } catch {}
+        }
       }
-    });
-    es.addEventListener("eviction", (msg) => {
-      if (msg.lastEventId) _evictLastId = msg.lastEventId;
-      try {
-        prependEvict(JSON.parse(msg.data));
-        status.textContent = "live · " + new Date().toLocaleTimeString();
-      } catch {}
-    });
-    es.onerror = () => {
-      try { es.close(); } catch {}
-      if (_evictES === es) _evictES = null;
-      status.textContent = "reconnecting…";
-      const delay = _evictBackoffMs(_evictAttempt);
-      _evictAttempt += 1;
-      _evictTimer = setTimeout(connectEvictionStream, delay);
-    };
+    }
+    throw new Error("stream ended");
   } catch (err) {
-    status.textContent = err.message;
+    if (ac.signal.aborted) return; // superseded by a newer connection
+    status.textContent = "reconnecting…";
     const delay = _evictBackoffMs(_evictAttempt);
     _evictAttempt += 1;
     _evictTimer = setTimeout(connectEvictionStream, delay);

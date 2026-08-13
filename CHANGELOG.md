@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.97.1 — eviction stream: operator token out of the URL
+
+Security-review follow-up on 3.97.0: the eviction live stream carried the operator
+token as a `?token=` query param (EventSource can't set headers) — URLs land in
+access logs and proxies. The stream is now a fetch-based SSE reader, so the token
+travels as a header via the same wrapper as every other call; lastEventId resume
+and decorrelated backoff kept. Verified live: stream reconnects "live" post-restart,
+and no `?token=` carrier remains anywhere in either UI.
+
 ## 3.97.0 — every editable surface on the web UI: 8 new Control sections + auth sweep
 
 The 8-gap close: every gateway capability that was editable only via API/CLI now has a
