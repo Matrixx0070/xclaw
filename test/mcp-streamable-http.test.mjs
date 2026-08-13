@@ -58,21 +58,23 @@ before(async () => {
       return;
     }
     if (body.method === "tools/list") {
-      // SSE response: an unrelated notification frame, then the real response
+      // SSE response with CRLF line endings (what DeepWiki actually sends —
+      // an \n-only parser never terminates a frame): an unrelated
+      // notification frame, then the real response.
       res.writeHead(200, { "Content-Type": "text/event-stream" });
       res.write(
-        `event: message\ndata: ${JSON.stringify({
+        `event: message\r\ndata: ${JSON.stringify({
           jsonrpc: "2.0",
           method: "notifications/message",
           params: { level: "info", data: "hello" },
-        })}\n\n`
+        })}\r\n\r\n`
       );
       res.write(
-        `event: message\ndata: ${JSON.stringify({
+        `event: message\r\ndata: ${JSON.stringify({
           jsonrpc: "2.0",
           id: body.id,
           result: { tools: [{ name: "echo", description: "echoes", inputSchema: { type: "object" } }] },
-        })}\n\n`
+        })}\r\n\r\n`
       );
       res.end();
       return;

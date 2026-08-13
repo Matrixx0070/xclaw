@@ -78,11 +78,14 @@ function createHttpTransport(server = {}, opts = {}) {
         const { done, value } = await reader.read();
         if (done) break;
         buf += dec.decode(value, { stream: true });
-        const frames = buf.split("\n\n");
+        // SSE allows \r\n, \r or \n line terminators (DeepWiki sends CRLF —
+        // an \n-only split buffered forever and surfaced as "stream ended
+        // before response", found live against the real server).
+        const frames = buf.split(/\r\n\r\n|\r\r|\n\n/);
         buf = frames.pop() || "";
         for (const frame of frames) {
           const dataLines = frame
-            .split("\n")
+            .split(/\r\n|\r|\n/)
             .filter((l) => l.startsWith("data:"))
             .map((l) => l.slice(5).trim());
           if (!dataLines.length) continue;

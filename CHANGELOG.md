@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.98.1 — real-world remote MCP proven (DeepWiki + GitHub) + SSE CRLF fix
+
+First contact with real third-party remote MCP servers, driven end-to-end through
+the Control UI: **DeepWiki** (mcp.deepwiki.com — no auth) and **GitHub MCP**
+(api.githubcopilot.com — Bearer PAT, session ids). It immediately caught a real
+transport bug: the SSE parser split frames on `\n\n` only, but the SSE spec
+allows CR/CRLF terminators and DeepWiki sends CRLF — every response buffered
+forever and surfaced as "stream ended before response". Frames/lines now split
+on any spec terminator; the fixture server emits CRLF to pin it.
+
+Live-verified through UI clicks on the operator display: DeepWiki tested green
+(3 tools) and `read_wiki_structure` returned real wiki content; GitHub added
+with `allowTools: get_me,search_repositories` — the filter cut its ~90 tools to
+exactly 2 against the real server — and `get_me` returned the operator's real
+account over an Mcp-Session-Id session. Suite 1419/0.
+
 ## 3.98.0 — MCP overhaul: Streamable HTTP, OAuth 2.1, resources/prompts, spec server, full management surface
 
 Closes the remaining 6 findings of the 2026-08-13 MCP audit (finding #1 shipped as 3.97.2):
