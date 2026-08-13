@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.99.1 — MCP OAuth callback: escape rendered error text (XSS)
+
+Security-review follow-up: the auth-exempt `/mcp/oauth/callback` page rendered
+its title/subtitle unescaped — the failure branch interpolates exchange error
+text, which can carry a remote authorization server's `error_description`.
+All interpolations are now HTML-escaped; pinned by a reflection test. Suite 1442/0.
+
 ## 3.99.0 — lifecycle hook system (dynamic, tiered, failure-isolated)
 
 New `HookManager` (src/hooks/manager.mjs) with five lifecycle categories wired

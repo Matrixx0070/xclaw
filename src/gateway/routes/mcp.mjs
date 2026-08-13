@@ -82,8 +82,15 @@ export async function tryHandleMcpRoute({ p, method, req, res, url, cfg, json, r
     const state = url.searchParams.get("state") || "";
     const code = url.searchParams.get("code") || "";
     const flow = pendingOAuth.get(state);
+    // This endpoint is auth-exempt and the failure branch renders e.message,
+    // which can carry a remote AS's error_description — escape everything
+    // interpolated into the page (flagged by security review: XSS).
+    const escHtml = (s) =>
+      String(s ?? "").replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+      );
     const html = (title, sub) =>
-      `<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;background:#0d1117;color:#e6edf3;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:3rem">🦞</div><h2>${title}</h2><p style="opacity:.7">${sub}</p></div></body>`;
+      `<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;background:#0d1117;color:#e6edf3;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:3rem">🦞</div><h2>${escHtml(title)}</h2><p style="opacity:.7">${escHtml(sub)}</p></div></body>`;
     if (!flow || !code) {
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(html("Login link expired", "Start the MCP OAuth login again from XClaw."));
