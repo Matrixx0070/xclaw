@@ -37,7 +37,36 @@ export const HOOK_CATEGORIES = [
   "on_error",
   "on_request",
   "on_response",
+  // tool phase — the highest-leverage points (Claude-Code-class)
+  "pre_tool_use",
+  "post_tool_use",
+  // stop phase — a system hook may veto completion and force continuation
+  "on_stop",
 ];
+
+/** Tool-decision merge priority (a deny always wins). */
+const DECISION_RANK = { deny: 3, ask: 2, allow: 1 };
+
+/**
+ * Matcher: pipe-separated names, `*` wildcards allowed, empty/absent = all.
+ * e.g. "xclaw_bash|bash", "mcp__github__*"
+ */
+export function matcherMatches(matcher, key) {
+  if (!matcher) return true;
+  if (!key) return false;
+  return String(matcher)
+    .split("|")
+    .map((m) => m.trim())
+    .filter(Boolean)
+    .some((m) => {
+      if (m === "*") return true;
+      if (!m.includes("*")) return m === key;
+      const re = new RegExp(
+        "^" + m.split("*").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$"
+      );
+      return re.test(key);
+    });
+}
 
 export const HOOK_TIERS = ["system", "trusted", "user"];
 const TIER_RANK = { system: 3, trusted: 2, user: 1 };
@@ -136,8 +165,17 @@ export class HookManager {
     }
     const id = `hk_${++this._seq}`;
     const name = String(opts.name || fn.name || id).slice(0, 80);
-    this._hooks.get(category).push({ id, name, tier, fn, registeredAt: Date.now() });
-    this._log({ event: "registered", category, name, tier, id });
+    this._hooks.get(category).push({
+      id,
+      name,
+      tier,
+      fn,
+      matcher: opts.matcher || null, // pipe-separated tool/key patterns
+      once: opts.once === true,
+      source: opts.source || "code", // code | module | command
+      registeredAt: Date.now(),
+    });
+    this._log({ event: "registered", category, name, tier, id, matcher: opts.matcher || null });
     return id;
   }
 
@@ -161,7 +199,17 @@ export class HookManager {
     const out = [];
     for (const [cat, list] of this._hooks) {
       if (category && cat !== category) continue;
-      for (const h of list) out.push({ id: h.id, category: cat, name: h.name, tier: h.tier });
+      for (const h of list) {
+        out.push({
+          id: h.id,
+          category: cat,
+          name: h.name,
+          tier: h.tier,
+          matcher: h.matcher || null,
+          once: h.once || false,
+          source: h.source || "code",
+        });
+      }
     }
     return out;
   }
@@ -191,19 +239,28 @@ export class HookManager {
    * @param {string} category
    * @param {object} context — shared payload; whitelisted fields may be
    *   mutated by system/trusted hooks via returned objects
-   * @param {{mutable?: string[]}} [opts]
-   * @returns {Promise<{context: object, abort: string|null, results: Array}>}
-   *   NEVER rejects — hook failures land in results[i].error.
+   * @param {{mutable?: string[], matchKey?: string}} [opts]
+   *   matchKey — compared against each hook's matcher (tool name for
+   *   pre/post_tool_use); non-matching hooks are skipped silently.
+   * @returns {Promise<{context, abort, decision, reason, results}>}
+   *   decision — merged tool decision from SYSTEM-tier hooks only
+   *   (deny > ask > allow; null when none). NEVER rejects.
    */
   async executeAll(category, context = {}, opts = {}) {
     const results = [];
     let abort = null;
+    let decision = null;
+    let reason = null;
     if (!this.enabled(category)) {
-      return { context, abort, results, skipped: "disabled" };
+      return { context, abort, decision, reason, results, skipped: "disabled" };
     }
     await this._ensureModules();
     const mutable = opts.mutable || [];
+    const spent = [];
     for (const hook of this._hooks.get(category) || []) {
+      if (opts.matchKey !== undefined && !matcherMatches(hook.matcher, opts.matchKey)) {
+        continue;
+      }
       const t0 = Date.now();
       const rec = { category, name: hook.name, tier: hook.tier, ok: true, ms: 0 };
       try {
@@ -220,13 +277,24 @@ export class HookManager {
         ]).finally(() => clearTimeout(timer));
 
         if (ret && typeof ret === "object" && hook.tier !== "user") {
-          // abort is system-only; trusted attempts are logged and ignored
+          // abort + decisions are SYSTEM-only; trusted attempts logged+ignored
           if (ret.abort != null) {
             if (hook.tier === "system") {
               abort = String(ret.abort);
               rec.aborted = true;
             } else {
               rec.abortIgnored = true;
+            }
+          }
+          if (ret.decision != null) {
+            if (hook.tier === "system" && DECISION_RANK[ret.decision]) {
+              if (!decision || DECISION_RANK[ret.decision] > DECISION_RANK[decision]) {
+                decision = ret.decision;
+                reason = ret.reason != null ? String(ret.reason) : reason;
+              }
+              rec.decision = ret.decision;
+            } else {
+              rec.decisionIgnored = true;
             }
           }
           const mutated = [];
@@ -244,17 +312,25 @@ export class HookManager {
       }
       rec.ms = Date.now() - t0;
       results.push(rec);
+      if (hook.once) spent.push(hook.id);
       this._log({ event: "executed", ...rec });
       if (abort) break; // a system abort stops the chain
     }
-    return { context, abort, results };
+    for (const id of spent) this.removeHook(id);
+    return { context, abort, decision, reason, results };
   }
 
-  /** Load cfg.hooks.modules once (operator-declared, tier-capped). */
+  /** Load cfg.hooks.modules + cfg.hooks.commands once (operator-declared). */
   _ensureModules() {
     if (this._modulesLoaded) return this._modulesLoaded;
     const modules = this.cfg.hooks?.modules || [];
     this._modulesLoaded = (async () => {
+      try {
+        const { registerCommandHooks } = await import("./command.mjs");
+        registerCommandHooks(this, this.cfg);
+      } catch (err) {
+        this._log({ event: "command_hooks_error", error: String(err?.message || err) });
+      }
       for (const entry of modules) {
         const spec = typeof entry === "string" ? { path: entry } : entry || {};
         if (!spec.path) continue;

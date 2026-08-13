@@ -2874,6 +2874,126 @@ $("btnSaMerge")?.addEventListener("click", async () => {
 });
 if ($("saTable")) loadSubagents().catch(() => {});
 
+/* ── Hooks (lifecycle hook system) ───────────────────────────────── */
+async function loadHooks() {
+  try {
+    const data = await getJSON("/hooks");
+    if ($("hkStatus")) {
+      $("hkStatus").textContent = data.enabled
+        ? `${data.hooks.length} hooks · on`
+        : "disabled";
+    }
+    // per-category toggles
+    const tg = $("hkToggles");
+    if (tg) {
+      tg.innerHTML = (data.categoriesAll || [])
+        .map((c) => {
+          const on = data.categories[c] !== false;
+          return `<button class="chip hk-tgl${on ? " active" : ""}" data-cat="${esc(c)}" title="toggle ${esc(c)}">${esc(c)}</button>`;
+        })
+        .join("");
+      tg.querySelectorAll(".hk-tgl").forEach((b) => {
+        b.onclick = async () => {
+          const on = b.classList.contains("active");
+          try {
+            await postJSON("/hooks/toggle", { category: b.dataset.cat, enabled: !on });
+            await loadHooks();
+          } catch (e) { $("hkOut").textContent = String(e.message || e); }
+        };
+      });
+    }
+    const tbody = $("hkTable")?.querySelector("tbody");
+    if (tbody) {
+      tbody.innerHTML = (data.hooks || [])
+        .map((h) => `<tr>
+          <td><span class="pill">${esc(h.category)}</span></td>
+          <td><b>${esc(h.name)}</b></td>
+          <td><span class="pill${h.tier === "system" ? " danger" : h.tier === "trusted" ? " warn" : ""}">${esc(h.tier)}</span></td>
+          <td style="font-size:0.75rem;">${esc(h.matcher || "*")}</td>
+          <td class="muted" style="font-size:0.75rem;">${esc(h.source || "code")}</td>
+        </tr>`)
+        .join("") || `<tr><td colspan="5" class="muted">No hooks registered — add a command hook below or declare modules in xclaw.json.</td></tr>`;
+    }
+    const ev = $("hkEvent");
+    if (ev && !ev.options.length) {
+      ev.innerHTML = (data.categoriesAll || [])
+        .map((c) => `<option value="${esc(c)}">${esc(c)}</option>`)
+        .join("");
+    }
+    const ct = $("hkCmdTable")?.querySelector("tbody");
+    if (ct) {
+      ct.innerHTML = (data.commands || [])
+        .map((c) => `<tr>
+          <td><b>${esc(c.name)}</b></td>
+          <td>${esc(c.event)}${c.matcher ? ` <span class="muted" style="font-size:0.7rem;">${esc(c.matcher)}</span>` : ""}</td>
+          <td>${esc(c.tier)}</td>
+          <td style="font-size:0.75rem;"><code>${esc((c.command || "").slice(0, 60))}</code></td>
+          <td><button class="btn ghost hk-cmd-del" data-name="${esc(c.name)}">×</button></td>
+        </tr>`)
+        .join("") || `<tr><td colspan="5" class="muted">No command hooks configured.</td></tr>`;
+      ct.querySelectorAll(".hk-cmd-del").forEach((b) => {
+        b.onclick = async () => {
+          if (!confirm(`Remove command hook "${b.dataset.name}"?`)) return;
+          try {
+            await getJSON("/hooks/commands", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: b.dataset.name }),
+            });
+            await loadHooks();
+          } catch (e) { $("hkOut").textContent = String(e.message || e); }
+        };
+      });
+    }
+  } catch (e) {
+    if ($("hkOut")) $("hkOut").textContent = String(e.message || e);
+  }
+}
+async function loadHookHistory() {
+  const tbody = $("hkHistTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/hooks/history?limit=60");
+    tbody.innerHTML = (data.history || [])
+      .slice()
+      .reverse()
+      .map((h) => `<tr>
+        <td style="font-size:0.7rem;">${h.at ? new Date(h.at).toLocaleTimeString() : "—"}</td>
+        <td><span class="pill${h.event === "executed" ? (h.ok === false ? " danger" : " on") : ""}">${esc(h.event)}</span></td>
+        <td>${esc(h.category || "—")}</td>
+        <td>${esc(h.name || h.path || "—")}</td>
+        <td>${esc(h.tier || "—")}</td>
+        <td>${h.ms != null ? h.ms : "—"}</td>
+        <td style="font-size:0.72rem;" class="muted">${esc(
+          [h.error, h.mutated ? "mutated:" + h.mutated.join(",") : "", h.decision ? "decision:" + h.decision : "", h.aborted ? "aborted" : "", h.requested ? `clamped ${h.requested}→${h.capped}` : ""]
+            .filter(Boolean).join(" · ")
+        )}</td>
+      </tr>`)
+      .join("") || `<tr><td colspan="7" class="muted">No hook activity yet.</td></tr>`;
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+$("btnHkRefresh")?.addEventListener("click", () => { loadHooks(); loadHookHistory(); });
+$("btnHkHist")?.addEventListener("click", () => loadHookHistory());
+$("btnHkAdd")?.addEventListener("click", async () => {
+  const body = {
+    name: $("hkName").value.trim() || undefined,
+    event: $("hkEvent").value,
+    command: $("hkCommand").value.trim(),
+    matcher: $("hkMatcher").value.trim() || undefined,
+    tier: $("hkTier").value,
+  };
+  if (!body.command) { $("hkOut").textContent = "command required"; return; }
+  try {
+    const r = await postJSON("/hooks/commands", body);
+    $("hkOut").textContent = JSON.stringify(r, null, 2);
+    $("hkName").value = ""; $("hkCommand").value = ""; $("hkMatcher").value = "";
+    await loadHooks();
+  } catch (e) { $("hkOut").textContent = String(e.message || e); }
+});
+if ($("hkTable")) { loadHooks().catch(() => {}); loadHookHistory().catch(() => {}); }
+
 /* ── Memory viewer ───────────────────────────────────────────────── */
 async function loadMemoryFilesUi() {
   const tbody = $("memTable")?.querySelector("tbody");

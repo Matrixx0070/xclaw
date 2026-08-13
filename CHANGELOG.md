@@ -1,5 +1,37 @@
 # Changelog
 
+## 3.100.0 — hook system v2: tool-phase hooks, command hooks, matchers, stop veto, runtime management
+
+Market-parity-plus upgrade after studying the field (Claude Code's 30-event hook
+architecture being the bar):
+
+- **pre_tool_use / post_tool_use** — matcher-scoped hooks on every tool call.
+  System hooks return `{decision, reason}` merged deny > ask > allow: deny
+  blocks before dispatch, **ask escalates to the human approval gate even on
+  auto-approve policy** (hooks compose with the security stack, never bypass
+  allowlists), and `{args}` rewrites input before the security plan binds.
+  post_tool_use may rewrite the result text the model sees.
+- **on_stop veto cycle** — a system hook may veto a clean completion
+  (`{abort:"reason"}`): the reason is injected as a user turn and the loop
+  re-enters, capped by hooks.stopBlockCap (default 2); `stopHookActive` guards
+  against hook loops. Never fires on guard/budget/approval/abort stops.
+- **Command hooks (out-of-process)** — hooks.commands[] run as separate
+  processes in any language: JSON context on stdin, JSON verdict on stdout,
+  exit 2 = universal block. Real isolation: the script never touches gateway
+  memory regardless of tier.
+- **Matchers** (`xclaw_bash|bash`, `mcp__github__*`) + `once` self-removing
+  hooks.
+- **Runtime management** — GET /hooks + /hooks/history, POST /hooks/toggle,
+  POST/DELETE /hooks/commands (persisted + hot-applied, token-gated in both
+  auth modes) and a Control-UI **Hooks** section: category toggles, hook
+  table, execution history, command-hook editor.
+
+Live-proven on the operator display: a `no-rm` command hook added through the
+UI (system tier, matcher xclaw_bash|bash) hot-applied without restart and
+denied a real agent's `rm -rf` attempt before dispatch — the model received
+"Tool xclaw_bash blocked by hook: rm -rf is not allowed on this host." The
+hook stays installed. 11 new tests; suite 1453/0.
+
 ## 3.99.1 — MCP OAuth callback: escape rendered error text (XSS)
 
 Security-review follow-up: the auth-exempt `/mcp/oauth/callback` page rendered

@@ -174,7 +174,7 @@ export function createApprovalGate(cfg = {}) {
   /**
    * @returns {Promise<{ok, approved?, reason?, message?, mode?, pendingId?, plan?, planFingerprint?}>}
    */
-  async function authorize(name, args, { timeoutMs = 120_000, onPending } = {}) {
+  async function authorize(name, args, { timeoutMs = 120_000, onPending, forceHuman = false } = {}) {
     if (!isToolAllowed(name)) {
       return {
         ok: false,
@@ -189,7 +189,9 @@ export function createApprovalGate(cfg = {}) {
         message: `Command for ${name} is not on the exec allowlist.`,
       };
     }
-    if (!needsApproval(name)) {
+    // forceHuman: a pre_tool_use hook returned decision:"ask" — escalate to a
+    // human even when policy would auto-approve.
+    if (!forceHuman && !needsApproval(name)) {
       // Auto path: still optionally bind a plan for downstream audit, but do not block.
       let plan = null;
       if (bindSystemRunPlan && isExecTool(name)) {

@@ -28,6 +28,8 @@ const PATHS = [
   "/computer/start", "/computer/stop", "/computer/health",
   "/events/eviction", "/events/eviction/stream",
   "/doctor", "/doctor/run",
+  // hook management adds SHELL EXECUTION config — must be token-gated
+  "/hooks", "/hooks/history", "/hooks/toggle", "/hooks/commands",
 ];
 
 describe("cost/usage/logs auth coverage", () => {

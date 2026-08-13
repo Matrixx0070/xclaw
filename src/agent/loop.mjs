@@ -661,11 +661,21 @@ export async function runAgentLoop(options) {
   let dualState = null;
   let lastEvictReport = null;
   let prevWeights = null;
+  let naturalStop = false;
+  let stopBlocks = 0;
+  const stopBlockCap = Number.isFinite(Number(cfg.hooks?.stopBlockCap))
+    ? Number(cfg.hooks.stopBlockCap)
+    : 2;
 
   try {
     if (hookAbort && !finalText) {
       finalText = `Run blocked by hook: ${hookAbort}`;
     }
+    // on_stop block cycle: a SYSTEM on_stop hook may veto a clean completion
+    // ({abort:"reason"}) — the reason is injected as a user turn and the loop
+    // re-enters, at most stopBlockCap times (Claude-Code-style Stop hooks).
+    stopCycle: while (true) {
+    naturalStop = false;
     for (turns = 0; !hookAbort && turns < maxTurns; turns++) {
       if (signal?.aborted) throw new Error("aborted");
 
@@ -857,6 +867,7 @@ export async function runAgentLoop(options) {
             });
           }
         }
+        naturalStop = true; // clean tool-free completion — on_stop may veto
         break;
       }
 
@@ -869,6 +880,39 @@ export async function runAgentLoop(options) {
           args = JSON.parse(call.function?.arguments || "{}");
         } catch {
           args = {};
+        }
+
+        // ── Hook: pre_tool_use — matcher-scoped; system hooks may rewrite
+        // args, deny outright, or force human approval (decision: "ask").
+        let hookForceHuman = false;
+        let hookAllow = false;
+        {
+          const hr = await hooks.executeAll(
+            "pre_tool_use",
+            { toolName: name, args, turn: turns + 1, sessionKey, workingDir, cfg },
+            { mutable: ["args"], matchKey: name }
+          );
+          if (hr.context.args && hr.context.args !== args) args = hr.context.args;
+          if (hr.decision === "deny") {
+            const msg = `Tool ${name} blocked by hook${hr.reason ? `: ${hr.reason}` : ""}.`;
+            onEvent({ type: "hook", phase: "tool_denied", name, reason: hr.reason || null });
+            messages.push(
+              makeToolMessage({ tool_call_id: call.id, content: msg, source: "hook" })
+            );
+            toolTrace.push(
+              finalizeToolTraceEntry(
+                beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
+                {
+                  resultText: msg,
+                  blocked: true,
+                  policy: { phase: "hook", decision: "deny", reason: hr.reason || "hook_deny" },
+                }
+              )
+            );
+            return;
+          }
+          if (hr.decision === "ask") hookForceHuman = true;
+          if (hr.decision === "allow") hookAllow = true;
         }
 
         const verdict = guard.detect(name, args);
@@ -900,6 +944,11 @@ export async function runAgentLoop(options) {
             : args;
         const auth = await approvalGate.authorize(name, authArgs, {
           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
+          // hook decisions: "ask" escalates to a human even on auto-approve
+          // policy. "allow" only pre-answers when a human WOULD have been
+          // asked — it never bypasses allowlists or exec pattern checks
+          // (hookAllow currently informational; deny>ask>allow already merged).
+          forceHuman: hookForceHuman && !hookAllow,
           onPending: (info) => {
             onEvent({
               type: "security",
@@ -1258,7 +1307,28 @@ export async function runAgentLoop(options) {
         const trunc = truncOpts.enabled
           ? truncateToolResult(rawText, truncOpts)
           : { text: rawText, truncated: false, originalChars: rawText.length, keptChars: rawText.length };
-        const text = trunc.text;
+        let text = trunc.text;
+        // ── Hook: post_tool_use — matcher-scoped; system/trusted hooks may
+        // replace the result text the model will see (resultText).
+        {
+          const hr = await hooks.executeAll(
+            "post_tool_use",
+            {
+              toolName: name,
+              args,
+              resultText: text,
+              isError: Boolean(toolThrown || result?.isError),
+              turn: turns + 1,
+              sessionKey,
+              cfg,
+            },
+            { mutable: ["resultText"], matchKey: name }
+          );
+          if (typeof hr.context.resultText === "string" && hr.context.resultText !== text) {
+            text = hr.context.resultText;
+            onEvent({ type: "hook", phase: "mutated", category: "post_tool_use", name });
+          }
+        }
         guard.record(name, args, text);
         const traceEntry = finalizeToolTraceEntry(tracePartial, {
           resultText: text,
@@ -1313,6 +1383,46 @@ export async function runAgentLoop(options) {
       });
       void stopTools;
     }
+
+    // ── Hook: on_stop — only on clean tool-free completions (never on
+    // guard stops, pending approvals, budget stops, or aborts).
+    if (
+      naturalStop &&
+      finalText &&
+      !loopGuardStop &&
+      !lastPendingApproval &&
+      !signal?.aborted
+    ) {
+      const sr = await hooks.executeAll("on_stop", {
+        text: finalText,
+        turns,
+        stopBlocks,
+        stopHookActive: stopBlocks > 0,
+        sessionKey,
+        cfg,
+      });
+      if (sr.abort && stopBlocks < stopBlockCap) {
+        stopBlocks += 1;
+        onEvent({
+          type: "hook",
+          phase: "stop_blocked",
+          reason: sr.abort,
+          stopBlocks,
+          cap: stopBlockCap,
+        });
+        messages.push({
+          role: "user",
+          content: `[stop-hook] Not finished: ${sr.abort}. Address this, then finish.`,
+        });
+        finalText = "";
+        continue stopCycle;
+      }
+      if (sr.abort) {
+        onEvent({ type: "hook", phase: "stop_block_cap", cap: stopBlockCap });
+      }
+    }
+    break stopCycle;
+    } // end stopCycle
 
     if (turns >= maxTurns && !finalText) {
       finalText = `Stopped after ${maxTurns} turns (maxTurns).`;

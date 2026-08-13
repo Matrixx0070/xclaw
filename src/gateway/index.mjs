@@ -16,6 +16,7 @@ import { tryHandleSessionsRoute } from "./routes/sessions.mjs";
 import { tryHandleSubagentsRoute } from "./routes/subagents.mjs";
 import { tryHandleMcpRoute } from "./routes/mcp.mjs";
 import { tryHandleMediaRoute } from "./routes/media.mjs";
+import { tryHandleHooksRoute } from "./routes/hooks.mjs";
 import { tryHandleProvidersRoute } from "./routes/providers.mjs";
 import { tryHandleChannelsRoute } from "./routes/channels.mjs";
 import { applyCors } from "./cors.mjs";
@@ -1111,6 +1112,7 @@ export async function startGateway({ root } = {}) {
       if (await tryHandleSubagentsRoute(routeArgs)) return;
       if (await tryHandleMcpRoute({ ...routeArgs, mcpClient, mcpServer })) return;
       if (await tryHandleMediaRoute(routeArgs)) return;
+      if (await tryHandleHooksRoute(routeArgs)) return;
 
 
 

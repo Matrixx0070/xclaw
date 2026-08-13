@@ -97,7 +97,10 @@ export function createGatewayAuth(cfg = {}) {
       p === "/profile" ||
       p.startsWith("/computer/") ||
       p.startsWith("/events/") ||
-      p.startsWith("/doctor");
+      p.startsWith("/doctor") ||
+      // hook management: command hooks EXECUTE arbitrary shell on the host
+      p === "/hooks" ||
+      p.startsWith("/hooks/");
     if (core) return true;
     if (!strict) {
       // legacy subset

@@ -10,15 +10,48 @@ wiring: `src/agent/loop.mjs` (search for `── Hook:`).
 
 ## Lifecycle points (categories)
 
-| Category       | Fires                                        | Context fields                                             | Mutable (tier ≥ trusted) |
-|----------------|----------------------------------------------|------------------------------------------------------------|--------------------------|
-| `pre_process`  | before the conversation is assembled          | `message, sessionKey, channel, userId, workingDir, cfg*`   | `message`                |
-| `on_request`   | before **every** model request (each turn)    | `turn, model, messageCount, messages*, cfg*`               | — (observe)              |
-| `on_response`  | after **every** model response                | `turn, finishReason, hasToolCalls, content (≤2 KB), cfg*`  | — (observe)              |
-| `post_process` | after the final text is produced              | `text, turns, sessionKey, cfg*`                            | `text`                   |
-| `on_error`     | when the loop fails (error still propagates)  | `error, turn, sessionKey, cfg*`                            | — (observe)              |
+| Category        | Fires                                        | Context fields                                             | Mutable (tier ≥ trusted) |
+|-----------------|----------------------------------------------|------------------------------------------------------------|--------------------------|
+| `pre_process`   | before the conversation is assembled          | `message, sessionKey, channel, userId, workingDir, cfg*`   | `message`                |
+| `on_request`    | before **every** model request (each turn)    | `turn, model, messageCount, messages*, cfg*`               | — (observe)              |
+| `on_response`   | after **every** model response                | `turn, finishReason, hasToolCalls, content (≤2 KB), cfg*`  | — (observe)              |
+| `pre_tool_use`  | before every tool call (matcher-scoped)       | `toolName, args, turn, sessionKey, workingDir, cfg*`       | `args` + **decision**    |
+| `post_tool_use` | after every tool call (matcher-scoped)        | `toolName, args, resultText, isError, turn, cfg*`          | `resultText`             |
+| `on_stop`       | on clean completion — may veto and continue   | `text, turns, stopBlocks, stopHookActive, cfg*`            | — (system `{abort}` vetoes) |
+| `post_process`  | after the final text is produced              | `text, turns, sessionKey, cfg*`                            | `text`                   |
+| `on_error`      | when the loop fails (error still propagates)  | `error, turn, sessionKey, cfg*`                            | — (observe)              |
 
 `*` = visible to the `system` tier only.
+
+### Tool decisions (`pre_tool_use`, system tier)
+
+Return `{ decision, reason }` — merged across hooks as **deny > ask > allow**:
+
+- `deny` — the tool call is blocked before dispatch; the model sees
+  `Tool <name> blocked by hook: <reason>` as the tool result.
+- `ask` — escalates to a **human approval** through the standard approval
+  gate, even when policy would auto-approve. Hooks compose with, never
+  bypass, the security stack (allowlists and exec patterns still apply).
+- `allow` — advisory pre-approval (recorded; never bypasses allowlists).
+
+Returning `{ args: {...} }` rewrites the tool input before the security
+plan is bound (system/trusted).
+
+### Matchers
+
+Any hook may carry `matcher` — pipe-separated tool patterns with `*`
+wildcards, checked against the tool name for the tool categories:
+`"xclaw_bash|bash"`, `"mcp__github__*"`, empty = all. `once: true` hooks
+self-remove after their first execution.
+
+### `on_stop` block cycle
+
+A **system** `on_stop` hook returning `{ abort: "reason" }` on a clean
+completion injects `[stop-hook] Not finished: <reason>` as a user turn and
+re-enters the loop — goal-enforcement, Claude-Code-Stop-hook-style. The hook
+receives `stopHookActive: true` on re-entries (return nothing then, or you'll
+loop); cycles are capped by `hooks.stopBlockCap` (default 2). Never fires on
+guard stops, pending approvals, budget stops, or aborts.
 
 `post_process` runs **before** the transcript save, so transformations (e.g.
 redaction) persist everywhere the text goes.
@@ -107,6 +140,41 @@ export function register(manager) {
 
 Programmatic embedders can also pass `hookManager` directly to
 `runAgentLoop({ ..., hookManager })`.
+
+## Command hooks (out-of-process — the isolation story)
+
+`hooks.commands[]` entries run as **separate processes**, so the script has no
+access to gateway memory regardless of tier — any language works:
+
+```jsonc
+{
+  "hooks": {
+    "commands": [{
+      "name": "no-rm",
+      "event": "pre_tool_use",
+      "matcher": "xclaw_bash|bash",
+      "tier": "system",
+      "command": "/root/.xclaw/hooks/no-rm.sh",
+      "timeoutMs": 5000
+    }]
+  }
+}
+```
+
+Protocol: the (tier-filtered) context arrives as **JSON on stdin**; stdout may
+be a JSON verdict (`{"decision":"deny","reason":"…"}` or mutable fields);
+**exit 2 blocks** with stderr as the reason (works for `pre_process` abort,
+`pre_tool_use` deny, and `on_stop` veto alike); any other non-zero exit is a
+contained failure. Manage them live from the **Control UI → Hooks** section or
+`POST/DELETE /hooks/commands` (changes persist to config and hot-apply).
+
+## Runtime management
+
+- `GET /hooks` — registered hooks, command/module inventory, category state
+- `GET /hooks/history` — execution log
+- `POST /hooks/toggle` — `{enabled}` or `{category, enabled}` (persisted)
+- `POST /hooks/commands` / `DELETE /hooks/commands` — command-hook CRUD
+- Control UI → **Hooks**: category toggles, hook table, history, command editor
 
 ## Example hooks (one per tier — `src/hooks/examples.mjs`)
 
