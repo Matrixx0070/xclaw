@@ -140,6 +140,7 @@ export async function tryHandleOpsRoute({
         healthy: await isComputerRunning(cfg),
       },
       agent: {
+        provider: cfg.agent?.provider,
         model: cfg.agent?.model,
         maxTurns: cfg.agent?.maxTurns,
         hasApiKey: Boolean(
@@ -148,6 +149,21 @@ export async function tryHandleOpsRoute({
             process.env.XCLAW_API_KEY
         ),
       },
+      // Non-secret eviction/context summary for the control UI (the old
+      // /config route this card used was dropped in a refactor; a raw
+      // config dump would leak secrets anyway).
+      eviction: (() => {
+        const e = cfg.tokens?.eviction || cfg.eviction || {};
+        const lru = e.lru || {};
+        return {
+          policy: e.policy || "hybrid",
+          maxMessages: e.maxMessages ?? null,
+          maxChars: e.maxChars ?? null,
+          toolMaxChars: e.toolMaxChars ?? e.maxToolResultChars ?? null,
+          lruMode: lru.mode || "size_weighted",
+          lruDynamic: Boolean(lru.dynamic),
+        };
+      })(),
       channels: {
         webchat: { enabled: webchatEnabled, path: "/chat/", sse: true },
         messaging: channelManager.status(),

@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.94.1 — Control UI restructured into a sectioned console (was: one endless scroll)
+
+Operator feedback: everything lived on a single page — 22 panels in one scroll. The Control UI is now a proper sectioned console:
+
+- **Grouped sidebar navigation** — Monitor (Overview · Health & Ops · Cost & Evals), Run (Agents & Jobs · Swarm · Approvals), Configure (Providers · Channels). One view at a time, hash-routed and deep-linkable (`#/swarm`, `#/providers`, …), mobile slide-in nav.
+- **Zero logic risk**: every panel kept its element IDs, so the existing `app.js` bindings work unchanged; the restructure is markup + styles + a ~30-line router. Design tokens now match the new WebChat (crimson accent, same dark system).
+- **Two long-dead panels resurrected**: the Gateway status card had shown "not found" and Eviction/LRU "unavailable" ever since the `/status` and `/config` routes were dropped in an old refactor — silently, because nothing tested them. Both now read the sanitized `/gateway/info`, which gained non-secret `agent.provider` and an `eviction` summary block (a raw `/config` dump would leak secrets, so it stays gone).
+- Also fixed: two sections shared `id="cardChannels"` (invalid HTML, `getElementById` ambiguity); channel status rows now cover Slack/Email too; sticky table headers.
+
+Live-verified: all 8 views route with the correct panels, Overview cards populate with real data (host/provider/model/auth mode/version, eviction config, channel states), Providers renders as its own page with live credential badges. Suite 1372/0.
+
 ## 3.94.0 — the new WebChat: streaming markdown, live tool timeline, inline approvals, in-chat images
 
 Full rewrite of `ui/webchat/` (zero dependencies, ES modules) — the front end finally shows what the backend already does:

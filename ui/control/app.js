@@ -51,45 +51,55 @@ async function getJSON(url, opts) {
 }
 
 async function loadStatus() {
-  const s = await getJSON("/status");
+  // /gateway/info is the sanitized status endpoint (the old /status route
+  // was dropped in a refactor and this card sat on "not found" ever since).
+  const s = await getJSON("/gateway/info");
   const computer = s.computer || {};
-  const gw = s.gateway || s;
+  const running = Boolean(computer.healthy);
+  const gw = s.gateway || {};
   $("statusKv").innerHTML = kvHtml([
-    ["Host", `${gw.host || s.host || "—"}:${gw.port || s.port || "—"}`],
-    ["Provider", s.agent?.provider || s.provider || "—"],
-    ["Model", s.agent?.model || s.model || "—"],
-    ["Computer", computer.running ? "running" : "stopped", computer.running ? "good" : "warn"],
+    ["Host", `${gw.host || "—"}:${gw.port || "—"}`],
+    ["Provider", s.agent?.provider || "—"],
+    ["Model", s.agent?.model || "—"],
+    ["Auth", gw.tokenSet ? (gw.authStrict ? "token · strict" : "token") : "open", gw.tokenSet ? "good" : "warn"],
+    ["Computer", running ? "running" : "stopped", running ? "good" : "warn"],
     ["Version", s.version || s.name || "XClaw"],
   ]);
   $("computerKv").innerHTML = kvHtml([
-    ["Running", computer.running ? "yes" : "no", computer.running ? "good" : "warn"],
+    ["Running", running ? "yes" : "no", running ? "good" : "warn"],
+    ["Host", computer.host ?? "—"],
     ["Port", computer.port ?? "—"],
-    ["PID", computer.pid ?? "—"],
   ]);
   const ch = s.channels || {};
-  $("channelsKv").innerHTML = kvHtml([
+  const messaging = Array.isArray(ch.messaging) ? ch.messaging : [];
+  const chanState = (name) => messaging.find((m) => m.name === name);
+  const chanRows = [
     ["WebChat", ch.webchat?.enabled !== false ? "on" : "off", "good"],
-    ["Telegram", ch.telegram?.enabled ? "on" : "off", ch.telegram?.enabled ? "good" : ""],
-    ["Discord", ch.discord?.enabled ? "on" : "off", ch.discord?.enabled ? "good" : ""],
-  ]);
+    ...["telegram", "discord", "slack", "email"].map((n) => {
+      const st = chanState(n);
+      const on = Boolean(st?.enabled);
+      const label = n[0].toUpperCase() + n.slice(1);
+      return [label, on ? "on" : "off", on ? "good" : ""];
+    }),
+  ];
+  $("channelsKv").innerHTML = kvHtml(chanRows);
   $("footMeta").textContent = new Date().toLocaleString();
+  return s;
 }
 
 async function loadConfigEviction() {
   try {
-    const c = await getJSON("/config");
-    const e = c.tokens?.eviction || c.eviction || {};
-    const lru = e.lru || {};
-    const dyn = lru.dynamic || {};
-    const dual = dyn.dual || {};
+    // Sanitized summary from /gateway/info (the old raw /config route is
+    // gone — and a full config dump would leak secrets anyway).
+    const info = await getJSON("/gateway/info");
+    const e = info.eviction || {};
     $("evictionKv").innerHTML = kvHtml([
       ["Policy", e.policy || "hybrid"],
       ["Max messages", e.maxMessages ?? "—"],
       ["Max chars", e.maxChars ?? "—"],
-      ["Tool max", e.toolMaxChars ?? e.maxToolResultChars ?? "—"],
-      ["LRU mode", lru.mode || "size_weighted"],
-      ["Dual EMA", dual.enabled !== false ? "on" : "off", "good"],
-      ["Adaptive deadband", dual.adaptive?.enabled !== false ? "on" : "off"],
+      ["Tool max", e.toolMaxChars ?? "—"],
+      ["LRU mode", e.lruMode || "size_weighted"],
+      ["LRU dynamic", e.lruDynamic ? "on" : "off", e.lruDynamic ? "good" : ""],
     ]);
   } catch {
     $("evictionKv").innerHTML = kvHtml([["Config", "unavailable", "warn"]]);
