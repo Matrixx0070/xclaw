@@ -18,6 +18,18 @@ import {
 } from "../../cron/scheduler.mjs";
 
 /**
+ * Public view of a scheduler job. Jobs carry `_cfg` (the FULL resolved config —
+ * gateway token, channel bot tokens, provider credentials) and `handler`
+ * internally; returning them raw leaked every secret to any /cron/jobs caller
+ * (found 2026-08-13 by reading the response during the control-UI build).
+ */
+function publicJob(job) {
+  if (!job || typeof job !== "object") return job;
+  const { _cfg, cfg: _jobCfg, handler, ...rest } = job;
+  return rest;
+}
+
+/**
  * @param {object} args
  * @returns {Promise<boolean>} true if handled
  */
@@ -40,7 +52,7 @@ export async function tryHandleCronRoute({ p, method, req, res, url, cfg, json, 
     return true;
   }
   if (p === "/cron/jobs" && method === "GET") {
-    json(res, 200, { jobs: listJobs() });
+    json(res, 200, { jobs: listJobs().map(publicJob) });
     return true;
   }
   if (p === "/cron/jobs" && method === "POST") {
@@ -63,7 +75,7 @@ export async function tryHandleCronRoute({ p, method, req, res, url, cfg, json, 
             console.log(`[xclaw:cron] tick ${job.name}`, job.delivery || "");
           },
     });
-    json(res, 200, { id: job.id, job: { ...job, handler: undefined } });
+    json(res, 200, { id: job.id, job: publicJob(job) });
     return true;
   }
   if (p.startsWith("/cron/jobs/") && p.endsWith("/run") && method === "POST") {
@@ -74,7 +86,7 @@ export async function tryHandleCronRoute({ p, method, req, res, url, cfg, json, 
   if (p.startsWith("/cron/jobs/") && method === "GET") {
     const id = p.slice("/cron/jobs/".length);
     const job = getJob(id);
-    if (job) json(res, 200, { ...job, handler: undefined });
+    if (job) json(res, 200, publicJob(job));
     else json(res, 404, { error: "not found" });
     return true;
   }

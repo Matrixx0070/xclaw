@@ -70,9 +70,32 @@ export function createGatewayAuth(cfg = {}) {
       }
     }
     if (p === "/metrics") return protectMetrics && (required || requireAuth);
-    if (p.startsWith("/webhooks/")) return false; // signed webhooks later
+    // Inbound webhooks are HMAC-verified in their handlers and must stay
+    // reachable without an operator token — EXCEPT the /recent read, which
+    // lists received events (operator data, token-gated below).
+    if (p.startsWith("/webhooks/") && p !== "/webhooks/pagerduty/recent") return false;
     // requireAuth (prod) protects API even when token is not yet configured
     if (!required && !requireAuth) return false;
+    // Protected in BOTH legacy and strict modes: state-changing or
+    // secret/conversation-exposing surface. A 2026-08-13 sweep found these in
+    // NEITHER branch — unauthenticated callers could fire real alerts
+    // (/alerts/pd), spend money (/media/jobs POST, /checkpoints/resume,
+    // /eval), install skills, and read transcripts/memory.
+    const core =
+      p.startsWith("/alerts") ||
+      p === "/webhooks/pagerduty/recent" ||
+      p.startsWith("/media") ||
+      p === "/memory" ||
+      p.startsWith("/transcripts") ||
+      p.startsWith("/checkpoints") ||
+      p.startsWith("/skills") ||
+      p.startsWith("/eval") ||
+      p.startsWith("/tokens") ||
+      p === "/profile" ||
+      p.startsWith("/computer/") ||
+      p.startsWith("/events/") ||
+      p.startsWith("/doctor");
+    if (core) return true;
     if (!strict) {
       // legacy subset
       return (

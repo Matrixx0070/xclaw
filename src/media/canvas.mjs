@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { registerMediaProvider, listMediaProviders } from "./provider-registry.mjs";
 import { createOpenAICompatibleImageProvider } from "./openai-image.mjs";
 import { generateImageWithFallback } from "./runtime.mjs";
+import { DEFAULT_IMAGINE_MODELS } from "./imagine-models.mjs";
 
 // Register default OpenAI-compatible provider (works with xAI if baseUrl set)
 registerMediaProvider(
@@ -21,7 +22,10 @@ registerMediaProvider(
     id: "xai",
     aliases: ["grok"],
     baseUrl: process.env.XAI_BASE_URL || "https://api.x.ai/v1",
-    defaultModel: process.env.XCLAW_IMAGE_MODEL || "grok-2-image",
+    // Track the imagine matrix — the hardcoded "grok-2-image" default kept
+    // 404ing after xAI retired that id (live API serves grok-imagine-image*).
+    defaultModel: process.env.XCLAW_IMAGE_MODEL || DEFAULT_IMAGINE_MODELS[0],
+    models: DEFAULT_IMAGINE_MODELS,
   })
 );
 
@@ -64,6 +68,7 @@ export async function enqueueMediaJob({
   model,
   size,
   apiKey,
+  apiKeys,
 } = {}) {
   const id = randomUUID();
   const job = {
@@ -102,6 +107,7 @@ export async function enqueueMediaJob({
     model: model || opts.model,
     size: size || opts.size,
     apiKey: apiKey || opts.apiKey,
+    apiKeys: apiKeys || opts.apiKeys,
     preferredProvider: provider || opts.provider,
   });
 

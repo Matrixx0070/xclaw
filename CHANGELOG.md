@@ -1,5 +1,43 @@
 # Changelog
 
+## 3.97.0 — every editable surface on the web UI: 8 new Control sections + auth sweep
+
+The 8-gap close: every gateway capability that was editable only via API/CLI now has a
+Control-UI section, each verified by real clicks on the operator display. New sections:
+**Automations** (cron jobs: create/run-now/delete, humanized schedules, cron activity),
+**Alerts** (status, history, test-fire, PagerDuty setup/policies/levels/webhooks),
+**Skills** (catalog, outcome stats, proposal review queue with Install/Reject),
+**MCP** (tools list + call console), **Images** (providers, generate with inline render,
+job history), **Sessions** (live session list, create, peer binding, transcript reader),
+**Subagents** (spawn/view/merge), **Memory** (agent memory file viewer). Health & Ops
+gains Reload-config and Run-and-record-doctor buttons.
+
+Security sweep (all pinned in the both-modes auth matrix test):
+- **/cron/jobs leaked the full config** — every job carried `_cfg` with the gateway
+  token, Telegram bot token and the live OAuth access token. Responses now strip
+  `_cfg`/`handler` (test: cron-jobs-leak).
+- **9 route families were in NEITHER auth branch** — /alerts, /media, /memory,
+  /transcripts, /checkpoints, /skills, /eval, /tokens, /profile (+ /computer/*,
+  /events/*, /doctor, /webhooks/pagerduty/recent). Unauthenticated callers could fire
+  real pages, spend money on image jobs, install skills and read conversation
+  transcripts. All token-gated in BOTH strict and legacy modes; HMAC webhook ingest
+  stays open; the eviction EventSource carries the token via query param.
+
+Real bugs found by clicking:
+- POST /media/jobs never awaited the async job — every caller got literally `{}`.
+- Image generation was dead end-to-end: the HTTP route only looked at env vars for
+  credentials (now resolves the per-provider credential store like the agent tool),
+  the xai registration pinned retired `grok-2-image` (now tracks the imagine matrix),
+  the provider always sent `size` which xAI rejects outright (now only when asked),
+  and xAI's string-shaped error bodies were swallowed. Verified: UI Generate → real
+  grok-imagine-image render inline.
+- Installing a skill proposal left it in the review queue (second click errored) —
+  install now archives the source to installed/.
+- New route: POST /skills/proposals/decide (filename-scoped; traversal 400s).
+- GET /memory?full=1 returns bounded bodies for the viewer.
+
+Suite 1409/0 (5 env-gated skips).
+
 ## 3.96.1 — Swarm section verified on-screen + phantom approvals badge fix
 
 Eyes-on check of the Swarm view on the operator display: runs table with status pill + live count, the View drill-down (full run JSON incl. child subagent ids), merges table, live stream, checkpoints — all verified working (the Run + live SSE path was already proven end-to-end earlier by a real 2-node run). One cosmetic-but-real bug caught by looking: the pending-approvals nav badge rendered a phantom "0" when it should be hidden — `.nav-badge`'s `display:inline-flex` overrode the `hidden` attribute (same defeat-the-hidden-attribute class as the 3.94.0 stop-button). `.nav-badge[hidden]{display:none}` added; verified computed style. Suite 1400/0.

@@ -15,8 +15,28 @@ import {
   getMediaJob,
 } from "../../media/canvas.mjs";
 
+/**
+ * Per-provider image keys from the credential store (same store as chat —
+ * `xclaw providers` / the Providers UI). Without this the HTTP route only saw
+ * env vars, so a UI-configured xai/openai key couldn't generate images while
+ * the agent's image tool (which resolves the store) could.
+ */
+async function resolveImageApiKeys(cfg) {
+  const keys = {};
+  try {
+    const { resolveProviderToken } = await import("../../auth/profiles.mjs");
+    for (const prov of listImageProviders()) {
+      try {
+        const tok = await resolveProviderToken(cfg || {}, prov.id, {});
+        if (tok?.token) keys[prov.id] = tok.token;
+      } catch { /* provider without stored credential */ }
+    }
+  } catch { /* profile store unavailable — env fallback still applies */ }
+  return keys;
+}
+
 /** @returns {Promise<boolean>} true if handled */
-export async function tryHandleMediaRoute({ p, method, req, res, json, readBody }) {
+export async function tryHandleMediaRoute({ p, method, req, res, cfg, json, readBody }) {
   if (p === "/media/canvas" && method === "POST") {
     const body = await readBody(req).catch(() => ({}));
     json(res, 200, createCanvas(body));
@@ -48,7 +68,11 @@ export async function tryHandleMediaRoute({ p, method, req, res, json, readBody 
   }
   if (p === "/media/jobs" && method === "POST") {
     const body = await readBody(req);
-    json(res, 200, enqueueMediaJob(body));
+    // enqueueMediaJob is async — without the await this serialized a pending
+    // Promise, so every caller got literally "{}" back (found by clicking
+    // Generate in the control UI; the job ran but the response was empty).
+    const apiKeys = body.apiKey ? {} : await resolveImageApiKeys(cfg);
+    json(res, 200, await enqueueMediaJob({ ...body, apiKeys }));
     return true;
   }
 

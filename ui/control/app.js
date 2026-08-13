@@ -457,10 +457,16 @@ function connectEvictionStream() {
       try { _evictES.close(); } catch {}
       _evictES = null;
     }
-    let url = "/events/eviction/stream";
-    if (_evictLastId) {
-      url += "?lastEventId=" + encodeURIComponent(_evictLastId);
-    }
+    // EventSource can't set headers, and /events/* is token-protected — carry
+    // the operator token as a query param (auth.check accepts ?token=).
+    const params = new URLSearchParams();
+    if (_evictLastId) params.set("lastEventId", _evictLastId);
+    try {
+      const tok = localStorage.getItem("xclaw_token");
+      if (tok) params.set("token", tok);
+    } catch {}
+    const qs = params.toString();
+    const url = "/events/eviction/stream" + (qs ? "?" + qs : "");
     status.textContent = _evictAttempt === 0 ? "connecting…" : ("reconnecting · try " + _evictAttempt);
     const es = new EventSource(url);
     _evictES = es;
@@ -2209,3 +2215,540 @@ async function updateAprBadge() {
   }
 }
 updateAprBadge().catch(() => {});
+
+// ═══════════════ 8-gap sections (Automations · Alerts · Skills · MCP ·
+// Images · Sessions · Subagents · Memory) — every editable surface the
+// gateway already exposed but the UI didn't. Same helpers as the rest
+// (getJSON carries the operator token via the fetch wrapper).
+
+const postJSON = (url, body) =>
+  getJSON(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+
+/* ── Automations (cron jobs) ─────────────────────────────────────── */
+// schedule is an object: {kind:"every", everyMs} or {kind:"cron", expr}
+function autoSchedFmt(s, intervalMs) {
+  if (!s) return intervalMs ? `every ${autoMs(intervalMs)}` : "—";
+  if (typeof s === "string") return s;
+  if (s.everyMs || s.kind === "every") return "every " + autoMs(s.everyMs || s.intervalMs);
+  if (s.expr || s.cron) return s.expr || s.cron;
+  return JSON.stringify(s);
+}
+function autoMs(ms) {
+  if (!ms) return "?";
+  if (ms % 3_600_000 === 0) return ms / 3_600_000 + "h";
+  if (ms % 60_000 === 0) return ms / 60_000 + "m";
+  if (ms % 1000 === 0) return ms / 1000 + "s";
+  return ms + "ms";
+}
+async function loadAutomations() {
+  try {
+    const data = await getJSON("/cron/jobs");
+    const tbody = $("autoTable")?.querySelector("tbody");
+    if (!tbody) return;
+    const jobs = data.jobs || [];
+    if ($("autoStatus")) $("autoStatus").textContent = `${jobs.length} jobs`;
+    tbody.innerHTML = jobs
+      .map((j) => {
+        const deliv = j.delivery
+          ? typeof j.delivery === "string" ? j.delivery : j.delivery.channel || "custom"
+          : j.sessionKey || (j.payload?.kind ? j.payload.kind : j.payload?.message ? "announce" : "log");
+        const lastCls = j.lastStatus === "ok" ? "on" : j.lastStatus === "error" ? "danger" : "";
+        const last = j.lastRunAt
+          ? `<span class="pill ${lastCls}">${esc(j.lastStatus || "ran")}</span> ${new Date(j.lastRunAt).toLocaleTimeString()}`
+          : "—";
+        return `<tr>
+          <td><b>${esc(j.name || j.id)}</b><br /><span class="muted" style="font-size:0.7rem;">${esc((j.id || "").slice(0, 12))}</span></td>
+          <td>${esc(autoSchedFmt(j.schedule, j.intervalMs))}</td>
+          <td>${j.enabled !== false ? '<span class="pill on">on</span>' : '<span class="pill">off</span>'}</td>
+          <td style="font-size:0.75rem;">${esc(String(deliv))}</td>
+          <td style="font-size:0.7rem;">${last}</td>
+          <td style="font-size:0.7rem;">${j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : "—"}</td>
+          <td class="row" style="gap:0.25rem;">
+            <button class="btn ghost auto-run" data-id="${esc(j.id)}">Run now</button>
+            <button class="btn ghost auto-del" data-id="${esc(j.id)}" title="delete">×</button>
+          </td>
+        </tr>`;
+      })
+      .join("") || `<tr><td colspan="7" class="muted">No automations yet — create one above.</td></tr>`;
+    tbody.querySelectorAll(".auto-run").forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const r = await postJSON("/cron/jobs/" + encodeURIComponent(b.dataset.id) + "/run", {});
+          $("autoOut").textContent = JSON.stringify(r, null, 2);
+          await loadAutomations();
+        } catch (e) { $("autoOut").textContent = String(e.message || e); }
+      };
+    });
+    tbody.querySelectorAll(".auto-del").forEach((b) => {
+      b.onclick = async () => {
+        if (!confirm("Delete this automation?")) return;
+        try {
+          await getJSON("/cron/jobs/" + encodeURIComponent(b.dataset.id), { method: "DELETE" });
+          $("autoOut").textContent = "deleted " + b.dataset.id;
+          await loadAutomations();
+        } catch (e) { $("autoOut").textContent = String(e.message || e); }
+      };
+    });
+  } catch (e) {
+    const tbody = $("autoTable")?.querySelector("tbody");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+
+$("btnAutoCreate")?.addEventListener("click", async () => {
+  const name = $("autoName").value.trim();
+  const sched = $("autoSchedule").value.trim();
+  if (!name || !sched) {
+    $("autoOut").textContent = "name and schedule are required";
+    return;
+  }
+  const body = { name, enabled: true };
+  if (/^\d+$/.test(sched)) body.intervalMs = Number(sched);
+  else body.schedule = sched;
+  const msg = $("autoMsg").value.trim();
+  if (msg) body.payload = { message: msg };
+  const sk = $("autoSessionKey").value.trim();
+  if (sk) body.sessionKey = sk;
+  try {
+    const r = await postJSON("/cron/jobs", body);
+    $("autoOut").textContent = JSON.stringify(r, null, 2);
+    $("autoName").value = ""; $("autoSchedule").value = ""; $("autoMsg").value = "";
+    await loadAutomations();
+  } catch (e) { $("autoOut").textContent = String(e.message || e); }
+});
+$("btnAutoRefresh")?.addEventListener("click", () => loadAutomations().catch(console.error));
+
+async function loadAutoLogs() {
+  try {
+    const data = await getJSON("/cron/logs?lines=60");
+    const events = (data.cronEvents?.tail || []).join("\n");
+    $("autoLogOut").textContent = events || "(no cron events yet)";
+  } catch (e) { $("autoLogOut").textContent = String(e.message || e); }
+}
+$("btnAutoLogs")?.addEventListener("click", () => loadAutoLogs().catch(console.error));
+if ($("autoTable")) { loadAutomations().catch(() => {}); loadAutoLogs().catch(() => {}); }
+
+/* ── Alerts + PagerDuty ──────────────────────────────────────────── */
+async function loadAlerts() {
+  try {
+    const st = await getJSON("/alerts/status");
+    const sinks = st.sinks || st.channels || {};
+    const rows = [["Enabled", String(st.enabled ?? true), st.enabled === false ? "warn" : "good"]];
+    for (const [k, v] of Object.entries(sinks)) {
+      const on = v === true || v?.enabled || v?.configured;
+      rows.push([k, on ? "configured" : "off", on ? "good" : ""]);
+    }
+    if (st.lastAlertAt) rows.push(["Last alert", new Date(st.lastAlertAt).toLocaleString()]);
+    $("alertStatusKv").innerHTML = kvHtml(rows);
+  } catch (e) {
+    $("alertStatusKv").innerHTML = kvHtml([["Error", esc(e.message || e), "bad"]]);
+  }
+  try {
+    const h = await getJSON("/alerts/history?limit=25");
+    const tbody = $("alertHistTable")?.querySelector("tbody");
+    if (tbody) {
+      tbody.innerHTML = (h.history || [])
+        .map((a) => `<tr>
+          <td style="font-size:0.7rem;">${a.at ? new Date(a.at).toLocaleString() : "—"}</td>
+          <td><span class="pill${a.severity === "critical" || a.severity === "error" ? " danger" : a.severity === "warning" ? " warn" : ""}">${esc(a.severity || "—")}</span></td>
+          <td>${esc(a.title || a.summary || "—")}</td>
+          <td style="font-size:0.7rem;">${esc(Array.isArray(a.sinks || a.sent) ? (a.sinks || a.sent).map((s) => s.sink || s).join(", ") : String(a.sinks || "—"))}</td>
+        </tr>`)
+        .join("") || `<tr><td colspan="4" class="muted">No alerts recorded.</td></tr>`;
+    }
+  } catch { /* history optional */ }
+}
+$("btnAlertRefresh")?.addEventListener("click", () => loadAlerts().catch(console.error));
+$("btnAlertTest")?.addEventListener("click", async () => {
+  try {
+    const r = await postJSON("/alerts/test", {
+      title: $("alertTitle").value.trim() || "Test alert",
+      severity: $("alertSeverity").value,
+      body: "Manual test fired from the Control UI",
+    });
+    $("alertOut").textContent = JSON.stringify(r, null, 2);
+    await loadAlerts();
+  } catch (e) { $("alertOut").textContent = String(e.message || e); }
+});
+const pdShow = (p) => async () => {
+  $("pdOut").textContent = "loading…";
+  try { $("pdOut").textContent = JSON.stringify(await getJSON(p), null, 2); }
+  catch (e) { $("pdOut").textContent = String(e.message || e); }
+};
+$("btnPdSetup")?.addEventListener("click", pdShow("/alerts/pd/setup"));
+$("btnPdPolicies")?.addEventListener("click", pdShow("/alerts/pd/policies"));
+$("btnPdServices")?.addEventListener("click", pdShow("/alerts/pd/services"));
+$("btnPdLevels")?.addEventListener("click", pdShow("/alerts/pd/levels"));
+$("btnPdLevelsDiff")?.addEventListener("click", pdShow("/alerts/pd/levels?mode=diff"));
+$("btnPdHooks")?.addEventListener("click", pdShow("/webhooks/pagerduty/recent"));
+if ($("alertStatusKv")) loadAlerts().catch(() => {});
+
+/* ── Skills (catalog + proposals) ────────────────────────────────── */
+async function loadSkillCatalog() {
+  try {
+    const data = await getJSON("/skills");
+    const tbody = $("sklTable")?.querySelector("tbody");
+    const skills = data.skills || [];
+    if ($("sklStatus")) $("sklStatus").textContent = `${skills.length} skills loaded`;
+    if (tbody) {
+      tbody.innerHTML = skills
+        .map((s) => `<tr>
+          <td><b>${esc(s.name)}</b></td>
+          <td>${esc(s.description || "—")}</td>
+          <td style="font-size:0.7rem;" class="muted">${esc((s.path || "").replace(/^\/root/, "~"))}</td>
+        </tr>`)
+        .join("") || `<tr><td colspan="3" class="muted">No skills installed.</td></tr>`;
+    }
+  } catch (e) {
+    if ($("sklStatus")) $("sklStatus").textContent = String(e.message || e);
+  }
+  try {
+    const st = await getJSON("/skills/stats");
+    const rows = Object.values(st.skills || {});
+    $("sklStatsOut").textContent = rows.length
+      ? rows.map((s) => `${s.name} v${s.version} · rate=${((s.successRate || 0) * 100).toFixed(0)}% · runs=${s.runs}`).join("\n")
+      : "No skill outcomes recorded yet.";
+  } catch (e) { $("sklStatsOut").textContent = String(e.message || e); }
+}
+async function loadSkillProposals() {
+  try {
+    const data = await getJSON("/skills/proposals");
+    const tbody = $("sklPropTable")?.querySelector("tbody");
+    if (!tbody) return;
+    tbody.innerHTML = (data.proposals || [])
+      .map((p) => `<tr>
+        <td><code>${esc(p.file)}</code></td>
+        <td style="font-size:0.7rem;">${p.mtime ? new Date(p.mtime).toLocaleString() : "—"}</td>
+        <td class="row" style="gap:0.25rem;">
+          <button class="btn primary skl-install" data-file="${esc(p.file)}">Install</button>
+          <button class="btn ghost skl-reject" data-file="${esc(p.file)}">Reject</button>
+        </td>
+      </tr>`)
+      .join("") || `<tr><td colspan="3" class="muted">No proposals waiting for review.</td></tr>`;
+    tbody.querySelectorAll(".skl-install").forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const r = await postJSON("/skills/proposals/decide", { file: b.dataset.file, action: "install" });
+          $("sklOut").textContent = JSON.stringify(r, null, 2);
+          await loadSkillProposals(); await loadSkillCatalog();
+        } catch (e) { $("sklOut").textContent = String(e.message || e); }
+      };
+    });
+    tbody.querySelectorAll(".skl-reject").forEach((b) => {
+      b.onclick = async () => {
+        const reason = prompt("Reason for rejecting (optional):") || "";
+        try {
+          const r = await postJSON("/skills/proposals/decide", { file: b.dataset.file, action: "reject", reason });
+          $("sklOut").textContent = JSON.stringify(r, null, 2);
+          await loadSkillProposals();
+        } catch (e) { $("sklOut").textContent = String(e.message || e); }
+      };
+    });
+  } catch (e) {
+    const tbody = $("sklPropTable")?.querySelector("tbody");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="3" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+$("btnSklRefresh")?.addEventListener("click", () => {
+  loadSkillCatalog().catch(console.error);
+  loadSkillProposals().catch(console.error);
+});
+if ($("sklTable")) { loadSkillCatalog().catch(() => {}); loadSkillProposals().catch(() => {}); }
+
+/* ── MCP ─────────────────────────────────────────────────────────── */
+async function loadMcpTools() {
+  const tbody = $("mcpTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/mcp/tools");
+    const tools = data.tools || [];
+    if ($("mcpCount")) $("mcpCount").textContent = `${tools.length} tools`;
+    tbody.innerHTML = tools
+      .map((t) => `<tr class="mcp-row" data-name="${esc(t.name)}" style="cursor:pointer;" title="click to load into call console">
+        <td><b>${esc(t.name)}</b>${t.server ? `<br /><span class="muted" style="font-size:0.7rem;">${esc(t.server)}</span>` : ""}</td>
+        <td style="font-size:0.8rem;">${esc((t.description || "—").slice(0, 140))}</td>
+      </tr>`)
+      .join("") || `<tr><td colspan="2" class="muted">No MCP tools — add servers under <code>mcp.servers</code> in xclaw.json, then reload config.</td></tr>`;
+    tbody.querySelectorAll(".mcp-row").forEach((tr) => {
+      tr.onclick = () => {
+        $("mcpToolName").value = tr.dataset.name;
+        $("mcpOut").textContent = "→ " + tr.dataset.name + " loaded — fill arguments and Call";
+      };
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="2" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+$("btnMcpRefresh")?.addEventListener("click", () => loadMcpTools().catch(console.error));
+$("btnMcpCall")?.addEventListener("click", async () => {
+  const name = $("mcpToolName").value.trim();
+  if (!name) { $("mcpOut").textContent = "pick a tool first"; return; }
+  let args = {};
+  try { args = JSON.parse($("mcpArgs").value || "{}"); }
+  catch (e) { $("mcpOut").textContent = "arguments JSON invalid: " + e.message; return; }
+  $("mcpOut").textContent = "calling…";
+  try {
+    const r = await postJSON("/mcp/call", { name, arguments: args });
+    $("mcpOut").textContent = JSON.stringify(r, null, 2);
+  } catch (e) { $("mcpOut").textContent = String(e.message || e); }
+});
+if ($("mcpTable")) loadMcpTools().catch(() => {});
+
+/* ── Images (media jobs) ─────────────────────────────────────────── */
+function mediaRenderResult(job) {
+  const img = $("mediaImg");
+  const wrap = $("mediaImgWrap");
+  const first = job?.result?.images?.[0];
+  if (first && (first.b64 || first.url)) {
+    img.src = first.b64 ? "data:image/png;base64," + first.b64 : first.url;
+    wrap.style.display = "block";
+  } else {
+    wrap.style.display = "none";
+  }
+  $("mediaOut").textContent = JSON.stringify(
+    { id: job.id, status: job.status, provider: job.result?.provider, model: job.result?.model, error: job.error, attempts: job.attempts },
+    null, 2
+  );
+}
+async function loadMediaProviders() {
+  try {
+    const data = await getJSON("/media/providers");
+    const provs = data.providers || [];
+    $("mediaProvKv").innerHTML = kvHtml(
+      provs.length
+        ? provs.map((p) => [p.id, esc(p.defaultModel || (p.models || []).join(", ") || "ready"), "good"])
+        : [["Image providers", "none registered — add an xAI/OpenAI-style key in Providers", "warn"]]
+    );
+    const sel = $("mediaProvider");
+    if (sel) {
+      sel.innerHTML = `<option value="">auto provider</option>` +
+        provs.map((p) => `<option value="${esc(p.id)}">${esc(p.id)}</option>`).join("");
+    }
+  } catch (e) {
+    $("mediaProvKv").innerHTML = kvHtml([["Error", esc(e.message || e), "bad"]]);
+  }
+}
+async function loadMediaJobs() {
+  const tbody = $("mediaJobsTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/media/jobs");
+    const jobs = (data.jobs || []).slice().reverse();
+    tbody.innerHTML = jobs
+      .map((j) => `<tr>
+        <td style="font-size:0.7rem;">${j.createdAt ? new Date(j.createdAt).toLocaleString() : "—"}</td>
+        <td><span class="pill${j.status === "done" ? " on" : j.status === "error" ? " danger" : ""}">${esc(j.status)}</span></td>
+        <td>${esc((j.prompt || "—").slice(0, 60))}</td>
+        <td><button class="btn ghost media-view" data-id="${esc(j.id)}">View</button></td>
+      </tr>`)
+      .join("") || `<tr><td colspan="4" class="muted">No image jobs yet.</td></tr>`;
+    tbody.querySelectorAll(".media-view").forEach((b) => {
+      b.onclick = async () => {
+        try { mediaRenderResult(await getJSON("/media/jobs/" + encodeURIComponent(b.dataset.id))); }
+        catch (e) { $("mediaOut").textContent = String(e.message || e); }
+      };
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+$("btnMediaGen")?.addEventListener("click", async () => {
+  const prompt = $("mediaPrompt").value.trim();
+  if (!prompt) { $("mediaOut").textContent = "enter a prompt"; return; }
+  $("btnMediaGen").disabled = true;
+  $("mediaOut").textContent = "generating…";
+  try {
+    const body = { type: "image", prompt };
+    if ($("mediaProvider").value) body.provider = $("mediaProvider").value;
+    if ($("mediaModel").value.trim()) body.model = $("mediaModel").value.trim();
+    const job = await postJSON("/media/jobs", body);
+    mediaRenderResult(job);
+    await loadMediaJobs();
+  } catch (e) { $("mediaOut").textContent = String(e.message || e); }
+  finally { $("btnMediaGen").disabled = false; }
+});
+$("btnMediaJobs")?.addEventListener("click", () => loadMediaJobs().catch(console.error));
+if ($("mediaProvKv")) { loadMediaProviders().catch(() => {}); loadMediaJobs().catch(() => {}); }
+
+/* ── Sessions + transcripts ──────────────────────────────────────── */
+async function loadSessAdmin() {
+  const tbody = $("sessTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/sessions");
+    const list = data.sessions || [];
+    if ($("sessCount")) $("sessCount").textContent = `${list.length} live`;
+    tbody.innerHTML = list
+      .map((s) => `<tr>
+        <td style="font-size:0.7rem;"><code>${esc((s.id || "").slice(0, 12))}</code></td>
+        <td style="font-size:0.75rem;">${esc(s.sessionKey || "—")}</td>
+        <td>${esc(s.channel || "—")}</td>
+        <td style="font-size:0.7rem;">${s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "—"}</td>
+      </tr>`)
+      .join("") || `<tr><td colspan="4" class="muted">No live sessions (they appear as channels talk).</td></tr>`;
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+$("btnSessRefresh")?.addEventListener("click", () => loadSessAdmin().catch(console.error));
+$("btnSessNew")?.addEventListener("click", async () => {
+  try {
+    const s = await postJSON("/sessions", {});
+    $("sessOut").textContent = JSON.stringify(s, null, 2);
+    await loadSessAdmin();
+  } catch (e) { $("sessOut").textContent = String(e.message || e); }
+});
+$("btnSessBind")?.addEventListener("click", async () => {
+  const channel = $("bindChannel").value.trim();
+  const peerId = $("bindPeer").value.trim();
+  const sessionId = $("bindSession").value.trim();
+  if (!channel || !peerId || !sessionId) {
+    $("sessOut").textContent = "channel, peerId and sessionId are all required";
+    return;
+  }
+  try {
+    const r = await postJSON("/sessions/bind", { channel, peerId, sessionId });
+    $("sessOut").textContent = JSON.stringify(r, null, 2);
+    await loadSessAdmin();
+  } catch (e) { $("sessOut").textContent = String(e.message || e); }
+});
+async function loadTranscripts() {
+  const tbody = $("trTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/transcripts");
+    const list = (data.transcripts || []).slice().sort((a, b) => (b.mtime || "").localeCompare(a.mtime || ""));
+    tbody.innerHTML = list
+      .slice(0, 40)
+      .map((t) => `<tr>
+        <td style="font-size:0.75rem;"><code>${esc((t.sessionId || "").slice(0, 24))}</code></td>
+        <td>${t.bytes != null ? (t.bytes / 1024).toFixed(1) + " KB" : "—"}</td>
+        <td style="font-size:0.7rem;">${t.mtime ? new Date(t.mtime).toLocaleString() : "—"}</td>
+        <td><button class="btn ghost tr-view" data-id="${esc(t.sessionId)}">Read</button></td>
+      </tr>`)
+      .join("") || `<tr><td colspan="4" class="muted">No transcripts recorded yet.</td></tr>`;
+    tbody.querySelectorAll(".tr-view").forEach((b) => {
+      b.onclick = async () => {
+        $("trOut").textContent = "loading…";
+        try {
+          const d = await getJSON("/transcripts/" + encodeURIComponent(b.dataset.id) + "?limit=60");
+          $("trOut").textContent = (d.history || [])
+            .map((m) => `[${m.role || m.type || "?"}] ${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`.slice(0, 500))
+            .join("\n\n") || "(empty transcript)";
+        } catch (e) { $("trOut").textContent = String(e.message || e); }
+      };
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+$("btnTrRefresh")?.addEventListener("click", () => loadTranscripts().catch(console.error));
+if ($("sessTable")) { loadSessAdmin().catch(() => {}); loadTranscripts().catch(() => {}); }
+
+/* ── Subagents ───────────────────────────────────────────────────── */
+async function loadSubagents() {
+  const tbody = $("saTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/subagents");
+    const list = (data.subagents || []).slice().reverse();
+    if ($("saCount")) $("saCount").textContent = `${list.length} tracked`;
+    tbody.innerHTML = list
+      .map((s) => `<tr>
+        <td style="font-size:0.7rem;"><code>${esc((s.id || "").slice(0, 12))}</code></td>
+        <td><span class="pill${s.status === "done" || s.ok ? " on" : s.status === "error" ? " danger" : ""}">${esc(s.status || (s.ok ? "done" : "—"))}</span></td>
+        <td>${esc((s.task || "").slice(0, 56))}</td>
+        <td style="font-size:0.7rem;">${s.startedAt || s.at ? new Date(s.startedAt || s.at).toLocaleString() : "—"}</td>
+        <td><button class="btn ghost sa-view" data-id="${esc(s.id)}">View</button></td>
+      </tr>`)
+      .join("") || `<tr><td colspan="5" class="muted">No subagents spawned yet.</td></tr>`;
+    tbody.querySelectorAll(".sa-view").forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const d = await getJSON("/subagents/" + encodeURIComponent(b.dataset.id));
+          $("saOut").textContent = JSON.stringify(d, null, 2);
+          $("saMergeId").value = b.dataset.id;
+        } catch (e) { $("saOut").textContent = String(e.message || e); }
+      };
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+$("btnSaRefresh")?.addEventListener("click", () => loadSubagents().catch(console.error));
+$("btnSaSpawn")?.addEventListener("click", async () => {
+  const task = $("saTask").value.trim();
+  if (!task) { $("saOut").textContent = "enter a task"; return; }
+  $("btnSaSpawn").disabled = true;
+  $("saOut").textContent = "spawning… (runs the task to completion)";
+  try {
+    const body = { task };
+    const turns = Number($("saTurns").value.trim());
+    if (turns > 0) body.maxTurns = turns;
+    const r = await postJSON("/subagents/spawn", body);
+    $("saOut").textContent = JSON.stringify(r, null, 2);
+    $("saTask").value = "";
+    await loadSubagents();
+  } catch (e) { $("saOut").textContent = String(e.message || e); }
+  finally { $("btnSaSpawn").disabled = false; }
+});
+$("btnSaMerge")?.addEventListener("click", async () => {
+  const subagentId = $("saMergeId").value.trim();
+  if (!subagentId) { $("saOut").textContent = "enter a subagent id (View fills it)"; return; }
+  try {
+    const r = await postJSON("/subagents/merge", { subagentId, checkOnly: $("saCheckOnly").checked });
+    $("saOut").textContent = JSON.stringify(r, null, 2);
+  } catch (e) { $("saOut").textContent = String(e.message || e); }
+});
+if ($("saTable")) loadSubagents().catch(() => {});
+
+/* ── Memory viewer ───────────────────────────────────────────────── */
+async function loadMemoryFilesUi() {
+  const tbody = $("memTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/memory?full=1");
+    const files = data.files || [];
+    tbody.innerHTML = files
+      .map((f, i) => `<tr class="mem-row" data-i="${i}" style="cursor:pointer;" title="click to read">
+        <td><b>${esc(f.name)}</b></td>
+        <td>${Number(f.chars).toLocaleString()}</td>
+        <td style="font-size:0.7rem;" class="muted">${esc((f.path || "").replace(/^\/root/, "~"))}</td>
+      </tr>`)
+      .join("") || `<tr><td colspan="3" class="muted">No memory files found for the gateway working dir.</td></tr>`;
+    tbody.querySelectorAll(".mem-row").forEach((tr) => {
+      tr.onclick = () => {
+        const f = files[Number(tr.dataset.i)];
+        $("memOut").textContent = f?.body || f?.preview || "(empty)";
+      };
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="3" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+$("btnMemRefresh")?.addEventListener("click", () => loadMemoryFilesUi().catch(console.error));
+if ($("memTable")) loadMemoryFilesUi().catch(() => {});
+
+/* ── Health & Ops additions: doctor record + config reload ───────── */
+$("btnDoctorRecord")?.addEventListener("click", async () => {
+  const el = $("doctorOut");
+  el.textContent = "running doctor (recorded)…";
+  try {
+    const r = await postJSON("/doctor/run", { notifyOnFail: false });
+    el.textContent = JSON.stringify(r, null, 2);
+    el.className = r.report?.ok ? "good" : "bad";
+  } catch (e) { el.textContent = String(e.message || e); el.className = "bad"; }
+});
+$("btnCfgReload")?.addEventListener("click", async () => {
+  const el = $("doctorOut");
+  el.textContent = "reloading config…";
+  try {
+    const r = await postJSON("/config/reload", {});
+    el.textContent = JSON.stringify(r, null, 2);
+    el.className = r.ok === false ? "bad" : "good";
+  } catch (e) { el.textContent = String(e.message || e); el.className = "bad"; }
+});

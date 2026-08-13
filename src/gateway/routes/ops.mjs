@@ -249,7 +249,9 @@ export async function tryHandleOpsRoute({
   }
   if (p === "/memory" && method === "GET") {
     const { loadMemoryFiles } = await import("../../skills/loader.mjs");
-    const cwd = new URL(req.url, "http://x").searchParams.get("cwd") || process.cwd();
+    const sp = new URL(req.url, "http://x").searchParams;
+    const cwd = sp.get("cwd") || process.cwd();
+    const full = sp.get("full") === "1"; // viewer wants bodies (bounded)
     const files = await loadMemoryFiles(cwd);
     json(res, 200, {
       files: files.map((f) => ({
@@ -257,6 +259,7 @@ export async function tryHandleOpsRoute({
         path: f.path,
         chars: f.body.length,
         preview: f.body.slice(0, 200),
+        ...(full ? { body: f.body.slice(0, 40_000) } : {}),
       })),
     });
     return true;

@@ -13,6 +13,21 @@ const PATHS = [
   // pairing is state-changing (approve grants a sender DM access) — a
   // review flagged it; both auth branches had it all along, pinned here.
   "/pairing/pending", "/pairing/approve", "/pairing/revoke",
+  // 2026-08-13 sweep: these families were in NEITHER branch — unauthenticated
+  // callers could fire real pages (/alerts/pd), spend money (/media/jobs,
+  // /checkpoints/resume, /eval), install skills, start the computer runtime,
+  // and read transcripts/memory/spend detail. Pinned in BOTH modes.
+  "/alerts/status", "/alerts/test", "/alerts/pd",
+  "/webhooks/pagerduty/recent",
+  "/media/providers", "/media/jobs",
+  "/memory", "/transcripts", "/transcripts/abc",
+  "/checkpoints", "/checkpoints/resume",
+  "/skills", "/skills/proposals", "/skills/proposals/decide", "/skills/stats",
+  "/eval/baseline", "/eval/history",
+  "/tokens/cost", "/profile",
+  "/computer/start", "/computer/stop", "/computer/health",
+  "/events/eviction", "/events/eviction/stream",
+  "/doctor", "/doctor/run",
 ];
 
 describe("cost/usage/logs auth coverage", () => {
@@ -31,6 +46,13 @@ describe("cost/usage/logs auth coverage", () => {
           `${p} must accept the token (strict=${strict})`
         );
       }
+      // Inbound HMAC-verified webhooks must STAY reachable without an
+      // operator token — only the /recent read above is gated.
+      assert.equal(
+        a.check({ url: "/webhooks/pagerduty", headers: {} }).ok,
+        true,
+        `/webhooks/pagerduty must stay open for signed deliveries (strict=${strict})`
+      );
     });
   }
 });

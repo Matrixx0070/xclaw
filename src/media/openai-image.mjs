@@ -24,8 +24,11 @@ export function createOpenAICompatibleImageProvider(opts = {}) {
         model: model || defaultModel,
         prompt: String(prompt || "").slice(0, 4000),
         n: Math.min(4, Math.max(1, n)),
-        size: size || "1024x1024",
       };
+      // Only send size when the caller asked for one — xAI's images API
+      // rejects the argument outright ("Argument not supported: size"), and
+      // OpenAI defaults it server-side anyway.
+      if (size) body.size = size;
       const r = await fetch(`${baseUrl}/images/generations`, {
         method: "POST",
         headers: {
@@ -37,7 +40,13 @@ export function createOpenAICompatibleImageProvider(opts = {}) {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        throw new Error(data.error?.message || `image API ${r.status}`);
+        // OpenAI nests {error:{message}}; xAI returns {error:"string"} — the
+        // old extraction dropped xAI's text, hiding "Argument not supported".
+        const msg =
+          data.error?.message ||
+          (typeof data.error === "string" ? data.error : null) ||
+          `image API ${r.status}`;
+        throw new Error(msg);
       }
       return {
         provider: id,

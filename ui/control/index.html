@@ -25,12 +25,16 @@
       <a class="nav-item" href="#/usage" data-view="usage"><span class="ni-ico">▤</span>Usage &amp; Logs</a>
       <a class="nav-item" href="#/ops" data-view="ops"><span class="ni-ico">♥</span>Health &amp; Ops</a>
       <a class="nav-item" href="#/cost" data-view="cost"><span class="ni-ico">¢</span>Cost &amp; Evals</a>
+      <a class="nav-item" href="#/memory" data-view="memory"><span class="ni-ico">◈</span>Memory</a>
     </div>
 
     <div class="nav-group">
       <div class="nav-label">Run</div>
       <a class="nav-item" href="#/agents" data-view="agents"><span class="ni-ico">▶</span>Agents &amp; Jobs</a>
+      <a class="nav-item" href="#/sessions" data-view="sessions"><span class="ni-ico">❖</span>Sessions</a>
+      <a class="nav-item" href="#/subagents" data-view="subagents"><span class="ni-ico">⑂</span>Subagents</a>
       <a class="nav-item" href="#/swarm" data-view="swarm"><span class="ni-ico">⛬</span>Swarm</a>
+      <a class="nav-item" href="#/media" data-view="media"><span class="ni-ico">▣</span>Images</a>
       <a class="nav-item" href="#/approvals" data-view="approvals"><span class="ni-ico">✋</span>Approvals<span class="nav-badge" id="aprBadge" hidden></span></a>
     </div>
 
@@ -38,6 +42,10 @@
       <div class="nav-label">Configure</div>
       <a class="nav-item" href="#/providers" data-view="providers"><span class="ni-ico">☁</span>Providers</a>
       <a class="nav-item" href="#/channels" data-view="channels"><span class="ni-ico">✉</span>Channels</a>
+      <a class="nav-item" href="#/automations" data-view="automations"><span class="ni-ico">↻</span>Automations</a>
+      <a class="nav-item" href="#/alerts" data-view="alerts"><span class="ni-ico">⚠</span>Alerts</a>
+      <a class="nav-item" href="#/skills" data-view="skills"><span class="ni-ico">✦</span>Skills</a>
+      <a class="nav-item" href="#/mcp" data-view="mcp"><span class="ni-ico">⌘</span>MCP</a>
     </div>
 
     <div class="nav-foot">
@@ -425,7 +433,11 @@
 
         <section class="card" id="cardDoctor">
           <h2>Doctor</h2>
-          <button class="btn" id="btnDoctor">Run doctor</button>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn" id="btnDoctor">Run doctor</button>
+            <button class="btn ghost" id="btnDoctorRecord" title="Run the scheduled doctor check (records + alerts on failure)">Run &amp; record</button>
+            <button class="btn ghost" id="btnCfgReload" title="Soft-reload xclaw.json without restarting">Reload config</button>
+          </div>
           <pre id="doctorOut" class="muted" style="margin-top:0.75rem;max-height:240px;overflow:auto;font-size:0.75rem;"></pre>
         </section>
 
@@ -511,6 +523,268 @@
       </div>
     </div>
 
+    <!-- ═══ Automations (cron jobs) ═══ -->
+    <div class="view" data-view="automations">
+      <div class="grid">
+        <section class="card span2" id="cardAutomations">
+          <h2>Scheduled automations <span id="autoStatus" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">
+            Jobs run inside the gateway on an interval or cron expression. A job with a
+            <b>message</b> announces it through the delivery channel (e.g. a Telegram DM);
+            without one it just logs a tick. Same engine as <code>xclaw automations</code>.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="autoName" placeholder="name" style="width:130px;" />
+            <input id="autoSchedule" placeholder='schedule: 60000 (ms) or "0 9 * * *"' style="flex:1;min-width:170px;" />
+            <input id="autoMsg" placeholder="message to announce (optional)" style="flex:2;min-width:180px;" />
+            <input id="autoSessionKey" placeholder="delivery sessionKey (optional, e.g. telegram:dm:123)" style="flex:2;min-width:210px;" />
+            <button class="btn primary" id="btnAutoCreate">Create</button>
+            <button class="btn ghost" id="btnAutoRefresh">Refresh</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="autoTable">
+              <thead><tr><th>Name</th><th>Schedule</th><th>Enabled</th><th>Delivery</th><th>Last run</th><th>Next run</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="autoOut" class="log" style="max-height:160px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardAutoLogs">
+          <h2>Cron activity</h2>
+          <button class="btn ghost" id="btnAutoLogs">Refresh</button>
+          <pre id="autoLogOut" class="log" style="max-height:240px;margin-top:0.5rem;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Alerts ═══ -->
+    <div class="view" data-view="alerts">
+      <div class="grid">
+        <section class="card span2" id="cardAlertStatus">
+          <h2>Alerting</h2>
+          <div class="kv" id="alertStatusKv">Loading…</div>
+          <h3 class="subhead">Send test alert</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="alertTitle" placeholder="title" value="Test alert" style="flex:1;min-width:140px;" />
+            <select id="alertSeverity">
+              <option value="info">info</option>
+              <option value="warning">warning</option>
+              <option value="error" selected>error</option>
+              <option value="critical">critical</option>
+            </select>
+            <button class="btn primary" id="btnAlertTest">Fire test</button>
+            <button class="btn ghost" id="btnAlertRefresh">Refresh</button>
+          </div>
+          <h3 class="subhead">History</h3>
+          <div class="table-wrap" style="max-height:260px;">
+            <table id="alertHistTable">
+              <thead><tr><th>When</th><th>Severity</th><th>Title</th><th>Sinks</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="alertOut" class="log" style="max-height:140px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardPagerDuty">
+          <h2>PagerDuty</h2>
+          <p class="muted">Escalation wiring for on-call paging. Configure the routing key via
+            <code>alerting.pagerduty</code>; everything here reads/writes through the live REST API.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn ghost" id="btnPdSetup">Setup report</button>
+            <button class="btn ghost" id="btnPdPolicies">Policies</button>
+            <button class="btn ghost" id="btnPdServices">Services</button>
+            <button class="btn ghost" id="btnPdLevels">Levels preview</button>
+            <button class="btn ghost" id="btnPdLevelsDiff">Levels diff</button>
+            <button class="btn ghost" id="btnPdHooks">Recent webhooks</button>
+          </div>
+          <pre id="pdOut" class="log" style="max-height:300px;margin-top:0.5rem;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Skills ═══ -->
+    <div class="view" data-view="skills">
+      <div class="grid">
+        <section class="card span2" id="cardSkillCatalog">
+          <h2>Skill catalog</h2>
+          <div class="row">
+            <button class="btn ghost" id="btnSklRefresh">Refresh</button>
+            <span id="sklStatus" class="muted"></span>
+          </div>
+          <div class="table-wrap" style="max-height:320px;margin-top:0.5rem;">
+            <table id="sklTable">
+              <thead><tr><th>Skill</th><th>Description</th><th>Path</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h3 class="subhead">Outcome stats</h3>
+          <pre id="sklStatsOut" class="log" style="max-height:160px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardSkillProposals">
+          <h2>Proposals (review queue)</h2>
+          <p class="muted">Skills the agent drafted from failed/successful runs. <b>Install</b> enables
+            the skill for future runs; <b>Reject</b> archives it with your reason.</p>
+          <div class="table-wrap" style="max-height:280px;">
+            <table id="sklPropTable">
+              <thead><tr><th>File</th><th>Proposed</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="sklOut" class="log" style="max-height:160px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ MCP ═══ -->
+    <div class="view" data-view="mcp">
+      <div class="grid">
+        <section class="card span2" id="cardMcpTools">
+          <h2>MCP tools <span id="mcpCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">Tools exposed by the MCP servers in <code>mcp.servers</code> config.
+            Click a tool to load it into the call console.</p>
+          <button class="btn ghost" id="btnMcpRefresh">Refresh</button>
+          <div class="table-wrap" style="max-height:300px;margin-top:0.5rem;">
+            <table id="mcpTable">
+              <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span2" id="cardMcpCall">
+          <h2>Call console</h2>
+          <div class="row">
+            <input id="mcpToolName" placeholder="tool name" style="flex:1;min-width:160px;" />
+            <button class="btn primary" id="btnMcpCall">Call</button>
+          </div>
+          <textarea id="mcpArgs" rows="4" placeholder='arguments JSON, e.g. {"path": "/tmp"}' style="margin-top:0.5rem;">{}</textarea>
+          <pre id="mcpOut" class="log" style="max-height:280px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Images (media) ═══ -->
+    <div class="view" data-view="media">
+      <div class="grid">
+        <section class="card span2" id="cardMediaGen">
+          <h2>Generate image</h2>
+          <div class="kv" id="mediaProvKv">Loading…</div>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;margin-top:0.5rem;">
+            <input id="mediaPrompt" placeholder="prompt…" style="flex:2;min-width:220px;" />
+            <select id="mediaProvider"><option value="">auto provider</option></select>
+            <input id="mediaModel" placeholder="model (optional)" style="width:150px;" />
+            <button class="btn primary" id="btnMediaGen">Generate</button>
+          </div>
+          <div id="mediaImgWrap" style="margin-top:0.75rem;display:none;">
+            <img id="mediaImg" alt="generated image" style="max-width:100%;max-height:420px;border-radius:8px;border:1px solid #26303d;" />
+          </div>
+          <pre id="mediaOut" class="log" style="max-height:180px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardMediaJobs">
+          <h2>Image jobs</h2>
+          <button class="btn ghost" id="btnMediaJobs">Refresh</button>
+          <div class="table-wrap" style="max-height:280px;margin-top:0.5rem;">
+            <table id="mediaJobsTable">
+              <thead><tr><th>When</th><th>Status</th><th>Prompt</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Sessions ═══ -->
+    <div class="view" data-view="sessions">
+      <div class="grid">
+        <section class="card span2" id="cardSessAdmin">
+          <h2>Sessions <span id="sessCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">Live conversation sessions across all channels. Bind a channel peer
+            (e.g. a Telegram chat) to a session to steer where its messages land.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn ghost" id="btnSessRefresh">Refresh</button>
+            <button class="btn" id="btnSessNew">New session</button>
+            <input id="bindChannel" placeholder="channel (telegram)" style="width:140px;" />
+            <input id="bindPeer" placeholder="peerId" style="width:130px;" />
+            <input id="bindSession" placeholder="sessionId" style="flex:1;min-width:160px;" />
+            <button class="btn" id="btnSessBind">Bind</button>
+          </div>
+          <div class="table-wrap" style="max-height:300px;margin-top:0.5rem;">
+            <table id="sessTable">
+              <thead><tr><th>Id</th><th>Key</th><th>Channel</th><th>Updated</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="sessOut" class="log" style="max-height:140px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardTranscripts">
+          <h2>Transcripts</h2>
+          <p class="muted">Persisted conversation history per session — click one to read it.</p>
+          <button class="btn ghost" id="btnTrRefresh">Refresh</button>
+          <div class="table-wrap" style="max-height:240px;margin-top:0.5rem;">
+            <table id="trTable">
+              <thead><tr><th>Session</th><th>Size</th><th>Updated</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="trOut" class="log" style="max-height:320px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Subagents ═══ -->
+    <div class="view" data-view="subagents">
+      <div class="grid">
+        <section class="card span2" id="cardSubagents">
+          <h2>Subagents <span id="saCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">Spawn an isolated worker for a task (own worktree when in a git repo);
+            merge its changes back after review. Swarm coordinates many of these — this is the
+            single-worker control.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="saTask" placeholder="task for the subagent…" style="flex:2;min-width:220px;" />
+            <input id="saTurns" placeholder="maxTurns" style="width:90px;" />
+            <button class="btn primary" id="btnSaSpawn">Spawn</button>
+            <button class="btn ghost" id="btnSaRefresh">Refresh</button>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem;">
+            <input id="saMergeId" placeholder="subagent id to merge" style="flex:1;min-width:200px;" />
+            <label style="font-size:0.8rem;"><input type="checkbox" id="saCheckOnly" checked /> check only</label>
+            <button class="btn" id="btnSaMerge">Merge</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="saTable">
+              <thead><tr><th>Id</th><th>Status</th><th>Task</th><th>When</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="saOut" class="log" style="max-height:260px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Memory ═══ -->
+    <div class="view" data-view="memory">
+      <div class="grid">
+        <section class="card span2" id="cardMemory">
+          <h2>Agent memory</h2>
+          <p class="muted">Memory files the agent loads each run (<code>MEMORY.md</code>, project
+            memory, CLAUDE.md-style context). Click a file to read it. Editing stays on-host by
+            design — these files feed straight into the agent's context.</p>
+          <button class="btn ghost" id="btnMemRefresh">Refresh</button>
+          <div class="table-wrap" style="max-height:260px;margin-top:0.5rem;">
+            <table id="memTable">
+              <thead><tr><th>File</th><th>Chars</th><th>Path</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="memOut" class="log" style="max-height:380px;">—</pre>
+        </section>
+      </div>
+    </div>
+
     </main>
   </div>
   </div>
@@ -522,6 +796,9 @@
         overview: "Overview", usage: "Usage & Logs", agents: "Agents & Jobs",
         swarm: "Swarm", approvals: "Approvals", providers: "Providers",
         channels: "Channels", cost: "Cost & Evals", ops: "Health & Ops",
+        automations: "Automations", alerts: "Alerts", skills: "Skills",
+        mcp: "MCP", media: "Images", sessions: "Sessions",
+        subagents: "Subagents", memory: "Memory",
       };
       const views = [...document.querySelectorAll(".view")];
       const items = [...document.querySelectorAll(".nav-item")];

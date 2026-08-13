@@ -200,6 +200,30 @@ export async function tryHandleEvalQueueRoute({
     json(res, 200, { proposals: items, count: items.length });
     return true;
   }
+  if (p === "/skills/proposals/decide" && method === "POST") {
+    const body = await readBody(req).catch(() => ({}));
+    const file = String(body.file || "");
+    // proposal filenames only — the propose-store helpers join relative names
+    // onto the proposals dir, so separators/.. would escape it
+    if (!file || /[/\\]/.test(file) || file.includes("..")) {
+      json(res, 400, { error: "file must be a proposal filename" });
+      return true;
+    }
+    try {
+      if (body.action === "install") {
+        const { installProposal } = await import("../../skills/propose.mjs");
+        json(res, 200, { ok: true, installed: await installProposal(cfg, file, { force: Boolean(body.force) }) });
+      } else if (body.action === "reject") {
+        const { rejectProposal } = await import("../../skills/propose.mjs");
+        json(res, 200, { ok: true, rejected: await rejectProposal(cfg, file, String(body.reason || "")) });
+      } else {
+        json(res, 400, { error: "action must be install or reject" });
+      }
+    } catch (e) {
+      json(res, 400, { ok: false, error: e.message });
+    }
+    return true;
+  }
   if (p === "/skills/stats" && method === "GET") {
     const { loadSkillStats } = await import("../../skills/registry.mjs");
     json(res, 200, await loadSkillStats(cfg));

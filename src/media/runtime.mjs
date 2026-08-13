@@ -18,6 +18,7 @@ export async function generateImageWithFallback(params = {}) {
     model,
     size,
     apiKey,
+    apiKeys, // per-provider {id: key} — resolved from the credential store
     preferredProvider,
     providerIds,
     signal,
@@ -63,7 +64,7 @@ export async function generateImageWithFallback(params = {}) {
           prompt,
           model,
           size,
-          apiKey,
+          apiKey: (apiKeys && apiKeys[id]) || apiKey,
           signal: controller.signal,
         });
         return { ok: true, result, attempts };
