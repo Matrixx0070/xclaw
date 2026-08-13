@@ -62,7 +62,10 @@ export function buildChromeArgs(opts = {}) {
     process.env.XCLAW_BROWSER_NO_SANDBOX === "true" ||
     process.env.CI === "true" ||
     process.env.XCLAW_IN_DOCKER === "1" ||
-    fs.existsSync("/.dockerenv");
+    fs.existsSync("/.dockerenv") ||
+    // Chrome hard-refuses to start as root without --no-sandbox — on a
+    // root-run host the browser exits before the CDP port ever opens.
+    (typeof process.getuid === "function" && process.getuid() === 0);
   if (noSandbox) {
     if (!args.includes("--no-sandbox")) args.push("--no-sandbox");
     if (!args.includes("--test-type")) args.push("--test-type");

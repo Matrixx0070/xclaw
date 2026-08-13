@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.91.2 — fix: browser dead on root-run hosts (Chrome refused to start without --no-sandbox)
+
+The live bot self-reported "my browser is navigate + read-only, no click/type/screenshots" — wrong diagnosis, real symptom. The bundle engine's full CDP browser was configured and advertised (`jsCode`, `screenshot`), but every launch died with `Browser exited before getting port`: Chrome hard-refuses to start as root without `--no-sandbox`, and `chrome-args.mjs` only added the flag for CI / docker / explicit `XCLAW_BROWSER_NO_SANDBOX`. Bare-metal root hosts (this one) got a browser that could never start.
+
+- `buildChromeArgs` now detects uid 0 and adds `--no-sandbox` automatically (the bundle picks this up through the chrome-args bridge — no bundle change). Regression tests cover root-forces-flag and non-root-keeps-sandbox.
+- Verified live end-to-end after restart: direct computer call (DOM mutate + same-tab readback + desktop screenshot) and through the real agent flow — the bot filled and submitted the httpbin.org test form via `jsCode` and read back `custname: "XCLAW_FORM_TEST"` from the response.
+
+Corrections to the bot's other self-report claims, for the record: the computer engine already *was* `bundle` (not `native`); a gateway token *is* set; localhost being blocked is the SSRF guard working as designed; env API keys "missing" is env-policy stripping secrets by design (keys live in the provider credential store). Suite 1321/0.
+
 ## 3.91.1 — fix: every live bash call rejected by the bundle engine + 21 browser tools born broken
 
 Two live-bot-breaking bugs, both found from the running gateway's own logs (`ALRIGHT RECHECK AGAIN` turn, 2026-08-13 01:43):
