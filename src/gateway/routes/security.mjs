@@ -33,6 +33,45 @@ export async function tryHandleSecurityRoute({
   json,
   readBody,
 }) {
+  // Channel pairing (the control UI's Pairing panel called these since it
+  // shipped — the routes never existed; 5th dead-route family found by the
+  // endpoint sweep). The store is file-backed (~/.xclaw), so this instance
+  // shares state with the channels' own pairing flows.
+  if (p === "/pairing/pending" && method === "GET") {
+    const url = new URL(req.url || p, "http://local");
+    const channel = url.searchParams.get("channel") || "telegram";
+    const { createPairingStore } = await import("../../pairing/pairing-store.mjs");
+    const store = createPairingStore({});
+    json(res, 200, {
+      ok: true,
+      channel,
+      pending: store.listPending(channel),
+      approved: store.listApproved(channel),
+    });
+    return true;
+  }
+  if (p === "/pairing/approve" && method === "POST") {
+    const body = await readBody(req);
+    if (!body.channel || !body.code) {
+      json(res, 400, { error: "channel and code required" });
+      return true;
+    }
+    const { createPairingStore } = await import("../../pairing/pairing-store.mjs");
+    const out = createPairingStore({}).approve(body.channel, String(body.code));
+    json(res, out.ok ? 200 : 404, out);
+    return true;
+  }
+  if (p === "/pairing/revoke" && method === "POST") {
+    const body = await readBody(req);
+    if (!body.channel || !body.senderId) {
+      json(res, 400, { error: "channel and senderId required" });
+      return true;
+    }
+    const { createPairingStore } = await import("../../pairing/pairing-store.mjs");
+    json(res, 200, createPairingStore({}).revoke(body.channel, String(body.senderId)));
+    return true;
+  }
+
   if (p === "/security/pending" && method === "GET") {
     const pending = approvalGate?.listPending?.() || [];
     const sla = approvalGate?.slaStats?.() || null;

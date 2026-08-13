@@ -384,3 +384,28 @@ body {
   .row { padding: 14px 14px 4px; }
   #composer-wrap { padding: 8px 12px 12px; }
 }
+
+/* auth overlay */
+#xclaw-auth-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(6, 8, 11, 0.88); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+}
+.xa-card {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 16px; padding: 28px 30px; width: min(400px, 92vw);
+  text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.xa-mark { font-size: 40px; filter: drop-shadow(0 0 16px rgba(255,93,93,0.5)); }
+.xa-card h2 { margin: 10px 0 4px; font-size: 17px; }
+.xa-sub { color: var(--tx-3); font-size: 13px; margin: 0 0 16px; }
+.xa-card input {
+  width: 100%; margin-bottom: 10px; text-align: center;
+  font-family: var(--mono); background: var(--bg-0); border: 1px solid var(--line);
+  border-radius: 9px; color: var(--tx-1); padding: 0.5rem;
+}
+.xa-btn {
+  width: 100%; background: var(--acc); color: #2a0707; font-weight: 650;
+  border: 0; border-radius: 10px; padding: 0.55rem; cursor: pointer; font: inherit;
+}
+#xa-err { margin-top: 10px; font-size: 12.5px; color: var(--bad); min-height: 1em; }

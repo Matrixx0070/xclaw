@@ -168,6 +168,15 @@ async function serveStatic(res, filePath) {
  */
 
 function noteEviction(e, source = "agent") {
+  // Live console: approval/security + budget events go to the WS hub so open
+  // Control UIs update without polling (pending-approval badge, table).
+  if (e?.type === "security" || e?.type === "budget") {
+    try {
+      wsBroadcast("security", { source, ...e });
+    } catch {
+      /* hub not attached yet (boot) — fine */
+    }
+  }
   if (e?.type === "cache" && e?.phase === "eviction") {
     pushEvictionEvent({
       source,
@@ -1504,9 +1513,10 @@ export async function startGateway({ root } = {}) {
 
 
 
-      // /security/* served by the routes module (richer than the old inline
-      // handlers: SLA stats, allow-always decision parsing, engine snapshot).
-      if (p.startsWith("/security/")) {
+      // /security/* + /pairing/* served by the routes module (richer than the
+      // old inline handlers: SLA stats, allow-always decision parsing, engine
+      // snapshot; pairing store list/approve/revoke).
+      if (p.startsWith("/security/") || p.startsWith("/pairing/")) {
         const handled = await tryHandleSecurityRoute({
           p,
           method: req.method,

@@ -572,3 +572,56 @@ setInterval(refreshStatus, 20_000);
 refreshSessions();
 if (sessionId) switchSession(sessionId);
 input.focus();
+
+// First-run auth overlay — same onboarding as the Control UI: any
+// same-origin 401 (strict gateways token-gate /channel/) raises a
+// token-entry card instead of a dead chat. Tokenless labs never see it.
+let _xaShown = false;
+function showAuthOverlay() {
+  if (_xaShown || document.getElementById("xclaw-auth-overlay")) return;
+  _xaShown = true;
+  const ov = document.createElement("div");
+  ov.id = "xclaw-auth-overlay";
+  ov.innerHTML = `
+    <div class="xa-card">
+      <div class="xa-mark">🦞</div>
+      <h2>Operator token required</h2>
+      <p class="xa-sub">This gateway is token-protected. The token lives in
+        <code>~/.xclaw/xclaw.json</code> → <code>gateway.token</code> on the host.</p>
+      <input type="password" id="xa-token" placeholder="xclaw_…" autocomplete="off" spellcheck="false" />
+      <button id="xa-save" class="xa-btn">Connect</button>
+      <div id="xa-err"></div>
+    </div>`;
+  document.body.append(ov);
+  const input = ov.querySelector("#xa-token");
+  const err = ov.querySelector("#xa-err");
+  const submit = async () => {
+    const t = input.value.trim();
+    if (!t) return;
+    localStorage.setItem("xclaw_token", t);
+    err.textContent = "checking…";
+    try {
+      const r = await fetch("/channel/webchat/sessions");
+      if (r.ok) { location.reload(); return; }
+      err.textContent = "Token rejected — check it and try again.";
+    } catch (e) {
+      err.textContent = String(e.message || e);
+    }
+  };
+  ov.querySelector("#xa-save").addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  input.focus();
+}
+{
+  const _wrapped = window.fetch;
+  window.fetch = (url, opts) =>
+    _wrapped(url, opts).then((resp) => {
+      try {
+        const raw = typeof url === "string" ? url : url?.url != null ? url.url : String(url);
+        if (resp.status === 401 && new URL(raw, location.href).origin === location.origin) {
+          showAuthOverlay();
+        }
+      } catch { /* */ }
+      return resp;
+    });
+}

@@ -379,3 +379,32 @@ textarea {
 .ul-preview { color: var(--muted); font-size: 0.78rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ul-detail { margin-top: 0.7rem; border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.8rem; background: var(--bg-1, #0f1218); }
 .ul-detail-head { display: flex; justify-content: space-between; align-items: center; }
+
+/* ── auth overlay ────────────────────────────────── */
+#xclaw-auth-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(6, 8, 11, 0.88); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+}
+.xa-card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; padding: 28px 30px; width: min(400px, 92vw);
+  text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.xa-mark { font-size: 40px; filter: drop-shadow(0 0 16px rgba(255,93,93,0.5)); }
+.xa-card h2 { margin: 10px 0 4px; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); }
+.xa-sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+.xa-card input { width: 100%; margin-bottom: 10px; text-align: center; font-family: var(--mono); }
+.xa-card .btn { width: 100%; }
+#xa-err { margin-top: 10px; font-size: 12.5px; color: var(--bad); min-height: 1em; }
+
+/* nav badge (pending approvals) */
+.nav-badge {
+  margin-left: auto;
+  background: var(--accent); color: #2a0707;
+  font-size: 10.5px; font-weight: 700;
+  min-width: 17px; height: 17px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 5px;
+  animation: flash 1.4s ease infinite;
+}

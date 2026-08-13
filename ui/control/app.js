@@ -960,6 +960,12 @@ function connectEventsWs() {
         if (ch === "swarm" && typeof loadSwarmRuns === "function") {
           loadSwarmRuns().catch(() => {});
         }
+        if (ch === "security") {
+          // Approval lifecycle: refresh the table live + keep the nav badge
+          // honest, so a pending approval is visible the moment it happens.
+          if (typeof loadApprovals === "function") loadApprovals().catch(() => {});
+          updateAprBadge().catch(() => {});
+        }
         if (status && ch === "admission") {
           status.textContent = "ws · " + (msg.data?.kind || "event") + " · " + new Date().toLocaleTimeString();
         }
@@ -2130,3 +2136,76 @@ window.addEventListener("storage", (e) => {
   ulLoadUsage().catch(console.error);
   ulLoadLogs().catch(console.error);
 });
+
+// ═══════════ First-run auth overlay (fresh-install onboarding) ═══════════
+// A new install on a strict gateway used to greet the operator with silent
+// "unauthorized" panels and no way to sign in from the page (the token had
+// to be planted in localStorage by hand). Any same-origin 401 now raises a
+// token-entry overlay; the token is verified against a protected endpoint
+// before reload. Tokenless lab gateways never see this.
+let _xaShown = false;
+function showAuthOverlay() {
+  if (_xaShown || document.getElementById("xclaw-auth-overlay")) return;
+  _xaShown = true;
+  const ov = document.createElement("div");
+  ov.id = "xclaw-auth-overlay";
+  ov.innerHTML = `
+    <div class="xa-card">
+      <div class="xa-mark">🦞</div>
+      <h2>Operator token required</h2>
+      <p class="xa-sub">This gateway is token-protected. The token lives in
+        <code>~/.xclaw/xclaw.json</code> → <code>gateway.token</code> on the host.</p>
+      <input type="password" id="xa-token" placeholder="xclaw_…" autocomplete="off" spellcheck="false" />
+      <button id="xa-save" class="btn primary">Connect</button>
+      <div id="xa-err"></div>
+    </div>`;
+  document.body.append(ov);
+  const input = ov.querySelector("#xa-token");
+  const err = ov.querySelector("#xa-err");
+  const submit = async () => {
+    const t = input.value.trim();
+    if (!t) return;
+    localStorage.setItem("xclaw_token", t);
+    err.textContent = "checking…";
+    try {
+      const r = await fetch("/providers/manage");
+      if (r.ok) { location.reload(); return; }
+      err.textContent = "Token rejected — check it and try again.";
+    } catch (e) {
+      err.textContent = String(e.message || e);
+    }
+  };
+  ov.querySelector("#xa-save").addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  input.focus();
+}
+{
+  const _wrapped = window.fetch;
+  window.fetch = (url, opts) =>
+    _wrapped(url, opts).then((resp) => {
+      try {
+        const raw = typeof url === "string" ? url : url?.url != null ? url.url : String(url);
+        if (resp.status === 401 && new URL(raw, location.href).origin === location.origin) {
+          showAuthOverlay();
+        }
+      } catch { /* */ }
+      return resp;
+    });
+}
+
+// Pending-approval badge on the Approvals nav item — updated live by the
+// WS security channel and on boot, so a waiting approval is visible from
+// any view without polling or clicking.
+async function updateAprBadge() {
+  const badge = document.getElementById("aprBadge");
+  if (!badge) return;
+  try {
+    const d = await getJSON("/security/pending");
+    const n = d.count ?? (d.pending || []).length;
+    badge.hidden = !n;
+    badge.textContent = n > 9 ? "9+" : String(n);
+  } catch {
+    badge.hidden = true;
+  }
+}
+updateAprBadge().catch(() => {});

@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.96.0 — full-robustness pass: every section audited, first-run login, live console
+
+The three things standing between the web UI and an honest "fully robust" (operator-demanded):
+
+**Every section audited.** Endpoint sweep of all 44 URLs the Control UI calls + click-through of the six never-audited views (Swarm, Approvals, Agents & Jobs, Health & Ops, Cost & Evals interiors, Overview). Result: one more dead-route family — the **Pairing** panel's `/pairing/pending|approve|revoke` never existed (5th such family). Wired to the real file-backed pairing store (routes/security.mjs; the gateway now dispatches `/pairing/*` there too), auth-gated, 3 route tests. Everything else verified rendering real data: swarm runs + live status, checkpoints, job queue + admission live, approvals + policy, dashboard, doctor, cron logs, eviction viz LIVE, eval baseline 21/21, scoreboard, skills.
+
+**First-run login.** A fresh install on a strict gateway used to show silent "unauthorized" panels with no way in (the token had to be hand-planted in localStorage). Any same-origin 401 now raises a token-entry overlay — in both Control and WebChat — that verifies the token against a protected endpoint before reloading. Live-proven: cleared token → overlay → wrong token rejected with a clear message → real token → console loads. Tokenless lab installs never see it.
+
+**Live console.** The gateway now broadcasts `security`/`budget` loop events on the existing WS hub, and the Control UI reacts: a pulsing pending-approvals badge on the nav (visible from any view) and a live-refreshing Approvals table. Live-proven end-to-end: fired a guarded bash via the API without touching the console — badge appeared with "1" and the approval row rendered unprompted; denied it from the UI — badge cleared. Also: display :10 screensaver/DPMS disabled so the operator console stays visible.
+
+Suite 1400/0.
+
 ## 3.95.4 — Channels panel: live status pills were silently broken since 3.90.0
 
 Checking the Channels section on the operator display: config management was complete (all 5 channels, per-field saves, secrets never echoed, Restart) — but no live status anywhere. Root cause: `channelManager.status()` returns an **array** of `{name, running, …}` while `mergeStatus` indexed it like a **map** keyed by id — `array["telegram"]` is always undefined, so the status merge silently never happened and the UI's (already-written!) running pill never rendered. `mergeStatus` now accepts both shapes; the row shows **running · N msg** (green, with bot username + last-ok tooltip), **stopped** (red, with the last error) for enabled-but-dead channels, and an **err** pill when a running channel carries a lastError. 2 regression tests. Live-verified on the display: Telegram shows "running · 0 msg" (@xxclaw_bot). Suite 1397/0.
