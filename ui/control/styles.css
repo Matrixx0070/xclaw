@@ -408,3 +408,4 @@ textarea {
   padding: 0 5px;
   animation: flash 1.4s ease infinite;
 }
+.nav-badge[hidden] { display: none; }

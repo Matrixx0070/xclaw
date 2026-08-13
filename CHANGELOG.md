@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.96.1 — Swarm section verified on-screen + phantom approvals badge fix
+
+Eyes-on check of the Swarm view on the operator display: runs table with status pill + live count, the View drill-down (full run JSON incl. child subagent ids), merges table, live stream, checkpoints — all verified working (the Run + live SSE path was already proven end-to-end earlier by a real 2-node run). One cosmetic-but-real bug caught by looking: the pending-approvals nav badge rendered a phantom "0" when it should be hidden — `.nav-badge`'s `display:inline-flex` overrode the `hidden` attribute (same defeat-the-hidden-attribute class as the 3.94.0 stop-button). `.nav-badge[hidden]{display:none}` added; verified computed style. Suite 1400/0.
+
 ## 3.96.0 — full-robustness pass: every section audited, first-run login, live console
 
 The three things standing between the web UI and an honest "fully robust" (operator-demanded):
