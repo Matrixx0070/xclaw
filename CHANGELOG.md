@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.94.2 — OAuth login from the web UI (was CLI-only)
+
+The Providers page could store API keys but OAuth said "use the CLI". Now the whole flow runs in the browser:
+
+- **`POST /providers/manage/oauth/start`** — for paste-code PKCE providers (Claude/Anthropic) returns the authorize URL + state; the PKCE verifier never leaves the gateway (in-memory, 10-minute TTL, single-use, size-capped). Providers whose flows can't run as a browser round-trip (xai/openai need env-configured client ids + local callbacks) return the exact CLI command instead of a dead button.
+- **`POST /providers/manage/oauth/complete`** — exchanges the pasted code (`CODE` or `CODE#STATE`) through the existing `exchangeAnthropicAuthCode` core and stores the profile via `loginOAuthTokens` — same result as `xclaw providers oauth`, tokens never echoed back.
+- **UI**: every provider row gains an **OAuth login** button — for Anthropic it opens the Claude approval tab and shows a paste-code field + Complete right in the row (then auto-fetches live models); for others it shows the CLI command inline. Both the routes and the whole `/providers/manage` plane remain operator-token gated (the old "OAuth stays CLI-side" comment predated that gate and is corrected).
+
+4 new tests: authorize URL + state (verifier never serialized), CLI fallback, unknown/expired state rejection, and a full start→complete exchange against a mocked token endpoint asserting the verifier reaches the token endpoint, the profile stores and resolves, tokens are never echoed, and the state is single-use. Live-verified in the UI: Anthropic row shows the paste-code flow, xai row shows the CLI command. Suite 1376/0.
+
 ## 3.94.1 — Control UI restructured into a sectioned console (was: one endless scroll)
 
 Operator feedback: everything lived on a single page — 22 panels in one scroll. The Control UI is now a proper sectioned console:

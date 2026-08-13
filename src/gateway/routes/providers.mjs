@@ -14,9 +14,19 @@
  *   POST   /providers/manage/check     → {provider} live credential resolution
  *   DELETE /providers/manage/key       → {provider | profileId[, name]} remove profile
  *
- * OAuth login flows stay CLI-side (`xclaw providers oauth`) — a browser
- * round-trip with a PKCE verifier has no business in an unauthenticated-by-
- * default lab gateway.
+ *   POST   /providers/manage/oauth/start    → {provider[, name, mode]} begin a
+ *          web OAuth flow. Paste-code PKCE providers (anthropic) return
+ *          {flow:"paste-code", authorizeUrl, state}; providers whose flow
+ *          can't run in a browser round-trip return {flow:"cli", command}.
+ *          The PKCE verifier never leaves the gateway (held in memory,
+ *          10-minute TTL, single use).
+ *   POST   /providers/manage/oauth/complete → {state, code} exchange the
+ *          pasted authorization code and store the OAuth profile. Tokens are
+ *          never echoed back.
+ *
+ * (An older note here said OAuth "stays CLI-side" because the gateway was
+ * unauthenticated-by-default — stale since 3.86.0: this whole route plane is
+ * operator-token gated.)
  *
  * Config writes apply to NEW config loads (running agent loops keep their boot
  * snapshot) — responses say so.
@@ -30,6 +40,22 @@ import {
 import { loginApiKey, removeProfile, setAuthOrder, listProfiles } from "../../auth/profiles.mjs";
 
 const APPLIES_NOTE = "applies to new agent runs (running loops keep their boot config)";
+
+// Pending web-OAuth flows: state → { provider, name, built, at }.
+// The PKCE verifier lives ONLY here; single-use, TTL-swept, size-capped.
+const OAUTH_PENDING = new Map();
+const OAUTH_TTL_MS = 10 * 60_000;
+const OAUTH_MAX_PENDING = 10;
+function sweepOauthPending() {
+  const now = Date.now();
+  for (const [state, v] of OAUTH_PENDING) {
+    if (now - v.at > OAUTH_TTL_MS) OAUTH_PENDING.delete(state);
+  }
+  while (OAUTH_PENDING.size > OAUTH_MAX_PENDING) {
+    const oldest = OAUTH_PENDING.keys().next().value;
+    OAUTH_PENDING.delete(oldest);
+  }
+}
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
@@ -141,6 +167,106 @@ export async function tryHandleProvidersRoute({ p, method, req, res, cfg, json, 
         return true;
       }
       json(res, 200, await checkProviderCredential(cfg, body.provider));
+      return true;
+    }
+
+    if (p === "/providers/manage/oauth/start" && method === "POST") {
+      const body = await readBody(req);
+      const provider = String(body.provider || "").toLowerCase();
+      if (!provider) {
+        json(res, 400, { error: "provider required" });
+        return true;
+      }
+      if (provider === "anthropic" || provider === "claude") {
+        const { canStartOAuth } = await import("../../auth/oauth-policy.mjs");
+        const gate = canStartOAuth("anthropic");
+        if (!gate.ok) {
+          json(res, 400, { ok: false, error: gate.reason });
+          return true;
+        }
+        const { buildAnthropicAuthorizeUrl } = await import("../../auth/anthropic-oauth.mjs");
+        const built = buildAnthropicAuthorizeUrl({ mode: body.mode });
+        sweepOauthPending();
+        OAUTH_PENDING.set(built.state, {
+          provider: "anthropic",
+          name: String(body.name || "oauth"),
+          built,
+          at: Date.now(),
+        });
+        json(res, 200, {
+          ok: true,
+          provider: "anthropic",
+          flow: "paste-code",
+          authorizeUrl: built.url,
+          state: built.state,
+          expiresInMs: OAUTH_TTL_MS,
+          note: "Open the URL in a browser where you're logged into Claude, approve, then POST the shown code (CODE or CODE#STATE) to oauth/complete.",
+        });
+        return true;
+      }
+      // Providers whose flow can't run as a browser paste-code round-trip
+      // (xai/openai need env-configured client ids + local callbacks).
+      json(res, 200, {
+        ok: false,
+        provider,
+        flow: "cli",
+        command: `xclaw providers oauth --provider ${provider}`,
+        error: "web OAuth supports anthropic; use the CLI command for this provider",
+      });
+      return true;
+    }
+
+    if (p === "/providers/manage/oauth/complete" && method === "POST") {
+      const body = await readBody(req);
+      const state = String(body.state || "");
+      const pending = OAUTH_PENDING.get(state);
+      if (!pending || Date.now() - pending.at > OAUTH_TTL_MS) {
+        OAUTH_PENDING.delete(state);
+        json(res, 400, { ok: false, error: "oauth flow not found or expired — start again" });
+        return true;
+      }
+      OAUTH_PENDING.delete(state); // single use, even on failure
+      const { parsePastedAuthCode, exchangeAnthropicAuthCode } = await import(
+        "../../auth/anthropic-oauth.mjs"
+      );
+      const { loginOAuthTokens } = await import("../../auth/profiles.mjs");
+      const { code, state: pastedState } = parsePastedAuthCode(String(body.code || ""));
+      if (!code) {
+        json(res, 400, { ok: false, error: "empty authorization code" });
+        return true;
+      }
+      const exchanged = await exchangeAnthropicAuthCode({
+        ...pending.built,
+        code,
+        codeVerifier: pending.built.verifier,
+        state: pastedState || pending.built.state,
+      });
+      if (!exchanged.ok) {
+        json(res, 400, { ok: false, error: exchanged.error || "code exchange failed" });
+        return true;
+      }
+      const profile = await loginOAuthTokens(cfg, {
+        provider: "anthropic",
+        name: pending.name,
+        accessToken: exchanged.accessToken,
+        refreshToken: exchanged.refreshToken,
+        expiresAt: exchanged.expiresAt,
+        meta: {
+          scope: exchanged.scope,
+          account: exchanged.account,
+          organization: exchanged.organization,
+          clientId: pending.built.clientId,
+          source: "anthropic-oauth-pkce-web",
+        },
+      });
+      // Tokens are never echoed back — profile id + expiry only.
+      json(res, 200, {
+        ok: true,
+        provider: "anthropic",
+        profileId: profile?.profileId || profile?.id || `anthropic:${pending.name}`,
+        expiresAt: exchanged.expiresAt,
+        note: APPLIES_NOTE,
+      });
       return true;
     }
 

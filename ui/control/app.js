@@ -1548,9 +1548,14 @@ function provRenderRow(row) {
     ? `<span class="pill on" title="env ${esc(row.envKey || "")}">env ✓</span>`
     : "";
   const noCred = !credBadges && !envBadge ? `<span class="pill">no credential</span>` : "";
-  const oauthHint = row.hasOAuth
-    ? ""
-    : `<div class="prov-sub muted">oauth via <code>xclaw providers oauth --provider ${esc(row.id)}</code></div>`;
+  // Web OAuth: the button starts /providers/manage/oauth/start — paste-code
+  // providers (anthropic) run entirely in the browser; others get the exact
+  // CLI command shown in the flow area.
+  const oauthHint = `
+      <div class="prov-btnrow">
+        <button class="btn ghost prov-oauth">OAuth login</button>
+      </div>
+      <div class="prov-oauth-flow" style="display:none;"></div>`;
   const hint = PROV_HINTS[row.id] ? `<div class="prov-sub muted">${PROV_HINTS[row.id]}</div>` : "";
   const active = row.isActive ? ` <span class="pill on">active</span>` : "";
   // Local ollama needs no credential to be usable.
@@ -1653,6 +1658,41 @@ function provWireRows() {
     tr.querySelector(".prov-models-refresh")?.addEventListener("click", guard(async () => {
       await provFetchModels(id, tr);
       await loadProviders();
+    }));
+
+    tr.querySelector(".prov-oauth")?.addEventListener("click", guard(async () => {
+      const flow = tr.querySelector(".prov-oauth-flow");
+      const start = await provCall("/providers/manage/oauth/start", "POST", { provider: id });
+      flow.style.display = "block";
+      if (start.flow === "cli") {
+        flow.innerHTML =
+          `<span class="prov-sub muted">Web OAuth isn't available for this provider — run:<br />` +
+          `<code>${esc(start.command || `xclaw providers oauth --provider ${id}`)}</code></span>`;
+        return;
+      }
+      // paste-code flow: open the authorize URL, collect the code here.
+      window.open(start.authorizeUrl, "_blank", "noopener");
+      flow.innerHTML =
+        `<span class="prov-sub muted">A Claude login tab opened — approve access, copy the code, paste it here:</span>` +
+        `<div class="prov-btnrow">` +
+        `<input type="text" class="prov-oauth-code" placeholder="paste authorization code…" autocomplete="off" spellcheck="false" />` +
+        `<button class="btn primary prov-oauth-complete">Complete</button>` +
+        `<a class="prov-sub muted" href="${esc(start.authorizeUrl)}" target="_blank" rel="noopener">reopen login</a>` +
+        `</div>`;
+      flow.querySelector(".prov-oauth-complete").addEventListener("click", guard(async () => {
+        const codeInput = flow.querySelector(".prov-oauth-code");
+        const code = codeInput.value.trim();
+        if (!code) return provSetStatus(`${id}: paste the authorization code first`, true);
+        const done = await provCall("/providers/manage/oauth/complete", "POST", {
+          state: start.state,
+          code,
+        });
+        codeInput.value = ""; // never keep the code in the DOM
+        if (!done.ok) return provSetStatus(`${id}: oauth failed — ${done.error || "unknown"}`, true);
+        provSetStatus(`${id}: OAuth stored (${done.profileId}) — fetching live models…`);
+        await provFetchModels(id, tr);
+        await loadProviders();
+      }));
     }));
 
     tr.querySelectorAll(".prov-cred").forEach((badge) => {
