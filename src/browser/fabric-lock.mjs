@@ -17,8 +17,8 @@ function fabricRoot() {
   );
 }
 
-function lockPath(name = "fabric") {
-  return path.join(fabricRoot(), `${name}.lock`);
+function lockPath(name = "fabric", root = null) {
+  return path.join(root || fabricRoot(), `${name}.lock`);
 }
 
 function isPidAlive(pid) {
@@ -41,14 +41,18 @@ async function sleep(ms) {
  * @param {string} [opts.name]
  * @param {number} [opts.timeoutMs]
  * @param {number} [opts.staleMs] reclaim if lock older than this and pid dead
+ * @param {string} [opts.root] lock directory — defaults to the fabric root.
+ *   Pass this to reuse the same exclusive-lockfile + stale-pid-reclaim
+ *   algorithm for other JSON stores (e.g. automations) instead of
+ *   duplicating it.
  */
 export async function acquireFabricLock(opts = {}) {
   const name = opts.name || "fabric";
   const timeoutMs = opts.timeoutMs ?? 10_000;
   const staleMs = opts.staleMs ?? 30_000;
-  const root = fabricRoot();
+  const root = opts.root || fabricRoot();
   await fs.mkdir(root, { recursive: true });
-  const lp = lockPath(name);
+  const lp = lockPath(name, opts.root);
   const start = Date.now();
   const payload = () =>
     JSON.stringify({

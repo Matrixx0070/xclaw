@@ -4,7 +4,7 @@
  * Thin product layer over cron scheduler + agent runner.
  */
 import { randomUUID } from "node:crypto";
-import { loadStore, saveStore, automationsPath } from "./store.mjs";
+import { loadStore, saveStore, automationsPath, withStoreLock } from "./store.mjs";
 import {
   DEFAULT_MAX_TICKS,
   initialGoalState,
@@ -120,103 +120,145 @@ function registerAutomationJob(cfg, record) {
   });
 }
 
+// In-process guard against overlapping executions of the SAME automation
+// (e.g. a manual `automations run` racing the gateway's own scheduled tick
+// in the same process). Cross-process overlap is not caught here — see the
+// locked fresh-read-modify-write below, which is what actually prevents a
+// slow tick's result from silently vanishing regardless of who else wrote
+// to the store while it was running.
+const runningIds = new Set();
+
 /**
  * Run agent turn for an automation and append result.
+ *
+ * The store write at the end is a fresh, locked read-modify-write — NOT a
+ * save of the snapshot read at the top of this function. Real incident this
+ * fixes: a manual run's LLM call took long enough that the gateway's own
+ * scheduled tick for the same automation completed and saved in the
+ * meantime; the manual run then finished and saved its own STALE
+ * pre-call snapshot, silently erasing the scheduled tick's already-persisted
+ * result and state. Re-reading fresh right before the write, under a lock,
+ * means whichever writer finishes last always layers its result on top of
+ * the current truth instead of overwriting it.
  */
 export async function executeAutomation(cfg, id, { mode = "manual", runner = null } = {}) {
-  const store = loadStore(cfg);
-  const auto = store.automations.find((a) => a.id === id);
-  if (!auto) return { ok: false, error: "not_found" };
-
-  const startedAt = new Date().toISOString();
-  let status = "ok";
-  let summary = "";
-  let error = null;
-  let goalTick = null;
-
+  if (runningIds.has(id)) {
+    return { ok: false, error: "already_running" };
+  }
+  runningIds.add(id);
   try {
-    // Prefer lightweight agent runner if available (injectable for tests)
-    const runAgentOnce =
-      runner ||
-      (await import("../agent/run-once.mjs").catch(() => ({}))).runAgentOnce;
-    if (typeof runAgentOnce === "function") {
-      const isGoal = auto.mode === "goal";
-      const message = isGoal ? buildGoalPrompt(auto) : auto.prompt;
-      const out = await runAgentOnce({
-        cfg,
-        message,
-        goal: auto.prompt,
-        source: "automation",
-        automationId: id,
-      });
-      summary =
-        typeof out === "string"
-          ? out.slice(0, 2000)
-          : JSON.stringify(out?.text || out?.reply || out || {}).slice(0, 2000);
-      if (out?.ok === false) {
-        status = "error";
-        error = out.error || "agent_failed";
-      } else if (isGoal) {
-        // Fold the tick into persistent goal state; stop when done/exhausted
-        const parsed = parseGoalState(typeof out === "string" ? out : out?.text);
-        goalTick = applyGoalTick(auto, parsed);
-        auto.state = goalTick.state;
-        const note = goalTick.state.progress.slice(-1)[0] || "";
-        summary = `[tick ${goalTick.state.tick}${
-          goalTick.finished ? ` · finished:${goalTick.reason}` : ""
-        }] ${note}`.slice(0, 2000);
-        if (goalTick.finished) {
-          auto.enabled = false;
-          try {
-            cancelJob(auto.id);
-          } catch {
-            /* not scheduled in this process */
-          }
+    const store = loadStore(cfg);
+    const auto = store.automations.find((a) => a.id === id);
+    if (!auto) return { ok: false, error: "not_found" };
+
+    const startedAt = new Date().toISOString();
+    let status = "ok";
+    let summary = "";
+    let error = null;
+    let goalTick = null;
+
+    try {
+      // Prefer lightweight agent runner if available (injectable for tests)
+      const runAgentOnce =
+        runner ||
+        (await import("../agent/run-once.mjs").catch(() => ({}))).runAgentOnce;
+      if (typeof runAgentOnce === "function") {
+        const isGoal = auto.mode === "goal";
+        const message = isGoal ? buildGoalPrompt(auto) : auto.prompt;
+        const out = await runAgentOnce({
+          cfg,
+          message,
+          goal: auto.prompt,
+          source: "automation",
+          automationId: id,
+        });
+        summary =
+          typeof out === "string"
+            ? out.slice(0, 2000)
+            : JSON.stringify(out?.text || out?.reply || out || {}).slice(0, 2000);
+        if (out?.ok === false) {
+          status = "error";
+          error = out.error || "agent_failed";
+        } else if (isGoal) {
+          // Fold the tick into persistent goal state; stop when done/exhausted
+          const parsed = parseGoalState(typeof out === "string" ? out : out?.text);
+          goalTick = applyGoalTick(auto, parsed);
+          const note = goalTick.state.progress.slice(-1)[0] || "";
+          summary = `[tick ${goalTick.state.tick}${
+            goalTick.finished ? ` · finished:${goalTick.reason}` : ""
+          }] ${note}`.slice(0, 2000);
         }
+      } else {
+        // Fallback: emit via announce path / mark scheduled
+        const { announceCronJob } = await import("../cron/announce.mjs");
+        const ann = await announceCronJob(
+          {
+            id,
+            name: auto.name,
+            payload: { message: auto.prompt, text: auto.prompt, prompt: auto.prompt },
+            _cfg: cfg,
+          },
+          { cfg }
+        );
+        summary = JSON.stringify(ann || { note: "announced" }).slice(0, 2000);
       }
-    } else {
-      // Fallback: emit via announce path / mark scheduled
-      const { announceCronJob } = await import("../cron/announce.mjs");
-      const ann = await announceCronJob(
-        {
-          id,
-          name: auto.name,
-          payload: { message: auto.prompt, text: auto.prompt, prompt: auto.prompt },
-          _cfg: cfg,
-        },
-        { cfg }
-      );
-      summary = JSON.stringify(ann || { note: "announced" }).slice(0, 2000);
+    } catch (e) {
+      status = "error";
+      error = e.message || String(e);
+      summary = error;
     }
-  } catch (e) {
-    status = "error";
-    error = e.message || String(e);
-    summary = error;
-  }
 
-  const result = {
-    id: randomUUID(),
-    automationId: id,
-    name: auto.name,
-    mode,
-    status,
-    summary,
-    error,
-    startedAt,
-    finishedAt: new Date().toISOString(),
-  };
-  if (goalTick) {
-    result.tick = goalTick.state.tick;
-    result.goalFinished = goalTick.finished;
-    result.goalReason = goalTick.reason;
-  }
+    const result = {
+      id: randomUUID(),
+      automationId: id,
+      name: auto.name,
+      mode,
+      status,
+      summary,
+      error,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    };
+    if (goalTick) {
+      result.tick = goalTick.state.tick;
+      result.goalFinished = goalTick.finished;
+      result.goalReason = goalTick.reason;
+    }
 
-  store.results.push(result);
-  auto.lastRunAt = result.finishedAt;
-  auto.lastStatus = status;
-  auto.updatedAt = result.finishedAt;
-  saveStore(cfg, store);
-  return { ok: status === "ok", result, automation: auto };
+    // Fresh, locked read-modify-write (see the doc comment above) — never a
+    // save of the `store`/`auto` objects read at the top of this function.
+    let finalAuto = auto;
+    await withStoreLock(cfg, (fresh) => {
+      const cur = fresh.automations.find((a) => a.id === id);
+      fresh.results.push(result);
+      if (!cur) {
+        // Deleted mid-flight: the result is still recorded for the audit
+        // trail, but there is no automation record left to update.
+        return fresh;
+      }
+      if (goalTick) {
+        cur.state = goalTick.state;
+        if (goalTick.finished) cur.enabled = false;
+      }
+      cur.lastRunAt = result.finishedAt;
+      cur.lastStatus = status;
+      cur.updatedAt = result.finishedAt;
+      finalAuto = cur;
+      return fresh;
+    });
+
+    if (goalTick?.finished) {
+      try {
+        cancelJob(id);
+      } catch {
+        /* not scheduled in this process */
+      }
+    }
+
+    return { ok: status === "ok", result, automation: finalAuto };
+  } finally {
+    runningIds.delete(id);
+  }
 }
 
 export function listAutomations(cfg, { includeDisabled = true } = {}) {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.93.0 — ship-readiness closeout: outage-proof doctor, automations locking, tool execute-smoke sweep
+
+Closes the three gaps identified in a ship-readiness review after 3.92.1: doctor could go green through an outage, the automations store had a lost-update race, and nothing exercised tool bodies to catch the "shipped with a missing import" bug class generically.
+
+**Doctor now makes a real, forced authenticated call to the active provider** (`providers.liveCheck`), not just a credential-resolution check — status ERROR (not warn) so hourly doctor-cron's `notifyOnFail` actually pages the operator. Credential *resolving* is not the same as credential *working*: the 3.92.1 outage had a token that resolved fine (a separate bug) for 9 hours while every real request 401'd. Opt out per-environment with `doctor.providersLiveCheck: false` (existing doctor tests set this so they stay hermetic).
+
+**Automations store race fixed** (`src/automations/store.mjs`, `src/automations/index.mjs`): `executeAutomation` used to read the store once, await a multi-second-to-minute LLM call, then save that same stale in-memory snapshot — silently clobbering any write another process made in the meantime (a manual `automations run` racing the gateway's own scheduled tick, or an unrelated `add`/`delete`). Now: (1) a new `withStoreLock` always operates on a freshly-loaded copy under an exclusive cross-process lock (`src/browser/fabric-lock.mjs` generalized with an optional `root` — the same proven exclusive-lockfile-with-stale-pid-reclaim algorithm already used for fabric state, not duplicated); (2) an in-process guard rejects overlapping executions of the *same* automation instead of double-ticking it. 3 new tests reproduce the exact race (slow + fast writer to different automations; same-id overlap; lock sees prior writes) and pass only with the fix.
+
+**Tool execute-smoke sweep** (`test/tools-execute-smoke.test.mjs`): calls `execute()` on every registered local tool (24) and every browser tool (21, via a stub computer client) with minimal args chosen per-tool so nothing reaches a real network call, paid API, or slow subprocess — asserts none throw. This is a smoke test, not full behavioral coverage, but it directly re-creates how the 3.91.1 born-broken-tools bug was found and generalizes that discovery method across the whole tool surface. Verified it actually catches the regression class: reintroducing the exact missing-import bug in browser-tools.mjs makes this test fail with the same `ReferenceError` as the original incident, restoring it passes again.
+
+Suite 1349/1344 pass (5 pre-existing host-quirk skips), all new tests included.
+
 ## 3.92.1 — fix: live outage — anthropic OAuth token sat expired for 9 hours, never refreshed
 
 Discovered live: a goal-automation e2e test hit a real 401, and so did the running gateway itself when probed directly — `@xxclaw_bot` had been unable to answer any Anthropic-backed request for roughly 9 hours with no visible error to the operator (the failure surfaced only as "Anthropic HTTP 401: OAuth access token has expired").

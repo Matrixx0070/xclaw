@@ -30,6 +30,9 @@ describe("doctor profile.mismatch", () => {
       JSON.stringify(
         {
           agent: { apiKey: "test-key" },
+          // Keep this test hermetic — providers.liveCheck makes a real
+          // network call by design (that's the point of the feature).
+          doctor: { providersLiveCheck: false },
           ...obj,
         },
         null,

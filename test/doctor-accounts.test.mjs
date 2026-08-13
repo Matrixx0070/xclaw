@@ -35,6 +35,9 @@ describe("doctor account checks", () => {
           profile: "lab",
           paths: { configDir: path.join(dir, ".xclaw") },
           agent: { apiKey: "test-key" },
+          // Keep this test hermetic — providers.liveCheck makes a real
+          // network call by design (that's the point of the feature).
+          doctor: { providersLiveCheck: false },
         },
         null,
         2

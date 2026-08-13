@@ -1262,6 +1262,43 @@ export async function runDoctor(opts = {}) {
     const xai = await checkProviderCredential(cfg, "xai");
     push("providers.imageGen", xai.ok ? "ok" : "warn",
       xai.ok ? "image generation ready (xai credential resolves)" : "image generation needs an xai credential");
+
+    // Live liveness ping (active provider only — this is what actually
+    // serves the bot). Credential *resolving* is not the same as the
+    // credential *working*: the 2026-08-13 outage had an anthropic OAuth
+    // token that resolved fine (the expiry check was broken) for 9 hours
+    // while every real request 401'd, with doctor reporting green the
+    // whole time. A forced (uncached), real, authenticated request is the
+    // only check that would have caught it — status ERROR so hourly
+    // doctor-cron's notifyOnFail actually pages the operator.
+    if (inv.active?.provider && cfg.doctor?.providersLiveCheck !== false) {
+      try {
+        const { fetchLiveModels } = await import("../providers/discovery.mjs");
+        const live = await fetchLiveModels(cfg, inv.active.provider, {
+          force: true,
+          timeoutMs: 8_000,
+        });
+        if (live.ok) {
+          push(
+            "providers.liveCheck",
+            "ok",
+            `${inv.active.provider}: live API call succeeded (${live.count} models)`
+          );
+        } else {
+          push(
+            "providers.liveCheck",
+            "error",
+            `${inv.active.provider}: live API call failed — ${live.error || "unknown error"}`
+          );
+        }
+      } catch (e) {
+        push(
+          "providers.liveCheck",
+          "error",
+          `${inv.active.provider}: live check threw — ${e.message || String(e)}`
+        );
+      }
+    }
   } catch (e) {
     push("providers.summary", "warn", e.message || String(e));
   }
