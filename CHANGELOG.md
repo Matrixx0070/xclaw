@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.92.1 — fix: live outage — anthropic OAuth token sat expired for 9 hours, never refreshed
+
+Discovered live: a goal-automation e2e test hit a real 401, and so did the running gateway itself when probed directly — `@xxclaw_bot` had been unable to answer any Anthropic-backed request for roughly 9 hours with no visible error to the operator (the failure surfaced only as "Anthropic HTTP 401: OAuth access token has expired").
+
+Root cause was two compounding bugs in `src/auth/profiles.mjs`, not the "connected token refresh scheduler" (that scheduler covers a different subsystem — third-party connected-app integrations — and was never involved in refreshing provider credentials at all):
+
+1. **The expiry check silently never fired.** `anthropic-oauth.mjs` stores `expiresAt` as a raw epoch-ms **number** on every exchange/refresh. `credentialFromProfile`'s staleness check called `Date.parse(profile.expiresAt)` — which only understands strings; called on a number it returns `NaN`, and `Date.now() > NaN - 30000` is always `false`. The token has looked "not expired" to xclaw since the moment it actually expired.
+2. **Even a firing check refreshed through the wrong OAuth server.** The one generic refresh path (`refreshProfileOAuth`) defaults to xAI's token endpoint and client id (`auth.x.ai/oauth/token`) for every provider — there was no Anthropic-specific dispatch, so a correctly-detected anthropic expiry would still have failed.
+
+Fixed both: a `parseExpiresAtMs()` helper accepts numeric or ISO-string `expiresAt`; `refreshProfileOAuth` now dispatches anthropic profiles to `anthropic-oauth.mjs`'s own `refreshAnthropicOAuthToken` (real token endpoint, real Claude Code client id, JSON body shape) instead of the xAI-shaped generic path. 4 new tests, including one with a mocked `fetch` asserting the refresh request target is Anthropic's endpoint, not xAI's — it fails against the pre-fix code.
+
+Live-verified: manually triggered the fixed refresh (real network call, real token returned, profile store updated with a fresh ~8h expiry), restarted the gateway, and a real webchat turn through Anthropic succeeded again. Suite 1341/0 (1336 pass, 5 pre-existing host-quirk skips).
+
 ## 3.92.0 — unattended-operation guardrails: approval mode live, commit gates config knob, per-run budgets, goal-mode automations
 
 Frank opted into "full autonomy prep." Three slices, each flag-gated and default-compatible:

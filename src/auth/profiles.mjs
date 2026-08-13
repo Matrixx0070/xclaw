@@ -274,6 +274,26 @@ function redactProfile(id, p, orderMap = {}) {
 /**
  * Extract bearer credential from a profile (refresh oauth if needed).
  */
+/**
+ * profile.expiresAt is written inconsistently across writers: the OAuth
+ * exchange/refresh paths (anthropic-oauth.mjs) store a raw epoch-ms NUMBER;
+ * refreshProfileOAuth below stores an ISO STRING. Date.parse() only handles
+ * the string form — called on a number it returns NaN, and any comparison
+ * against NaN is false, so a numeric expiresAt silently never looked expired
+ * (real incident: an anthropic:oauth token sat expired for 9 hours because
+ * this check never fired). Accept both shapes.
+ */
+function parseExpiresAtMs(expiresAt) {
+  if (expiresAt == null) return null;
+  if (typeof expiresAt === "number" && Number.isFinite(expiresAt)) return expiresAt;
+  if (typeof expiresAt === "string") {
+    if (/^\d+$/.test(expiresAt.trim())) return Number(expiresAt.trim());
+    const parsed = Date.parse(expiresAt);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 export async function credentialFromProfile(cfg, profile, store, profileIdStr) {
   if (!profile) return null;
   if (profile.mode === "api_key" && profile.apiKey) {
@@ -283,7 +303,8 @@ export async function credentialFromProfile(cfg, profile, store, profileIdStr) {
     return { token: profile.token, source: `profile:${profileIdStr}`, mode: "token", profileId: profileIdStr };
   }
   if (profile.mode === "oauth" && profile.accessToken) {
-    if (profile.expiresAt && Date.now() > Date.parse(profile.expiresAt) - 30_000) {
+    const expiresAtMs = parseExpiresAtMs(profile.expiresAt);
+    if (expiresAtMs != null && Date.now() > expiresAtMs - 30_000) {
       if (profile.refreshToken) {
         try {
           const refreshed = await refreshProfileOAuth(cfg, store, profileIdStr, profile);
@@ -321,7 +342,36 @@ export async function credentialFromProfile(cfg, profile, store, profileIdStr) {
   return null;
 }
 
+/**
+ * Refresh dispatch is provider-aware: xAI (and anything else using the
+ * generic client_id + form-encoded grant) goes through the inline path
+ * below; Anthropic has its own token endpoint, JSON body shape, and fixed
+ * Claude Code client id, so it must go through anthropic-oauth.mjs's own
+ * refresher (real incident: this used to fall through to the xAI defaults
+ * — auth.x.ai/oauth/token with no client id configured — for an anthropic
+ * profile, which either 400'd or, combined with the expiry-check bug above,
+ * never even ran).
+ */
 async function refreshProfileOAuth(cfg, store, id, profile) {
+  if (profile.provider === "anthropic") {
+    // Lazy import: anthropic-oauth.mjs imports from this module.
+    const { refreshAnthropicOAuthToken } = await import("./anthropic-oauth.mjs");
+    const out = await refreshAnthropicOAuthToken({
+      refreshToken: profile.refreshToken,
+      clientId: profile.meta?.clientId,
+      tokenUrl: profile.meta?.tokenUrl,
+      scope: profile.meta?.scope,
+    });
+    if (!out.ok) throw new Error(out.error || "anthropic refresh failed");
+    profile.accessToken = out.accessToken;
+    if (out.refreshToken) profile.refreshToken = out.refreshToken;
+    profile.expiresAt = out.expiresAt;
+    profile.updatedAt = new Date().toISOString();
+    store.profiles[id] = profile;
+    await saveProfiles(cfg, store);
+    return profile;
+  }
+
   const tokenUrl =
     profile.meta?.tokenUrl ||
     process.env.XCLAW_XAI_OAUTH_TOKEN_URL ||
