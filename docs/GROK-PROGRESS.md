@@ -655,3 +655,16 @@ old ids kept as fallback.
 RAN: suite 1306/0 · LIVE: generate_image produced a real 60KB PNG via
 profile:xai:apikey with XAI_API_KEY unset. Regression test added. pm2 gateway
 restarted to pick up the fix so @xxclaw_bot can now generate images.
+
+## 2026-08-13 — 3.90.3 telegram image delivery (Claude)
+
+STATUS: green
+CONTEXT: user's bot generated an image but only sent text — telegram outbound had
+no local-file photo upload (only voice-out used multipart).
+BUILT: channels/telegram/photo-out.mjs (multipart sendPhoto → sendDocument
+fallback); base.mjs extractImageArtifacts(toolTrace) → images field; runtime.mjs
+passes images through processInbound; telegram reply path uploads out.images as
+photos after text (cap 10). 
+RAN: suite 1308/0 · LIVE: sent the earlier generated logo to chat 8087386717 →
+sendPhoto ok message_id 70 (user received it). pm2 gateway restarted so future
+generate_image auto-delivers the picture.

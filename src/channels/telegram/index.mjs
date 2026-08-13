@@ -718,6 +718,20 @@ export function createTelegramChannel(cfg) {
         } else if (streamer) {
           streamer.close();
         }
+        // Deliver any images the agent produced (generate_image / edit_image)
+        // as actual photos — the text reply alone left the picture on the server.
+        if (Array.isArray(out.images) && out.images.length) {
+          const { sendPhotoFile } = await import("./photo-out.mjs");
+          for (const imgPath of out.images.slice(0, 10)) {
+            try {
+              const r = await sendPhotoFile({ token, chatId, filePath: imgPath, replyTo: msg.message_id });
+              if (r.ok) console.log(`[telegram] 🖼 ${r.method} ${imgPath.split("/").pop()}`);
+              else console.warn(`[telegram] photo send failed (${imgPath}): ${r.error}`);
+            } catch (ierr) {
+              console.warn(`[telegram] photo-out error:`, ierr.message || ierr);
+            }
+          }
+        }
         if (wantVoice) {
           try {
             const syn = await synthesizeReplyVoice(out.reply, cfg, conf.voiceOut || {});

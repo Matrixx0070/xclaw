@@ -2,6 +2,20 @@
  * Shared helpers for messaging channels → agent loop.
  */
 import { runAgentLoop } from "../agent/loop.mjs";
+
+const IMAGE_EXT = /\.(png|jpe?g|webp|gif)$/i;
+/** Pull image file paths the agent produced (generate_image / edit_image …)
+ *  from the tool trace's collected artifacts, so channels can deliver them. */
+function extractImageArtifacts(toolTrace = []) {
+  const out = [];
+  for (const t of toolTrace || []) {
+    for (const a of t.artifacts || []) {
+      const ref = a?.ref || a?.path || a?.filePath;
+      if (typeof ref === "string" && IMAGE_EXT.test(ref) && !out.includes(ref)) out.push(ref);
+    }
+  }
+  return out;
+}
 import { truncateForChannel } from "../utils/unicode-truncate.mjs";
 
 /**
@@ -46,6 +60,7 @@ export async function replyWithAgent({
       turns: result.turns,
       model: result.model,
       toolTrace: result.toolTrace,
+      images: extractImageArtifacts(result.toolTrace),
       suggestions: result.suggestions || [],
       turnState: result.turnState || null,
       identity,

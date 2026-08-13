@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.90.3 — deliver agent-generated images to Telegram (was text-only)
+
+The bot could generate an image but only sent the text description — the picture stayed on the server, because the Telegram outbound path had no local-file photo upload (only voice used multipart).
+
+- New `channels/telegram/photo-out.mjs` — multipart `sendPhoto` for a local image file, falling back to `sendDocument` if Telegram refuses it (mirrors voice-out).
+- The agent turn now surfaces produced image paths: `base.mjs` extracts image artifacts (png/jpg/webp/gif) from the tool trace's collected artifacts into an `images` field; `runtime.mjs` passes them through `processInbound`.
+- The Telegram reply path uploads each produced image as a photo after the text reply (cap 10/turn).
+
+Verified live: a generated image was delivered to a real chat via `sendPhoto` (message_id returned). Suite 1308/0.
+
 ## 3.90.2 — image generation uses the xai provider credential (not XAI_API_KEY env) + current models
 
 Image generation failed with "XAI_API_KEY not set" even when an xAI key was configured, because `generate_image`/`edit_image` read the `XAI_API_KEY` env var directly instead of the provider credential store.

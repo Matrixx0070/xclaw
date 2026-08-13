@@ -260,6 +260,7 @@ export async function processInbound(inbound, opts = {}) {
     handled: true,
     via: "agent",
     reply: result.text || "(no response)",
+    images: result.images || [],
     identity: result.identity || inbound.identity,
     vaultUserId: result.vaultUserId,
     userId: inbound.userId,
