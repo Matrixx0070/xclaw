@@ -628,3 +628,16 @@ leaked, /channels/status 200, /control/ 200, chan panel present. CLI list
 aligned (enabled webchat first, disabled below).
 STATE: channels now manageable same as providers across CLI/TUI/UI. webchat on;
 telegram/slack/discord/email need setup (tokens).
+
+## 2026-08-13 — telegram channel live + dmPolicy lock (Claude)
+
+STATUS: green
+DID: set up Telegram channel with the user's bot @xxclaw_bot (token validated
+getMe, stored redacted, enabled). Locked DMs to owner: allowedChatIds
+["8087386717"] + dmPolicy="allowlist" (added dmPolicy to CHANNEL_SPECS.telegram
+so it's CLI/UI-manageable). Gateway now runs under pm2 (name xclaw-gateway,
+logs /root/.xclaw/logs/gateway.log) + pm2 startup systemd + pm2 save →
+reboot-persistent. Live-verified end-to-end: user DM'd bot → Claude reply
+(anthropic:oauth active). 3.90.1 shipped the dmPolicy spec field.
+NOTE: user hit generate_image fail via bot — image-gen reads XAI_API_KEY env
+directly (not the xai:apikey profile); env not set → images fail. Separate gap.

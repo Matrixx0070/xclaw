@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.90.1 — telegram dmPolicy manageable + live @xxclaw_bot setup
+
+- Added `dmPolicy` (open|allowlist|pairing) to the Telegram channel spec so DM access control is manageable via `xclaw channels set --channel telegram --field dmPolicy` and the UI, alongside `allowedChatIds`. `allowlist` + a populated `allowedChatIds` hard-locks DMs to specific chat ids (others denied outright); the default `pairing` offers strangers a pairing request; empty `allowedChatIds` with `pairing` is open.
+
 ## 3.90.0 — channel management via CLI · TUI · web UI (mirrors providers)
 
 Every channel (Telegram, Slack, Discord, Email, WebChat) is now manageable the same way as providers — CLI, interactive TUI, and the control-UI panel — instead of hand-editing config.

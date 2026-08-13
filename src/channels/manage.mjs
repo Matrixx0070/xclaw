@@ -23,6 +23,7 @@ export const CHANNEL_SPECS = {
       { key: "token", label: "Bot token", secret: true, required: true },
       { key: "ownerChatId", label: "Owner chat id" },
       { key: "allowedChatIds", label: "Allowed chat ids (comma list)", type: "list" },
+      { key: "dmPolicy", label: "DM policy (open|allowlist|pairing)" },
       { key: "transport", label: "Transport (poll|webhook)" },
     ],
   },
