@@ -409,9 +409,19 @@ export async function resolveProviderRouteAsync(cfg = {}, opts = {}) {
   // different provider ships one vendor's token to another's endpoint. Only
   // use it when the resolved provider matches agent.provider, or none is set.
   const agentKeyApplies = !cfg.agent?.provider || cfg.agent.provider === provider;
+  // OAuth tokens expire (~8h). cfg.agent.apiKey is a boot-time snapshot from
+  // loadConfig — trusting it on the hot path means a long-running gateway
+  // keeps sending a token that expired hours ago (the 2026-08-13 outage: a
+  // resolving-but-dead token; auto-refresh existed but this path never
+  // reached it). So when the ACTIVE provider is OAuth-backed, skip the static
+  // snapshot and always re-resolve through resolveProviderToken, which checks
+  // expiry and refreshes near the boundary. API keys don't expire → they keep
+  // the fast cached path.
+  const oauthActive =
+    agentKeyApplies && cfg.agent?.authMode === "oauth";
   let apiKey =
     opts.apiKey ||
-    (agentKeyApplies ? cfg.agent?.apiKey : null) ||
+    (agentKeyApplies && !oauthActive ? cfg.agent?.apiKey : null) ||
     cfg.providers?.[provider]?.apiKey ||
     process.env[def.envKey] ||
     "";
@@ -421,6 +431,9 @@ export async function resolveProviderRouteAsync(cfg = {}, opts = {}) {
     try {
       const tok = await resolveProviderToken(cfg, provider, {
         profileId: opts.profileId || cfg.agent?.authProfileId,
+        // Active OAuth: bypass the boot-cached snapshot so expiry is checked
+        // and the token refreshes near the boundary (see the oauthActive note).
+        freshOAuth: oauthActive,
       });
       if (tok.token) {
         apiKey = tok.token;

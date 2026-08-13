@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.94.4 — fix: running gateway never refreshed the active OAuth token mid-flight (the outage, not fully closed)
+
+The "did auto-refresh work?" question surfaced that 3.92.1 only half-fixed the 2026-08-13 outage. The refresh *logic* worked — but the running gateway never reached it for the **active** provider, so it was only masked by frequent restarts (each `loadConfig` refreshes).
+
+`loadConfig` caches the active provider's OAuth token into `cfg.agent.apiKey` at boot. Then **both** `resolveProviderRouteAsync` (the per-request hot path) **and** `resolveProviderToken` (step 1) short-circuited on that static snapshot — the `resolveProviderToken` call that checks expiry and refreshes sat behind an `if (!apiKey)` that was never true. A gateway running past the token's ~8h lifetime kept sending the dead cached token → 401 → outage, exactly as before.
+
+Fix: when the active provider is OAuth-backed (`cfg.agent.authMode === "oauth"`), the hot path bypasses the boot cache (new `freshOAuth` option on `resolveProviderToken`) and resolves through the profile store each run, which checks expiry and refreshes near the boundary. API keys don't expire → they keep the fast cached path, and healthy OAuth tokens don't refresh either (proven: 3 resolutions on an 8h-out token, zero rotations — no per-request storm).
+
+Live-proven end to end on the real token: forced near-expiry → the hot path minted a fresh token per-request (`:refresh` source, ~8h expiry) → the new token authenticated (10 models). 3 regression tests (refreshes near expiry, no storm when healthy, `freshOAuth` bypasses the cache). Suite 1383/0.
+
 ## 3.94.3 — provider page: live credential health check + unknown-provider validation
 
 Two gaps found auditing the Providers page for robustness:

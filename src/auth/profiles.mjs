@@ -416,7 +416,17 @@ export async function resolveProviderToken(cfg = {}, provider = "xai", opts = {}
   //    when the requested provider matches, or when no active provider is set
   //    (a genuinely generic key). The old `|| p === "xai"` default-to-xai clause
   //    leaked one provider's key (e.g. an Anthropic OAuth token) to another.
-  if (cfg.agent?.apiKey && (!cfg.agent?.provider || cfg.agent.provider === p)) {
+  //
+  //    opts.freshOAuth bypasses this cache: the cached token is a boot-time
+  //    snapshot and OAuth tokens expire (~8h), so a long-running caller must
+  //    force resolution down to the profile branch below, which checks expiry
+  //    and refreshes. (Without this, a gateway up past the token lifetime
+  //    keeps returning the dead cached token — the 2026-08-13 outage.)
+  if (
+    !opts.freshOAuth &&
+    cfg.agent?.apiKey &&
+    (!cfg.agent?.provider || cfg.agent.provider === p)
+  ) {
     return {
       token: cfg.agent.apiKey,
       source: cfg.agent.authSource || "config.agent.apiKey",
