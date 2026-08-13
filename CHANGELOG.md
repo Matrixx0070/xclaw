@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.87.1 — split Ollama into two entries: `ollama` (local) + `ollama-cloud`
+
+Follow-up to 3.87.0: instead of routing one `ollama` provider by whether a key is present, Ollama is now **two independent, always-visible provider entries** — cleaner and matching the per-credential model of the others.
+
+- **`ollama`** — the local daemon, `http://127.0.0.1:11434/v1`, no key. Installed via `xclaw providers install ollama`.
+- **`ollama-cloud`** — ollama.com, `https://ollama.com/v1`, uses an ollama.com API key (`ollama-cloud:apikey`). Add with `xclaw providers set --provider ollama-cloud --api-key <key>`.
+
+Both appear separately in `providers list` and the UI, each independently selectable — no more implicit local/cloud switching on a single provider. The 3.87.0 key-based routing hack (registry `ollamaEffectiveDefault`, discovery + manage special-cases) is removed; each entry simply carries its own base URL. An existing `ollama:apikey` credential is migrated to `ollama-cloud:apikey`.
+
+Verified live: `providers list` shows both entries with correct endpoints; `ollama-cloud` fetches 18 cloud models and runs `gpt-oss:120b` inference; the local daemon generates (llama3.2). Suite 1284/0.
+
 ## 3.87.0 — Ollama: one-command install + separate cloud API-key credential
 
 Ollama now fits the same per-provider credential model as xAI/Anthropic — a local runtime you install in one command, plus a **separate cloud API key** that routes to ollama.com.

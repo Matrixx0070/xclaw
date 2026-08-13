@@ -558,8 +558,8 @@ async function cmdInstall(args) {
       }.`
   );
   console.log(`  local models: ${(r.models || []).join(", ") || "(none yet — `ollama pull <model>`)"}`);
-  console.log(`  use it:  xclaw providers use ollama ${model}`);
-  console.log(`  cloud:   xclaw providers set --provider ollama --api-key <ollama.com key>  (adds the cloud credential → routes to ollama.com)`);
+  console.log(`  use local:  xclaw providers use ollama ${model}`);
+  console.log(`  cloud:      xclaw providers set --provider ollama-cloud --api-key <ollama.com key>  (separate entry → ollama.com)`);
   return 0;
 }
 

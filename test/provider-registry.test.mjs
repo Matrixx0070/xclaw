@@ -101,12 +101,13 @@ describe("provider registry", () => {
   });
 });
 
-describe("ollama cloud base-url routing", () => {
-  it("resolves ollama.com when an ollama key is configured, local otherwise", async () => {
-    const { resolveProviderRouteAsync } = await import("../src/providers/registry.mjs");
+describe("ollama local vs ollama-cloud (two entries)", () => {
+  it("ollama → local daemon, ollama-cloud → ollama.com", async () => {
+    const { resolveProviderRouteAsync, BUILTIN_PROVIDERS } = await import("../src/providers/registry.mjs");
+    assert.ok(BUILTIN_PROVIDERS["ollama-cloud"], "ollama-cloud provider exists");
     const local = await resolveProviderRouteAsync({ paths:{configDir:"/tmp/xclaw-none"} }, { provider:"ollama", model:"llama3.2" });
     assert.match(local.baseUrl, /127\.0\.0\.1:11434/);
-    const cloud = await resolveProviderRouteAsync({ agent:{provider:"ollama", apiKey:"k"}, paths:{configDir:"/tmp/xclaw-none"} }, { provider:"ollama", model:"gpt-oss:120b" });
+    const cloud = await resolveProviderRouteAsync({ paths:{configDir:"/tmp/xclaw-none"} }, { provider:"ollama-cloud", model:"gpt-oss:120b" });
     assert.match(cloud.baseUrl, /ollama\.com/);
   });
 });

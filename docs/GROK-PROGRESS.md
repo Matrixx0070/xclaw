@@ -561,3 +561,21 @@ ollama cloud gpt-oss:120b → OLLAMA-CLOUD-XCLAW-OK · providers list shows olla
 https://ollama.com/v1 (key present). Routing unit tests (registry+discovery).
 STATE: 3 providers configured — xai(apikey★+oauth), anthropic(oauth★+apikey),
 ollama(apikey=cloud, local=no-key). User provided the ollama.com cloud key.
+
+## 2026-08-13 — 3.87.1 split Ollama into ollama (local) + ollama-cloud (Claude)
+
+STATUS: green
+CONTEXT: user asked to split the routed single ollama provider into two entries.
+BUILT: added "ollama-cloud" builtin (baseUrl ollama.com/v1, defaultModel
+gpt-oss:120b, envKey OLLAMA_API_KEY, seed cloud models); REMOVED the 3.87.0
+key-routing hack (registry ollamaEffectiveDefault + discovery/manage special
+cases) — each entry now carries its own baseUrl. Migrated stored ollama:apikey
+→ ollama-cloud:apikey. Install cmd help points cloud at ollama-cloud. Routing
+tests rewritten (ollama→127.0.0.1, ollama-cloud→ollama.com).
+RAN: suite 1284/0 · LIVE: providers list shows BOTH ollama(127.0.0.1, no key)
++ ollama-cloud(ollama.com, ollama-cloud:apikey); ollama-cloud fetch 18 cloud
+models + gpt-oss:120b turn OLLAMA-CLOUD-SPLIT-OK; local daemon direct generate
+llama3.2 OK (0.5s). NB: local agent-turn slow (large sysprompt × small model
+on CPU) — routing fine, latency only.
+STATE: providers now — xai(apikey★+oauth), anthropic(oauth★+apikey),
+ollama(local no-key), ollama-cloud(apikey).

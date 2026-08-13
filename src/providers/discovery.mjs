@@ -244,14 +244,7 @@ export async function fetchLiveModels(
 ) {
   const def = getProvider(cfg, providerId);
   const apiKey = await resolveApiKey(cfg, providerId, def);
-  // Ollama: cloud endpoint when a key resolves, else the local daemon — mirrors
-  // registry.ollamaEffectiveDefault so model discovery hits the same host the
-  // agent loop will.
-  const ollamaCloud = process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/v1";
-  const rawBase =
-    cfg.providers?.[providerId]?.baseUrl ||
-    (providerId === "ollama" && apiKey ? ollamaCloud : def.baseUrl);
-  const baseUrl = (rawBase || "").replace(/\/$/, "");
+  const baseUrl = (cfg.providers?.[providerId]?.baseUrl || def.baseUrl || "").replace(/\/$/, "");
   if (!baseUrl && providerId !== "google") {
     return { ok: false, error: "no baseUrl", models: [], provider: providerId };
   }

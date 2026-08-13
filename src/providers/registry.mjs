@@ -214,6 +214,20 @@ export const BUILTIN_PROVIDERS = {
       { id: "phi4", name: "Phi-4" },
     ],
   },
+  "ollama-cloud": {
+    name: "Ollama Cloud",
+    baseUrl: process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/v1",
+    api: "openai-completions",
+    defaultModel: "gpt-oss:120b",
+    envKey: "OLLAMA_API_KEY",
+    models: [
+      { id: "gpt-oss:120b", name: "gpt-oss 120B (cloud)" },
+      { id: "gpt-oss:20b", name: "gpt-oss 20B (cloud)" },
+      { id: "deepseek-v3.1:671b-cloud", name: "DeepSeek V3.1 671B (cloud)" },
+      { id: "qwen3-coder:480b-cloud", name: "Qwen3 Coder 480B (cloud)" },
+      { id: "glm-4.6:cloud", name: "GLM 4.6 (cloud)" },
+    ],
+  },
   compatible: {
     name: "OpenAI-compatible",
     baseUrl: "http://127.0.0.1:8080/v1",
@@ -223,14 +237,6 @@ export const BUILTIN_PROVIDERS = {
     models: [{ id: "local-model", name: "Local" }],
   },
 };
-
-/** Ollama routes to its cloud endpoint (ollama.com) when an API key is present,
- *  else the local daemon. A user-set per-provider baseUrl still overrides both. */
-const OLLAMA_CLOUD_BASE = process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/v1";
-function ollamaEffectiveDefault(provider, apiKey, defBase) {
-  if (provider === "ollama" && apiKey) return OLLAMA_CLOUD_BASE;
-  return defBase;
-}
 
 /** Prefix heuristics when model has no provider/ prefix */
 const PREFIX_ROUTES = [
@@ -434,7 +440,7 @@ export async function resolveProviderRouteAsync(cfg = {}, opts = {}) {
     opts.baseUrl ||
     (agentBaseApplies ? cfg.agent?.baseUrl || cfg.agent?.apiBase : null) ||
     cfg.providers?.[provider]?.baseUrl ||
-    ollamaEffectiveDefault(provider, apiKey, def.baseUrl) ||
+    def.baseUrl ||
     "https://api.openai.com/v1"
   ).replace(/\/$/, "");
 
@@ -491,7 +497,7 @@ export function resolveProviderRoute(cfg = {}, opts = {}) {
     opts.baseUrl ||
     (agentBaseApplies ? cfg.agent?.baseUrl || cfg.agent?.apiBase : null) ||
     cfg.providers?.[provider]?.baseUrl ||
-    ollamaEffectiveDefault(provider, apiKey, def.baseUrl) ||
+    def.baseUrl ||
     "https://api.openai.com/v1"
   ).replace(/\/$/, "");
 
