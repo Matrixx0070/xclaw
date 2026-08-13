@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.100.1 — command-hook runner: survive fast-exiting hook scripts (EPIPE)
+
+A command hook that exits before stdin is written (one-liner `exit 2` guards
+under load) emitted an async EPIPE on the child's stdin, rejecting the hook
+with the wrong error instead of honoring the exit-code verdict — surfaced as a
+load-dependent flake in the 3.100.0 pre-ship suite (which the ship script then
+failed to gate on; this release's ship WAS gated). stdin errors are now
+swallowed — the exit code is the verdict. Suite 1453/0 twice consecutively.
+
 ## 3.100.0 — hook system v2: tool-phase hooks, command hooks, matchers, stop veto, runtime management
 
 Market-parity-plus upgrade after studying the field (Claude Code's 30-event hook

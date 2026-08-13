@@ -45,6 +45,10 @@ export function createCommandHookFn(spec = {}) {
       }, timeoutMs);
       child.stdout.on("data", (d) => (out += d));
       child.stderr.on("data", (d) => (err += d));
+      // A hook that exits before stdin lands (e.g. `exit 2` one-liners under
+      // load) emits an async EPIPE on stdin — that's fine, the exit code is
+      // the verdict; swallow it so it can't reject with the wrong error.
+      child.stdin.on("error", () => {});
       child.on("error", (e) => finish(reject, e));
       child.on("close", (code) => {
         const trimmed = out.trim();
