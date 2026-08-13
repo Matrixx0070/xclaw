@@ -1912,3 +1912,194 @@ function chanWireRows() {
 
 $("btnChanRefresh")?.addEventListener("click", () => loadChannels().catch(console.error));
 loadChannels().catch(() => {});
+
+// ═══════════════════ Usage & Logs (per-provider) ═══════════════════
+// Provider separation is the organizing principle: one provider on screen at
+// a time (or an explicit "All"), selected by the chip bar — usage charts,
+// breakdown, models and logs all rescope together so nothing ever mixes.
+
+const UL_TYPE_COLORS = {
+  prompt: "#6ea8ff",
+  cached: "#3dd68c",
+  completion: "#e0af68",
+  reasoning: "#ff7ab2",
+};
+
+let ulProvider = localStorage.getItem("xclaw_ul_provider") || "all";
+let ulDays = 7;
+
+function ulFmt(n) {
+  if (n == null) return "—";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 10_000) return (n / 1000).toFixed(1) + "K";
+  return Number(n).toLocaleString();
+}
+function ulUsd(n) {
+  if (n == null || !(n > 0)) return "$0.00";
+  return n < 0.01 ? "<$0.01" : "$" + n.toFixed(2);
+}
+
+/** Zero-dep SVG bar chart. series: [{values:[…], color}] stacked per index. */
+function ulBars(el, series, labels = []) {
+  if (!el) return;
+  const n = Math.max(...series.map((s) => s.values.length), 1);
+  const sums = Array.from({ length: n }, (_, i) =>
+    series.reduce((a, s) => a + (s.values[i] || 0), 0)
+  );
+  const max = Math.max(...sums, 1);
+  const W = 100, H = 34, gap = 0.6;
+  const bw = W / n - gap;
+  let rects = "";
+  for (let i = 0; i < n; i++) {
+    let y = H;
+    for (const s of series) {
+      const v = s.values[i] || 0;
+      const h = (v / max) * (H - 2);
+      if (h > 0.1) {
+        y -= h;
+        rects += `<rect x="${(i * W) / n + gap / 2}" y="${y}" width="${bw}" height="${h}" rx="0.8" fill="${s.color}"><title>${labels[i] || ""}: ${ulFmt(sums[i])}</title></rect>`;
+      }
+    }
+    if (sums[i] === 0) {
+      rects += `<rect x="${(i * W) / n + gap / 2}" y="${H - 0.8}" width="${bw}" height="0.8" fill="#232b37"/>`;
+    }
+  }
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${rects}</svg>`;
+}
+
+async function ulLoadProviders() {
+  const bar = $("ulProviders");
+  if (!bar) return;
+  let ids = [];
+  try {
+    const inv = await getJSON("/providers/manage");
+    ids = (inv.providers || []).filter((p) => p.configured).map((p) => p.id);
+  } catch { /* chips fall back to All */ }
+  const chips = ["all", ...ids];
+  bar.innerHTML = chips
+    .map((id) => {
+      const label = id === "all" ? "All providers" : id;
+      return `<button class="chip ul-prov-chip${id === ulProvider ? " active" : ""}" data-prov="${esc(id)}">${esc(label)}</button>`;
+    })
+    .join("");
+  bar.querySelectorAll(".ul-prov-chip").forEach((c) =>
+    c.addEventListener("click", () => {
+      ulProvider = c.dataset.prov;
+      localStorage.setItem("xclaw_ul_provider", ulProvider);
+      bar.querySelectorAll(".ul-prov-chip").forEach((x) => x.classList.toggle("active", x === c));
+      ulLoadUsage().catch(console.error);
+      ulLoadLogs().catch(console.error);
+    })
+  );
+}
+
+async function ulLoadUsage() {
+  const data = await getJSON(`/usage?provider=${encodeURIComponent(ulProvider)}&days=${ulDays}`);
+  const t = data.totals || {};
+  $("ulTitle").textContent =
+    (ulProvider === "all" ? "Usage — all providers" : `Usage — ${ulProvider}`) + ` · last ${data.days}d`;
+  $("ulSpend").textContent = ulUsd(t.costUsd);
+  $("ulTokens").textContent = ulFmt(t.totalTokens);
+  $("ulRequests").textContent = ulFmt(t.requests);
+
+  const days = data.daily || [];
+  const labels = days.map((d) => d.day.slice(5));
+  ulBars($("ulSpendChart"), [{ values: days.map((d) => d.costUsd), color: "#ff5d5d" }], labels);
+  ulBars(
+    $("ulTokensChart"),
+    [
+      { values: days.map((d) => d.promptTokens), color: UL_TYPE_COLORS.prompt },
+      { values: days.map((d) => d.cachedTokens), color: UL_TYPE_COLORS.cached },
+      { values: days.map((d) => d.completionTokens), color: UL_TYPE_COLORS.completion },
+      { values: days.map((d) => d.reasoningTokens), color: UL_TYPE_COLORS.reasoning },
+    ],
+    labels
+  );
+  ulBars($("ulRequestsChart"), [{ values: days.map((d) => d.requests), color: "#8b98a8" }], labels);
+
+  $("ulLegend").innerHTML = Object.entries(UL_TYPE_COLORS)
+    .map(([k, c]) => `<span class="ul-lg"><i style="background:${c}"></i>${k}</span>`)
+    .join("");
+
+  const totalForShare = Math.max(
+    1,
+    (t.promptTokens || 0) + (t.cachedTokens || 0) + (t.completionTokens || 0) + (t.reasoningTokens || 0)
+  );
+  $("ulBreakdown").querySelector("tbody").innerHTML = (data.breakdown || [])
+    .map((b) => {
+      const pct = Math.round(((b.tokens || 0) / totalForShare) * 100);
+      return `<tr>
+        <td><i class="ul-dot" style="background:${UL_TYPE_COLORS[b.type] || "#888"}"></i> ${esc(b.label)}</td>
+        <td>${ulFmt(b.tokens)}</td>
+        <td><div class="ul-share"><div style="width:${pct}%"></div></div> ${pct}%</td>
+      </tr>`;
+    })
+    .join("");
+
+  $("ulByModel").querySelector("tbody").innerHTML = (data.byModel || [])
+    .slice(0, 8)
+    .map(
+      (m) => `<tr><td>${esc(m.model)}</td><td>${ulFmt(m.runs)}</td><td>${ulFmt(m.tokens)}</td><td>${ulUsd(m.costUsd)}</td></tr>`
+    )
+    .join("") || `<tr><td colspan="4" class="muted">no runs in range</td></tr>`;
+}
+
+async function ulLoadLogs() {
+  const q = $("ulLogFilter")?.value?.trim();
+  const data = await getJSON(
+    `/logs?provider=${encodeURIComponent(ulProvider)}&limit=100${q ? `&q=${encodeURIComponent(q)}` : ""}`
+  );
+  $("ulLogMeta").textContent = `· ${data.total} requests${ulProvider !== "all" ? ` · ${ulProvider}` : ""}`;
+  const tbody = $("ulLogTable").querySelector("tbody");
+  tbody.innerHTML = (data.rows || [])
+    .map(
+      (r) => `<tr class="ul-log-row" data-run="${esc(r.runId)}" title="click for detail">
+        <td>${new Date(r.at).toLocaleString()}</td>
+        <td><span class="pill">${esc(r.provider)}</span></td>
+        <td>${esc(r.model)}</td>
+        <td>${ulFmt(r.promptTokens)}${r.estimated ? '<span class="muted" title="estimated">~</span>' : ""}</td>
+        <td>${ulFmt(r.completionTokens)}</td>
+        <td>${ulFmt(r.cachedTokens)}</td>
+        <td>${r.costUsd != null ? "$" + Number(r.costUsd).toFixed(6) : "—"}</td>
+        <td class="ul-preview">${esc((r.preview || "").slice(0, 48))}</td>
+      </tr>`
+    )
+    .join("") || `<tr><td colspan="8" class="muted">no requests</td></tr>`;
+  tbody.querySelectorAll(".ul-log-row").forEach((tr) =>
+    tr.addEventListener("click", async () => {
+      try {
+        const d = await getJSON(`/logs/run?id=${encodeURIComponent(tr.dataset.run)}`);
+        $("ulDetailTitle").textContent = `${d.entry.provider} · ${d.entry.model} · ${new Date(d.entry.at).toLocaleString()}`;
+        $("ulDetailBody").textContent = JSON.stringify(d.entry, null, 2);
+        $("ulLogDetail").style.display = "block";
+        $("ulLogDetail").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } catch (e) {
+        $("ulDetailBody").textContent = String(e.message || e);
+        $("ulLogDetail").style.display = "block";
+      }
+    })
+  );
+}
+
+document.querySelectorAll(".ul-range-btn").forEach((b) =>
+  b.addEventListener("click", () => {
+    ulDays = Number(b.dataset.days) || 7;
+    document.querySelectorAll(".ul-range-btn").forEach((x) => x.classList.toggle("active", x === b));
+    ulLoadUsage().catch(console.error);
+  })
+);
+$("ulRefresh")?.addEventListener("click", () => {
+  ulLoadUsage().catch(console.error);
+  ulLoadLogs().catch(console.error);
+});
+$("ulLogRefresh")?.addEventListener("click", () => ulLoadLogs().catch(console.error));
+$("ulLogFilter")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") ulLoadLogs().catch(console.error);
+});
+$("ulDetailClose")?.addEventListener("click", () => ($("ulLogDetail").style.display = "none"));
+
+if ($("ulProviders")) {
+  ulLoadProviders()
+    .then(() => Promise.all([ulLoadUsage(), ulLoadLogs()]))
+    .catch(console.error);
+}

@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.95.0 — Usage & Logs: per-provider analytics console (xAI-console style)
+
+New "Usage & Logs" section in the Control UI, modeled on the xAI console's Usage/Logs pages — with **provider separation as the organizing principle**: a provider chip bar (All · xai · anthropic · nvidia · …) rescopes every chart, breakdown, model table and log row together, so one provider's traffic can never be confused with another's.
+
+**Usage**: spend / tokens / requests stat tiles with per-day zero-dep SVG charts (tokens stacked by type: prompt · cached · completion · reasoning), 7d/30d range, token-type breakdown table with share bars, and a by-model table (runs · tokens · spend).
+
+**Logs**: one row per API request (time, provider badge, model, in/out/cached tokens, USD, message preview), filterable by run id / model / session / message text, newest first — click any row for the full run drill-down (all turns, cache stats, session, raw JSON).
+
+**Data layer** (`src/tokens/usage-analytics.mjs`): aggregates the existing cost ledger — whose `turns[]` already record per-request token detail — instead of inventing a second store. Ledger entries now carry `provider` + `runId` (loop persists them); pre-3.95 entries infer provider from the model name. New token-gated routes: `GET /usage`, `GET /logs`, `GET /logs/run`.
+
+Two bugs caught during the build by its own tests: daily buckets were built but never stored (charts rendered flat while totals were right), and synthetic run ids for legacy entries were computed from the filtered index in the list but the unfiltered index in the detail lookup — drill-down missed. Both fixed; 7 analytics tests including provider-separation no-leakage and the bucket regression. Suite 1393/0. Live-verified with screenshots: All + anthropic views, charts, breakdown, provider-scoped logs, drill-down.
+
 ## 3.94.5 — Cost & Evals: inbound/outbound token columns + governor card were dead
 
 Operator report: the ledger's In/Out token columns were all dashes and the governor section empty. Three defects, one view:

@@ -1327,6 +1327,11 @@ export async function runAgentLoop(options) {
   }
   if (tokensEnabled && usageSnap && (usageSnap.hasCost || usageSnap.hasRealUsage)) {
     await usageTracker.persistLedger({
+      // runId + provider power the per-provider Usage & Logs views — every
+      // ledger entry must say which provider actually served it (model name
+      // alone is ambiguous across gateways/routers).
+      runId: (await import("node:crypto")).randomUUID(),
+      provider: provider?.providerName || route?.provider || cfg.agent?.provider || null,
       sessionId,
       userMessagePreview: String(userMessage || "").slice(0, 120),
       cache: usageSnap.cache,

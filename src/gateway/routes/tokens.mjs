@@ -60,6 +60,33 @@ export async function tryHandleTokensRoute({ p, method, req, res, url, cfg, json
     return true;
   }
 
+  // Per-provider Usage & Logs (control UI). Provider filtering is first-class:
+  // every response is scoped to exactly one provider (or explicitly "all").
+  if (p === "/usage" && method === "GET") {
+    const { usageSummary } = await import("../../tokens/usage-analytics.mjs");
+    json(res, 200, await usageSummary(cfg, {
+      provider: url.searchParams.get("provider") || "all",
+      days: url.searchParams.get("days") || 7,
+    }));
+    return true;
+  }
+  if (p === "/logs" && method === "GET") {
+    const { requestLogs } = await import("../../tokens/usage-analytics.mjs");
+    json(res, 200, await requestLogs(cfg, {
+      provider: url.searchParams.get("provider") || "all",
+      limit: url.searchParams.get("limit") || 50,
+      model: url.searchParams.get("model") || null,
+      q: url.searchParams.get("q") || null,
+    }));
+    return true;
+  }
+  if (p === "/logs/run" && method === "GET") {
+    const { requestLogDetail } = await import("../../tokens/usage-analytics.mjs");
+    const out = await requestLogDetail(cfg, url.searchParams.get("id") || "");
+    json(res, out.ok ? 200 : 404, out);
+    return true;
+  }
+
   if (p === "/tokens/cost" && method === "GET") {
     const ledger = cfg.tokens?.ledgerPath || defaultLedgerPath();
     const since = url.searchParams.get("since");

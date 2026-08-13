@@ -22,6 +22,7 @@
     <div class="nav-group">
       <div class="nav-label">Monitor</div>
       <a class="nav-item" href="#/overview" data-view="overview"><span class="ni-ico">◉</span>Overview</a>
+      <a class="nav-item" href="#/usage" data-view="usage"><span class="ni-ico">▤</span>Usage &amp; Logs</a>
       <a class="nav-item" href="#/ops" data-view="ops"><span class="ni-ico">♥</span>Health &amp; Ops</a>
       <a class="nav-item" href="#/cost" data-view="cost"><span class="ni-ico">¢</span>Cost &amp; Evals</a>
     </div>
@@ -87,6 +88,79 @@
         <section class="card" id="cardEviction">
           <h2>Eviction / LRU</h2>
           <div class="kv" id="evictionKv">Loading…</div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Usage & Logs (per provider) ═══ -->
+    <div class="view" data-view="usage">
+      <div class="grid">
+        <section class="card span2" id="cardUsage">
+          <div class="ul-head">
+            <div class="ul-providers" id="ulProviders"><!-- provider chips --></div>
+            <div class="ul-range">
+              <button class="btn ghost ul-range-btn active" data-days="7">7d</button>
+              <button class="btn ghost ul-range-btn" data-days="30">30d</button>
+              <button class="btn ghost" id="ulRefresh">↻</button>
+            </div>
+          </div>
+          <h2 id="ulTitle" class="ul-title">Usage</h2>
+
+          <div class="ul-stats">
+            <div class="ul-stat">
+              <div class="ul-stat-label">Spend</div>
+              <div class="ul-stat-value" id="ulSpend">—</div>
+              <div class="ul-chart" id="ulSpendChart"></div>
+            </div>
+            <div class="ul-stat">
+              <div class="ul-stat-label">Tokens</div>
+              <div class="ul-stat-value" id="ulTokens">—</div>
+              <div class="ul-chart" id="ulTokensChart"></div>
+            </div>
+            <div class="ul-stat">
+              <div class="ul-stat-label">Requests</div>
+              <div class="ul-stat-value" id="ulRequests">—</div>
+              <div class="ul-chart" id="ulRequestsChart"></div>
+            </div>
+          </div>
+          <div class="ul-legend" id="ulLegend"></div>
+
+          <h3 class="subhead">Breakdown</h3>
+          <div class="table-wrap" style="max-height:220px;">
+            <table id="ulBreakdown">
+              <thead><tr><th>Type</th><th>Usage</th><th>Share</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <h3 class="subhead">By model</h3>
+          <div class="table-wrap" style="max-height:180px;">
+            <table id="ulByModel">
+              <thead><tr><th>Model</th><th>Runs</th><th>Tokens</th><th>Spend</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span2" id="cardLogs">
+          <h2>Logs <span class="muted" id="ulLogMeta"></span></h2>
+          <div class="row">
+            <input id="ulLogFilter" placeholder="filter by run id, model, session, message…" style="flex:1;min-width:200px;" />
+            <button class="btn ghost" id="ulLogRefresh">Refresh</button>
+          </div>
+          <div class="table-wrap" style="max-height:420px;margin-top:0.5rem;">
+            <table id="ulLogTable">
+              <thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>In</th><th>Out</th><th>Cached</th><th>USD</th><th>Message</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="ulLogDetail" class="ul-detail" style="display:none;">
+            <div class="ul-detail-head">
+              <b id="ulDetailTitle">run</b>
+              <button class="btn ghost" id="ulDetailClose">×</button>
+            </div>
+            <pre id="ulDetailBody" class="log" style="max-height:300px;"></pre>
+          </div>
         </section>
       </div>
     </div>
@@ -445,9 +519,9 @@
     // Hash router — one view visible at a time; deep-linkable (#/swarm …).
     (() => {
       const TITLES = {
-        overview: "Overview", agents: "Agents & Jobs", swarm: "Swarm",
-        approvals: "Approvals", providers: "Providers", channels: "Channels",
-        cost: "Cost & Evals", ops: "Health & Ops",
+        overview: "Overview", usage: "Usage & Logs", agents: "Agents & Jobs",
+        swarm: "Swarm", approvals: "Approvals", providers: "Providers",
+        channels: "Channels", cost: "Cost & Evals", ops: "Health & Ops",
       };
       const views = [...document.querySelectorAll(".view")];
       const items = [...document.querySelectorAll(".nav-item")];

@@ -122,6 +122,10 @@ export function createGatewayAuth(cfg = {}) {
       // spend-pause + budget state is an operator control
       p === "/cost" ||
       p.startsWith("/cost/") ||
+      // usage analytics + request logs expose session previews/spend
+      p === "/usage" ||
+      p === "/logs" ||
+      p.startsWith("/logs/") ||
       p.startsWith("/seats") ||
       p.startsWith("/models") ||
       // JWKS operator endpoints (document itself is alwaysOpen)
