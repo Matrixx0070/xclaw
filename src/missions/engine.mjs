@@ -33,6 +33,7 @@ import {
 } from "../agents/worktree.mjs";
 import { buildTaskContext } from "../intel/repo-intel.mjs";
 import { createApprovalGate } from "../security/approvals.mjs";
+import { getSharedLedger } from "../ops/ledger.mjs";
 import { runSwarmFanOut, resumeSwarmRun, normalizeTaskGraph } from "../agents/swarm-run.mjs";
 import {
   newMission,
@@ -296,6 +297,15 @@ async function providerForPhase(cfg, phase) {
   }
 }
 
+// A1 ledger: mission-scoped operational entries. Best-effort by contract.
+function mledger(cfg, mission, kind, data, actor = "agent") {
+  try {
+    getSharedLedger(cfg).append({ kind, ids: { missionId: mission.id }, actor, data });
+  } catch {
+    /* never blocks the mission */
+  }
+}
+
 async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provider, providerOverride }) {
   const t0 = Date.now();
   const mcfg = missionCfg(cfg, mission.worktree.path);
@@ -314,6 +324,7 @@ async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provi
     signal,
     provider: providerOverride || provider || (await providerForPhase(cfg, phase)),
     chatSessionId: null,
+    ledgerIds: { missionId: mission.id },
     onEvent: (e) => {
       try {
         onEvent?.({ missionId: mission.id, phase, ...e });
@@ -326,6 +337,7 @@ async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provi
     ms: Date.now() - t0,
     at: new Date().toISOString(),
   });
+  mledger(cfg, mission, "phase", { phase, turns: out.turns ?? null, ms: Date.now() - t0 });
   return out;
 }
 
@@ -661,6 +673,15 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     emit("verify", `verification attempt ${mission.attempts + 1}/${mission.maxAttempts}`);
     const v = await runVerification(cfg, mission);
     await saveMission(cfg, mission);
+    mledger(cfg, mission, "verify", {
+      ok: v.ok,
+      attempt: mission.attempts + 1,
+      results: (mission.verify.results || []).map((r) => ({
+        cmd: r.cmd,
+        pass: r.pass,
+        exitCode: r.exitCode,
+      })),
+    });
     if (v.ok) {
       emit("verify", `PASSED: ${mission.verify.history.at(-1).summary}`);
       break;
@@ -676,6 +697,7 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     if (mission.attempts >= mission.maxAttempts) {
       mission.status = "failed";
       mission.error = `verification failed after ${mission.attempts} attempts`;
+      mledger(cfg, mission, "failure", { error: mission.error, phase: "verify" });
       emit("verify", mission.error);
       await captureDiff(cfg, mission);
       await saveMission(cfg, mission);
@@ -684,6 +706,11 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     mission.status = "repairing";
     await saveMission(cfg, mission);
     const failing = mission.verify.results.find((r) => !r.pass);
+    mledger(cfg, mission, "recovery", {
+      action: "repair",
+      attempt: mission.attempts,
+      failingCmd: failing?.cmd || null,
+    });
     emit("repair", `attempt ${mission.attempts}: ${failing?.cmd || "unknown check"} failed`);
     await agentPhase(
       cfg,
@@ -752,6 +779,16 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
   mission.status = "done";
   mission.mergedAt = new Date().toISOString();
   addEvent(mission, "merge", "merged into repository");
+  mledger(cfg, mission, "merge", {
+    method: out.method,
+    files: String(out.stat || "")
+      .split("\n")
+      .map((l) => l.trim().replace(/^[A-Z?! ]{1,3}\s+/, ""))
+      .filter(Boolean)
+      .slice(0, 200),
+    copied: (out.copied || []).slice(0, 200),
+    excluded: (out.excluded || []).slice(0, 50),
+  });
   await saveMission(cfg, mission);
   try {
     await removeWorktree(mission.repoDir, mission.worktree.path);
@@ -774,6 +811,7 @@ export async function rollbackMission(cfg, id) {
   // be on disk first or the abort's "failed" would win the race.
   mission.status = "rolled_back";
   addEvent(mission, "rollback", "worktree discarded — repository untouched");
+  mledger(cfg, mission, "recovery", { action: "rollback", worktree: mission.worktree?.path || null });
   await saveMission(cfg, mission);
   const active = running.get(id);
   if (active) {

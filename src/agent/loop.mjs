@@ -73,6 +73,8 @@ import { createAllLocalTools, localToolsAsOpenAI, executeLocalTool, localToolNam
 import { createToolRouter } from "../tools/router.mjs";
 import { createAgentMcpTools } from "./mcp-tools.mjs";
 import { getSharedHookManager } from "../hooks/manager.mjs";
+import { createLedger, slimToolTraceEntry } from "../ops/ledger.mjs";
+import { inferEffects } from "../agents/swarm-receipt.mjs";
 import { afterBrowserToolTruth } from "../browser/truth.mjs";
 import { beforeNavigate, beforeInput } from "../browser/hooks.mjs";
 import { resolveRole } from "../browser/role-binding.mjs";
@@ -673,6 +675,20 @@ export async function runAgentLoop(options) {
   const guard = createLoopGuard(cfg.agent?.loopGuard || {});
   const approvalGate = options.approvalGate || getSharedApprovalGate(cfg);
   const toolTrace = [];
+  // A1 operational ledger — every finalized trace entry (including denials,
+  // which post_tool_use hooks never see) is journaled durably. Best-effort:
+  // ledger failures never block the loop.
+  const ledger = createLedger(cfg, {
+    ids: { sessionId: sessionKey, ...(options.ledgerIds || {}) },
+  });
+  const recordTrace = (entry) => {
+    toolTrace.push(entry);
+    ledger.append({
+      kind: "tool",
+      actor: "agent",
+      data: slimToolTraceEntry(entry, { effects: inferEffects([entry]) }),
+    });
+  };
   resetToolTraceSeq();
   const goal = inferGoal(userMessage);
   let lastPendingApproval = null;
@@ -912,7 +928,7 @@ export async function runAgentLoop(options) {
           messages.push(
             makeToolMessage({ tool_call_id: call.id, content: msg, source: "filter" })
           );
-          toolTrace.push(
+          recordTrace(
             finalizeToolTraceEntry(
               beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
               {
@@ -942,7 +958,7 @@ export async function runAgentLoop(options) {
             messages.push(
               makeToolMessage({ tool_call_id: call.id, content: msg, source: "hook" })
             );
-            toolTrace.push(
+            recordTrace(
               finalizeToolTraceEntry(
                 beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
                 {
@@ -1045,7 +1061,7 @@ export async function runAgentLoop(options) {
               source: "security",
             })
           );
-          toolTrace.push(
+          recordTrace(
             finalizeToolTraceEntry(
               beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
               {
@@ -1104,7 +1120,7 @@ export async function runAgentLoop(options) {
                 source: "security",
               })
             );
-            toolTrace.push(
+            recordTrace(
               finalizeToolTraceEntry(
                 beginToolTraceEntry({
                   name,
@@ -1149,7 +1165,7 @@ export async function runAgentLoop(options) {
               source: "sandbox",
             })
           );
-          toolTrace.push(
+          recordTrace(
             finalizeToolTraceEntry(
               beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
               {
@@ -1174,7 +1190,7 @@ export async function runAgentLoop(options) {
               source: "egress",
             })
           );
-          toolTrace.push(
+          recordTrace(
             finalizeToolTraceEntry(
               beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
               {
@@ -1381,7 +1397,7 @@ export async function runAgentLoop(options) {
           result,
           thrown: toolThrown || Boolean(result?.isError),
         });
-        toolTrace.push(traceEntry);
+        recordTrace(traceEntry);
         onEvent({
           type: "tool",
           phase: "end",

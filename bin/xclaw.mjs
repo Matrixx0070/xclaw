@@ -1473,6 +1473,72 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "ledger": {
+      const { queryLedger, ledgerStats, whoTouched, compactLedger } = await import("../src/ops/ledger.mjs");
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "tail";
+      const flag = (name, dflt = null) => {
+        const i = args.indexOf(`--${name}`);
+        return i >= 0 ? args[i + 1] : dflt;
+      };
+      if (sub === "tail" || sub === "query") {
+        const filters = {
+          kind: flag("kind"),
+          since: flag("since", sub === "tail" ? "1d" : "7d"),
+          status: flag("status"),
+          artifact: flag("artifact"),
+          limit: Number(flag("limit", sub === "tail" ? 30 : 200)),
+          sessionId: flag("session"),
+          jobId: flag("job"),
+          missionId: flag("mission"),
+          swarmId: flag("swarm"),
+          runId: flag("run"),
+        };
+        for (const k of Object.keys(filters)) if (filters[k] == null) delete filters[k];
+        const { events, malformed } = await queryLedger(cfg, filters);
+        for (const e of events) {
+          const ids = Object.entries(e.ids || {}).map(([k, v]) => `${k}=${v}`).join(" ");
+          const d = e.data || {};
+          const summary =
+            e.kind === "tool"
+              ? `${d.name} ${d.status || ""} ${d.policy ? `[${d.policy.phase}:${d.policy.decision}]` : ""}`
+              : e.kind === "policy"
+                ? `${d.tool || ""} ${d.decision} (${d.mode})`
+                : e.kind === "verify"
+                  ? `${d.ok ? "PASS" : "FAIL"} attempt ${d.attempt}`
+                  : e.kind === "merge"
+                    ? `${(d.files || []).length} files`
+                    : JSON.stringify(d).slice(0, 100);
+          console.log(`${e.ts} ${e.kind.padEnd(8)} ${summary.trim()}  ${ids}`);
+        }
+        if (malformed) console.error(`(${malformed} malformed lines skipped)`);
+        break;
+      }
+      if (sub === "who-touched") {
+        const target = args[2];
+        if (!target) {
+          console.error("Usage: xclaw ledger who-touched <path> [--since 30d]");
+          process.exitCode = 1;
+          break;
+        }
+        const hits = await whoTouched(cfg, target, { since: flag("since", "30d") });
+        console.log(JSON.stringify({ path: target, hits }, null, 2));
+        break;
+      }
+      if (sub === "stats") {
+        console.log(JSON.stringify(await ledgerStats(cfg), null, 2));
+        break;
+      }
+      if (sub === "compact") {
+        const out = await compactLedger(cfg, { keepDays: flag("keep-days") });
+        console.log(JSON.stringify(out, null, 2));
+        break;
+      }
+      console.error("Usage: xclaw ledger tail|query [--kind k] [--since 2d] [--mission id] [--session id] [--status fail] | who-touched <path> | stats | compact [--keep-days N]");
+      process.exitCode = 1;
+      break;
+    }
     case "transcripts":
     case "transcript": {
       const { listTranscripts, loadTranscriptHistory, transcriptPath } = await import("../src/sessions/transcript.mjs");
@@ -2147,6 +2213,7 @@ Commands:
   channels             list | setup (wizard) | set | enable X | disable X
   sessions-active      List in-process agent sessions
   transcripts          list | show <sessionId>
+  ledger               tail | query | who-touched <path> | stats | compact
   eval                 Eval suite (--tag, --mock, --json)
   job <goal>           Verified job in a temp workspace
   version              Print version

@@ -13,6 +13,7 @@ import {
   normalizeToolName,
 } from "./tool-allowlist-guard.mjs";
 import { commandMatchesExecAllowlist } from "./exec-allowlist-pattern.mjs";
+import { getSharedLedger } from "../ops/ledger.mjs";
 import {
   buildSystemRunPlan,
   revalidatePlan,
@@ -34,6 +35,13 @@ function ensureSlaTimer(cfg) {
         pending.delete(id);
         if (item.timer) clearTimeout(item.timer);
         const action = item.slaAction || "deny";
+        journalDecision(cfg, {
+          tool: item.tool,
+          decision: action === "deny" ? "deny" : "approve",
+          mode: "sla",
+          pendingId: id,
+          planFingerprint: item.plan?.fingerprint ?? null,
+        }, "sla");
         if (action === "deny") {
           item.resolve({
             ok: false,
@@ -72,6 +80,16 @@ function ensureSlaTimer(cfg) {
     }
   }, tickMs);
   if (slaTimer.unref) slaTimer.unref();
+}
+
+// A1 ledger: every human/SLA approval resolution is journaled durably.
+// Best-effort — journaling must never affect the decision path.
+function journalDecision(cfg, data, actor = "operator") {
+  try {
+    getSharedLedger(cfg || {}).append({ kind: "policy", actor, data });
+  } catch {
+    /* never blocks approvals */
+  }
 }
 
 function sanitizePlan(plan) {
@@ -244,6 +262,13 @@ export function createApprovalGate(cfg = {}) {
       const timer = setTimeout(() => {
         if (pending.has(id)) {
           pending.delete(id);
+          journalDecision(cfg, {
+            tool: name,
+            decision: "timeout",
+            mode: "timer",
+            pendingId: id,
+            planFingerprint: plan?.fingerprint ?? null,
+          }, "sla");
           resolve({
             ok: false,
             reason: "timeout",
@@ -305,6 +330,14 @@ export function createApprovalGate(cfg = {}) {
     if (!item) return { ok: false, error: "unknown_pending" };
     pending.delete(pendingId);
     if (item.timer) clearTimeout(item.timer);
+    journalDecision(cfg, {
+      tool: item.tool,
+      decision: approved ? "approve" : "deny",
+      mode: "human",
+      note: note || undefined,
+      pendingId,
+      planFingerprint: item.plan?.fingerprint ?? null,
+    });
 
     if (approved && item.plan && revalidateOnDecide) {
       const check = revalidatePlan(item.plan);

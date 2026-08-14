@@ -10,6 +10,7 @@ import { tryHandleCronRoute } from "./routes/cron.mjs";
 import { tryHandleJwksRoute } from "./routes/jwks.mjs";
 import { tryHandleAlertsRoute } from "./routes/alerts.mjs";
 import { tryHandleOpsRoute } from "./routes/ops.mjs";
+import { tryHandleLedgerRoute } from "./routes/ledger.mjs";
 import { tryHandleEvalQueueRoute } from "./routes/eval-queue.mjs";
 import { tryHandleTokensRoute } from "./routes/tokens.mjs";
 import { tryHandleSessionsRoute } from "./routes/sessions.mjs";
@@ -1141,6 +1142,7 @@ export async function startGateway({ root } = {}) {
       if (await tryHandleChannelsRoute({ ...routeArgs, channelManager })) return;
       if (await tryHandleAlertsRoute({ ...routeArgs, channelManager })) return;
       if (await tryHandleOpsRoute({ ...routeArgs, root, webchatEnabled, channelManager, XCLAW_VERSION, XCLAW_PHASE })) return;
+      if (await tryHandleLedgerRoute(routeArgs)) return;
       if (await tryHandleEvalQueueRoute({ ...routeArgs, root })) return;
       if (await tryHandleJwksRoute(routeArgs)) return;
       if (await tryHandleTokensRoute(routeArgs)) return;

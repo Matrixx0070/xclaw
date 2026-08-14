@@ -160,6 +160,12 @@ export const DEFAULT_CONFIG = {
     perJobUsd: 1,
     pauseQueueOnHard: true,
   },
+  // A1 operational ledger — the durable black box (docs/LEDGER.md)
+  ledger: {
+    enabled: true,
+    retentionDays: 90,
+    maxPerMin: 0, // 0 = no sampling; >0 caps ok-read tool entries per minute
+  },
   tokens: {
     enabled: true,
     mode: "auto",

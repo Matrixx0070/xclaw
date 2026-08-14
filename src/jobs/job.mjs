@@ -142,6 +142,7 @@ export async function runJob(opts) {
       cfg: jobCfg,
       workingDir: workspace,
       signal: ac.signal,
+      ledgerIds: { jobId: id },
       onEvent: (e) => {
         push(e);
         if (e.type === "tool" && e.phase === "end") {
