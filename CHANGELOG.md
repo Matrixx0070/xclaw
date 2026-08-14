@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.123.0 — read-only exec risk classification
+
+Fresh live observation: on the DM bot every diagnostic command (`pm2 list`,
+`tail`, `cat`, `df -h`) tiered "risky" and pended the full approval SLA
+identically to genuinely dangerous commands — the A2 audit hardened the
+dangerous direction but the safe direction was never built, which made
+`security.autoApproveMaxTier` useless for channel bots (observed live: an
+owner diagnostic request died on SLA timeout; another needed a manual
+`/approve` for a `pm2 list`-class command).
+
+- **`isReadOnlyExecCommand()`** in `src/security/risk.mjs`: deterministic,
+  FAIL-CLOSED classifier — every pipeline/chain segment must have a bare
+  head in the read-only set (or a constrained subcommand for
+  git/pm2/npm/systemctl/find/journalctl/crontab/env); any redirection,
+  substitution, subshell, path-prefixed head, or env-prefix disqualifies.
+  Verified read-only chains map to tier **"low"** (never "safe" — reads can
+  exfiltrate), overridable via `security.risk.tiers.readOnlyExec`.
+  Credential-path reads (`cat ~/.ssh/id_rsa`) stay **critical** — the
+  irreversible fact outranks the read-only path.
+- With `security.autoApproveMaxTier: "low"` a channel bot now auto-runs
+  provable diagnostics and still pends writes/risky/critical to the owner.
+- Telegram `notifyOwnerApproval` now logs prompt delivery/failure — the
+  gateway log previously could not show whether an approval prompt ever
+  reached the owner.
+
 ## 3.122.1 — suite determinism + append-only rotation + alerter singleton fix
 
 Mandate-2 closeout hygiene (all three found by re-reading the shipped arc):

@@ -220,8 +220,13 @@ export function createTelegramChannel(cfg) {
         undefined,
         { reply_markup: approvalInlineKeyboard({ pendingId: item.id, tool: item.tool }) }
       );
+      // log delivery: raw sendMessage bypasses the reply-path "→" logging, so
+      // without this line the gateway log cannot show whether the approval
+      // prompt ever reached the owner (bit us diagnosing a live SLA-denial)
+      console.log(`[telegram] → ${ownerChatId}: approval prompt ${item.id} (${item.tool})`);
       return { ok: true };
     } catch (err) {
+      console.warn(`[telegram] approval prompt ${item.id} FAILED: ${err.message}`);
       return { ok: false, reason: err.message };
     }
   }

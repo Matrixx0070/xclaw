@@ -67,6 +67,67 @@ const ROOTISH_TARGET =
 
 const CREDENTIAL_PATH_RE = /\.ssh\/|credentials|\.env(\.|$)|secrets?\.|\.pem$|id_rsa|oauth|token/i;
 
+/**
+ * Read-only exec classification — the safe direction the tier table lacked.
+ * Live observation (2026-08-14): every DM diagnostic (`pm2 list`, `tail`,
+ * `cat`, `df -h`) tiered "risky" and pended 5min identically to `curl evil`,
+ * making autoApproveMaxTier useless for channel bots. Deterministic and
+ * FAIL-CLOSED: anything not provably read-only stays on the normal exec path.
+ * Verified read-only exec maps to tier "low", never "safe" — reads can still
+ * exfiltrate (and credential-path reads stay critical via the facts above).
+ */
+const READONLY_HEADS = new Set([
+  "ls", "cat", "head", "tail", "less", "more", "grep", "egrep", "fgrep", "rg",
+  "wc", "sort", "uniq", "cut", "tr", "diff", "cmp", "comm", "file", "stat",
+  "readlink", "realpath", "basename", "dirname", "tree", "nl", "tac", "column",
+  "strings", "md5sum", "sha1sum", "sha256sum", "base64", "jq",
+  "ps", "pgrep", "pstree", "df", "du", "free", "uptime", "w", "who", "whoami",
+  "id", "groups", "hostname", "uname", "arch", "nproc", "lscpu", "lsblk",
+  "lsof", "netstat", "ss", "date", "cal", "printenv", "pwd", "which",
+  "whereis", "type", "echo", "printf", "true", "false", "test", "sleep",
+  "journalctl", "dmesg",
+]);
+
+// Heads allowed only with a constrained first subcommand / flag shape.
+const CONSTRAINED_HEADS = {
+  git: new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "blame", "grep", "describe", "shortlog"]),
+  pm2: new Set(["list", "ls", "jlist", "status", "describe", "info", "show", "prettylist", "report", "id"]),
+  npm: new Set(["ls", "list", "view", "info", "ping", "outdated", "root", "prefix"]),
+  systemctl: new Set(["status", "show", "list-units", "list-timers", "is-active", "is-enabled", "is-failed", "cat"]),
+};
+
+const FIND_MUTATORS = /-(delete|exec|execdir|ok|okdir|fprint|fprintf|fls)\b/;
+const JOURNALCTL_MUTATORS = /--(vacuum|rotate|flush)/;
+
+function segmentIsReadOnly(segment) {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true; // empty side of a separator
+  const head = tokens[0];
+  if (head.includes("/") || head.includes("=")) return false; // path heads / env prefixes: fail closed
+  if (head === "find") return !FIND_MUTATORS.test(segment);
+  if (head === "journalctl") return !JOURNALCTL_MUTATORS.test(segment);
+  if (head === "env") return tokens.length === 1; // bare env lists; `env X cmd` runs cmd
+  if (head === "crontab") return tokens.length === 2 && tokens[1] === "-l";
+  const constrained = CONSTRAINED_HEADS[head];
+  if (constrained) {
+    const sub = tokens.slice(1).find((t) => !t.startsWith("-"));
+    return Boolean(sub && constrained.has(sub));
+  }
+  return READONLY_HEADS.has(head);
+}
+
+/** True only when every pipeline/chain segment is a provably read-only command. */
+export function isReadOnlyExecCommand(cmdRaw) {
+  const cmd = String(cmdRaw || "").trim();
+  if (!cmd) return false;
+  // structure gate on the RAW string: redirections, substitutions, subshells,
+  // and here-docs disqualify outright (a `>` inside a quoted grep pattern
+  // false-positives to the normal exec path — fail-closed, costs a prompt)
+  if (/[><]|\$\(|`|\(/.test(cmd)) return false;
+  const segments = cmd.split(/\|\||&&|;|\||&|\n/);
+  return segments.every(segmentIsReadOnly);
+}
+
 function extractPaths(args = {}) {
   const out = [];
   for (const k of ["path", "file", "filepath", "filename", "target", "dest", "dir", "cwd", "workingDir"]) {
@@ -211,7 +272,16 @@ export function assessRisk({ tool, args = {}, workingDir, cfg = {}, context = {}
     reasons.push("isolated worktree — discardable");
   }
 
-  const factors = { scope, impact, reversibility, blastRadius, recovery };
+  // read-only exec: provably non-mutating command chains rank "low" instead
+  // of the blanket exec tier. Computed AFTER the danger facts so an
+  // irreversible/credential finding always wins in mapTier.
+  let readOnlyExec = false;
+  if (impact === "exec" && cmdRaw && isReadOnlyExecCommand(cmdRaw)) {
+    readOnlyExec = true;
+    reasons.push("read-only diagnostic command");
+  }
+
+  const factors = { scope, impact, reversibility, blastRadius, recovery, readOnlyExec };
   const tier = mapTier(factors, cfg);
   return { tier, factors, reasons };
 }
@@ -224,6 +294,10 @@ function mapTier(f, cfg = {}) {
   if (f.impact === "write" && f.scope === "workspace") return t.workspaceWrite || "low";
   if (f.impact === "egress") return t.egress || "risky";
   if (f.impact === "exec") {
+    // provably read-only command chains (any scope): reads can exfiltrate,
+    // so "low" — never "safe"; credential-path reads never reach here
+    // (irreversible wins above)
+    if (f.readOnlyExec) return t.readOnlyExec || "low";
     // workspace-scoped exec in a recoverable context is the bread and butter
     // of autonomous engineering — risky only when recovery is absent
     if (f.scope === "workspace" && f.recovery !== "none") return t.workspaceExec || "risky";

@@ -77,7 +77,9 @@ describe("approval gate with risk tiers (A2)", () => {
     const auto = await gate.authorize("xclaw_bash", { command: "echo hi", cwd: "/tmp" }, { timeoutMs: 300 });
     assert.equal(auto.ok, true);
     assert.equal(auto.mode, "auto");
-    assert.equal(auto.risk.tier, "risky");
+    // "low" since the read-only exec classification (echo with no redirect);
+    // still ≤ maxTier "risky", so the auto-run semantics are unchanged
+    assert.equal(auto.risk.tier, "low");
 
     const crit = await gate.authorize(
       "xclaw_bash",
