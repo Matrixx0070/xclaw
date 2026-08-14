@@ -10,6 +10,12 @@
  *
  * WebSocket control frames: opcode 9 (ping) auto-replies with 10 (pong);
  * session.ping() sends a client ping (optional wait for pong).
+ *
+ * Robustness layers:
+ *   1) TCP keepalive (socket.setKeepAlive) — half-open / silent path death
+ *   2) WS ping/pong — framing liveness
+ *   3) Optional periodic heartbeat (startHeartbeat) — app-driven keepalive
+ *   4) Pending request fail-fast on socket close/error
  */
 import http from "node:http";
 import crypto from "node:crypto";
@@ -34,8 +40,27 @@ function httpGetJson(host, port, path, timeoutMs = 4000) {
   });
 }
 
-/** Minimal RFC6455 client connection (text frames, client-masked). */
-function wsConnect(wsUrl, { timeoutMs = 8000 } = {}) {
+/**
+ * Minimal RFC6455 client connection (text frames, client-masked).
+ * @param {string} wsUrl
+ * @param {{
+ *   timeoutMs?: number,
+ *   keepAlive?: boolean,
+ *   keepAliveInitialDelayMs?: number,
+ *   heartbeatIntervalMs?: number,
+ *   heartbeatTimeoutMs?: number,
+ *   onDisconnect?: (err?: Error) => void,
+ * }} [opts]
+ */
+function wsConnect(wsUrl, opts = {}) {
+  const {
+    timeoutMs = 8000,
+    keepAlive = true,
+    keepAliveInitialDelayMs = 30_000,
+    heartbeatIntervalMs = 0,
+    heartbeatTimeoutMs = 5_000,
+    onDisconnect = null,
+  } = opts;
   const u = new URL(wsUrl);
   const key = crypto.randomBytes(16).toString("base64");
   return new Promise((resolve, reject) => {
@@ -54,11 +79,46 @@ function wsConnect(wsUrl, { timeoutMs = 8000 } = {}) {
     req.on("timeout", () => req.destroy(new Error("CDP WS timeout")));
     req.on("upgrade", (res, socket) => {
       socket.setNoDelay(true);
+      // TCP keepalive: detect half-open after idle (layer under WS ping)
+      if (keepAlive !== false) {
+        try {
+          socket.setKeepAlive(true, Math.max(0, Number(keepAliveInitialDelayMs) || 30_000));
+        } catch {
+          /* platform may ignore */
+        }
+      }
       const pending = new Map();
       let id = 0;
       let buf = Buffer.alloc(0);
+      let closed = false;
+      /** @type {ReturnType<typeof setInterval> | null} */
+      let heartbeatTimer = null;
       /** @type {((payload: Buffer) => void) | null} */
       let onPong = null;
+
+      function failPending(err) {
+        const e = err instanceof Error ? err : new Error(String(err || "CDP socket closed"));
+        for (const { reject: rej2 } of pending.values()) {
+          try {
+            rej2(e);
+          } catch {
+            /* ignore */
+          }
+        }
+        pending.clear();
+      }
+
+      function markClosed(err) {
+        if (closed) return;
+        closed = true;
+        stopHeartbeat();
+        failPending(err || new Error("CDP socket closed"));
+        try {
+          onDisconnect?.(err instanceof Error ? err : err ? new Error(String(err)) : undefined);
+        } catch {
+          /* listener must not throw outward */
+        }
+      }
 
       /**
        * Write a masked client frame (RFC6455 §5.3).
@@ -66,6 +126,9 @@ function wsConnect(wsUrl, { timeoutMs = 8000 } = {}) {
        * @param {Buffer} [payload]
        */
       function writeFrame(opcode, payload = Buffer.alloc(0)) {
+        if (closed || socket.destroyed) {
+          throw new Error("CDP socket closed");
+        }
         const data = Buffer.isBuffer(payload) ? payload : Buffer.from(payload || []);
         const mask = crypto.randomBytes(4);
         const masked = Buffer.from(data);
@@ -121,10 +184,11 @@ function wsConnect(wsUrl, { timeoutMs = 8000 } = {}) {
           // 8 = close
           if (op === 8) {
             try {
-              writeFrame(8, payload.length ? payload : Buffer.alloc(0));
+              if (!closed) writeFrame(8, payload.length ? payload : Buffer.alloc(0));
             } catch {
               /* socket may already be closing */
             }
+            markClosed(new Error("CDP peer closed WebSocket"));
             socket.destroy();
             return;
           }
@@ -162,14 +226,25 @@ function wsConnect(wsUrl, { timeoutMs = 8000 } = {}) {
           }
         }
       });
-      socket.on("error", () => {
-        for (const { reject: rej2 } of pending.values()) rej2(new Error("CDP socket error"));
-        pending.clear();
+      socket.on("error", (err) => {
+        markClosed(err || new Error("CDP socket error"));
       });
+      socket.on("close", () => {
+        markClosed(new Error("CDP socket closed"));
+      });
+      socket.on("end", () => {
+        markClosed(new Error("CDP socket ended"));
+      });
+
       function send(method, params = {}, { timeoutMs: t = 15_000 } = {}) {
+        if (closed) return Promise.reject(new Error("CDP socket closed"));
         const mid = ++id;
         const data = Buffer.from(JSON.stringify({ id: mid, method, params }));
-        writeFrame(1, data);
+        try {
+          writeFrame(1, data);
+        } catch (e) {
+          return Promise.reject(e);
+        }
         return new Promise((res2, rej2) => {
           pending.set(mid, { resolve: res2, reject: rej2 });
           setTimeout(() => {
@@ -180,39 +255,110 @@ function wsConnect(wsUrl, { timeoutMs = 8000 } = {}) {
           }, t).unref?.();
         });
       }
+
       /**
        * Send a WebSocket ping; optional wait for matching pong.
        * @param {Buffer|string} [payload]
        * @param {{ wait?: boolean, timeoutMs?: number }} [opts]
        */
       function ping(payload = Buffer.alloc(0), opts = {}) {
+        if (closed) return Promise.reject(new Error("CDP socket closed"));
         const data = Buffer.isBuffer(payload)
           ? payload
           : Buffer.from(String(payload || ""), "utf8");
-        // RFC: ping payload ≤ 125 bytes when used as control frame convention
         const body = data.length > 125 ? data.subarray(0, 125) : data;
-        writeFrame(9, body);
+        try {
+          writeFrame(9, body);
+        } catch (e) {
+          return Promise.reject(e);
+        }
         if (!opts.wait) return Promise.resolve();
-        const t = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 5000;
+        const waitMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 5000;
         return new Promise((res2, rej2) => {
           const prev = onPong;
           const timer = setTimeout(() => {
             onPong = prev;
             rej2(new Error("CDP WebSocket ping timed out"));
-          }, t);
+          }, waitMs);
           timer.unref?.();
           onPong = (pongPayload) => {
             onPong = prev;
             clearTimeout(timer);
             res2(pongPayload);
-            prev?.(pongPayload);
+            try {
+              prev?.(pongPayload);
+            } catch {
+              /* ignore */
+            }
           };
         });
       }
+
+      function stopHeartbeat() {
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+      }
+
+      /**
+       * Periodic WS ping (application heartbeat on top of TCP keepalive).
+       * @param {{ intervalMs?: number, timeoutMs?: number, onMiss?: (err: Error) => void }} [hbOpts]
+       */
+      function startHeartbeat(hbOpts = {}) {
+        stopHeartbeat();
+        const interval = Number(hbOpts.intervalMs) > 0
+          ? Number(hbOpts.intervalMs)
+          : Number(heartbeatIntervalMs) > 0
+            ? Number(heartbeatIntervalMs)
+            : 30_000;
+        const waitMs = Number(hbOpts.timeoutMs) > 0
+          ? Number(hbOpts.timeoutMs)
+          : Number(heartbeatTimeoutMs) || 5_000;
+        const onMiss = hbOpts.onMiss || ((err) => markClosed(err));
+        heartbeatTimer = setInterval(() => {
+          if (closed) {
+            stopHeartbeat();
+            return;
+          }
+          ping("xclaw-hb", { wait: true, timeoutMs: waitMs }).catch((err) => {
+            try {
+              onMiss(err instanceof Error ? err : new Error(String(err)));
+            } catch {
+              /* ignore */
+            }
+          });
+        }, interval);
+        heartbeatTimer.unref?.();
+        return () => stopHeartbeat();
+      }
+
+      // Auto-start heartbeat when interval configured at connect
+      if (Number(heartbeatIntervalMs) > 0) {
+        startHeartbeat({
+          intervalMs: heartbeatIntervalMs,
+          timeoutMs: heartbeatTimeoutMs,
+        });
+      }
+
       resolve({
         send,
         ping,
-        close: () => socket.destroy(),
+        startHeartbeat,
+        stopHeartbeat,
+        isOpen: () => !closed && !socket.destroyed,
+        close: () => {
+          stopHeartbeat();
+          if (!closed) {
+            try {
+              writeFrame(8, Buffer.alloc(0));
+            } catch {
+              /* ignore */
+            }
+          }
+          markClosed(new Error("CDP socket closed by client"));
+          socket.destroy();
+        },
       });
     });
     req.on("error", reject);
@@ -221,7 +367,15 @@ function wsConnect(wsUrl, { timeoutMs = 8000 } = {}) {
 }
 
 /**
- * @param {{ host?: string, port?: number, allowRemote?: boolean }} opts
+ * @param {{
+ *   host?: string,
+ *   port?: number,
+ *   allowRemote?: boolean,
+ *   keepAlive?: boolean,
+ *   keepAliveInitialDelayMs?: number,
+ *   heartbeatIntervalMs?: number,
+ *   heartbeatTimeoutMs?: number,
+ * }} opts
  */
 export function createCdpClient(opts = {}) {
   const host = String(opts.host || "127.0.0.1");
@@ -229,6 +383,12 @@ export function createCdpClient(opts = {}) {
   if (!LOOPBACK.has(host) && opts.allowRemote !== true) {
     throw new Error(`CDP host ${host} is not loopback (set allowRemote to override)`);
   }
+  const wsOpts = {
+    keepAlive: opts.keepAlive !== false,
+    keepAliveInitialDelayMs: opts.keepAliveInitialDelayMs ?? 30_000,
+    heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 0,
+    heartbeatTimeoutMs: opts.heartbeatTimeoutMs ?? 5_000,
+  };
 
   return {
     host,
@@ -275,13 +435,16 @@ export function createCdpClient(opts = {}) {
       else if (typeof match === "string" && match) page = pages.find((p) => String(p.url || "").includes(match));
       if (!page) page = pages[0];
       if (!page) throw new Error("no CDP page target available");
-      const ws = await wsConnect(page.webSocketDebuggerUrl);
+      const ws = await wsConnect(page.webSocketDebuggerUrl, wsOpts);
       return {
         page,
         /** Raw CDP command access for advanced callers (Input.*, DOM.*, …). */
-        send: (method, params, opts) => ws.send(method, params, opts),
+        send: (method, params, sendOpts) => ws.send(method, params, sendOpts),
         /** WebSocket-level ping (not a CDP domain method). */
-        ping: (payload, opts) => ws.ping(payload, opts),
+        ping: (payload, pingOpts) => ws.ping(payload, pingOpts),
+        startHeartbeat: (hbOpts) => ws.startHeartbeat(hbOpts),
+        stopHeartbeat: () => ws.stopHeartbeat(),
+        isOpen: () => ws.isOpen(),
         async evaluate(expression, { awaitPromise = true, timeoutMs } = {}) {
           const r = await ws.send(
             "Runtime.evaluate",
