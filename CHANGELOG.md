@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.107.0 — Phase-aware mission resume + transactional worktree merge
+
+Post-roadmap candidates 1 & 2.
+
+- Missions record `executedAt` when the execute phase completes; resume maps
+  failed/interrupted missions to planning | executing | verifying by ACTUAL
+  progress — a mission that died mid-execute re-runs its implementation
+  instead of skipping to verification. Swarm missions resume their fan-out
+  journal (terminal-ok nodes replayed, only missing work re-runs).
+  Live-proven: gateway killed mid-execute → boot reconcile marked the
+  mission interrupted → resume re-entered at executing → merge_ready →
+  merged.
+- `applyWorktreeMerge` is transactional: `git apply --check` runs BEFORE any
+  untracked copy (a failing patch leaves the repo byte-untouched — previously
+  copies landed first), existing destinations are conflicts instead of silent
+  overwrites (identical content = idempotent re-merge), and a post-check
+  apply failure rolls the copies back (`rolledBack: true`).
+
 ## 3.106.1 — completion path containment
 
 Commit security review follow-up: `buildCompletionContext` now refuses a
