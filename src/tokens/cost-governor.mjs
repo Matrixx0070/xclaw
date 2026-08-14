@@ -101,13 +101,28 @@ export async function governorMode(cfg) {
   return { mode: "normal", spentUsd: check.spentUsd, limits: lim, economyAt };
 }
 
-export async function recordJobCost(cfg, { usd = 0, jobId = null } = {}) {
+/** Band for a given spent figure — shared by governorMode + transition detection. */
+function bandFor(spent, lim, paused, economyAt) {
+  if (paused || spent >= lim.dailyHardUsd) return "halt";
+  if (spent >= economyAt) return "economy";
+  return "normal";
+}
+
+export async function recordJobCost(cfg, { usd = 0, jobId = null, estimated = false } = {}) {
   let ledger = await loadLedger(cfg);
   if (ledger.day !== dayKey()) {
     ledger = { day: dayKey(), spentUsd: 0, jobs: 0, paused: false, events: [] };
   }
   const lim = limits(cfg);
+  const economyAt = cfg?.cost?.economyAtUsd ?? lim.dailySoftUsd;
+  const prevBand = bandFor(ledger.spentUsd || 0, lim, ledger.paused, economyAt);
   ledger.spentUsd = Math.round((ledger.spentUsd + Number(usd || 0)) * 1e6) / 1e6;
+  // Estimated (list-price, often subscription-notional for OAuth) vs billed
+  // (provider-returned) tracked separately so band alerts can be honest
+  // about what the number means. spentUsd stays the combined total for
+  // back-compat with every existing reader.
+  const bucket = estimated ? "spentEstimatedUsd" : "spentBilledUsd";
+  ledger[bucket] = Math.round(((ledger[bucket] || 0) + Number(usd || 0)) * 1e6) / 1e6;
   ledger.jobs += 1;
   ledger.events = [
     ...(ledger.events || []).slice(-50),
@@ -116,8 +131,71 @@ export async function recordJobCost(cfg, { usd = 0, jobId = null } = {}) {
   if (ledger.spentUsd >= lim.dailyHardUsd && lim.pauseQueueOnHard) {
     ledger.paused = true;
   }
+  const newBand = bandFor(ledger.spentUsd, lim, ledger.paused, economyAt);
+  if (newBand !== prevBand) {
+    // Band changes used to be SILENT: economy could downshift models and
+    // halt paused the queue/refused jobs with no owner signal — armed for
+    // real the day estimated pricing landed. Journal + alert + WS.
+    ledger.events = [
+      ...ledger.events.slice(-49),
+      { at: new Date().toISOString(), kind: "band", from: prevBand, to: newBand },
+    ];
+    ledger.lastBand = newBand;
+    notifyBandTransition(cfg, { from: prevBand, to: newBand, ledger, lim, economyAt }).catch(() => {});
+  }
   await saveLedger(cfg, ledger);
   return ledger;
+}
+
+/** Owner-visible band-transition fanout: alerter (DM) + WS + ops ledger. */
+async function notifyBandTransition(cfg, { from, to, ledger, lim, economyAt }) {
+  const split =
+    `total $${ledger.spentUsd.toFixed(2)} (billed $${(ledger.spentBilledUsd || 0).toFixed(2)}` +
+    ` + estimated $${(ledger.spentEstimatedUsd || 0).toFixed(2)} — estimates use list prices;` +
+    ` subscription/OAuth traffic is notional, not billed)`;
+  const detail =
+    to === "halt"
+      ? `Hard cap $${lim.dailyHardUsd} reached — queue paused, new jobs refused until tomorrow or /cost resume. ${split}`
+      : to === "economy"
+        ? `Economy threshold $${economyAt} reached — role router may reroute to cheaper models (if configured). ${split}`
+        : `Back to normal. ${split}`;
+  try {
+    globalThis.__xclawWsBroadcast?.("security", {
+      type: "cost",
+      phase: "band",
+      from,
+      to,
+      spentUsd: ledger.spentUsd,
+    });
+  } catch {
+    /* hub optional */
+  }
+  try {
+    const { getSharedLedger } = await import("../ops/ledger.mjs");
+    getSharedLedger(cfg).append({
+      kind: "phase",
+      actor: "governor",
+      ids: {},
+      data: { phase: "cost_band", from, to, spentUsd: ledger.spentUsd },
+    });
+  } catch {
+    /* ledger best-effort */
+  }
+  try {
+    const { getSharedAlerter } = await import("../alerting/alerts.mjs");
+    await getSharedAlerter(cfg).send({
+      key: `cost-band:${to}`,
+      // escalations use "error" so they clear the alerter's default
+      // minSeverity ("error") and actually reach the owner's DM; the
+      // recovery info is WS/ledger-visible without paging
+      severity: to === "normal" ? "info" : "error",
+      title: `Cost governor: ${from} → ${to}`,
+      body: detail,
+      meta: { from, to, spentUsd: ledger.spentUsd, day: ledger.day },
+    });
+  } catch {
+    /* alerting best-effort */
+  }
 }
 
 export async function getCostGovernorStatus(cfg) {

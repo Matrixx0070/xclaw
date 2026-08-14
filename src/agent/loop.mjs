@@ -1722,7 +1722,7 @@ export async function runAgentLoop(options) {
     if (runCostUsd > 0) {
       try {
         const { recordJobCost } = await import("../tokens/cost-governor.mjs");
-        await recordJobCost(cfg, { usd: runCostUsd, jobId: sessionId });
+        await recordJobCost(cfg, { usd: runCostUsd, jobId: sessionId, estimated: costEstimated });
       } catch {
         /* governor best-effort */
       }
