@@ -562,8 +562,16 @@ export function createAnthropicMessagesProvider(opts = {}) {
 
     applySystem(body, converted);
 
-    const anthTools = toAnthropicTools(tools);
-    if (anthTools?.length) body.tools = anthTools;
+    let anthTools = toAnthropicTools(tools);
+    if (anthTools?.length) {
+      anthTools = applyToolCacheBreakpoints(anthTools, {
+        enabled: cacheEnabled,
+        ttl: bpCfg.ttl || "ephemeral",
+        systemBreakpointCount: countCacheBreakpoints(body.system),
+        maxBreakpoints: Number(bpCfg.maxBreakpoints) || 4,
+      });
+      body.tools = anthTools;
+    }
 
     const headers = {
       ...authHeaders(apiKey),
