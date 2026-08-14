@@ -534,6 +534,7 @@ async function runNodeOnce(cfg, swarmCfg, run, node, goal, resultsByNodeId, inpu
       parentId: input.parentId || run.id,
       swarmId: run.id,
       workingDir: input.workingDir,
+      approvalGate: input.approvalGate,
       signal: input.signal,
       timeoutMs:
         input.timeoutMs ?? swarmCfg.subagentTimeoutMs ?? 300_000,

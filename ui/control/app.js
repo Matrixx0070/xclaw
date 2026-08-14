@@ -2937,6 +2937,10 @@ async function openMission(id, { silent } = {}) {
       ["Attempts", `${m.attempts}/${m.maxAttempts}`],
       ["Verified", m.verify?.history?.length ? (m.verify.history.at(-1).ok ? "yes" : "no") : "—",
         m.verify?.history?.at(-1)?.ok ? "good" : "warn"],
+      ["Strategy", (m.strategy || "solo") + (m.swarm?.runId ? ` · run ${m.swarm.runId.slice(0, 14)}` : "")],
+      ["Swarm nodes", m.swarm?.nodes?.length
+        ? m.swarm.nodes.map((n) => `${n.id}(${n.role})${n.ok ? "✓" : n.status === "skipped" ? "→skip" : "✗"}${n.merged ? "·merged" : ""}`).join("  ")
+        : "—"],
       ["Diff", m.diff ? `${m.diff.patchChars} chars` : "—"],
       ["New files", m.diff?.untracked?.length ? m.diff.untracked.join(", ").slice(0, 200) : "—"],
       ["Excluded", m.diff?.excludedUntracked?.length
@@ -2980,7 +2984,8 @@ $("btnMsnStart")?.addEventListener("click", async () => {
   }
   $("btnMsnStart").disabled = true;
   try {
-    const r = await postJSON("/missions", { goal, repoDir });
+    const strategy = $("msnStrategy")?.value === "swarm" ? "swarm" : undefined;
+    const r = await postJSON("/missions", { goal, repoDir, strategy });
     $("msnGoal").value = "";
     $("msnLive").textContent = "launched " + r.mission.id.slice(0, 12);
     await loadMissions();

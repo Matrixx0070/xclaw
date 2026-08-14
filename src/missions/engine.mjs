@@ -33,6 +33,7 @@ import {
 } from "../agents/worktree.mjs";
 import { buildTaskContext } from "../intel/repo-intel.mjs";
 import { createApprovalGate } from "../security/approvals.mjs";
+import { runSwarmFanOut, normalizeTaskGraph } from "../agents/swarm-run.mjs";
 import {
   newMission,
   saveMission,
@@ -168,6 +169,92 @@ export function missionCfg(cfg, worktreePath) {
       persistTranscript: false,
       ...(allowTools ? { allowTools } : {}),
     },
+  };
+}
+
+/**
+ * Parse the plan's fenced mission task graph:
+ * ```xclaw-mission-tasks
+ * [{"id":"a","role":"implement","task":"...","dependsOn":[]}]
+ * ```
+ * Last fenced block wins (same convention as goal-automation state blocks).
+ * Returns a validated node list or null (caller falls back to solo execute).
+ */
+export function parseMissionTasks(text) {
+  const s = String(text || "");
+  const re = /```xclaw-mission-tasks\s*\n([\s\S]*?)```/g;
+  let last = null;
+  for (let m; (m = re.exec(s)); ) last = m[1];
+  if (!last) return null;
+  let tasks;
+  try {
+    tasks = JSON.parse(last);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(tasks) || !tasks.length) return null;
+  const norm = normalizeTaskGraph(tasks);
+  if (norm.error) return null;
+  return norm.nodes.map((n) => ({
+    id: n.id,
+    role: n.role,
+    task: n.task,
+    dependsOn: n.dependsOn || [],
+  }));
+}
+
+/**
+ * Swarm-backed execute: fan the plan's task graph out to the dependency-aware
+ * swarm INSIDE the mission worktree. Implement nodes get their own worktrees
+ * (branched from the mission worktree) and early-merge back into it — the
+ * real repo stays untouched; the mission's evidence gate is unchanged.
+ */
+async function runMissionSwarm(cfg, mission, { onEvent, signal, spawnSeam }) {
+  const mcfg = missionCfg(cfg, mission.worktree.path);
+  const gate = createApprovalGate(mcfg);
+  const t0 = Date.now();
+  const res = await runSwarmFanOut(mcfg, {
+    goal: mission.goal,
+    tasks: mission.swarm.tasks,
+    workingDir: mission.worktree.path,
+    // merging node work into the SHADOW worktree is safe — the merge to the
+    // user's repo stays gated on verification evidence
+    earlyMergeImplement: true,
+    autoMerge: true,
+    approvalGate: gate,
+    parentId: mission.id,
+    signal,
+    onEvent: (e) => {
+      try {
+        onEvent?.({ missionId: mission.id, phase: "execute", ...e });
+      } catch {}
+    },
+    ...(spawnSeam ? { spawnSubagent: spawnSeam } : {}),
+  });
+  mission.agentRuns.push({
+    phase: "execute-swarm",
+    turns: null,
+    ms: Date.now() - t0,
+    at: new Date().toISOString(),
+  });
+  if (res?.error && !res?.results) {
+    return { ok: false, error: res.error, code: res.code || null };
+  }
+  mission.swarm.runId = res.swarmId || null;
+  mission.swarm.nodes = (res.results || []).map((r) => ({
+    id: r.nodeId,
+    role: r.role,
+    ok: Boolean(r.ok),
+    status: r.status || null,
+    error: r.error || null,
+    merged: Boolean(r.mergedToMain),
+  }));
+  const okCount = mission.swarm.nodes.filter((n) => n.ok).length;
+  return {
+    ok: Boolean(res.ok) && okCount > 0,
+    okCount,
+    total: mission.swarm.nodes.length,
+    error: res.ok ? null : `swarm status ${res.status}`,
   };
 }
 
@@ -323,13 +410,31 @@ export async function startMission(cfg, opts = {}) {
     autoMerge: opts.autoMerge === true,
     verify: opts.verify || null,
   });
-  addEvent(mission, "created", goal);
+  // Execution strategy: "solo" (single agent, default) or "swarm" (plan
+  // emits a task graph → dependency-aware fan-out in the worktree). Explicit
+  // caller-provided tasks skip plan-time graph extraction.
+  mission.strategy =
+    opts.strategy === "swarm" || (!opts.strategy && cfg.missions?.strategy === "swarm")
+      ? "swarm"
+      : "solo";
+  if (mission.strategy === "swarm") {
+    const explicit = Array.isArray(opts.tasks) && opts.tasks.length ? opts.tasks : null;
+    if (explicit) {
+      const norm = normalizeTaskGraph(explicit);
+      if (norm.error) throw new Error(`invalid tasks: ${norm.error}`);
+      mission.swarm = { tasks: norm.nodes.map((n) => ({ id: n.id, role: n.role, task: n.task, dependsOn: n.dependsOn || [] })), runId: null, nodes: [] };
+    } else {
+      mission.swarm = { tasks: null, runId: null, nodes: [] };
+    }
+  }
+  addEvent(mission, "created", `${goal}${mission.strategy === "swarm" ? " [swarm]" : ""}`);
   await saveMission(cfg, mission);
   const controller = new AbortController();
   const promise = runMission(cfg, mission, {
     onEvent: opts.onEvent,
     signal: controller.signal,
     providerOverride: opts.provider,
+    spawnSeam: opts.spawnSubagent,
   }).catch(async (err) => {
     // A rollback (or completion) may have set a terminal status while this
     // run was aborting — never overwrite it with "failed".
@@ -398,7 +503,7 @@ export async function resumeMission(cfg, id, opts = {}) {
   return mission;
 }
 
-async function runMission(cfg, mission, { onEvent, signal, providerOverride } = {}) {
+async function runMission(cfg, mission, { onEvent, signal, providerOverride, spawnSeam } = {}) {
   const emit = (phase, note) => {
     addEvent(mission, phase, note);
     try {
@@ -425,11 +530,24 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride } = 
   }
 
   // ── plan (repo intelligence → bounded plan run)
+  // A caller-provided task graph IS the plan — no model run needed.
+  if (!mission.plan && mission.strategy === "swarm" && mission.swarm?.tasks?.length) {
+    mission.status = "planning";
+    mission.plan = {
+      summary: `explicit task graph (${mission.swarm.tasks.length} nodes): ${mission.swarm.tasks
+        .map((t) => `${t.id}(${t.role})`)
+        .join(" · ")}`,
+      contextFiles: [],
+    };
+    emit("plan", mission.plan.summary);
+    await saveMission(cfg, mission);
+  }
   if (!mission.plan) {
     mission.status = "planning";
     await saveMission(cfg, mission);
     const intel = await buildTaskContext(mission.worktree.path, mission.goal);
     emit("intel", `context: ${intel.files.length} ranked files of ${intel.stats.totalFiles} (${intel.stats.chars} chars)`);
+    const wantsGraph = mission.strategy === "swarm" && !mission.swarm?.tasks;
     const planOut = await agentPhase(
       cfg,
       mission,
@@ -441,6 +559,16 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride } = 
         intel.contextText,
         ``,
         `Produce a concrete implementation plan: which files change and why, what gets created, how it will be verified. Explore further with tools if the context above is not enough. Do NOT implement yet — reply with the plan only.`,
+        ...(wantsGraph
+          ? [
+              ``,
+              `Then decompose the implementation into 2–6 INDEPENDENT subtasks for parallel agents and append a fenced block exactly like:`,
+              "```xclaw-mission-tasks",
+              `[{"id":"a","role":"implement","task":"...","dependsOn":[]},{"id":"b","role":"implement","task":"...","dependsOn":[]}]`,
+              "```",
+              `Rules: role is one of implement|research|verify; use dependsOn (ids) only for true ordering needs; each implement task must be self-contained (its agent works in an isolated copy and only sees upstream results, not siblings).`,
+            ]
+          : []),
       ].join("\n"),
       { onEvent, signal, providerOverride }
     );
@@ -449,6 +577,16 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride } = 
       summary: String(planOut.finalText ?? planOut.text ?? "").slice(0, 12_000),
       contextFiles: intel.files,
     };
+    if (wantsGraph) {
+      const tasks = parseMissionTasks(planOut.finalText ?? planOut.text ?? "");
+      if (tasks) {
+        mission.swarm.tasks = tasks;
+        emit("plan", `task graph: ${tasks.map((t) => `${t.id}(${t.role})${t.dependsOn.length ? `←${t.dependsOn.join(",")}` : ""}`).join(" · ")}`);
+      } else {
+        emit("plan", "no valid task graph in plan — falling back to solo execute");
+        mission.strategy = "solo";
+      }
+    }
     emit("plan", mission.plan.summary.slice(0, 300));
     await saveMission(cfg, mission);
   }
@@ -457,19 +595,35 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride } = 
   if (["planning", "executing"].includes(mission.status)) {
     mission.status = "executing";
     await saveMission(cfg, mission);
-    emit("execute", "implementing the plan in the shadow workspace");
-    await agentPhase(
-      cfg,
-      mission,
-      "execute",
-      [
-        `Implement this mission in the current repository (your working directory). Work file-by-file, keep changes coherent across files.`,
-        `MISSION: ${mission.goal}`,
-        `PLAN:\n${mission.plan.summary}`,
-        `When done, run the project's tests yourself if cheap; fix what you break. Reply with a summary of the changes you made.`,
-      ].join("\n\n"),
-      { onEvent, signal, providerOverride }
-    );
+    let soloNeeded = true;
+    if (mission.strategy === "swarm" && mission.swarm?.tasks?.length) {
+      emit("execute", `swarm fan-out: ${mission.swarm.tasks.length} nodes in the shadow workspace`);
+      const sw = await runMissionSwarm(cfg, mission, { onEvent, signal, spawnSeam });
+      await saveMission(cfg, mission);
+      if (sw.ok) {
+        soloNeeded = false;
+        emit("execute", `swarm done: ${sw.okCount}/${sw.total} nodes ok (run ${mission.swarm.runId || "?"})`);
+      } else {
+        // robustness: a failed fan-out degrades to the solo path — the
+        // evidence gate below still decides what merges
+        emit("execute", `swarm failed (${sw.error || sw.code || "unknown"}) — falling back to solo execute`);
+      }
+    }
+    if (soloNeeded) {
+      emit("execute", "implementing the plan in the shadow workspace");
+      await agentPhase(
+        cfg,
+        mission,
+        "execute",
+        [
+          `Implement this mission in the current repository (your working directory). Work file-by-file, keep changes coherent across files.`,
+          `MISSION: ${mission.goal}`,
+          `PLAN:\n${mission.plan.summary}`,
+          `When done, run the project's tests yourself if cheap; fix what you break. Reply with a summary of the changes you made.`,
+        ].join("\n\n"),
+        { onEvent, signal, providerOverride }
+      );
+    }
     await bailIfAborted();
     mission.status = "verifying";
     await saveMission(cfg, mission);

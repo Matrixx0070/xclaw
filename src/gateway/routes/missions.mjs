@@ -25,6 +25,15 @@ function missionSummary(m) {
     lastEvent: m.events?.at(-1) || null,
     verified: Boolean(m.verify?.history?.at(-1)?.ok),
     hasDiff: Boolean(m.diff?.patch),
+    strategy: m.strategy || "solo",
+    swarm: m.swarm
+      ? {
+          runId: m.swarm.runId || null,
+          tasks: (m.swarm.tasks || []).length,
+          nodesOk: (m.swarm.nodes || []).filter((n) => n.ok).length,
+          nodes: (m.swarm.nodes || []).length,
+        }
+      : null,
   };
 }
 
@@ -59,6 +68,8 @@ export async function tryHandleMissionsRoute({ p, method, req, res, url, cfg, js
         autoMerge: body.autoMerge === true,
         maxAttempts: body.maxAttempts,
         verify: Array.isArray(body.verify) ? body.verify : null,
+        strategy: body.strategy === "swarm" ? "swarm" : undefined,
+        tasks: Array.isArray(body.tasks) ? body.tasks : undefined,
         onEvent: emitWs,
       });
       json(res, 200, { ok: true, mission: missionSummary(mission) });

@@ -216,6 +216,10 @@ export async function spawnSubagent(opts = {}) {
         workingDir: workingDir || process.cwd(),
         signal: nest.signal,
         onEvent: pushEvent,
+        // Callers with run-scoped security (missions) pass their own gate —
+        // the loop's default shared gate is primed with the GATEWAY's policy
+        // and would silently override the child cfg's autoApprove.
+        approvalGate: opts.approvalGate,
       });
     } finally {
       nest.dispose();
