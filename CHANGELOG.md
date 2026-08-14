@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.102.1 — Mission approval-gate override + tool pairing invariant + resume evidence gate
+
+Three real bugs found while live-verifying 3.102.0 through the gateway (a
+mission failed with Anthropic 400 "tool_use ids were found without tool_result
+blocks"; the full chain was reproduced and pinned in tests):
+
+- **Missions now build their own approval gate** from the mission-scoped
+  config. The loop's default is a process-wide shared gate (first caller
+  wins) that a live gateway primes with `autoApprove:false` — silently
+  overriding the mission's declared worktree autonomy: every exec tool
+  pended for a human who was never asked, timed out after 120s, and the
+  mid-batch stop skipped remaining calls. Hooks still compose through the
+  mission gate.
+- **tool_use/tool_result pairing invariant** in the agent loop: when a
+  pending-approval or guard stop ends a turn early, remaining tool calls in
+  the batch now get explicit "Not executed" tool messages (+ a
+  `tool skipped` event) instead of orphaned tool_use blocks that 400 the
+  next provider request.
+- **Resume cannot bypass the evidence gate**: `resumeMission` maps
+  `failed` → `verifying` (a stale failed status used to skip every phase
+  block in `runMission` and fall through to `merge_ready` with zero
+  evidence), and `runMission` now structurally refuses `merge_ready`
+  without a recorded passing verification run.
+
 ## 3.102.0 — Mission integrity: tool scoping, complete merge evidence, artifact-free merges
 
 Evidence-driven increment. The planned "local-plane fast file ops" roadmap item
