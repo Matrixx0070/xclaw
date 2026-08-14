@@ -156,3 +156,64 @@ describe("cfg.agent.allowTools in runAgentLoop", () => {
     );
   });
 });
+
+describe("tool_use/tool_result pairing invariant", () => {
+  it("a mid-turn stop (pending approval) backfills skipped calls' tool messages", async () => {
+    // the shared approval gate is a process-wide singleton — earlier tests
+    // primed it with autoApprove:true; rebuild it with THIS test's policy
+    const { resetSharedApprovalGate } = await import("../src/security/approvals.mjs");
+    resetSharedApprovalGate({ security: { autoApprove: false, approvalTimeoutMs: 250, approvalSlaMs: 250 } });
+    // turn 1: bash (needs approval, will pend then time out → stop)
+    // + file_read in a later batch (would be skipped → orphan tool_use pre-fix)
+    let n = 0;
+    const seqs = [];
+    const events = [];
+    const provider = {
+      providerName: "fake", model: "fake-1", baseUrl: "http://127.0.0.1:1",
+      async chat({ messages }) {
+        seqs.push(messages.map((m) => ({ role: m.role, id: m.tool_call_id || null })));
+        n += 1;
+        if (n === 1) {
+          return {
+            message: {
+              role: "assistant", content: "",
+              tool_calls: [
+                { id: "c_bash", function: { name: "xclaw_bash", arguments: JSON.stringify({ command: "echo hi" }) } },
+                { id: "c_read", function: { name: "xclaw_file_read", arguments: JSON.stringify({ file_path: "package.json" }) } },
+              ],
+            },
+            finishReason: "tool_calls",
+          };
+        }
+        return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
+      },
+    };
+    const cfg = {
+      agent: { maxTurns: 3, persistTranscript: false },
+      tokens: { enabled: false, ledger: false },
+      skills: { enabled: false },
+      memory: { enabled: false },
+      computer: { autoStart: false },
+      security: { autoApprove: false, approvalTimeoutMs: 250, approvalSlaMs: 250 },
+      hooks: { log: false },
+    };
+    const out = await runAgentLoop({
+      userMessage: "go", cfg, provider,
+      onEvent: (e) => events.push(e),
+    });
+    void out;
+    // backfill fired for the skipped read call
+    const skipped = events.find((e) => e.type === "tool" && e.phase === "skipped");
+    assert.ok(skipped, "skipped backfill event emitted");
+    assert.equal(skipped.callId, "c_read");
+    // request 2 (the run CONTINUES after a pending stop — the exact path
+    // that used to 400): both tool_use ids must have tool messages
+    assert.ok(seqs.length >= 2, "run continued to a second request");
+    const req2 = seqs[1];
+    const aIdx = req2.findIndex((m) => m.role === "assistant");
+    const toolIds = req2.filter((m) => m.role === "tool").map((m) => m.id);
+    assert.ok(aIdx >= 0);
+    assert.ok(toolIds.includes("c_bash"), "approval message paired");
+    assert.ok(toolIds.includes("c_read"), "skipped call backfilled — no orphan tool_use");
+  });
+});

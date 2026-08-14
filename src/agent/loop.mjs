@@ -1425,6 +1425,32 @@ export async function runAgentLoop(options) {
         onEvent,
       });
       void stopTools;
+      // Pairing invariant: EVERY tool_call id in this assistant turn must get
+      // a tool message — a mid-batch stop (pending approval, guard critical)
+      // skips the remaining calls, and an orphaned tool_use makes the next
+      // Anthropic request fail with HTTP 400 ("tool_use ids were found
+      // without tool_result blocks"). Backfill explicit not-executed results.
+      for (const call of calls) {
+        if (
+          call?.id &&
+          !messages.some((m) => m.role === "tool" && m.tool_call_id === call.id)
+        ) {
+          onEvent({
+            type: "tool",
+            phase: "skipped",
+            name: call.function?.name,
+            callId: call.id,
+            reason: "turn_stopped",
+          });
+          messages.push(
+            makeToolMessage({
+              tool_call_id: call.id,
+              content: "Not executed — the turn stopped before this tool call ran.",
+              source: "skipped",
+            })
+          );
+        }
+      }
     }
 
     // ── Hook: on_stop — only on clean tool-free completions (never on

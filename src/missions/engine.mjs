@@ -32,6 +32,7 @@ import {
   untrackedPatch,
 } from "../agents/worktree.mjs";
 import { buildTaskContext } from "../intel/repo-intel.mjs";
+import { createApprovalGate } from "../security/approvals.mjs";
 import {
   newMission,
   saveMission,
@@ -195,10 +196,19 @@ async function providerForPhase(cfg, phase) {
 
 async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provider, providerOverride }) {
   const t0 = Date.now();
+  const mcfg = missionCfg(cfg, mission.worktree.path);
   const out = await runAgentLoop({
     userMessage: message,
-    cfg: missionCfg(cfg, mission.worktree.path),
+    cfg: mcfg,
     workingDir: mission.worktree.path,
+    // The loop defaults to the process-wide shared approval gate, which a
+    // live gateway primes with ITS security config (autoApprove:false) —
+    // silently overriding the mission's declared worktree autonomy: every
+    // exec tool pended for a human who was never asked, timed out, and the
+    // stop skipped batch-mates (orphaned tool_use → provider 400). Missions
+    // get their own gate built from the mission-scoped cfg; hooks still
+    // compose (a hook "ask"/"deny" escalates through this gate unchanged).
+    approvalGate: createApprovalGate(mcfg),
     signal,
     provider: providerOverride || provider || (await providerForPhase(cfg, phase)),
     chatSessionId: null,
@@ -358,9 +368,11 @@ export async function resumeMission(cfg, id, opts = {}) {
     mission.status = "planning";
   } else {
     addEvent(mission, "recovery", `resuming from status ${mission.status}`);
-    if (mission.status === "interrupted") {
+    if (["interrupted", "failed"].includes(mission.status)) {
       // conservative: re-enter at verification — cheapest safe re-entry that
-      // re-proves whatever state the worktree is actually in
+      // re-proves whatever state the worktree is actually in. "failed" MUST
+      // be remapped too: a stale failed status would skip every phase block
+      // in runMission and fall through to merge_ready with zero evidence.
       mission.status = mission.plan ? "verifying" : "planning";
     }
   }
@@ -511,6 +523,15 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride } = 
   }
 
   // ── evidence + gate
+  // Structural invariant, not advisory: merge_ready REQUIRES a recorded
+  // passing verification run, whatever path led here.
+  if (!mission.verify?.history?.at(-1)?.ok) {
+    mission.status = "failed";
+    mission.error = "internal: reached gate without a passing verification run";
+    addEvent(mission, "error", mission.error);
+    await saveMission(cfg, mission);
+    return mission;
+  }
   await captureDiff(cfg, mission);
   mission.status = "merge_ready";
   emit("ready", `verified — diff ready (${(mission.diff.patch || "").length} chars of patch)`);
