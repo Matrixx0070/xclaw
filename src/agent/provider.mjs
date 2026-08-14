@@ -17,6 +17,7 @@ import {
   resolveReasoningEffort,
   resolveReasoningEffortMeta,
 } from "../tokens/reasoning-effort.mjs";
+import { buildCacheRoutingKey } from "../tokens/cache-keys.mjs";
 
 /**
  * xAI prompt-cache sticky routing.
@@ -31,16 +32,19 @@ import {
  * @param {object} [opts.cfg]
  * @returns {Record<string, string>}
  */
-export function buildXaiCacheHeaders({ convId, baseUrl = "", provider = "", cfg } = {}) {
+export function buildXaiCacheHeaders({
+  convId,
+  baseUrl = "",
+  provider = "",
+  cfg,
+  model,
+  sessionId,
+  conversationId,
+  namespace,
+  toolPack,
+} = {}) {
   const disabled = cfg?.tokens?.xaiConvId === false || cfg?.tokens?.xGrokConvId === false;
   if (disabled) return {};
-  const id = String(
-    convId ||
-      cfg?.tokens?.xaiConvId ||
-      cfg?.tokens?.xGrokConvId ||
-      ""
-  ).trim();
-  if (!id) return {};
   const prov = String(provider || "").toLowerCase();
   const base = String(baseUrl || "").toLowerCase();
   const isXai =
@@ -49,10 +53,28 @@ export function buildXaiCacheHeaders({ convId, baseUrl = "", provider = "", cfg 
     base.includes("api.x.ai") ||
     base.includes("x.ai");
   if (!isXai) return {};
-  // Header values should be ASCII-ish; clamp length for safety
-  const safe = id.replace(/[^\x20-\x7E]/g, "_").slice(0, 128);
-  if (!safe) return {};
-  return { "x-grok-conv-id": safe };
+
+  // Prefer structured optimized key; fall back to raw convId only if key builder disabled
+  const useOptimized = cfg?.tokens?.optimizeCacheKeys !== false;
+  let key;
+  if (useOptimized) {
+    key = buildCacheRoutingKey({
+      sessionId: sessionId || conversationId || convId,
+      conversationId,
+      convId,
+      model: model || cfg?.agent?.model,
+      provider: prov || "xai",
+      profile: cfg?.profile || process.env.XCLAW_PROFILE,
+      namespace: namespace || cfg?.tokens?.cacheNamespace,
+      toolPack: toolPack || cfg?.tokens?.cacheToolPack,
+      includeModel: cfg?.tokens?.cacheKeyIncludeModel !== false,
+      includeProfile: cfg?.tokens?.cacheKeyIncludeProfile !== false,
+    });
+  } else {
+    key = String(convId || sessionId || "").trim().replace(/[^\x20-\x7E]/g, "_").slice(0, 128);
+  }
+  if (!key) return {};
+  return { "x-grok-conv-id": key };
 }
 
 
@@ -173,6 +195,9 @@ export function createProvider(opts) {
     const lib = isHttps ? https : http;
     const cacheHeaders = buildXaiCacheHeaders({
       convId: convId || conversationId || sessionId || defaultConvId,
+      sessionId: sessionId || defaultConvId,
+      conversationId,
+      model: model || defaultModel,
       baseUrl,
       provider: providerLabel || opts.provider || opts.providerName,
       cfg: opts.cfg,
@@ -289,6 +314,9 @@ export function createProvider(opts) {
     const lib = isHttps ? https : http;
     const cacheHeaders = buildXaiCacheHeaders({
       convId: convId || conversationId || sessionId || defaultConvId,
+      sessionId: sessionId || defaultConvId,
+      conversationId,
+      model: model || defaultModel,
       baseUrl,
       provider: providerLabel || opts.provider || opts.providerName,
       cfg: opts.cfg,
