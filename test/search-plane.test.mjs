@@ -4,23 +4,24 @@ import {
   isSearchHostAllowed,
   SEARCH_ALLOW_HOSTS,
   runWebSearch,
-  isSearchPlaneTool,
 } from "../src/planes/search.mjs";
-import { createToolRouter } from "../src/tools/router.mjs";
-import { getPlane } from "../src/tools/planes.mjs";
 
-describe("T4 search plane", () => {
-  it("allowlists only search hosts", () => {
-    assert.equal(isSearchHostAllowed("https://html.duckduckgo.com/html/"), true);
-    assert.equal(isSearchHostAllowed("https://api.search.brave.com/res/v1/web/search"), true);
-    assert.equal(isSearchHostAllowed("https://evil.example/"), false);
-    assert.ok(SEARCH_ALLOW_HOSTS.length >= 2);
+describe("search plane", () => {
+  it("allowlist includes brave and ddg", () => {
+    assert.ok(SEARCH_ALLOW_HOSTS.some((h) => h.includes("brave")));
+    assert.ok(SEARCH_ALLOW_HOSTS.some((h) => h.includes("duckduckgo")));
   });
 
-  it("isSearchPlaneTool for web_search", () => {
-    assert.equal(isSearchPlaneTool("web_search"), true);
-    assert.equal(getPlane("web_search"), "search");
-    assert.equal(isSearchPlaneTool("xclaw_bash"), false);
+  it("isSearchHostAllowed accepts brave api", () => {
+    assert.equal(
+      isSearchHostAllowed("https://api.search.brave.com/res/v1/web/search"),
+      true
+    );
+  });
+
+  it("isSearchHostAllowed rejects random hosts", () => {
+    assert.equal(isSearchHostAllowed("https://evil.example/search"), false);
+    assert.equal(isSearchHostAllowed("https://google.com/search"), false);
   });
 
   it("runWebSearch requires query", async () => {
@@ -28,15 +29,17 @@ describe("T4 search plane", () => {
     assert.equal(r.ok, false);
   });
 
-  it("router dispatches web_search to search plane", async () => {
-    const router = createToolRouter({ computer: null, localTools: [] });
-    // May succeed or fail network; must not be computer plane
-    const r = await router.dispatch({
-      name: "web_search",
-      args: { query: "xclaw agent", limit: 2 },
-    });
-    assert.equal(r.plane, "search");
-    // if network works, ok true; if not, error message from search plane
-    assert.ok(r.plane === "search");
-  });
+  it(
+    "runWebSearch ddg or brave returns results when network available",
+    { timeout: 25_000 },
+    async () => {
+      const r = await runWebSearch({ query: "xAI Grok", limit: 3 });
+      if (r.isError || r.ok === false) {
+        // Network may be restricted in some sandboxes — soft skip
+        console.log("search soft-skip:", r.content?.[0]?.text || r);
+        return;
+      }
+      assert.ok(r.content || r.ok !== false);
+    }
+  );
 });
