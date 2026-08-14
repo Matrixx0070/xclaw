@@ -119,9 +119,9 @@ async function healthOk(cfg, { retries = 10, delayMs = 3000 } = {}) {
 async function alertOwner(cfg, title, body) {
   try {
     const { getSharedAlerter } = await import("../alerting/alerts.mjs");
-    await getSharedAlerter(cfg).alert({
+    await getSharedAlerter(cfg).send({
       key: `self-deploy:${title}`,
-      severity: /rolled_back|failed/.test(title) ? "error" : "info",
+      severity: /rolled_back|failed|ROLLBACK/i.test(title) ? "error" : "info",
       title: `xclaw self-deploy: ${title}`,
       body,
     });
