@@ -79,28 +79,11 @@ export async function runDoctor(opts = {}) {
   }
   for (const w of v.warnings) push("config.warn", "warn", w);
 
-  // Profile pack vs effective security (mismatch detector)
+  // Profile pack vs effective security (mismatch detector) — F
   try {
-    const name = cfg.profile || "lab";
-    const auto = cfg.security?.autoApprove === true;
-    if (name === "prod" && auto) {
-      push(
-        "profile.mismatch",
-        "warn",
-        'profile is "prod" but security.autoApprove is true — user file or env override; tools will not require approval'
-      );
-    } else if ((name === "lab" || name === "dev") && cfg.security?.autoApprove === false) {
-      push(
-        "profile.mismatch",
-        "warn",
-        `profile is "${name}" but security.autoApprove is false — user xclaw.json overrides profile; bots may hang on tools until /approve`
-      );
-    } else {
-      push(
-        "profile",
-        "ok",
-        `profile=${name} autoApprove=${auto} approvalPolicy=${cfg.security?.approvalPolicy || "—"}`
-      );
+    const { profileMismatchChecks } = await import("./doctor-prod-honesty.mjs");
+    for (const c of profileMismatchChecks(cfg)) {
+      push(c.id, c.status, c.message);
     }
   } catch (e) {
     push("profile", "warn", e.message || String(e));
@@ -194,75 +177,11 @@ export async function runDoctor(opts = {}) {
     push("security.killSwitch", "warn", e.message || String(e));
   }
 
-  // P2 — prod honesty (defaults must match the label)
+  // F — prod honesty (defaults must match the label)
   try {
-    const prof = cfg.profile || process.env.XCLAW_PROFILE || "lab";
-    if (prof === "prod") {
-      const token =
-        cfg.gateway?.token ||
-        process.env.XCLAW_GATEWAY_TOKEN ||
-        process.env.GATEWAY_TOKEN ||
-        null;
-      if (!token) {
-        push(
-          "security.prod.token",
-          "error",
-          "prod requires XCLAW_GATEWAY_TOKEN / gateway.token — fail closed before exposing the gateway"
-        );
-      } else {
-        push("security.prod.token", "ok", "gateway token present");
-      }
-      if (cfg.security?.autoApprove === true) {
-        push(
-          "security.prod.autoApprove",
-          "error",
-          "prod must not autoApprove tools (override detected in config/env)"
-        );
-      } else {
-        push("security.prod.autoApprove", "ok", "autoApprove=false");
-      }
-      const eg = cfg.security?.egress?.mode || process.env.XCLAW_EGRESS || "deny";
-      if (String(eg).toLowerCase() === "allow") {
-        push(
-          "security.prod.egress",
-          "warn",
-          "prod egress mode=allow — outbound shell network is open; prefer deny or allowlist"
-        );
-      } else {
-        push("security.prod.egress", "ok", `egress mode=${eg}`);
-      }
-      if (cfg.swarm?.autoMerge === true) {
-        push(
-          "security.prod.swarmAutoMerge",
-          "error",
-          "prod must not autoMerge swarm worktrees onto main"
-        );
-      } else {
-        push(
-          "security.prod.swarmAutoMerge",
-          "ok",
-          `swarm.autoMerge=${cfg.swarm?.autoMerge === true}`
-        );
-      }
-      if (cfg.gateway?.requireAuth === false) {
-        push(
-          "security.prod.requireAuth",
-          "error",
-          "prod gateway.requireAuth is false — open auth plane"
-        );
-      } else {
-        push(
-          "security.prod.requireAuth",
-          "ok",
-          `requireAuth=${cfg.gateway?.requireAuth !== false}`
-        );
-      }
-    } else {
-      push(
-        "security.prodHonesty",
-        "ok",
-        `profile=${prof} — prod honesty checks skipped`
-      );
+    const { prodHonestyChecks } = await import("./doctor-prod-honesty.mjs");
+    for (const c of prodHonestyChecks(cfg)) {
+      push(c.id, c.status, c.message);
     }
   } catch (e) {
     push("security.prodHonesty", "warn", e.message || String(e));
