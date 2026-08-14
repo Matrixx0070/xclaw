@@ -15,6 +15,7 @@ import { isAnthropicOAuthToken } from "../providers/anthropic-oauth-headers.mjs"
 import {
   isReasoningConfigured,
   resolveReasoningEffort,
+  resolveReasoningEffortMeta,
 } from "../tokens/reasoning-effort.mjs";
 
 /**
@@ -133,16 +134,25 @@ export function createProvider(opts) {
     const temp = resolveTemperature(callTemp);
     if (temp != null) body.temperature = temp;
     const modelForEffort = callOpts.model || body.model || defaultModel;
-    const effort = resolveReasoningEffort({
+    const effortMeta = resolveReasoningEffortMeta({
       cfg: opts.cfg,
       model: modelForEffort,
       callEffort: callOpts.reasoning_effort ?? callOpts.effort,
     });
-    if (effort) {
-      body.reasoning_effort = effort;
-    } else if (reasoningActive && reasoningCfg?.enabled === true) {
-      // enabled without effort → API default (high on 4.5/4.6); still signal intent
+    if (effortMeta.effort) {
+      body.reasoning_effort = effortMeta.effort;
+    } else if (
+      reasoningActive &&
+      reasoningCfg?.enabled === true &&
+      effortMeta.capabilities?.supportsEffort !== false
+    ) {
+      // enabled without effort → API default (high on 4.5/4.6)
       body.reasoning_effort = "high";
+    }
+    // Stash for optional debugging (not sent on the wire)
+    if (effortMeta.coerced && opts.cfg?.tokens?.log !== false) {
+      // eslint-disable-next-line no-console
+      console.warn(`[xclaw] reasoning_effort coerced: ${effortMeta.reason}`);
     }
   }
 

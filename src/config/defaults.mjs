@@ -100,11 +100,13 @@ export const DEFAULT_CONFIG = {
      * effort: "low" | "medium" | "high" | "xhigh"
      *   - xhigh: grok-4.6 / multi-agent; on grok-4.5 coerced to high by default
      *   - omit / enabled-only → provider default (high on 4.5)
-     * coerceXhighFor45: true (default) maps xhigh→high when model is grok-4.5*
+     * coerceXhigh: true (default) maps xhigh→high when model lacks xhigh (e.g. 4.5)
+     * coerceXhighFor45: alias of coerceXhigh (compat)
      */
     reasoning: {
       enabled: false,
       effort: null,
+      coerceXhigh: true,
       coerceXhighFor45: true,
     },
     /** Post-turn follow-up chips */
