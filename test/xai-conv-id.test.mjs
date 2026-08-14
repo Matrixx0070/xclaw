@@ -3,12 +3,19 @@ import assert from "node:assert/strict";
 import { buildXaiCacheHeaders } from "../src/agent/provider.mjs";
 
 describe("x-grok-conv-id", () => {
-  it("sets header for xAI baseUrl", () => {
+  it("sets optimized hierarchical header for xAI baseUrl", () => {
     const h = buildXaiCacheHeaders({
       convId: "sess_abc-123",
       baseUrl: "https://api.x.ai/v1",
+      cfg: { profile: "lab", agent: { model: "grok-4.3" } },
+      model: "grok-4.3",
     });
-    assert.equal(h["x-grok-conv-id"], "sess_abc-123");
+    const id = h["x-grok-conv-id"];
+    assert.ok(id, "header present");
+    assert.ok(id.includes("sess_abc-123"), `session in key: ${id}`);
+    assert.ok(id.startsWith("xclaw:"), `prefixed: ${id}`);
+    assert.ok(id.includes("lab"), `profile in key: ${id}`);
+    assert.ok(id.includes("grok-4.3"), `model family in key: ${id}`);
   });
 
   it("sets header when provider is xai", () => {
@@ -16,8 +23,13 @@ describe("x-grok-conv-id", () => {
       convId: "run-1",
       provider: "xai",
       baseUrl: "https://example.com/v1",
+      model: "grok-4.5",
+      cfg: { profile: "dev" },
     });
-    assert.equal(h["x-grok-conv-id"], "run-1");
+    const id = h["x-grok-conv-id"];
+    assert.ok(id);
+    assert.ok(id.includes("run-1"));
+    assert.ok(id.includes("grok-4.5"));
   });
 
   it("omits for non-xAI", () => {
@@ -42,8 +54,18 @@ describe("x-grok-conv-id", () => {
     const h = buildXaiCacheHeaders({
       convId: "id-你好-" + "a".repeat(200),
       baseUrl: "https://api.x.ai/v1",
+      model: "grok-4.3",
     });
     assert.ok(h["x-grok-conv-id"].length <= 128);
     assert.ok(!/[^\x20-\x7E]/.test(h["x-grok-conv-id"]));
+  });
+
+  it("raw mode when optimizeCacheKeys false", () => {
+    const h = buildXaiCacheHeaders({
+      convId: "raw-sess",
+      baseUrl: "https://api.x.ai/v1",
+      cfg: { tokens: { optimizeCacheKeys: false } },
+    });
+    assert.equal(h["x-grok-conv-id"], "raw-sess");
   });
 });

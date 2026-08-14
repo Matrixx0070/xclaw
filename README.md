@@ -51,6 +51,9 @@ More install detail: [INSTALL.md](./INSTALL.md)
 
 ## Secrets
 
+Full checklist: [docs/SECRETS.md](./docs/SECRETS.md)
+
+
 - **Never commit** API keys, OAuth tokens, or GitHub PATs.
 - Prefer env vars or local config outside the repo.
 - If a key was pasted into chat or logs → **rotate it**.
