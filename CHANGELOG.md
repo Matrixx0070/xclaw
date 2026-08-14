@@ -1,5 +1,37 @@
 # Changelog
 
+## 3.127.0 — long-running objectives: the mission survives execution boundaries
+
+Fixes the traced architecture failure where a high-level channel objective
+stopped after ~20–30 tool calls and asked "should I continue?" — the turn
+cap (`agent.maxTurns` 15) was acting as the de-facto completion condition,
+the rescue text manufactured the question, and the objective itself rolled
+out of the 40-message history window. Full audit + design: docs/LONGRUN.md.
+
+- **Durable objective state** (`src/agent/objective-store.mjs`):
+  objective (immutable) · interpretation · completion criteria · plan ·
+  current subtask · remaining · progress · findings · decisions ·
+  constraints · open questions · failures · inspected files/dirs/components
+  — atomic per-objective JSON, boot reconcile, lost-update-safe stop flag.
+- **Segmented orchestrator** (`src/agent/objective.mjs`): MISSION → PLAN →
+  ACT → VERIFY → UPDATE STATE → REPLAN → CONTINUE. Each segment is one
+  loop run bounded by maxTurns (an execution constraint, never completion);
+  fresh context per segment rebuilt from durable state makes context
+  boundaries invisible; a fenced state block is the model↔runtime protocol.
+  Criteria-driven completion with bounded anti-drift pushback; classified
+  escalation (needs_human requires a concrete question; blocked gets one
+  recovery pass); typed limits (segment budget pauses resumable, never
+  dies); everything ledger-journaled.
+- **Channel integration**: `/objective <goal>|status|stop|resume`;
+  **auto-promotion** — a normal turn cut off by maxTurns becomes a mission
+  automatically and continues detached (the old failure now *starts* the
+  right machinery); messages during a run get status instead of forking a
+  parallel task; the owner's next message answers an escalated question.
+  Telegram pushes detached updates; webchat appends to the session.
+- Loop seams: `result.stopReason` (natural|maxTurns|budget|hook|guard|
+  aborted) and `rescuePrompt` override (segment boundaries ask for the
+  state block, not a user-facing answer).
+
 ## 3.126.0 — SECURITY: risk path-arg blind spot + maxTurns rescue + swarm honesty
 
 - **SECURITY (live-fired blind spot)**: `xclaw_file_write` passes `file_path`

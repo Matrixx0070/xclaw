@@ -102,6 +102,56 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
 
   session.updatedAt = Date.now();
 
+  // Long-run objective routing (same router as processInbound channels):
+  // /objective commands, escalation answers, in-flight status. Detached
+  // mission updates append to the session so history/SSE surfaces them.
+  if (cfg.objectives?.enabled !== false) {
+    try {
+      const { routeObjective } = await import("../runtime.mjs");
+      const { replyWithAgent } = await import("../base.mjs");
+      const routed = await routeObjective({
+        text: message.trim(),
+        inbound: {
+          channel: "webchat",
+          chatId: session.id,
+          userId: session.userId || session.id,
+          identity: `webchat:${session.id}`,
+        },
+        cfg,
+        workingDir: session.workingDir,
+        replyWithAgent,
+        onEvent,
+        notify: async (t) => {
+          session.messages.push({
+            id: randomUUID(),
+            role: "assistant",
+            content: String(t),
+            at: Date.now(),
+          });
+          session.updatedAt = Date.now();
+        },
+      });
+      if (routed) {
+        const assistantMsg = {
+          id: randomUUID(),
+          role: "assistant",
+          content: routed.reply || "OK",
+          at: Date.now(),
+        };
+        session.messages.push(assistantMsg);
+        return {
+          sessionId: session.id,
+          reply: assistantMsg,
+          text: routed.reply || "OK",
+          objective: true,
+          messages: session.messages,
+        };
+      }
+    } catch (err) {
+      onEvent?.({ type: "objective", phase: "route_error", message: String(err?.message || err) });
+    }
+  }
+
   const events = [];
   try {
     let result;

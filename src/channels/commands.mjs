@@ -49,6 +49,7 @@ export async function handleChannelCommand({
         "/deny <id> — deny pending tool",
         "/pending — list pending approvals",
         "/trust <30m|2h|off|status> — bounded auto-run window (critical still asks)",
+        "/objective <goal> — start a long-running autonomous mission (also: status|stop|resume)",
         "/resume <jobId> — resume from checkpoint",
         "/status — channel health",
         "/session — session info",

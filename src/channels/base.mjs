@@ -31,6 +31,11 @@ export async function replyWithAgent({
   channel,
   chatId,
   stream = false,
+  /** Objective-segment plumbing: fresh context + dedicated transcript +
+   *  segment-boundary rescue instruction (see agent/objective.mjs) */
+  history,
+  chatSessionId,
+  rescuePrompt,
 }) {
   const { runWithRequestContext } = await import("../connected/request-context.mjs");
   const { normalizeChannelUserId, resolveVaultUserId } = await import(
@@ -54,6 +59,9 @@ export async function replyWithAgent({
       channel,
       chatId,
       stream,
+      ...(history !== undefined ? { history } : {}),
+      ...(chatSessionId ? { chatSessionId } : {}),
+      ...(rescuePrompt ? { rescuePrompt } : {}),
     });
     return {
       text: result.text || "(no response)",
@@ -63,6 +71,7 @@ export async function replyWithAgent({
       images: extractImageArtifacts(result.toolTrace),
       suggestions: result.suggestions || [],
       turnState: result.turnState || null,
+      stopReason: result.stopReason || null,
       identity,
       vaultUserId,
     };

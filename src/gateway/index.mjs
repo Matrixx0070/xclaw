@@ -962,6 +962,16 @@ export async function startGateway({ root } = {}) {
         }
       })
       .catch(() => {});
+    // long-run objectives: running → interrupted at boot; they auto-resume on
+    // the owner's next message in that chat (or /objective resume)
+    import("../agent/objective-store.mjs")
+      .then((m) => m.reconcileInterruptedObjectives(cfg))
+      .then((ids) => {
+        if (ids.length) {
+          console.log(`[xclaw:objectives] marked ${ids.length} interrupted objective(s) resumable: ${ids.join(", ")}`);
+        }
+      })
+      .catch(() => {});
   } catch (e) {
     console.warn("[xclaw] subagent persistence:", e.message);
   }

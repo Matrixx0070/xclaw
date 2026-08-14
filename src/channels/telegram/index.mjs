@@ -684,6 +684,11 @@ export function createTelegramChannel(cfg) {
         workingDir: workspace,
         rateLimiter,
         stream: streamOpts.enabled && streamOpts.partialText !== false,
+        // detached mission updates (objective runtime) push through the bot
+        notify: async (t) => {
+          await sendMessage(chatId, String(t).slice(0, 3900));
+          console.log(`[telegram] → ${chatId}: [mission] ${String(t).slice(0, 60)}`);
+        },
         onEvent: (e) => {
           if (e.type === "tool" && e.phase === "start") {
             console.log(`[telegram]   → ${e.name}`);

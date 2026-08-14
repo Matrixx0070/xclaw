@@ -136,6 +136,9 @@ export async function runAgentLoop(options) {
     chatSessionId = null,
     /** Prior conversation turns: [{role, content}, ...] — excludes system */
     history = [],
+    /** Override the maxTurns final-answer rescue instruction (orchestrated
+     *  segments want the mission state block, not a user-facing answer) */
+    rescuePrompt = null,
   } = options;
   const transcriptId =
     chatSessionId || options.conversationId || chatId || null;
@@ -723,6 +726,8 @@ export async function runAgentLoop(options) {
   let lastEvictReport = null;
   let prevWeights = null;
   let naturalStop = false;
+  let budgetStop = false;
+  let maxTurnsStop = false;
   let stopBlocks = 0;
   const stopBlockCap = Number.isFinite(Number(cfg.hooks?.stopBlockCap))
     ? Number(cfg.hooks.stopBlockCap)
@@ -749,6 +754,7 @@ export async function runAgentLoop(options) {
         });
         if (bx) {
           onEvent({ type: "budget", phase: "exceeded", ...bx });
+          budgetStop = true;
           if (!finalText) {
             finalText = `Stopped: run budget exceeded (${bx.reason}: ${bx.used}/${bx.limit}).`;
           }
@@ -1559,6 +1565,7 @@ export async function runAgentLoop(options) {
     } // end stopCycle
 
     if (turns >= maxTurns && !finalText) {
+      maxTurnsStop = true;
       // Final-answer rescue: hitting the turn budget mid-work used to discard
       // EVERYTHING (live: a 5-node research swarm returned 0/5 ballots — every
       // node stopped at maxTurns with only the stub text below, and the run
@@ -1572,10 +1579,13 @@ export async function runAgentLoop(options) {
               {
                 role: "user",
                 content:
+                  // orchestrated segments override this: a segment boundary
+                  // wants the mission state block, not a user-facing answer
+                  rescuePrompt ||
                   "Turn budget exhausted — no more tool calls are possible. " +
-                  "Produce your final answer NOW from the work above. If you were asked " +
-                  "for structured output (ballot, JSON, verdict), emit it based on what " +
-                  "you found so far; state clearly what remains unverified.",
+                    "Produce your final answer NOW from the work above. If you were asked " +
+                    "for structured output (ballot, JSON, verdict), emit it based on what " +
+                    "you found so far; state clearly what remains unverified.",
               },
             ],
           });
@@ -1803,6 +1813,20 @@ export async function runAgentLoop(options) {
     sessionId,
     suggestions,
     turnState,
+    // Why the run ended — orchestrators must distinguish "the model finished"
+    // from "the runtime cut it off" (a turn cap is an execution constraint,
+    // never evidence the user's objective is complete).
+    stopReason: signal?.aborted || aborted
+      ? "aborted"
+      : hookAbort
+        ? "hook"
+        : loopGuardStop
+          ? "guard"
+          : budgetStop
+            ? "budget"
+            : maxTurnsStop
+              ? "maxTurns"
+              : "natural",
     context: {
       skills: (skills || []).map((s) => s.name),
       memory: (memoryFiles || []).map((m) => m.path),
