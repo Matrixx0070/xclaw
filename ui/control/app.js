@@ -2975,6 +2975,65 @@ async function openMission(id, { silent } = {}) {
   }
 }
 
+// ── Point & Prompt: pick an element from the running app, launch a pinned mission
+let ppPicked = null;
+$("btnPpPick")?.addEventListener("click", async () => {
+  $("ppStatus").textContent = "picking… click an element in the app tab";
+  $("btnPpPick").disabled = true;
+  try {
+    const body = {};
+    const url = $("ppUrl").value.trim();
+    if (url) body.url = url;
+    const r = await postJSON("/point/pick", body);
+    if (r.cancelled) {
+      $("ppStatus").textContent = "cancelled";
+    } else if (r.ok) {
+      ppPicked = r.element;
+      $("ppStatus").textContent = `picked <${r.element.tag}> ${r.element.selector || ""}`.slice(0, 60);
+      $("ppElement").textContent = JSON.stringify(r.element, null, 1);
+      // preview resolved source locations when repo is set
+      const repoDir = $("ppRepo").value.trim();
+      if (repoDir) {
+        const rr = await postJSON("/point/resolve", { repoDir, element: ppPicked });
+        if (rr.ok && rr.matches.length) {
+          $("ppElement").textContent += "\n\nresolved:\n" + rr.matches.map((m) => `${m.file}:${m.line} [${m.score}] ${m.matchedOn.join(",")}`).join("\n");
+        }
+      }
+      $("btnPpLaunch").disabled = false;
+    } else {
+      $("ppStatus").textContent = r.error || "pick failed";
+    }
+  } catch (e) {
+    $("ppStatus").textContent = String(e.message || e).slice(0, 60);
+  } finally {
+    $("btnPpPick").disabled = false;
+  }
+});
+$("btnPpLaunch")?.addEventListener("click", async () => {
+  const repoDir = $("ppRepo").value.trim();
+  const prompt = $("ppPrompt").value.trim();
+  if (!ppPicked || !repoDir || !prompt) {
+    $("ppStatus").textContent = "pick an element + repo + prompt first";
+    return;
+  }
+  $("btnPpLaunch").disabled = true;
+  try {
+    const strategy = $("ppStrategy")?.value === "swarm" ? "swarm" : undefined;
+    const r = await postJSON("/point/mission", { repoDir, element: ppPicked, prompt, strategy });
+    if (r.ok) {
+      $("ppStatus").textContent = "mission " + r.mission.id.slice(0, 14);
+      await loadMissions();
+      await openMission(r.mission.id);
+    } else {
+      $("ppStatus").textContent = r.error || "launch failed";
+    }
+  } catch (e) {
+    $("ppStatus").textContent = String(e.message || e).slice(0, 60);
+  } finally {
+    $("btnPpLaunch").disabled = false;
+  }
+});
+
 $("btnMsnStart")?.addEventListener("click", async () => {
   const goal = $("msnGoal").value.trim();
   const repoDir = $("msnRepo").value.trim();

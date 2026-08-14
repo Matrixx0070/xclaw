@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.104.0 — Visual point-and-prompt (element → source → change → rebuild → verify)
+
+Roadmap increment: point at an element in the RUNNING app, describe the
+change, and a mission lands it at the element's real source — verified.
+
+- `src/browser/cdp-client.mjs`: zero-dep CDP client primitive (loopback-only
+  by default) for driving the operator's own display browser — list/attach/
+  new-tab, evaluate, navigate, screenshot, raw `send`. No bundle, no fabric
+  leases: the picker overlay appears in the browser the operator is looking at.
+- `src/intel/element-resolver.mjs`: element descriptor → ranked repo
+  locations, pure lexical scoring (id/getElementById/`#id` 40, data-attrs 20,
+  visible text 25, class names 8 with 3-char utility classes dropped; markup
+  files get a defining-file bonus). `PICKER_JS` = injected one-shot overlay
+  picker (hover highlight, click captures descriptor, Esc cancels).
+- Routes (token-gated both modes): `POST /point/pick` (opens/attaches the
+  target page — NEVER the Control tab itself — arms the picker, returns the
+  clicked element), `POST /point/resolve` (preview ranked locations),
+  `POST /point/mission` (launch a mission with the element + resolved
+  locations pinned into the goal). Control UI: "Point & Prompt" card in the
+  Missions view.
+- `scanRepo` now includes UI file types (html/css/scss/vue/svelte) — element
+  resolution and front-end missions need them in the intel scan.
+- Live-proven end-to-end on the display: real CDP click on a running app's
+  `<h1>` → resolver ranked its html/css definition sites → mission changed
+  exactly `.hero-title { color: red → #0b57d0 }` → tests passed → merged →
+  page reloaded with computed color rgb(11, 87, 208).
+
 ## 3.103.0 — Swarm-backed missions
 
 Missions can now execute as a dependency-aware swarm instead of a single

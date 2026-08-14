@@ -14,6 +14,8 @@ import { spawn } from "node:child_process";
 const CODE_EXT = new Set([
   ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".go", ".rs", ".java",
   ".rb", ".php", ".c", ".h", ".cpp", ".cs", ".sh", ".sql",
+  // UI surface — element resolution + missions against front-end repos
+  ".html", ".htm", ".css", ".scss", ".less", ".vue", ".svelte",
 ]);
 const DOC_EXT = new Set([".md", ".txt", ".rst"]);
 const CFG_FILES = new Set([

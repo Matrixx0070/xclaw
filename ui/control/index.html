@@ -838,6 +838,30 @@
           </div>
         </section>
 
+        <section class="card span2" id="cardPointPrompt">
+          <h2>Point &amp; Prompt</h2>
+          <p class="muted">
+            Point at an element in the running app (the picker overlay appears in the
+            Control browser), describe the change, and a mission is launched with the
+            element's resolved source locations pinned — change → rebuild → verify.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="ppUrl" placeholder="app URL to open (optional — picks in the current tab)" style="flex:2;min-width:220px;" />
+            <input id="ppRepo" placeholder="repository path" style="flex:2;min-width:180px;" />
+            <button class="btn" id="btnPpPick">Pick element</button>
+            <span id="ppStatus" class="pill" style="font-size:0.7rem;">—</span>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem;">
+            <input id="ppPrompt" placeholder="what should change about this element…" style="flex:3;min-width:260px;" />
+            <select id="ppStrategy" style="flex:0 0 auto;" title="execution strategy">
+              <option value="solo">solo</option>
+              <option value="swarm">swarm</option>
+            </select>
+            <button class="btn primary" id="btnPpLaunch" disabled>Launch pointed mission</button>
+          </div>
+          <pre id="ppElement" class="mono" style="margin-top:0.5rem;white-space:pre-wrap;font-size:0.72rem;max-height:150px;overflow:auto;">no element picked yet</pre>
+        </section>
+
         <section class="card span2" id="cardMissionDetail" style="display:none;">
           <h2 id="msnDetailTitle">Mission</h2>
           <div class="row" style="flex-wrap:wrap;gap:0.4rem;">

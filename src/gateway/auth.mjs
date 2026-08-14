@@ -103,7 +103,10 @@ export function createGatewayAuth(cfg = {}) {
       p.startsWith("/hooks/") ||
       // missions run autonomous agents against repositories
       p === "/missions" ||
-      p.startsWith("/missions/");
+      p.startsWith("/missions/") ||
+      // point-and-prompt drives the operator's browser + starts missions
+      p === "/point" ||
+      p.startsWith("/point/");
     if (core) return true;
     if (!strict) {
       // legacy subset
