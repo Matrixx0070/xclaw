@@ -111,6 +111,9 @@ function segmentIsReadOnly(segment) {
   const constrained = CONSTRAINED_HEADS[head];
   if (constrained) {
     const sub = tokens.slice(1).find((t) => !t.startsWith("-"));
+    // pm2 logs tails forever unless --nostream; with it, it's a bounded read
+    // (live-observed: `pm2 logs sudo-ai-v5 --err --lines 50 --nostream`)
+    if (head === "pm2" && sub === "logs") return /--nostream\b/.test(segment);
     return Boolean(sub && constrained.has(sub));
   }
   return READONLY_HEADS.has(head);
@@ -118,11 +121,20 @@ function segmentIsReadOnly(segment) {
 
 /** True only when every pipeline/chain segment is a provably read-only command. */
 export function isReadOnlyExecCommand(cmdRaw) {
-  const cmd = String(cmdRaw || "").trim();
+  let cmd = String(cmdRaw || "").trim();
   if (!cmd) return false;
-  // structure gate on the RAW string: redirections, substitutions, subshells,
-  // and here-docs disqualify outright (a `>` inside a quoted grep pattern
-  // false-positives to the normal exec path — fail-closed, costs a prompt)
+  // Harmless stream redirects don't disqualify: fd duplication (2>&1) and
+  // /dev/null sinks mutate nothing. Live-observed: `pm2 describe x 2>&1 |
+  // head -50` — the single most common diagnostic idiom — was pending on
+  // the raw `>` gate. Strip ONLY these exact forms before the gate.
+  cmd = cmd
+    .replace(/\d?\s*>\s*&\s*\d(?!\S)/g, " ")
+    .replace(/\d?\s*>{1,2}\s*\/dev\/null(?![\w.-])/g, " ")
+    .replace(/<\s*\/dev\/null(?![\w.-])/g, " ");
+  // structure gate on the remaining string: redirections, substitutions,
+  // subshells, and here-docs disqualify outright (a `>` inside a quoted grep
+  // pattern false-positives to the normal exec path — fail-closed, costs a
+  // prompt)
   if (/[><]|\$\(|`|\(/.test(cmd)) return false;
   const segments = cmd.split(/\|\||&&|;|\||&|\n/);
   return segments.every(segmentIsReadOnly);

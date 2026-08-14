@@ -211,8 +211,15 @@ export function createTelegramChannel(cfg) {
   /**
    * Notify owner of a pending tool approval (inline buttons).
    */
+  // One prompt per pending: the loop emits approval_required twice (once at
+  // creation via onPending, again as a state update when authorize times
+  // out). Live-observed: Frank got identical prompts exactly 120s apart and
+  // tapped Allow on pendings whose turn had already moved on.
+  const promptedApprovals = new Set();
+
   async function notifyOwnerApproval(item) {
     if (!ownerChatId || !item?.id) return { ok: false, reason: "no_owner" };
+    if (promptedApprovals.has(item.id)) return { ok: false, reason: "already_prompted" };
     try {
       await sendMessage(
         ownerChatId,
@@ -224,6 +231,10 @@ export function createTelegramChannel(cfg) {
       // without this line the gateway log cannot show whether the approval
       // prompt ever reached the owner (bit us diagnosing a live SLA-denial)
       console.log(`[telegram] → ${ownerChatId}: approval prompt ${item.id} (${item.tool})`);
+      // latch only on successful delivery — a failed send must stay eligible
+      // for the loop's natural re-emission
+      if (promptedApprovals.size > 200) promptedApprovals.clear();
+      promptedApprovals.add(item.id);
       return { ok: true };
     } catch (err) {
       console.warn(`[telegram] approval prompt ${item.id} FAILED: ${err.message}`);
@@ -685,11 +696,15 @@ export function createTelegramChannel(cfg) {
             streamer.setPartial(e.accumulated).catch(() => {});
             recordTelegramStreamDelta();
           } else if (e.type === "security" && e.phase === "approval_required") {
-            notifyOwnerApproval({
-              id: e.pendingId,
-              tool: e.name,
-              args: e.args,
-            }).catch(() => {});
+            // timedOut re-emissions are state updates on an already-prompted
+            // pending — never a fresh ask
+            if (!e.timedOut) {
+              notifyOwnerApproval({
+                id: e.pendingId,
+                tool: e.name,
+                args: e.args,
+              }).catch(() => {});
+            }
           } else if (e.type === "security" && e.phase === "denied") {
             recordTelegramDeny(e.reason || "security");
           }

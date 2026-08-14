@@ -1086,6 +1086,11 @@ export async function runAgentLoop(options) {
             name,
             reason: auth.reason,
             pendingId,
+            // authorize already emitted approval_required via onPending when
+            // the pending was created; this second emission after a timeout
+            // is a state update, not a new ask — consumers that prompt a
+            // human (telegram) must not re-prompt on it
+            timedOut: auth.reason === "timeout",
             message: msg,
           });
           messages.push(

@@ -65,6 +65,26 @@ function sumChars(msgs) {
   return msgs.reduce((n, m) => n + messageChars(m), 0);
 }
 
+function isRealUserMessage(m) {
+  if (m?.role !== "user") return false;
+  const c = typeof m.content === "string" ? m.content : "";
+  return !c.startsWith("[XClaw sliding_window]") && !c.startsWith("[xclaw-compaction]");
+}
+
+function findLastRealUserUnit(units) {
+  for (let i = units.length - 1; i >= 0; i--) {
+    if (units[i].type === "user" && units[i].messages.some(isRealUserMessage)) return i;
+  }
+  return -1;
+}
+
+function findLastRealUserIndex(msgs) {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (isRealUserMessage(msgs[i])) return i;
+  }
+  return -1;
+}
+
 function flattenUnits(units) {
   return units.flatMap((u) => u.messages);
 }
@@ -107,6 +127,18 @@ export function slidingWindowEvict(messages, opts = {}) {
   if (pairAware) {
     const units = groupIntoUnits(rest);
     const result = slideUnits(units, { maxMessages, maxChars, protectRecent });
+    // Never evict the CURRENT ask: a heavy tool turn (e.g. 14 file_reads =
+    // 28 messages) pushes the triggering user message past the window and
+    // the model loses its instruction MID-TURN (observed live: bot replied
+    // "your message came through empty" to a non-empty DM). Slide drops
+    // oldest-first, so everything kept is newer than the ask — re-inserting
+    // it at the front of the kept tail is chronologically exact.
+    const lastUserDroppedIdx = findLastRealUserUnit(result.droppedUnits);
+    if (lastUserDroppedIdx >= 0 && findLastRealUserUnit(result.keptUnits) < 0) {
+      const [u] = result.droppedUnits.splice(lastUserDroppedIdx, 1);
+      result.keptUnits.unshift(u);
+      actions.push({ type: "retain", role: "user", reason: "last_user_protected" });
+    }
     keptRest = flattenUnits(result.keptUnits);
     for (const u of result.droppedUnits) {
       for (const m of u.messages) {
@@ -136,6 +168,13 @@ export function slidingWindowEvict(messages, opts = {}) {
     }
     const dropped = rest.slice(0, start);
     keptRest = rest.slice(start);
+    // same last-user protection as the pair-aware path
+    const lastUserIdx = findLastRealUserIndex(dropped);
+    if (lastUserIdx >= 0 && findLastRealUserIndex(keptRest) < 0) {
+      keptRest = [dropped[lastUserIdx], ...keptRest];
+      dropped.splice(lastUserIdx, 1);
+      actions.push({ type: "retain", role: "user", reason: "last_user_protected" });
+    }
     for (const m of dropped) {
       actions.push({ type: "drop", role: m.role, chars: messageChars(m) });
     }

@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.124.0 — eviction protects the current ask + approval-prompt precision
+
+All three from watching the owner's live DM session minutes after 3.123.0
+shipped (the new prompt-delivery logging paid for itself immediately):
+
+- **Eviction could silently drop the CURRENT user message mid-turn**: one
+  heavy tool turn (14 file_reads = 28 messages) slid the triggering ask out
+  of the window (maxMessages 40, protectRecent 4) and — because hybrid
+  policy suppresses the eviction notice — the model concluded "your message
+  came through empty" and answered a non-empty DM with nothing. The sliding
+  window (both pair-aware and simple paths) now retains the newest real user
+  message whenever no newer one is kept; superseded asks are still evictable
+  and eviction notices don't count as real user messages.
+- **Read-only classifier precision** (from the owner's actual blocked
+  commands): fd duplication (`2>&1`) and `/dev/null` sinks no longer
+  disqualify — `pm2 describe x 2>&1 | head -50` was pending on the raw `>`
+  gate; `pm2 logs --nostream` is recognized as a bounded read. Boundary
+  guard prevents the `2>/dev/nullX` fake-sink bypass.
+- **No more duplicate approval prompts**: the loop re-emits
+  `approval_required` as a state update when authorize times out; the owner
+  received identical Telegram prompts exactly 120s apart and tapped Allow on
+  pendings whose turn had already moved on. The timeout re-emission now
+  carries `timedOut: true` and Telegram skips it, plus per-pendingId dedupe
+  that latches only on successful delivery.
+- Confirmed live (closing 3.123.0's unknown): approval prompts DO reach the
+  owner — inline-button callbacks are his normal approval path.
+
 ## 3.123.0 — read-only exec risk classification
 
 Fresh live observation: on the DM bot every diagnostic command (`pm2 list`,
