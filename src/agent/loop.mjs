@@ -289,6 +289,9 @@ export async function runAgentLoop(options) {
         api: route.api,
         cfg,
         onRetry: onRetryProvider,
+        convId: sessionKey,
+        sessionId: sessionKey,
+        conversationId: transcriptId || sessionKey,
       });
       provider.providerName = route.provider;
     }
@@ -317,6 +320,9 @@ export async function runAgentLoop(options) {
       api: route.api,
       cfg,
       onRetry: onRetryProvider,
+      convId: sessionKey,
+      sessionId: sessionKey,
+      conversationId: transcriptId || sessionKey,
     });
     provider.providerName = route.provider;
   }
@@ -900,6 +906,10 @@ export async function runAgentLoop(options) {
       const chatArgs = {
         messages,
         tools,
+        // xAI sticky prompt cache — same id → same cache shard
+        convId: sessionKey,
+        conversationId: transcriptId || sessionKey,
+        sessionId: sessionKey,
         ...(turnRole ? { role: turnRole } : {}),
       };
       // ── Hook: on_request — observers see turn metadata; system tier also

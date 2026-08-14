@@ -14,6 +14,44 @@ import { createAnthropicMessagesProvider } from "../providers/anthropic-messages
 import { isAnthropicOAuthToken } from "../providers/anthropic-oauth-headers.mjs";
 
 /**
+ * xAI prompt-cache sticky routing.
+ * Docs: set `x-grok-conv-id` on Chat Completions so related requests hit the
+ * same cache shard. Optional body field is not used on Chat Completions;
+ * Responses API uses `prompt_cache_key` instead (not this client).
+ *
+ * @param {object} opts
+ * @param {string} [opts.convId]
+ * @param {string} [opts.baseUrl]
+ * @param {string} [opts.provider]
+ * @param {object} [opts.cfg]
+ * @returns {Record<string, string>}
+ */
+export function buildXaiCacheHeaders({ convId, baseUrl = "", provider = "", cfg } = {}) {
+  const disabled = cfg?.tokens?.xaiConvId === false || cfg?.tokens?.xGrokConvId === false;
+  if (disabled) return {};
+  const id = String(
+    convId ||
+      cfg?.tokens?.xaiConvId ||
+      cfg?.tokens?.xGrokConvId ||
+      ""
+  ).trim();
+  if (!id) return {};
+  const prov = String(provider || "").toLowerCase();
+  const base = String(baseUrl || "").toLowerCase();
+  const isXai =
+    prov === "xai" ||
+    prov === "x.ai" ||
+    base.includes("api.x.ai") ||
+    base.includes("x.ai");
+  if (!isXai) return {};
+  // Header values should be ASCII-ish; clamp length for safety
+  const safe = id.replace(/[^\x20-\x7E]/g, "_").slice(0, 128);
+  if (!safe) return {};
+  return { "x-grok-conv-id": safe };
+}
+
+
+/**
  * @param {object} opts
  * @param {string} opts.apiKey
  * @param {string} [opts.baseUrl]  default https://api.openai.com/v1
@@ -26,6 +64,12 @@ export function createProvider(opts) {
   const baseUrl = (opts.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "");
   const apiKey = opts.apiKey || process.env.OPENAI_API_KEY || process.env.XCLAW_API_KEY || "";
   const defaultModel = opts.model || process.env.XCLAW_MODEL || "gpt-4o-mini";
+  const defaultConvId =
+    opts.convId ||
+    opts.conversationId ||
+    opts.sessionId ||
+    null;
+  const providerLabel = String(opts.provider || opts.providerName || "");
 
   // Native Anthropic Messages (API key or Claude OAuth) — required for OAuth attestation.
   // The sk-ant-oat token-shape auto-detect only applies when the provider is NOT
@@ -86,7 +130,7 @@ export function createProvider(opts) {
     }
   }
 
-  function chatOnce({ messages, tools, model, temperature }) {
+  function chatOnce({ messages, tools, model, temperature, convId, conversationId, sessionId } = {}) {
     const url = new URL(`${baseUrl}/chat/completions`);
     const body = {
       model: model || defaultModel,
@@ -101,6 +145,12 @@ export function createProvider(opts) {
     const payload = JSON.stringify(body);
     const isHttps = url.protocol === "https:";
     const lib = isHttps ? https : http;
+    const cacheHeaders = buildXaiCacheHeaders({
+      convId: convId || conversationId || sessionId || defaultConvId,
+      baseUrl,
+      provider: providerLabel || opts.provider || opts.providerName,
+      cfg: opts.cfg,
+    });
 
     return new Promise((resolve, reject) => {
       const req = lib.request(
@@ -113,6 +163,7 @@ export function createProvider(opts) {
             "Content-Type": "application/json",
             Authorization: `Bearer ${apiKey}`,
             "Content-Length": Buffer.byteLength(payload),
+            ...cacheHeaders,
           },
           timeout: 180_000,
         },
@@ -195,7 +246,7 @@ export function createProvider(opts) {
    * Streaming chat (SSE). Calls onDelta({ content?, tool_calls? }) per chunk.
    * Resolves to same shape as chat() when done.
    */
-  async function chatStream({ messages, tools, model, temperature, signal, onDelta }) {
+  async function chatStream({ messages, tools, model, temperature, signal, onDelta, convId, conversationId, sessionId } = {}) {
     const url = new URL(`${baseUrl}/chat/completions`);
     const body = {
       model: model || defaultModel,
@@ -210,6 +261,12 @@ export function createProvider(opts) {
     const payload = JSON.stringify(body);
     const isHttps = url.protocol === "https:";
     const lib = isHttps ? https : http;
+    const cacheHeaders = buildXaiCacheHeaders({
+      convId: convId || conversationId || sessionId || defaultConvId,
+      baseUrl,
+      provider: providerLabel || opts.provider || opts.providerName,
+      cfg: opts.cfg,
+    });
 
     return withBackoff(
       () =>
@@ -225,6 +282,7 @@ export function createProvider(opts) {
                 Authorization: `Bearer ${apiKey}`,
                 "Content-Length": Buffer.byteLength(payload),
                 Accept: "text/event-stream",
+                ...cacheHeaders,
               },
               timeout: 180_000,
             },
@@ -371,5 +429,19 @@ export function createProvider(opts) {
     );
   }
 
-  return { chat, chatStream, model: defaultModel, baseUrl, backoffOpts };
+  return {
+    chat,
+    chatStream,
+    model: defaultModel,
+    baseUrl,
+    backoffOpts,
+    defaultConvId,
+    buildXaiCacheHeaders: (id) =>
+      buildXaiCacheHeaders({
+        convId: id || defaultConvId,
+        baseUrl,
+        provider: providerLabel || opts.provider || opts.providerName,
+        cfg: opts.cfg,
+      }),
+  };
 }

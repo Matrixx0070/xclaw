@@ -1709,10 +1709,19 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     }
 
     case "agent": {
-
-      const message = args.slice(1).join(" ").trim();
+      // xclaw agent [--session <id>] <message>
+      let sessionId = null;
+      const msgParts = [];
+      for (let i = 1; i < args.length; i++) {
+        if ((args[i] === "--session" || args[i] === "--session-id") && args[i + 1]) {
+          sessionId = args[++i];
+        } else {
+          msgParts.push(args[i]);
+        }
+      }
+      const message = msgParts.join(" ").trim();
       if (!message) {
-        console.error("Usage: xclaw agent <message>");
+        console.error("Usage: xclaw agent [--session <id>] <message>");
         process.exit(1);
       }
       const { loadConfig } = await import("../src/config/load.mjs");
@@ -1724,9 +1733,11 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         await startComputer({ root, foreground: false });
       }
       console.log(`[xclaw] Agent model: ${cfg.agent?.model || "gpt-4o-mini"}`);
+      if (sessionId) console.log(`[xclaw] session: ${sessionId}`);
       const result = await runAgentLoop({
         userMessage: message,
         cfg,
+        chatSessionId: sessionId || null,
         onEvent: (e) => {
           if (e.type === "tool" && e.phase === "start") {
             console.log(`  → tool ${e.name}`, JSON.stringify(e.args || {}).slice(0, 100));
@@ -1736,6 +1747,8 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
             console.log(`  ! guard [${e.level}] ${e.message}`);
           } else if (e.type === "lifecycle" && e.phase === "start") {
             console.log("  … running");
+          } else if (e.type === "cache" && e.phase === "turn_hit_rate") {
+            console.log(`  · cache hit ${e.cacheHitRatePct}% (cached=${e.cachedTokens}/${e.promptTokens})`);
           }
         },
       });

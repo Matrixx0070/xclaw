@@ -128,6 +128,7 @@ export async function createProviderForRef(cfg, modelRef, opts = {}) {
     api: route.api,
     cfg,
     onRetry: opts.onRetry,
+    convId: opts.convId || opts.sessionId || opts.conversationId || null,
   });
   provider.providerName = route.provider;
   provider.modelRef = route.modelRef;
