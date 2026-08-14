@@ -665,6 +665,47 @@ export function migrateReceiptStatusFields(receipt, opts = {}) {
 }
 
 /**
+ * True when receipt already satisfies strict status enum + shape (idempotent no-op).
+ */
+export function isReceiptMigrationIdempotent(receipt, opts = {}) {
+  const reasons = [];
+  if (!receipt || typeof receipt !== "object") {
+    return { idempotent: false, reasons: ["not_object"] };
+  }
+  const st = receipt.status;
+  if (!RECEIPT_STATUS_ENUM.includes(st)) {
+    reasons.push(`status_not_enum:${st}`);
+  }
+  const shape = validateReceiptShape(receipt, {
+    strictOutcome: opts.strictOutcome === true,
+  });
+  if (!shape.ok) {
+    for (const e of shape.errors) reasons.push(`shape:${e}`);
+  }
+  if (opts.requireMigrationMarker === true) {
+    const mark = receipt.meta?.statusMigratedAt || receipt.statusMigratedAt;
+    if (!mark) reasons.push("missing_migration_marker");
+  }
+  return { idempotent: reasons.length === 0, reasons };
+}
+
+/**
+ * Attach optional migration metadata.
+ */
+export function stampReceiptMigration(receipt, opts = {}) {
+  const at = opts.at || new Date().toISOString();
+  return {
+    ...receipt,
+    meta: {
+      ...(receipt.meta || {}),
+      statusMigratedAt: at,
+      statusMigratedV: 1,
+    },
+  };
+}
+
+
+/**
  * Pre-migration validation: identity + parseability before status rewrite.
  * Does not require status to already be in RECEIPT_STATUS_ENUM (that is what we migrate).
  * @returns {{ ok: boolean, errors: string[], canMigrate: boolean }}
@@ -904,6 +945,37 @@ export async function migrateReceiptsInDir(dir, opts = {}) {
       continue;
     }
 
+    // Idempotency: already on enum + valid shape → no write
+    if (opts.idempotent !== false) {
+      const idemp = isReceiptMigrationIdempotent(data, {
+        strictOutcome: opts.strictOutcome === true,
+        requireMigrationMarker: opts.requireMigrationMarker === true,
+      });
+      if (idemp.idempotent) {
+        try {
+          await hooks.onSkip?.({
+            file: f,
+            reason: "already_migrated",
+            detail: { status: data.status },
+          });
+        } catch { /* */ }
+        try {
+          await hooks.onIdempotent?.({ file: f, path: fp, receipt: data });
+        } catch { /* */ }
+        results.push({
+          file: f,
+          ok: true,
+          phase: "idempotent",
+          changed: false,
+          written: false,
+          status: data.status,
+          idempotent: true,
+          skipped: true,
+        });
+        continue;
+      }
+    }
+
     if (requirePreValid && !pre.canMigrate) {
       try {
         await hooks.onSkip?.({
@@ -1101,6 +1173,7 @@ export async function migrateReceiptsInDir(dir, opts = {}) {
     results,
     changed: results.filter((r) => r.changed).length,
     skipped: results.filter((r) => r.skipped).length,
+    idempotent: results.filter((r) => r.idempotent).length,
   };
 }
 
@@ -1114,6 +1187,8 @@ export default {
   normalizeReceiptStatus,
   validateReceiptShape,
   migrateReceiptStatusFields,
+  isReceiptMigrationIdempotent,
+  stampReceiptMigration,
   preValidateReceiptForMigration,
   createBeforeWriteGuard,
   writeReceiptWithRollback,
