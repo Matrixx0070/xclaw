@@ -106,7 +106,9 @@ export function createGatewayAuth(cfg = {}) {
       p.startsWith("/missions/") ||
       // point-and-prompt drives the operator's browser + starts missions
       p === "/point" ||
-      p.startsWith("/point/");
+      p.startsWith("/point/") ||
+      // completions spend provider tokens per call
+      p === "/complete";
     if (core) return true;
     if (!strict) {
       // legacy subset

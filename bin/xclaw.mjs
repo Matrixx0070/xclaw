@@ -871,6 +871,32 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "complete": {
+      // Repo-aware code completion: prefix on stdin → completion on stdout.
+      //   echo -n "function add(" | xclaw complete src/x.js --repo /path [--suffix ")"] [--lang js]
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const { completeCode } = await import("../src/completion/service.mjs");
+      const cfg = await loadConfig();
+      let file = null, repoDir = null, suffix = "", language = null;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === "--repo" && args[i + 1]) { repoDir = args[++i]; continue; }
+        if (args[i] === "--suffix" && args[i + 1]) { suffix = args[++i]; continue; }
+        if (args[i] === "--lang" && args[i + 1]) { language = args[++i]; continue; }
+        if (!file && !args[i].startsWith("--")) file = args[i];
+      }
+      const prefix = await new Promise((resolve) => {
+        let d = "";
+        process.stdin.on("data", (c) => (d += c));
+        process.stdin.on("end", () => resolve(d));
+      });
+      if (!prefix.trim()) {
+        console.error("Usage: echo -n '<code prefix>' | xclaw complete [file] [--repo dir] [--suffix code] [--lang js]");
+        process.exit(1);
+      }
+      const out = await completeCode(cfg, { prefix, suffix, file, repoDir, language });
+      process.stdout.write(out.completion + "\n");
+      break;
+    }
     case "doctor": {
       // Phase 7.4: prefer lightweight CLI doctor; fall back to gateway doctor
       const wantJson = args.includes("--json") || args.includes("-j");
