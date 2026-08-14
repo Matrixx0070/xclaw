@@ -1020,20 +1020,22 @@ export async function runAgentLoop(options) {
               cfg,
               onEvent,
             });
-            if (!v.skipped && v.replaced && v.finalText) {
+            if (!v.skipped && (v.replaced || v.appended) && v.finalText) {
               finalText = v.finalText;
               messages.push({
                 role: "assistant",
                 content: finalText,
                 _xclawVerify: true,
               });
-            } else if (!v.skipped && v.revise && v.revisedText && !v.replaced) {
+            } else if (!v.skipped && v.revise && v.revisedText && !v.replaced && !v.appended) {
               // Soft mode: keep act answer, attach critique in event only
               onEvent({
                 type: "router",
                 phase: "verify_suggest",
                 suggestion: v.revisedText.slice(0, 2000),
               });
+            } else if (!v.skipped && v.ok) {
+              onEvent({ type: "router", phase: "verify_ok" });
             }
           } catch (verr) {
             onEvent({

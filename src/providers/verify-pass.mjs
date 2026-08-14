@@ -9,8 +9,9 @@
  * Config:
  *   router.rolePolicy.verifyPrompt — custom system instruction
  *   router.rolePolicy.verifyMaxTokens — optional
- *   router.rolePolicy.verifyReplace — if true, replace finalText with verify output
- *                                    if false (default), append critique section only when issues found
+ *   router.rolePolicy.verifyReplace — if true, replace finalText with VERIFY_REVISE body
+ *   router.rolePolicy.verifyAppend  — if true (and not replace), append VERIFY section to finalText
+ *   default: event-only soft critique (verify_suggest) unless replace/append set
  */
 
 const DEFAULT_VERIFY_INSTRUCTION = `You are the VERIFY role for XClaw. Review the assistant's final answer for the user's goal.
@@ -106,7 +107,7 @@ export async function runVerifyPass(opts = {}) {
     return { skipped: true, reason: "error", error: String(err.message || err) };
   }
 
-  const text = completion?.message?.content || completion?.content || "";
+  const text = extractCompletionText(completion);
   const trimmed = String(text).trim();
   // SCAFFOLD: prose sentinel protocol (VERIFY_OK/VERIFY_REVISE prefixes) —
   // migrate to a structured tool-call verdict like the critic merge-gate did.
@@ -116,29 +117,68 @@ export async function runVerifyPass(opts = {}) {
   let revisedText = null;
   if (revise) {
     revisedText = trimmed.replace(/^VERIFY_REVISE\s*/i, "").trim();
+  } else if (!ok && trimmed) {
+    // Model ignored protocol — treat full reply as soft critique, not silent OK
+    revisedText = trimmed;
   }
 
   const replace = policy.verifyReplace === true;
+  const append = policy.verifyAppend === true;
+  let nextFinal = finalText;
+  let replaced = false;
+  let appended = false;
+  if (revise && revisedText && replace) {
+    nextFinal = revisedText;
+    replaced = true;
+  } else if ((revise || (!ok && revisedText)) && revisedText && append) {
+    nextFinal = `${String(finalText).trim()}\n\n---\nVERIFY:\n${revisedText}`;
+    appended = true;
+  }
+
   const out = {
     skipped: false,
     ok,
-    revise,
+    revise: Boolean(revise || (!ok && revisedText)),
     raw: trimmed,
     revisedText,
-    finalText: replace && revisedText ? revisedText : finalText,
-    replaced: Boolean(replace && revisedText),
+    finalText: nextFinal,
+    replaced,
+    appended,
   };
 
   onEvent({
     type: "router",
     phase: "verify_done",
     ok,
-    revise,
-    replaced: out.replaced,
+    revise: out.revise,
+    replaced,
+    appended,
     preview: trimmed.slice(0, 400),
   });
 
   return out;
+}
+
+/** Normalize provider completion content (string or multipart). */
+export function extractCompletionText(completion) {
+  const raw =
+    completion?.message?.content ??
+    completion?.content ??
+    completion?.text ??
+    "";
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((p) => {
+        if (typeof p === "string") return p;
+        if (p?.type === "text" && p.text) return p.text;
+        if (p?.text) return p.text;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return String(raw || "");
 }
 
 export { DEFAULT_VERIFY_INSTRUCTION };
