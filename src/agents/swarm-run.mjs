@@ -11,6 +11,7 @@ import {
   buildRunReceiptSummary,
   evaluateReceiptPolicy,
   receiptsRequired,
+  failedReceiptsRequired,
 } from "./swarm-receipt.mjs";
 import {
   createSwarmRun,
@@ -1559,6 +1560,8 @@ export async function runSwarmFanOut(cfg, input = {}) {
   const receiptSummary = buildRunReceiptSummary(results);
   const receiptPolicy = evaluateReceiptPolicy(results, {
     require: receiptsRequired(cfg, input),
+    requireFailedReceipts: failedReceiptsRequired(cfg, input),
+    forbidPending: input.forbidPending === true || cfg?.swarm?.forbidPending === true,
   });
 
   const finalResult = {

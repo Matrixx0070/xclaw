@@ -240,6 +240,20 @@ export function receiptsRequired(cfg = {}, input = {}) {
 }
 
 /**
+ * Whether failed/skipped critical nodes must carry receipts.
+ */
+export function failedReceiptsRequired(cfg = {}, input = {}) {
+  if (input.requireFailedReceipts === true || input.requireFailed === true)
+    return true;
+  if (input.requireFailedReceipts === false) return false;
+  if (cfg?.swarm?.requireFailedReceipts === true) return true;
+  return (
+    process.env.XCLAW_SWARM_REQUIRE_FAILED_RECEIPTS === "1" ||
+    process.env.XCLAW_SWARM_REQUIRE_FAILED_RECEIPTS === "true"
+  );
+}
+
+/**
  * S2 — Does this node result have a usable receipt?
  */
 export function hasReceipt(nodeResult = {}) {
@@ -268,10 +282,21 @@ export function receiptVoteWeight(nodeResult = {}, opts = {}) {
 
 /**
  * S2 merge/vote gate: critical roles should present receipts.
+ *
+ * Options:
+ *   require / requireReceipts — successful critical nodes must have receipts
+ *   requireFailedReceipts — failed or skipped critical nodes must also have receipts
+ *                           (durable proof of failure / UPSTREAM_FAILED)
+ *   criticalRoles — default implement, verify, critic
+ *   forbidPending — if true, any status=pending fails the policy
+ *
  * @returns {{ ok: boolean, reasons: string[], summary: object }}
  */
 export function evaluateReceiptPolicy(results = [], opts = {}) {
   const require = opts.require === true || opts.requireReceipts === true;
+  const requireFailed =
+    opts.requireFailedReceipts === true || opts.requireFailed === true;
+  const forbidPending = opts.forbidPending === true;
   const criticalRoles = new Set(
     (opts.criticalRoles || ["implement", "verify", "critic"]).map((x) =>
       String(x).toLowerCase()
@@ -280,7 +305,9 @@ export function evaluateReceiptPolicy(results = [], opts = {}) {
   const reasons = [];
   let withReceipt = 0;
   let withoutReceipt = 0;
-  let criticalMissing = [];
+  const criticalMissing = [];
+  const criticalFailedMissing = [];
+  const pendingIds = [];
 
   for (const r of results || []) {
     // skipped nodes have receipts too after S1 — still count
@@ -288,11 +315,30 @@ export function evaluateReceiptPolicy(results = [], opts = {}) {
     else withoutReceipt += 1;
 
     const role = String(r.role || "").toLowerCase();
+    const id = r.nodeId || r.id || role || "unknown";
+    const status = String(r.status || "").toLowerCase();
+
+    if (forbidPending && status === "pending") {
+      pendingIds.push(id);
+    }
+
     if (!criticalRoles.has(role)) continue;
-    // only require receipts for nodes that actually ran (not pending)
-    if (r.status === "pending") continue;
+    // pending: not yet a terminal success/fail
+    if (status === "pending") continue;
+
     if (r.ok && !hasReceipt(r)) {
-      criticalMissing.push(r.nodeId || r.id || role);
+      criticalMissing.push(id);
+      continue;
+    }
+
+    // Failed or skipped critical work without durable proof
+    const terminalFail =
+      r.ok === false ||
+      status === "skipped" ||
+      status === "error" ||
+      status === "failed";
+    if (requireFailed && terminalFail && !hasReceipt(r)) {
+      criticalFailedMissing.push(id);
     }
   }
 
@@ -300,6 +346,14 @@ export function evaluateReceiptPolicy(results = [], opts = {}) {
     reasons.push(
       `receipt required but missing for: ${criticalMissing.join(", ")}`
     );
+  }
+  if (requireFailed && criticalFailedMissing.length) {
+    reasons.push(
+      `failed/skipped receipt required but missing for: ${criticalFailedMissing.join(", ")}`
+    );
+  }
+  if (forbidPending && pendingIds.length) {
+    reasons.push(`pending nodes not allowed: ${pendingIds.join(", ")}`);
   }
 
   return {
@@ -309,7 +363,11 @@ export function evaluateReceiptPolicy(results = [], opts = {}) {
       withReceipt,
       withoutReceipt,
       criticalMissing,
+      criticalFailedMissing,
+      pendingIds,
       require,
+      requireFailedReceipts: requireFailed,
+      forbidPending,
     },
   };
 }
@@ -348,6 +406,7 @@ export default {
   attachNodeReceipt,
   inferEffects,
   receiptsRequired,
+  failedReceiptsRequired,
   hasReceipt,
   receiptVoteWeight,
   evaluateReceiptPolicy,
