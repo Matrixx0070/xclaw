@@ -69,6 +69,15 @@ export async function tryHandleTokensRoute({ p, method, req, res, url, cfg, json
     }));
     return true;
   }
+  if (p === "/usage/cache" && method === "GET") {
+    const { cacheHitMonitor } = await import("../../tokens/usage-analytics.mjs");
+    json(res, 200, await cacheHitMonitor(cfg, {
+      days: url.searchParams.get("days") || 7,
+      recent: url.searchParams.get("recent") || 20,
+      warnBelowPct: url.searchParams.get("warnBelow") || 40,
+    }));
+    return true;
+  }
   if (p === "/usage/efficiency" && method === "GET") {
     const { providerEfficiency } = await import("../../tokens/usage-analytics.mjs");
     json(res, 200, await providerEfficiency(cfg, {

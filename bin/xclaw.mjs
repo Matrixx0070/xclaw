@@ -1846,6 +1846,23 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       else console.log(JSON.stringify(buildApprovalDigest(cfg), null, 2));
       break;
     }
+    case "cache": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const { cacheHitMonitor, formatCacheHitReport } = await import("../src/tokens/usage-analytics.mjs");
+      const cfg = await loadConfig();
+      const flag = (name, dflt = null) => {
+        const i = args.indexOf(`--${name}`);
+        return i >= 0 ? args[i + 1] : dflt;
+      };
+      const mon = await cacheHitMonitor(cfg, {
+        days: flag("days", 7),
+        recent: flag("recent", 20),
+        warnBelowPct: flag("warn-below", 40),
+      });
+      if (args.includes("--json")) console.log(JSON.stringify(mon, null, 2));
+      else console.log(formatCacheHitReport(mon));
+      break;
+    }
     case "cost": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const { readCostLedger, defaultLedgerPath, formatUsd } = await import("../src/tokens/usage-tracker.mjs");

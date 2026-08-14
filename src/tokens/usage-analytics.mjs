@@ -417,4 +417,183 @@ export async function providerEfficiency(cfg, { days = 7 } = {}) {
   };
 }
 
-export default { usageSummary, requestLogs, requestLogDetail, inferProvider, buildUsageDashboard, providerEfficiency };
+/**
+ * Cache hit rate monitor — rollup + recent turns for ops.
+ *
+ * @param {object} cfg
+ * @param {object} [opts]
+ * @param {number} [opts.days=7]
+ * @param {number} [opts.recent=20]
+ * @param {number} [opts.warnBelowPct=40]  flag runs under this blended hit %
+ */
+export async function cacheHitMonitor(cfg, { days = 7, recent = 20, warnBelowPct = 40 } = {}) {
+  const nDays = Math.min(90, Math.max(1, Number(days) || 7));
+  const sinceMs = Date.now() - nDays * 86_400_000;
+  const { entries, path } = await loadEntries(cfg, { sinceMs });
+
+  let prompt = 0;
+  let cached = 0;
+  let turns = 0;
+  let turnsWithCache = 0;
+  let runs = 0;
+  const byProvider = new Map();
+  const series = []; // daily blended
+  const dayMap = new Map();
+
+  for (const e of entries) {
+    runs += 1;
+    const prov = inferProvider(e);
+    if (!byProvider.has(prov)) {
+      byProvider.set(prov, { provider: prov, promptTokens: 0, cachedTokens: 0, turns: 0, runs: 0 });
+    }
+    const pv = byProvider.get(prov);
+    pv.runs += 1;
+
+    const turnList = Array.isArray(e.turns) && e.turns.length ? e.turns : [e];
+    let runPrompt = 0;
+    let runCached = 0;
+    for (const t of turnList) {
+      const pTok = t.promptTokens || 0;
+      const cTok = t.cachedTokens || 0;
+      turns += 1;
+      prompt += pTok;
+      cached += cTok;
+      runPrompt += pTok;
+      runCached += cTok;
+      pv.promptTokens += pTok;
+      pv.cachedTokens += cTok;
+      pv.turns += 1;
+      if (cTok > 0) turnsWithCache += 1;
+
+      const day = (e.at || e.ts || new Date().toISOString()).slice(0, 10);
+      if (!dayMap.has(day)) dayMap.set(day, { day, promptTokens: 0, cachedTokens: 0, turns: 0 });
+      const d = dayMap.get(day);
+      d.promptTokens += pTok;
+      d.cachedTokens += cTok;
+      d.turns += 1;
+    }
+
+    const runHit = runPrompt > 0 ? runCached / runPrompt : 0;
+    series.push({
+      at: e.at || e.ts || null,
+      model: e.model || null,
+      provider: prov,
+      sessionId: e.sessionId || e.runId || null,
+      promptTokens: runPrompt,
+      cachedTokens: runCached,
+      cacheHitRatePct: Math.round(runHit * 1000) / 10,
+      costUsd: e.costUsd ?? null,
+      turnCount: turnList.length,
+      warn: runHit * 100 < Number(warnBelowPct),
+    });
+  }
+
+  const hitRate = prompt > 0 ? Math.min(1, cached / prompt) : 0;
+  const recentN = Math.min(100, Math.max(1, Number(recent) || 20));
+  const recentRuns = series.slice(-recentN).reverse();
+
+  const byDay = [...dayMap.values()]
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .map((d) => ({
+      ...d,
+      cacheHitRatePct:
+        d.promptTokens > 0
+          ? Math.round(Math.min(1, d.cachedTokens / d.promptTokens) * 1000) / 10
+          : 0,
+    }));
+
+  const providers = [...byProvider.values()].map((p) => ({
+    ...p,
+    cacheHitRatePct:
+      p.promptTokens > 0
+        ? Math.round(Math.min(1, p.cachedTokens / p.promptTokens) * 1000) / 10
+        : 0,
+  }));
+
+  const warned = recentRuns.filter((r) => r.warn);
+
+  return {
+    ok: true,
+    path,
+    days: nDays,
+    totals: {
+      runs,
+      turns,
+      turnsWithCache,
+      promptTokens: prompt,
+      cachedTokens: cached,
+      cacheHitRate: Math.round(hitRate * 1000) / 1000,
+      cacheHitRatePct: Math.round(hitRate * 1000) / 10,
+      turnsWithCachePct:
+        turns > 0 ? Math.round((turnsWithCache / turns) * 1000) / 10 : 0,
+    },
+    byProvider: providers,
+    byDay,
+    recent: recentRuns,
+    alerts: {
+      warnBelowPct: Number(warnBelowPct),
+      lowHitRuns: warned.length,
+      samples: warned.slice(0, 5),
+    },
+  };
+}
+
+/** Human-readable cache monitor report. */
+export function formatCacheHitReport(mon) {
+  if (!mon?.ok) return `cache monitor failed: ${mon?.error || "unknown"}`;
+  const t = mon.totals;
+  const lines = [
+    "XClaw cache hit monitor",
+    "=======================",
+    `Window:  ${mon.days}d`,
+    `Ledger:  ${mon.path}`,
+    `Runs:    ${t.runs}  turns=${t.turns}  turnsWithCache=${t.turnsWithCache} (${t.turnsWithCachePct}%)`,
+    `Tokens:  prompt=${t.promptTokens}  cached=${t.cachedTokens}`,
+    `Hit rate: ${t.cacheHitRatePct}%`,
+    "",
+  ];
+  if (mon.byProvider?.length) {
+    lines.push("By provider:");
+    for (const p of mon.byProvider) {
+      lines.push(
+        `  ${p.provider.padEnd(12)} hit=${String(p.cacheHitRatePct).padStart(5)}%  cached=${p.cachedTokens}/${p.promptTokens}  runs=${p.runs}`
+      );
+    }
+    lines.push("");
+  }
+  if (mon.byDay?.length) {
+    lines.push("By day:");
+    for (const d of mon.byDay.slice(-14)) {
+      lines.push(`  ${d.day}  hit=${d.cacheHitRatePct}%  turns=${d.turns}`);
+    }
+    lines.push("");
+  }
+  if (mon.recent?.length) {
+    lines.push(`Recent runs (last ${mon.recent.length}):`);
+    for (const r of mon.recent.slice(0, 15)) {
+      const flag = r.warn ? " ⚠" : "";
+      lines.push(
+        `  ${(r.at || "?").toString().slice(0, 19)}  ${String(r.cacheHitRatePct).padStart(5)}%  in=${r.promptTokens} c=${r.cachedTokens}  ${r.model || "?"}  turns=${r.turnCount}${flag}`
+      );
+    }
+    lines.push("");
+  }
+  if (mon.alerts?.lowHitRuns) {
+    lines.push(
+      `Alerts: ${mon.alerts.lowHitRuns} run(s) under ${mon.alerts.warnBelowPct}% hit rate`
+    );
+  }
+  return lines.join("\n");
+}
+
+export default {
+  usageSummary,
+  requestLogs,
+  requestLogDetail,
+  inferProvider,
+  buildUsageDashboard,
+  providerEfficiency,
+  cacheHitMonitor,
+  formatCacheHitReport,
+};
+
