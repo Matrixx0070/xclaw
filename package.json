@@ -57,13 +57,14 @@
     "p2:eval": "node scripts/p2-multistep-eval.mjs",
     "p2:swarm": "node scripts/p2-swarm-receipt.mjs",
     "p2:prod": "node scripts/p2-prod-fire-drill.mjs",
-    "p2": "node scripts/p2-swarm-receipt.mjs && node scripts/p2-prod-fire-drill.mjs && node --test test/search-plane.test.mjs",
+    "p2": "node scripts/p2-swarm-receipt.mjs && node scripts/p2-swarm-fail.mjs && node scripts/p2-prod-fire-drill.mjs && node --test test/search-plane.test.mjs",
     "p3:skills": "node scripts/p2-skills-smoke.mjs",
     "p3": "node scripts/p2-skills-smoke.mjs",
     "skills:smoke": "node scripts/p2-skills-smoke.mjs",
     "ci": "node scripts/ci-gate.mjs",
     "ci:live": "XCLAW_CI_LIVE=1 node scripts/ci-gate.mjs --live",
-    "ci-gate": "node scripts/ci-gate.mjs"
+    "ci-gate": "node scripts/ci-gate.mjs",
+    "p2:swarm-fail": "node scripts/p2-swarm-fail.mjs"
   },
   "files": [
     "bin/",

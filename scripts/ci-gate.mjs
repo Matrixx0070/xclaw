@@ -62,6 +62,11 @@ results.push(
   ])
 );
 results.push(
+  await run("p2 swarm fail path", process.execPath, [
+    "scripts/p2-swarm-fail.mjs",
+  ])
+);
+results.push(
   await run("p2 prod fire-drill", process.execPath, [
     "scripts/p2-prod-fire-drill.mjs",
   ])
