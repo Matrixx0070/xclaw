@@ -35,7 +35,7 @@ function dayKey(iso) {
 
 async function loadEntries(cfg, { provider = null, sinceMs = null } = {}) {
   const ledger = cfg?.tokens?.ledgerPath || defaultLedgerPath();
-  const agg = await readCostLedger(ledger, {});
+  const agg = await readCostLedger(ledger, { limit: 0 }); // all rows for analytics
   const rows = agg.rows || [];
   const want = provider && provider !== "all" ? String(provider).toLowerCase() : null;
   return {
@@ -80,6 +80,7 @@ export async function usageSummary(cfg, { provider = "all", days = 7 } = {}) {
     runs: 0,
   };
   const byModel = new Map();
+  const byProvider = new Map();
   const providersSeen = new Set();
 
   for (const e of entries) {
@@ -92,7 +93,20 @@ export async function usageSummary(cfg, { provider = "all", days = 7 } = {}) {
     const turns = Array.isArray(e.turns) && e.turns.length ? e.turns : [e];
     b.runs += 1;
     totals.runs += 1;
-    providersSeen.add(inferProvider(e));
+    const prov = inferProvider(e);
+    providersSeen.add(prov);
+    const pv = byProvider.get(prov) || {
+      provider: prov,
+      runs: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      costUsd: 0,
+    };
+    pv.runs += 1;
+    pv.promptTokens += e.promptTokens || 0;
+    pv.completionTokens += e.completionTokens || 0;
+    pv.costUsd += e.costUsd || 0;
+    byProvider.set(prov, pv);
     for (const t of turns) {
       b.promptTokens += t.promptTokens || 0;
       b.completionTokens += t.completionTokens || 0;
@@ -143,9 +157,52 @@ export async function usageSummary(cfg, { provider = "all", days = 7 } = {}) {
     ],
     daily: daysOut,
     byModel: [...byModel.values()].sort((a, b) => b.tokens - a.tokens),
+    byProvider: [...byProvider.values()].sort((a, b) => b.costUsd - a.costUsd),
     providersSeen: [...providersSeen],
   };
 }
+
+/**
+ * Composite dashboard payload for Control UI overview + Usage page.
+ */
+export async function buildUsageDashboard(cfg, { days = 7 } = {}) {
+  const summary = await usageSummary(cfg, { provider: "all", days });
+  let governor = null;
+  try {
+    const { getCostGovernorStatus, governorMode } = await import("./cost-governor.mjs");
+    const status = await getCostGovernorStatus(cfg);
+    const mode = await governorMode(cfg);
+    governor = {
+      ...status,
+      mode: mode.mode,
+      economyAt: mode.economyAt,
+      spentBilledUsd: status.spentUsd, // status merges check; file has split
+    };
+    try {
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      const os = await import("node:os");
+      const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
+      const raw = JSON.parse(await fs.readFile(path.join(base, "cost-governor.json"), "utf8"));
+      governor.spentBilledUsd = raw.spentBilledUsd || 0;
+      governor.spentEstimatedUsd = raw.spentEstimatedUsd || 0;
+      governor.lastBand = raw.lastBand || mode.mode;
+    } catch {
+      /* optional */
+    }
+  } catch (e) {
+    governor = { error: e.message };
+  }
+  const recent = await requestLogs(cfg, { provider: "all", limit: 15 });
+  return {
+    ok: true,
+    at: new Date().toISOString(),
+    usage: summary,
+    governor,
+    recentLogs: recent.rows || [],
+  };
+}
+
 
 /**
  * Flattened request log (newest first): one row per API request (turn).
@@ -206,4 +263,4 @@ export async function requestLogDetail(cfg, runId) {
   return { ok: false, error: "run not found" };
 }
 
-export default { usageSummary, requestLogs, requestLogDetail, inferProvider };
+export default { usageSummary, requestLogs, requestLogDetail, inferProvider, buildUsageDashboard };

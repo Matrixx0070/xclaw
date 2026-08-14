@@ -109,19 +109,39 @@ async function loadConfigEviction() {
 async function loadCostGovernor() {
   try {
     const g = await getJSON("/cost");
+    let dash = null;
+    try {
+      dash = await getJSON("/usage/dashboard?days=7");
+    } catch {
+      /* optional */
+    }
     const soft = g.limits?.dailySoftUsd;
     const hard = g.limits?.dailyHardUsd;
     const spent = g.spentUsd ?? 0;
     const softPct = soft ? Math.min(100, Math.round((spent / soft) * 100)) : 0;
+    const mode = dash?.governor?.mode || (g.hard || g.paused ? "halt" : g.soft ? "economy" : "normal");
+    const billed = dash?.governor?.spentBilledUsd;
+    const estimated = dash?.governor?.spentEstimatedUsd;
+    const week = dash?.usage?.totals;
     const el = $("costGov");
     if (el) {
-      el.innerHTML = kvHtml([
+      const rows = [
+        ["Band", mode, mode === "halt" ? "bad" : mode === "economy" ? "warn" : "ok"],
         ["Spent today", `$${Number(spent).toFixed(4)}`, g.hard ? "bad" : g.soft ? "warn" : "ok"],
         ["Soft / Hard", `$${soft} / $${hard}`],
         ["Paused", String(Boolean(g.paused)), g.paused ? "bad" : "ok"],
         ["Jobs", g.jobs ?? "—"],
         ["Soft pressure", softPct + "%"],
-      ]);
+      ];
+      if (billed != null || estimated != null) {
+        rows.push(["Billed / estimated", `$${Number(billed || 0).toFixed(4)} / $${Number(estimated || 0).toFixed(4)}`]);
+      }
+      if (week) {
+        rows.push(["7d runs", String(week.runs ?? "—")]);
+        rows.push(["7d tokens", Number(week.totalTokens || week.promptTokens || 0).toLocaleString()]);
+        rows.push(["7d USD", `$${Number(week.costUsd || 0).toFixed(4)}`]);
+      }
+      el.innerHTML = kvHtml(rows);
       const bar = $("costBar");
       if (bar) bar.style.width = Math.min(100, softPct) + "%";
     }

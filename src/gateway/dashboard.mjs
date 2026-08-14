@@ -62,7 +62,7 @@ export async function buildDashboard(cfg) {
   } catch {
     /* */
   }
-  return {
+  const out = {
     at: new Date().toISOString(),
     version: pkgVersion(),
     uptime: uptimeInfo(),
@@ -83,5 +83,22 @@ export async function buildDashboard(cfg) {
       maxTurns: cfg.agent?.maxTurns,
       autoApprove: cfg.security?.autoApprove,
     },
+    usage: null,
+    costGovernor: null,
   };
+  try {
+    const { buildUsageDashboard } = await import("../tokens/usage-analytics.mjs");
+    const ud = await buildUsageDashboard(cfg, { days: 7 });
+    out.usage = {
+      days: ud.usage?.days,
+      totals: ud.usage?.totals,
+      daily: ud.usage?.daily,
+      byProvider: ud.usage?.byProvider,
+      byModel: (ud.usage?.byModel || []).slice(0, 8),
+    };
+    out.costGovernor = ud.governor;
+  } catch {
+    /* optional — ledger may be empty */
+  }
+  return out;
 }

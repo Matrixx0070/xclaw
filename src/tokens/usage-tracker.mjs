@@ -226,7 +226,7 @@ export function createUsageTracker({ enabled = true, model = null, ledgerPath = 
 /**
  * Read JSONL cost ledger and aggregate.
  */
-export async function readCostLedger(ledgerPath, { since = null } = {}) {
+export async function readCostLedger(ledgerPath, { since = null, limit = 50 } = {}) {
   try {
     const raw = await fs.readFile(ledgerPath, "utf8");
     const lines = raw.split("\n").filter(Boolean);
@@ -251,6 +251,10 @@ export async function readCostLedger(ledgerPath, { since = null } = {}) {
       if (typeof r.promptTokens === "number") promptTokens += r.promptTokens;
       if (typeof r.completionTokens === "number") completionTokens += r.completionTokens;
     }
+    // limit: positive = last N rows; 0 / null / Infinity = all (analytics)
+    const lim = limit == null ? 50 : Number(limit);
+    const outRows =
+      !Number.isFinite(lim) || lim <= 0 ? rows : rows.slice(-Math.min(100_000, lim));
     return {
       path: ledgerPath,
       runs,
@@ -258,11 +262,21 @@ export async function readCostLedger(ledgerPath, { since = null } = {}) {
       completionTokens,
       costUsd,
       costUsdFormatted: formatUsd(costUsd),
-      rows: rows.slice(-50), // last 50
+      rows: outRows,
+      totalRows: rows.length,
     };
   } catch (err) {
     if (err.code === "ENOENT") {
-      return { path: ledgerPath, runs: 0, promptTokens: 0, completionTokens: 0, costUsd: 0, costUsdFormatted: "$0", rows: [] };
+      return {
+        path: ledgerPath,
+        runs: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        costUsd: 0,
+        costUsdFormatted: "$0",
+        rows: [],
+        totalRows: 0,
+      };
     }
     throw err;
   }

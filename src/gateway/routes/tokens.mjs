@@ -62,6 +62,13 @@ export async function tryHandleTokensRoute({ p, method, req, res, url, cfg, json
 
   // Per-provider Usage & Logs (control UI). Provider filtering is first-class:
   // every response is scoped to exactly one provider (or explicitly "all").
+  if (p === "/usage/dashboard" && method === "GET") {
+    const { buildUsageDashboard } = await import("../../tokens/usage-analytics.mjs");
+    json(res, 200, await buildUsageDashboard(cfg, {
+      days: url.searchParams.get("days") || 7,
+    }));
+    return true;
+  }
   if (p === "/usage" && method === "GET") {
     const { usageSummary } = await import("../../tokens/usage-analytics.mjs");
     json(res, 200, await usageSummary(cfg, {
@@ -90,7 +97,9 @@ export async function tryHandleTokensRoute({ p, method, req, res, url, cfg, json
   if (p === "/tokens/cost" && method === "GET") {
     const ledger = cfg.tokens?.ledgerPath || defaultLedgerPath();
     const since = url.searchParams.get("since");
-    const agg = await readCostLedger(ledger, { since });
+    const limitRaw = url.searchParams.get("limit");
+    const limit = limitRaw == null ? 50 : Number(limitRaw);
+    const agg = await readCostLedger(ledger, { since, limit: Number.isFinite(limit) ? limit : 50 });
     json(res, 200, { ok: true, ...agg });
     return true;
   }
