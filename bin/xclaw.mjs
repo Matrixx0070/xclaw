@@ -871,6 +871,68 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "workers": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const wcli = await import("../src/missions/workers-cli.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "list";
+      if (sub === "list") {
+        const workers = wcli.listWorkers(cfg);
+        const pings = await wcli.pingAllWorkers(cfg);
+        console.log(JSON.stringify(
+          workers.map((w) => ({ ...w, ping: pings.find((p) => p.name === w.name) || null })),
+          null, 2
+        ));
+        break;
+      }
+      if (sub === "add") {
+        const name = args[2];
+        const url = args[3];
+        let token = null, allowInsecure = false;
+        for (let i = 4; i < args.length; i++) {
+          if (args[i] === "--token" && args[i + 1]) token = args[++i];
+          else if (args[i] === "--allow-insecure") allowInsecure = true;
+        }
+        if (!name || !url) {
+          console.error("Usage: xclaw workers add <name> <url> [--token t] [--allow-insecure]");
+          process.exit(1);
+        }
+        const r = await wcli.addWorkerEntry(cfg, { name, url, token, allowInsecure });
+        console.log(JSON.stringify(r, null, 2));
+        process.exitCode = r.ok ? 0 : 1;
+        break;
+      }
+      if (sub === "remove") {
+        if (!args[2]) { console.error("Usage: xclaw workers remove <name>"); process.exit(1); }
+        console.log(JSON.stringify(await wcli.removeWorkerEntry(cfg, args[2]), null, 2));
+        break;
+      }
+      if (sub === "ping") {
+        const pings = await wcli.pingAllWorkers(cfg);
+        console.log(JSON.stringify(args[2] ? pings.filter((p) => p.name === args[2]) : pings, null, 2));
+        break;
+      }
+      if (sub === "token") {
+        const r = await wcli.ensureGatewayToken(cfg);
+        console.log(JSON.stringify(r, null, 2));
+        break;
+      }
+      if (sub === "join-command") {
+        let name = null, publicUrl = null;
+        for (let i = 2; i < args.length; i++) {
+          if (args[i] === "--name" && args[i + 1]) name = args[++i];
+          else if (args[i] === "--url" && args[i + 1]) publicUrl = args[++i];
+        }
+        const r = await wcli.buildJoinCommand(cfg, { name, publicUrl });
+        console.log(r.command);
+        if (r.note) console.error(`note: ${r.note}`);
+        if (r.tokenGenerated) console.error("note: gateway token was just generated — restart the gateway to enforce it");
+        break;
+      }
+      console.error("Usage: xclaw workers [list|add|remove|ping|token|join-command]");
+      process.exit(1);
+      break;
+    }
     case "complete": {
       // Repo-aware code completion: prefix on stdin → completion on stdout.
       //   echo -n "function add(" | xclaw complete src/x.js --repo /path [--suffix ")"] [--lang js]

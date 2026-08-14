@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.109.0 — Workers CLI bootstrap + federation TLS guidance
+
+Post-roadmap candidate 4.
+
+- `xclaw workers list|add|remove|ping` (coordinator) and
+  `xclaw workers token|join-command` (worker bootstrap): `token` ensures the
+  worker gateway has an operator token (generates + persists once);
+  `join-command` prints the exact `xclaw workers add …` line for the
+  coordinator, flagging non-loopback plain-http with a TLS pointer instead
+  of silently emitting `--allow-insecure`.
+- `src/missions/workers-cli.mjs` shared core (same registry as the routes/UI;
+  tokens redacted in listings, persisted 0600 via saveConfigPatch).
+- `docs/FEDERATION.md`: worker/coordinator setup, reverse-proxy TLS examples
+  (Caddy/nginx), URL policy rationale, credential-isolation rules (never
+  share an anthropic OAuth store between gateways).
+- Live-proven: CLI add → ping (version + computer health) → join-command
+  echoing the live token unchanged → remove.
+
 ## 3.108.0 — Point-and-prompt in the webchat
 
 Post-roadmap candidate 3: the picker is no longer Control-UI-only.
