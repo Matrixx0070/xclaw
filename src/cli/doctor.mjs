@@ -3,6 +3,7 @@
  * Exit codes: 0 ok, 1 warnings only, 2 errors
  */
 import fs from "fs/promises";
+import os from "os";
 import path from "path";
 import http from "node:http";
 import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
@@ -1364,8 +1365,18 @@ export async function runDoctor(opts = {}) {
 
   // ── Services ── pm2-managed gateway (the running bot)
   try {
+    // Only query pm2 if its daemon is already running: the pm2 client
+    // auto-spawns a God Daemon under $PM2_HOME (default $HOME/.pm2) when
+    // none exists, and that daemon outlives us. Under test/temp HOMEs this
+    // leaked one immortal ~25MB daemon per doctor run (612 daemons / 13.6GB
+    // on 2026-08-14). A doctor must never mutate the host it examines.
+    const pm2Home = process.env.PM2_HOME || path.join(os.homedir(), ".pm2");
+    const pm2DaemonUp = await fs
+      .stat(path.join(pm2Home, "rpc.sock"))
+      .then((s) => s.isSocket())
+      .catch(() => false);
     const { execFile } = await import("node:child_process");
-    const pm2 = await new Promise((resolve) => {
+    const pm2 = !pm2DaemonUp ? null : await new Promise((resolve) => {
       execFile("pm2", ["jlist"], { timeout: 6000 }, (err, out) => {
         if (err) return resolve(null);
         try { resolve(JSON.parse(out)); } catch { resolve(null); }
