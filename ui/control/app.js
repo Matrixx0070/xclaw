@@ -977,8 +977,17 @@ function connectEventsWs() {
         if (ch === "eviction" && typeof prependEvict === "function") {
           try { prependEvict(msg.data); } catch {}
         }
-        if (ch === "swarm" && typeof loadSwarmRuns === "function") {
-          loadSwarmRuns().catch(() => {});
+        if (ch === "swarm") {
+          // B5 live canvas: patch node status in place — no refetch per event
+          if (window.XClawCanvas) {
+            try { XClawCanvas.onWsEvent(msg.data); } catch {}
+          }
+          // list view refresh only on run-level transitions, not every child event
+          const p = msg.data?.phase || "";
+          if ((p === "swarm_start" || p === "swarm_done" || p === "swarm_aborted") &&
+              typeof loadSwarmRuns === "function") {
+            loadSwarmRuns().catch(() => {});
+          }
         }
         if (ch === "security") {
           // Approval lifecycle: refresh the table live + keep the nav badge
@@ -1300,6 +1309,9 @@ async function loadSwarmRuns() {
         const id = btn.getAttribute("data-id");
         try {
           const rec = await getJSON("/swarm/" + encodeURIComponent(id));
+          if (window.XClawCanvas) {
+            try { XClawCanvas.showRun(rec); } catch {}
+          }
           const el = $("swarmDetailOut");
           if (el) {
             el.style.display = "block";

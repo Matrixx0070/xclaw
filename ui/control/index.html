@@ -267,6 +267,9 @@
               <tbody></tbody>
             </table>
           </div>
+          <h3 class="subhead">Live canvas <span id="swarmCostTicker" style="float:right;font-size:0.75rem;opacity:0.8">$0.00000</span></h3>
+          <div id="swarmCanvas" style="overflow-x:auto;min-height:40px;"></div>
+          <pre id="swarmNodeTail" class="log" style="max-height:200px;display:none;"></pre>
           <h3 class="subhead">Live stream</h3>
           <pre id="swarmStreamOut" class="log" style="max-height:220px;">—</pre>
           <pre id="swarmDetailOut" class="log" style="max-height:160px;display:none;"></pre>
@@ -1034,6 +1037,7 @@
       activate();
     })();
   </script>
+  <script src="/control/canvas.js"></script>
   <script src="/control/app.js"></script>
 </body>
 </html>

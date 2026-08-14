@@ -5,6 +5,7 @@
  * S2: id + dependsOn DAG → topological waves → upstream handoff → skip-downstream
  */
 import { spawnSubagent } from "./spawn.mjs";
+import { teeSwarmEvents } from "./swarm-events.mjs";
 import {
   attachNodeReceipt,
   buildRunReceiptSummary,
@@ -992,6 +993,10 @@ export async function runSwarmFanOut(cfg, input = {}) {
       });
     }
   }
+
+  // B5: every entry path (HTTP, mission, agent tool) produces on the `swarm`
+  // WS channel — the Control UI's live canvas patches node status from these.
+  input = { ...input, onEvent: teeSwarmEvents(input.onEvent, { swarmId: run.id }) };
 
   // Append-only resume journal (advisory — write errors warn, never fail the run)
   const journal = createRunJournal(cfg, run.id, {
