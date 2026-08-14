@@ -233,9 +233,24 @@ export function isReadOnlyExecCommand(cmdRaw) {
   return segments.every(segmentIsReadOnly);
 }
 
+/**
+ * Exhaustive path-bearing arg keys — SINGLE SOURCE (self/profile.mjs imports
+ * this). The incomplete local copy this replaces caused a live BLOCKER
+ * (2026-08-14): xclaw_file_write passes `file_path`, which extractPaths did
+ * not inspect → no paths → scope defaulted "workspace" → an outside-
+ * workspace write tiered "low" and AUTO-RAN under autoApproveMaxTier —
+ * the same arg-key blind-spot class as the 3.122 edit-surface BLOCKER.
+ */
+export const PATH_ARG_KEYS = [
+  "path", "file", "filepath", "file_path", "filePath", "filename", "fileName",
+  "target", "dest", "destination", "to", "output", "outputPath", "out",
+  "dir", "directory", "cwd", "workingDir",
+  "old_path", "new_path", "oldPath", "newPath", "source", "src",
+];
+
 function extractPaths(args = {}) {
   const out = [];
-  for (const k of ["path", "file", "filepath", "filename", "target", "dest", "dir", "cwd", "workingDir"]) {
+  for (const k of PATH_ARG_KEYS) {
     if (typeof args[k] === "string" && args[k]) out.push(args[k]);
   }
   return out;
@@ -318,7 +333,19 @@ export function assessRisk({ tool, args = {}, workingDir, cfg = {}, context = {}
       scopes.push(classifyScope(m[1] || "/", workingDir));
     }
   }
-  const scope = scopes.length ? worstScope(scopes) : "workspace";
+  // Fail-closed scope default: a WRITE tool whose target we cannot extract
+  // must not silently count as workspace-scoped (that default is exactly how
+  // the file_path blind spot auto-ran an outside-workspace write). Reads keep
+  // the permissive default — worst case is a wasted read.
+  let scope;
+  if (scopes.length) {
+    scope = worstScope(scopes);
+  } else if (impact === "write") {
+    scope = "home";
+    reasons.push("write target unresolved — conservative scope");
+  } else {
+    scope = "workspace";
+  }
 
   // reversibility facts
   let reversibility = impact === "read" ? "reversible" : "recoverable";

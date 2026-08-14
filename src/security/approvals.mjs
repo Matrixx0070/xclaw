@@ -265,7 +265,7 @@ export function createApprovalGate(cfg = {}) {
   /**
    * @returns {Promise<{ok, approved?, reason?, message?, mode?, pendingId?, plan?, planFingerprint?}>}
    */
-  async function authorize(name, args, { timeoutMs = 120_000, onPending, forceHuman = false } = {}) {
+  async function authorize(name, args, { timeoutMs = 120_000, onPending, forceHuman = false, riskWorkingDir = null } = {}) {
     if (!isToolAllowed(name)) {
       return {
         ok: false,
@@ -287,7 +287,11 @@ export function createApprovalGate(cfg = {}) {
       risk = assessRisk({
         tool: name,
         args,
-        workingDir: args?.cwd || args?.workingDir || planRoot,
+        // riskWorkingDir: the RUN's workspace (session dir / mission
+        // worktree), passed by the loop. Without it, non-exec tools fell back
+        // to the gateway's planRoot and every path scoped against the wrong
+        // root (live blind spot: home writes scored "workspace").
+        workingDir: riskWorkingDir || args?.cwd || args?.workingDir || planRoot,
         cfg,
         context: security.riskContext || {},
       });

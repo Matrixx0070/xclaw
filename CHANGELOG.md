@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.126.0 — SECURITY: risk path-arg blind spot + maxTurns rescue + swarm honesty
+
+- **SECURITY (live-fired blind spot)**: `xclaw_file_write` passes `file_path`
+  — a key risk.mjs `extractPaths` never inspected → no paths extracted →
+  scope defaulted "workspace" → an OUTSIDE-workspace write tiered **low**
+  and auto-ran under `autoApproveMaxTier` with no approval and no policy
+  record (observed live: the bot wrote `/root/<file>.md` with zero
+  prompts). Same arg-key blind-spot class as the 3.122 edit-surface
+  BLOCKER — which had its own exhaustive list that risk.mjs didn't share.
+  Fixed threefold: (1) `PATH_ARG_KEYS` single-sourced in risk.mjs
+  (self/profile.mjs now imports it) and extended (file_path/filePath/
+  destination/output/old_path/new_path/…); (2) a WRITE tool with no
+  resolvable path now fails closed to conservative scope instead of
+  defaulting "workspace"; (3) `authorize` gained `riskWorkingDir` and the
+  loop passes its real run workspace — non-exec tools previously scoped
+  against the gateway's cwd (mission worktree autonomy verified preserved).
+- **maxTurns final-answer rescue**: hitting the turn budget mid-work used to
+  discard everything (live: a 5-node research swarm returned five
+  "Stopped after 6 turns" stubs, 0/5 ballots — and still reported done/ok).
+  The loop now makes one final no-tools model call asking for a best-effort
+  answer from work so far. Off via `agent.finalAnswerRescue:false`.
+- **Swarm honesty**: a node whose only output is the maxTurns stub now counts
+  as failed (`NO_OUTPUT`, status `truncated`) so the run degrades honestly;
+  an attempted-but-all-failed ballot parse adds a loud VOTE FAILED summary
+  line. Prose-only swarms without ballots are unaffected. Research role
+  default maxTurns 6 → 8 (config-overridable per run).
+
 ## 3.125.0 — quote-aware read-only classifier + /trust bounded auto-run window
 
 Live observation an hour after 3.124.0: an owner audit session produced an

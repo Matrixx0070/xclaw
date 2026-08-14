@@ -40,7 +40,9 @@ import {
 
 const ROLES = {
   research: {
-    maxTurns: 6,
+    // 6 was too tight for real deep-reads (live: 5/5 nodes truncated with
+    // zero output); override per run via swarm.roles.research.maxTurns
+    maxTurns: 8,
     worktree: false,
     isolateWorkspace: true,
     promptPrefix:
@@ -619,20 +621,29 @@ async function runNodeOnce(cfg, swarmCfg, run, node, goal, resultsByNodeId, inpu
     };
   }
 
+  // Honesty: a node whose ONLY output is the maxTurns stub produced nothing
+  // usable — live: a 5-node research swarm returned 5 stubs and still read
+  // as done/ok end-to-end. (With the loop's final-answer rescue the stub now
+  // only appears when the rescue itself failed or was disabled.)
+  const nodeText = out.result?.text || "";
+  const stubOnly =
+    Boolean(out.ok) && /^Stopped after \d+ turns \(maxTurns\)\.$/.test(nodeText.trim());
   return {
     nodeId: node.id,
     role: roleName,
     task: node.task,
     id: out.id,
-    ok: Boolean(out.ok),
-    status: out.status || (out.ok ? "done" : "error"),
-    text: out.result?.text || out.error || "",
-    error: out.error || null,
-    code: out.ok
-      ? null
-      : out.status === "timeout"
-        ? "TIMEOUT"
-        : "SPAWN_FAILED",
+    ok: Boolean(out.ok) && !stubOnly,
+    status: stubOnly ? "truncated" : out.status || (out.ok ? "done" : "error"),
+    text: nodeText || out.error || "",
+    error: stubOnly ? "maxTurns exhausted with no output" : out.error || null,
+    code: stubOnly
+      ? "NO_OUTPUT"
+      : out.ok
+        ? null
+        : out.status === "timeout"
+          ? "TIMEOUT"
+          : "SPAWN_FAILED",
     turns: out.result?.turns,
     workspace: out.result?.workspace || out.workspace,
     worktree: out.result?.worktree || out.worktree || null,
@@ -1481,6 +1492,17 @@ export async function runSwarmFanOut(cfg, input = {}) {
     }
   }
 
+  // Vote honesty note: when ballots were attempted and every one failed to
+  // parse, say so loudly (prose-only swarms are fine — status is governed by
+  // node truncation below, not by ballot absence).
+  if (
+    swarmCfg.voteEnabled !== false &&
+    voteReport &&
+    (voteReport.ballotCount || 0) > 0 &&
+    (voteReport.validBallots || 0) === 0
+  ) {
+    parts.push("## VOTE FAILED — 0 valid ballots parsed; treat consensus fields as absent");
+  }
   const summary = parts.join("\n");
   const status = abortedBySignal
     ? "aborted"

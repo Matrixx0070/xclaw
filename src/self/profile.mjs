@@ -83,10 +83,10 @@ export async function detectSelfTarget(cfg, repoDir) {
  */
 // All arg keys the codebase's tools (and common MCP file tools) use to carry
 // a path operand. Missing one is a guard bypass — keep this exhaustive.
-const PATH_ARG_KEYS = [
-  "path", "file", "filepath", "file_path", "filePath", "filename", "fileName",
-  "target", "dest", "destination", "to", "output", "outputPath", "out",
-];
+// Single-sourced from the risk module (2026-08-14): risk.mjs had its own
+// INCOMPLETE copy of this list, which re-created the exact 3.122 blind spot
+// this list was written to close.
+import { PATH_ARG_KEYS } from "../security/risk.mjs";
 // Tool-name substrings that indicate a file MUTATION (beyond write/edit) —
 // covers apply_patch, str_replace, create_or_update_file, push_files, etc.
 const MUTATOR_NAME =

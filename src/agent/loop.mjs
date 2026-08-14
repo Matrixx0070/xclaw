@@ -1034,6 +1034,10 @@ export async function runAgentLoop(options) {
             : args;
         const auth = await approvalGate.authorize(name, authArgs, {
           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
+          // risk scope must resolve against THIS run's workspace (session dir
+          // or mission worktree), not the gateway's cwd — without this, file
+          // tools' targets scoped against the wrong root (live blind spot)
+          riskWorkingDir: workingDir,
           // hook decisions: "ask" escalates to a human even on auto-approve
           // policy. "allow" only pre-answers when a human WOULD have been
           // asked — it never bypasses allowlists or exec pattern checks
@@ -1555,7 +1559,39 @@ export async function runAgentLoop(options) {
     } // end stopCycle
 
     if (turns >= maxTurns && !finalText) {
-      finalText = `Stopped after ${maxTurns} turns (maxTurns).`;
+      // Final-answer rescue: hitting the turn budget mid-work used to discard
+      // EVERYTHING (live: a 5-node research swarm returned 0/5 ballots — every
+      // node stopped at maxTurns with only the stub text below, and the run
+      // still claimed success). One more model call with NO tools asks for the
+      // best answer from work done so far. Off via agent.finalAnswerRescue:false.
+      if (cfg.agent?.finalAnswerRescue !== false) {
+        try {
+          const rescue = await provider.chat({
+            messages: [
+              ...messages,
+              {
+                role: "user",
+                content:
+                  "Turn budget exhausted — no more tool calls are possible. " +
+                  "Produce your final answer NOW from the work above. If you were asked " +
+                  "for structured output (ballot, JSON, verdict), emit it based on what " +
+                  "you found so far; state clearly what remains unverified.",
+              },
+            ],
+          });
+          const text =
+            typeof rescue?.message?.content === "string"
+              ? rescue.message.content.trim()
+              : "";
+          if (text) {
+            finalText = `${text}\n\n_[stopped at maxTurns=${maxTurns}; this is a best-effort final answer]_`;
+            onEvent({ type: "lifecycle", phase: "final_answer_rescue", turns });
+          }
+        } catch {
+          /* rescue is best-effort — fall through to the stub */
+        }
+      }
+      if (!finalText) finalText = `Stopped after ${maxTurns} turns (maxTurns).`;
     }
 
     // ── Hook: post_process — system/trusted hooks may transform the final
