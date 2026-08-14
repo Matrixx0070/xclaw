@@ -39,7 +39,7 @@ export function cleanCompletion(raw, { suffix = "" } = {}) {
  * Neighborhood context: symbols from files the target imports and files
  * that import the target. Bounded by budgetChars.
  */
-export async function buildCompletionContext(repoDir, file, { budgetChars = 4000 } = {}) {
+export async function buildCompletionContext(repoDir, file, { budgetChars = 4000, buffer = "" } = {}) {
   if (!repoDir) return { text: "", files: [] };
   let files;
   try {
@@ -49,12 +49,14 @@ export async function buildCompletionContext(repoDir, file, { budgetChars = 4000
   }
   const rel = path.isAbsolute(file) ? path.relative(repoDir, file) : file;
   const base = path.basename(rel).replace(/\.[^.]+$/, "");
-  let targetImports = [];
+  // The editor buffer (prefix) is the truth for imports — the file on disk
+  // may be stale or not exist yet (new files are the common completion case).
+  let targetImports = extractImports(rel, String(buffer || ""));
   try {
     const content = await fs.readFile(path.join(repoDir, rel), "utf8");
-    targetImports = extractImports(rel, content);
+    targetImports = [...new Set([...targetImports, ...extractImports(rel, content)])];
   } catch {
-    /* unsaved/new file — neighborhood from importers only */
+    /* unsaved/new file — buffer imports + importers-of-target only */
   }
   const interesting = [];
   for (const f of files) {
@@ -131,6 +133,7 @@ export async function completeCode(cfg, opts = {}) {
 
   const ctx = await buildCompletionContext(opts.repoDir, file || "untitled", {
     budgetChars: cfg.completion?.contextChars ?? 4000,
+    buffer: prefix,
   });
 
   const user = [

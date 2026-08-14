@@ -94,3 +94,18 @@ describe("completeCode with injected provider", () => {
     await assert.rejects(() => completeCode({}, { prefix: "  " }), /prefix required/);
   });
 });
+
+describe("buffer-derived imports (new/unsaved files)", () => {
+  it("context resolves from the prefix buffer when the file is not on disk", async () => {
+    const os2 = await import("node:os");
+    const repo = fs.mkdtempSync(path.join(os2.default.tmpdir(), "xclaw-complete3-"));
+    fs.mkdirSync(path.join(repo, "src"));
+    fs.writeFileSync(path.join(repo, "src", "money.js"), `function formatPrice(c){}\nmodule.exports = { formatPrice };\n`);
+    const ctx = await buildCompletionContext(repo, "src/brand-new.js", {
+      buffer: `const { formatPrice } = require("./money.js");\nfunction x() {`,
+    });
+    assert.ok(ctx.files.includes("src/money.js"), JSON.stringify(ctx.files));
+    assert.match(ctx.text, /formatPrice/);
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+});

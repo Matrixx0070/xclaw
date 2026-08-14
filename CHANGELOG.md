@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.106.0 — Repo-aware code completion service
+
+Final NEXT-LEVEL roadmap increment: completion-aware code completion.
+
+- `src/completion/service.mjs`: fill-in-the-middle over the provider chat
+  API with repo-intel neighborhood context — symbols from the files the
+  target imports (parsed from the LIVE editor buffer first: new/unsaved
+  files are the common case, disk may be stale) plus files that import the
+  target. Fence/echo cleanup; suffix-echo cut. Provider resolves exactly
+  like agent runs (OAuth hot-path refresh, failover, cost accounting).
+- `POST /complete {prefix, suffix?, file?, repoDir?, language?}` —
+  token-gated in BOTH auth modes (each call spends provider tokens).
+- `xclaw complete [file] [--repo dir] [--suffix code] [--lang js]` — prefix
+  on stdin, completion on stdout (editor-pluggable).
+- Live-proven: gateway completion for a NEW file resolved contextFiles from
+  the prefix buffer's requires and used both repo APIs correctly (~2s,
+  claude-sonnet-5); CLI round-trip returned `return clamp(x, 0, 100);`.
+
 ## 3.105.0 — Remote mission workers (federation)
 
 Roadmap increment: dispatch missions to OTHER xclaw gateways and drive them
