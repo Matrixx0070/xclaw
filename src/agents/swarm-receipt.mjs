@@ -665,14 +665,70 @@ export function migrateReceiptStatusFields(receipt, opts = {}) {
 }
 
 /**
+ * Pre-migration validation: identity + parseability before status rewrite.
+ * Does not require status to already be in RECEIPT_STATUS_ENUM (that is what we migrate).
+ * @returns {{ ok: boolean, errors: string[], canMigrate: boolean }}
+ */
+export function preValidateReceiptForMigration(receipt) {
+  const errors = [];
+  if (receipt == null || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return { ok: false, errors: ["receipt must be a non-null object"], canMigrate: false };
+  }
+  if (!receipt.id || typeof receipt.id !== "string") {
+    errors.push("missing id");
+  } else if (!String(receipt.id).startsWith("rcpt_")) {
+    errors.push("id should start with rcpt_");
+  }
+  if (!receipt.swarmId) errors.push("missing swarmId");
+  if (!receipt.nodeId) errors.push("missing nodeId");
+  if (typeof receipt.ok !== "boolean") errors.push("ok must be boolean");
+  if (receipt.v != null && Number(receipt.v) !== 1) {
+    errors.push(`unsupported receipt version v=${receipt.v}`);
+  }
+  // status may be legacy — only require that it exists or ok can imply it
+  if (receipt.status == null && typeof receipt.ok !== "boolean") {
+    errors.push("missing status and ok");
+  }
+  const canMigrate =
+    errors.filter((e) => e === "missing swarmId" || e === "missing nodeId" || e === "missing id" || e.startsWith("receipt must")).length === 0
+    && typeof receipt.ok === "boolean"
+    && Boolean(receipt.swarmId)
+    && Boolean(receipt.nodeId)
+    && Boolean(receipt.id);
+  // slightly looser canMigrate: need ids + ok
+  const can =
+    Boolean(receipt.swarmId) &&
+    Boolean(receipt.nodeId) &&
+    Boolean(receipt.id) &&
+    typeof receipt.ok === "boolean";
+  return {
+    ok: errors.length === 0,
+    errors,
+    canMigrate: can,
+  };
+}
+
+/**
  * Scan a receipts directory, migrate status fields, optionally write.
+ *
+ * Pre-migration hooks (opts.hooks):
+ *   beforeFile({ file, path })
+ *   afterPreValidate({ file, pre, receipt })
+ *   beforeMigrate({ file, receipt })
+ *   afterMigrate({ file, migration, postShape })
+ *   beforeWrite({ file, path, receipt }) → return false to skip write
+ *   onSkip({ file, reason, detail })
+ *
+ * opts.requirePreValid — skip migrate/write if preValidate fails canMigrate
+ * opts.skipInvalid — alias: do not write when post-shape invalid (default true on write)
+ *
  * @param {string} dir
- * @param {{ dryRun?: boolean, fixOk?: boolean }} [opts]
+ * @param {{ dryRun?: boolean, write?: boolean, fixOk?: boolean, hooks?: object, requirePreValid?: boolean }} [opts]
  */
 export async function migrateReceiptsInDir(dir, opts = {}) {
-  const dryRun = opts.dryRun !== false && opts.write !== true;
-  // dryRun default true unless write:true
   const doWrite = opts.write === true || opts.dryRun === false;
+  const hooks = opts.hooks || {};
+  const requirePreValid = opts.requirePreValid === true;
   let files = [];
   try {
     files = (await fs.readdir(dir)).filter(
@@ -684,52 +740,146 @@ export async function migrateReceiptsInDir(dir, opts = {}) {
   const results = [];
   for (const f of files) {
     const fp = path.join(dir, f);
+    try {
+      await hooks.beforeFile?.({ file: f, path: fp });
+    } catch (e) {
+      results.push({ file: f, ok: false, error: `beforeFile: ${e.message}` });
+      continue;
+    }
     let data;
     try {
       data = JSON.parse(await fs.readFile(fp, "utf8"));
     } catch (e) {
-      results.push({ file: f, ok: false, error: e.message });
+      try {
+        await hooks.onSkip?.({ file: f, reason: "parse_error", detail: e.message });
+      } catch { /* */ }
+      results.push({ file: f, ok: false, phase: "parse", error: e.message });
       continue;
     }
+
+    const pre = preValidateReceiptForMigration(data);
+    try {
+      await hooks.afterPreValidate?.({ file: f, pre, receipt: data });
+    } catch (e) {
+      results.push({ file: f, ok: false, error: `afterPreValidate: ${e.message}` });
+      continue;
+    }
+
+    if (requirePreValid && !pre.canMigrate) {
+      try {
+        await hooks.onSkip?.({
+          file: f,
+          reason: "pre_validation_failed",
+          detail: pre.errors,
+        });
+      } catch { /* */ }
+      results.push({
+        file: f,
+        ok: false,
+        phase: "pre_validate",
+        changed: false,
+        preOk: pre.ok,
+        canMigrate: pre.canMigrate,
+        preErrors: pre.errors,
+        skipped: true,
+      });
+      continue;
+    }
+
+    if (!pre.canMigrate && opts.skipUnmigratable !== false) {
+      // default: still attempt migration if we have minimal fields; if not, skip
+      if (!data.swarmId || !data.nodeId) {
+        try {
+          await hooks.onSkip?.({
+            file: f,
+            reason: "unmigratable",
+            detail: pre.errors,
+          });
+        } catch { /* */ }
+        results.push({
+          file: f,
+          ok: false,
+          phase: "pre_validate",
+          changed: false,
+          preErrors: pre.errors,
+          skipped: true,
+        });
+        continue;
+      }
+    }
+
+    try {
+      await hooks.beforeMigrate?.({ file: f, receipt: data });
+    } catch (e) {
+      results.push({ file: f, ok: false, error: `beforeMigrate: ${e.message}` });
+      continue;
+    }
+
     const mig = migrateReceiptStatusFields(data, {
       fixOk: opts.fixOk === true,
       preferErrorOnFail: opts.preferErrorOnFail === true,
     });
-    if (!mig.changed) {
-      const shape = validateReceiptShape(mig.receipt);
-      results.push({
+    const shape = validateReceiptShape(mig.receipt);
+    try {
+      await hooks.afterMigrate?.({
         file: f,
-        ok: true,
-        changed: false,
-        status: mig.to,
-        shapeOk: shape.ok,
-        shapeErrors: shape.errors,
+        migration: mig,
+        postShape: shape,
       });
+    } catch (e) {
+      results.push({ file: f, ok: false, error: `afterMigrate: ${e.message}` });
       continue;
     }
-    const shape = validateReceiptShape(mig.receipt);
-    if (doWrite && shape.ok) {
-      await fs.writeFile(fp, JSON.stringify(mig.receipt, null, 2) + "\n");
+
+    let written = false;
+    if (mig.changed && doWrite && shape.ok) {
+      let allowWrite = true;
+      try {
+        const hookResult = await hooks.beforeWrite?.({
+          file: f,
+          path: fp,
+          receipt: mig.receipt,
+        });
+        if (hookResult === false) allowWrite = false;
+      } catch (e) {
+        results.push({ file: f, ok: false, error: `beforeWrite: ${e.message}` });
+        continue;
+      }
+      if (allowWrite) {
+        await fs.writeFile(fp, JSON.stringify(mig.receipt, null, 2) + "\n");
+        written = true;
+      } else {
+        try {
+          await hooks.onSkip?.({ file: f, reason: "beforeWrite_rejected" });
+        } catch { /* */ }
+      }
     }
+
     results.push({
       file: f,
-      ok: shape.ok,
-      changed: true,
+      ok: shape.ok || !mig.changed,
+      phase: "migrate",
+      changed: mig.changed,
       from: mig.from,
       to: mig.to,
-      written: Boolean(doWrite && shape.ok),
+      written,
+      preOk: pre.ok,
+      canMigrate: pre.canMigrate,
+      preErrors: pre.errors,
       shapeOk: shape.ok,
       shapeErrors: shape.errors,
     });
   }
   return {
-    ok: results.every((r) => r.ok !== false || r.changed === false),
+    ok: results.every((r) => r.ok !== false || r.skipped === true),
     dir,
     dryRun: !doWrite,
     results,
     changed: results.filter((r) => r.changed).length,
+    skipped: results.filter((r) => r.skipped).length,
   };
 }
+
 
 export default {
   DEFAULT_CRITICAL_ROLES,
@@ -740,6 +890,7 @@ export default {
   normalizeReceiptStatus,
   validateReceiptShape,
   migrateReceiptStatusFields,
+  preValidateReceiptForMigration,
   migrateReceiptsInDir,
   buildNodeReceipt,
   writeNodeReceipt,

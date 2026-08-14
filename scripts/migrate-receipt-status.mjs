@@ -8,6 +8,7 @@
  *   node scripts/migrate-receipt-status.mjs --dir /path/to/receipts --write
  *   node scripts/migrate-receipt-status.mjs --all-runs --write
  *   node scripts/migrate-receipt-status.mjs --fix-ok --write
+ *   node scripts/migrate-receipt-status.mjs --require-pre-valid --write
  *
  * Scans ~/.xclaw/swarms/runs/<swarmId>/receipts by default (or cfg paths.configDir).
  */
@@ -32,6 +33,7 @@ function opt(name, def = null) {
 const write = flag("--write") || flag("--apply");
 const dryRun = !write;
 const fixOk = flag("--fix-ok");
+const requirePreValid = flag("--require-pre-valid");
 const allRuns = flag("--all-runs");
 const singleDir = opt("--dir");
 const configDir =
@@ -65,6 +67,7 @@ const report = {
   dryRun,
   write,
   fixOk,
+  requirePreValid,
   statusEnum: [...RECEIPT_STATUS_ENUM],
   dirs: [],
   totals: { files: 0, changed: 0, written: 0, invalid: 0 },
@@ -101,6 +104,12 @@ for (const dir of dirs) {
     dryRun,
     fixOk,
     preferErrorOnFail: fixOk,
+    requirePreValid,
+    hooks: {
+      onSkip: ({ file, reason, detail }) => {
+        console.error(`[skip] ${file}: ${reason}`, detail || "");
+      },
+    },
   });
   report.dirs.push({
     dir,
