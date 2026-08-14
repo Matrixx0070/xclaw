@@ -146,3 +146,32 @@ aborted run) was found and fixed with a regression test.
 
 This document's mandate (15-point audit → roadmap → post-roadmap) is fully
 executed. Future work starts from fresh observations, not this list.
+
+---
+
+## Mandate-2 arc (v3.113.0 → v3.122.0, 2026-08-14)
+
+Second-generation mandate: from autonomous engineering *platform* to *operating
+system*. Ten slices, each a live-proven release; then an adversarial audit.
+
+| Ver | Slice | What shipped |
+|---|---|---|
+| 3.113.0 | A1 | Operational ledger — durable black box; graph by joins over JSONL |
+| 3.114.0 | B1 | Persistent repo intelligence — incremental index shared across worktrees, compounding brief |
+| 3.115.0 | A2 | Zero-trust risk policy — facts→tier, durable pins, mission autonomy risk-bounded |
+| 3.116.0 | A3 | Time-travel — commit-on-merge, refs/xclaw/*, revert, attribution |
+| 3.117.0 | B3 | Economic routing — model metadata + measured stats + governor economy band |
+| 3.118.0 | B5 | Mission Control live canvas — swarm WS producer + SVG DAG live-patch |
+| 3.119.0 | B2 | Hierarchical context — LLM folds + fold-of-folds + mission phase carry |
+| 3.120.0 | B4 | Swarm blackboard + dynamic roles + voteNodes + tournaments |
+| 3.121.0 | A4 | Self-modification loop — self profile + autonomous deploy/health/rollback |
+| 3.122.0 | audit | 2 BLOCKERs + 10 HIGH/MED closed by adversarial review |
+
+Capstone proofs (live): first autonomous self-deploy (xclaw edited its own
+repo, gated, merged, restarted itself, health-passed); fire-drill (broken
+build → auto-rollback to known-good); tournament (N competitors → deterministic
+verify judge → winner merges).
+
+Pillar 8 (universal code intelligence) needed no new subsystem — language-
+agnostic by construction. Not built (doctrine): graph DB, model-in-the-gate,
+file-copy snapshots, embeddings/vector DB, message bus, bandit routers.
