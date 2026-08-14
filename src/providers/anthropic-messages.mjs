@@ -356,7 +356,7 @@ export function createAnthropicMessagesProvider(opts = {}) {
   const thinkingActive = Boolean(
     reasoningCfg && (reasoningCfg.enabled === true || reasoningCfg.effort)
   );
-  const EFFORT_BUDGET = { low: 4096, medium: 10000, high: 20000 };
+  const EFFORT_BUDGET = { low: 4096, medium: 10000, high: 20000, xhigh: 32000 };
   const thinkingBudget = thinkingActive
     ? Number(reasoningCfg.maxTokens) ||
       EFFORT_BUDGET[String(reasoningCfg.effort || "").toLowerCase()] ||

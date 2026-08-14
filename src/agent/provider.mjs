@@ -12,6 +12,10 @@ import {
 } from "../utils/backoff.mjs";
 import { createAnthropicMessagesProvider } from "../providers/anthropic-messages.mjs";
 import { isAnthropicOAuthToken } from "../providers/anthropic-oauth-headers.mjs";
+import {
+  isReasoningConfigured,
+  resolveReasoningEffort,
+} from "../tokens/reasoning-effort.mjs";
 
 /**
  * xAI prompt-cache sticky routing.
@@ -108,9 +112,7 @@ export function createProvider(opts) {
   // field is dropped.
   const agentCfg = opts.cfg?.agent || {};
   const reasoningCfg = agentCfg.reasoning || null;
-  const reasoningActive = Boolean(
-    reasoningCfg && (reasoningCfg.enabled === true || reasoningCfg.effort)
-  );
+  const reasoningActive = isReasoningConfigured(reasoningCfg);
 
   function resolveTemperature(callTemp) {
     if (callTemp !== undefined) return callTemp; // per-call override (null → omit)
@@ -121,22 +123,36 @@ export function createProvider(opts) {
     return 0.2;
   }
 
-  /** Apply temperature + reasoning fields to an OpenAI-compat request body. */
-  function applySampling(body, callTemp) {
+  /**
+   * Apply temperature + reasoning_effort (incl. xhigh) to OpenAI-compat body.
+   * @param {object} body
+   * @param {number|null|undefined} callTemp
+   * @param {object} [callOpts] model / reasoning_effort overrides
+   */
+  function applySampling(body, callTemp, callOpts = {}) {
     const temp = resolveTemperature(callTemp);
     if (temp != null) body.temperature = temp;
-    if (reasoningActive && reasoningCfg.effort) {
-      body.reasoning_effort = String(reasoningCfg.effort);
+    const modelForEffort = callOpts.model || body.model || defaultModel;
+    const effort = resolveReasoningEffort({
+      cfg: opts.cfg,
+      model: modelForEffort,
+      callEffort: callOpts.reasoning_effort ?? callOpts.effort,
+    });
+    if (effort) {
+      body.reasoning_effort = effort;
+    } else if (reasoningActive && reasoningCfg?.enabled === true) {
+      // enabled without effort → API default (high on 4.5/4.6); still signal intent
+      body.reasoning_effort = "high";
     }
   }
 
-  function chatOnce({ messages, tools, model, temperature, convId, conversationId, sessionId } = {}) {
+  function chatOnce({ messages, tools, model, temperature, convId, conversationId, sessionId, reasoning_effort, effort } = {}) {
     const url = new URL(`${baseUrl}/chat/completions`);
     const body = {
       model: model || defaultModel,
       messages,
     };
-    applySampling(body, temperature);
+    applySampling(body, temperature, { model, reasoning_effort, effort });
     if (tools?.length) {
       body.tools = tools;
       body.tool_choice = "auto";
@@ -246,14 +262,14 @@ export function createProvider(opts) {
    * Streaming chat (SSE). Calls onDelta({ content?, tool_calls? }) per chunk.
    * Resolves to same shape as chat() when done.
    */
-  async function chatStream({ messages, tools, model, temperature, signal, onDelta, convId, conversationId, sessionId } = {}) {
+  async function chatStream({ messages, tools, model, temperature, signal, onDelta, convId, conversationId, sessionId, reasoning_effort, effort } = {}) {
     const url = new URL(`${baseUrl}/chat/completions`);
     const body = {
       model: model || defaultModel,
       messages,
       stream: true,
     };
-    applySampling(body, temperature);
+    applySampling(body, temperature, { model, reasoning_effort, effort });
     if (tools?.length) {
       body.tools = tools;
       body.tool_choice = "auto";

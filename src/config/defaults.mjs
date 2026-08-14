@@ -95,6 +95,18 @@ export const DEFAULT_CONFIG = {
     model: "grok-4.3",
     apiKey: null,
     baseUrl: null,
+    /**
+     * Reasoning effort (xAI grok-4.5/4.6 and peers).
+     * effort: "low" | "medium" | "high" | "xhigh"
+     *   - xhigh: grok-4.6 / multi-agent; on grok-4.5 coerced to high by default
+     *   - omit / enabled-only → provider default (high on 4.5)
+     * coerceXhighFor45: true (default) maps xhigh→high when model is grok-4.5*
+     */
+    reasoning: {
+      enabled: false,
+      effort: null,
+      coerceXhighFor45: true,
+    },
     /** Post-turn follow-up chips */
   suggestions: {
     enabled: true,
