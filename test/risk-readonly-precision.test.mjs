@@ -20,6 +20,37 @@ describe("read-only exec precision (live-derived)", () => {
     }
   });
 
+  it("classifier v2: the 12:24 approval-storm patterns classify (quote-aware scanner)", () => {
+    for (const cmd of [
+      'cd /root/proj && echo "--- ARCHITECTURE.md ---" && cat ARCHITECTURE.md',
+      'cd /x && grep -rEo "TODO|FIXME|HACK" src --include="*.ts" | wc -l',
+      "sed -n '1,120p' ecosystem.config.cjs",
+      "cd /x && sed -n '14,45p' ARCHITECTURE.md",
+      "awk 'NR>=6 && NR<=30' /tmp/report.txt",
+      "awk '{print $1}' f",
+      'grep "a>b" f', // > inside double quotes is inert in bash
+      "cat 'weird; name'", // quoted separator is a filename, not a chain
+    ]) {
+      assert.equal(isReadOnlyExecCommand(cmd), true, cmd);
+    }
+  });
+
+  it("classifier v2: quoted-content escapes still fail closed", () => {
+    for (const cmd of [
+      "awk '{print > \"f\"}' x", // awk output redirect
+      "awk 'BEGIN{system(\"id\")}' x", // awk shell escape
+      "sed -i 's/a/b/' f", // in-place write
+      "sed -n '1,10p; s/x/y/e' f", // sed e executes
+      "cd /x && npx anything", // npx runs arbitrary code
+      'echo "$(id)"', // $() active inside double quotes
+      'echo "`id`"', // backtick active inside double quotes
+      'cat "unterminated', // unbalanced quote
+      "cd /x; rm y", // chain with mutator
+    ]) {
+      assert.equal(isReadOnlyExecCommand(cmd), false, cmd);
+    }
+  });
+
   it("real redirects and bypass shapes still fail closed", () => {
     for (const cmd of [
       "pm2 logs sudo-ai-v5", // unbounded tail

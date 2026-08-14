@@ -173,6 +173,40 @@ export function createApprovalGate(cfg = {}) {
    * name-based decision + A2 risk tier. risk is optional for backwards
    * compatibility (external callers); without it, behavior is pre-A2.
    */
+  /**
+   * Owner-granted bounded trust window: temporarily raises the auto-approve
+   * ceiling (never past "risky" — critical ALWAYS pends). Built for the
+   * live-observed approval storm: 52 manual inline-button approvals in 30
+   * minutes during one audit session; per-command pins can't help when every
+   * command differs. In-memory only — a gateway restart clears it, which is
+   * the safe failure mode.
+   */
+  let trustWindow = null; // { maxTier, expiresAt, by }
+
+  function setTrustWindow({ maxTier = "risky", ttlMs, by = "operator" } = {}) {
+    const ttl = Math.min(Math.max(Number(ttlMs) || 0, 60_000), 4 * 3600_000); // 1min..4h
+    const tier = tierRank(maxTier) >= tierRank("risky") ? "risky" : maxTier; // hard ceiling
+    trustWindow = { maxTier: tier, expiresAt: Date.now() + ttl, by };
+    journalDecision(cfg, { decision: "trust_window_set", maxTier: tier, ttlMs: ttl, by }, by);
+    return { ...trustWindow };
+  }
+
+  function clearTrustWindow(by = "operator") {
+    const had = Boolean(activeTrustWindow());
+    trustWindow = null;
+    if (had) journalDecision(cfg, { decision: "trust_window_cleared", by }, by);
+    return { cleared: had };
+  }
+
+  function activeTrustWindow() {
+    if (!trustWindow) return null;
+    if (Date.now() >= trustWindow.expiresAt) {
+      trustWindow = null;
+      return null;
+    }
+    return { ...trustWindow };
+  }
+
   function needsApproval(name, risk = null) {
     const n = normalizeToolName(name);
     const critical = risk?.tier === "critical";
@@ -181,13 +215,18 @@ export function createApprovalGate(cfg = {}) {
       // deliberate behavior change of A2 (criticalOverride:"legacy" reverts).
       return critical && criticalOverride !== "legacy";
     }
-    if (autoApproveMaxTier && risk) {
+    const trust = activeTrustWindow();
+    const effectiveMaxTier =
+      trust && (!autoApproveMaxTier || tierRank(trust.maxTier) > tierRank(autoApproveMaxTier))
+        ? trust.maxTier
+        : autoApproveMaxTier;
+    if (effectiveMaxTier && risk) {
       if (safeAuto.has(n)) return false;
       // M5: critical actions still honor criticalOverride even when the
       // configured max tier is "critical" — a max of "critical" must not be a
       // silent blanket auto-approve for the most dangerous class.
       if (critical && criticalOverride !== "legacy") return true;
-      return tierRank(risk.tier) > tierRank(autoApproveMaxTier);
+      return tierRank(risk.tier) > tierRank(effectiveMaxTier);
     }
     if (policy === "never") return false;
     if (safeAuto.has(n)) return false;
@@ -536,6 +575,9 @@ export function createApprovalGate(cfg = {}) {
     isToolAllowed,
     needsApproval,
     policyInfo,
+    setTrustWindow,
+    clearTrustWindow,
+    activeTrustWindow,
   };
 }
 

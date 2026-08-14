@@ -48,6 +48,7 @@ export async function handleChannelCommand({
         "/approve <id> — approve pending tool",
         "/deny <id> — deny pending tool",
         "/pending — list pending approvals",
+        "/trust <30m|2h|off|status> — bounded auto-run window (critical still asks)",
         "/resume <jobId> — resume from checkpoint",
         "/status — channel health",
         "/session — session info",
@@ -243,6 +244,36 @@ export async function handleChannelCommand({
     return {
       handled: true,
       reply: r.ok ? `${c === "/approve" ? "Approved" : "Denied"} ${arg}` : `Failed: ${r.error}`,
+    };
+  }
+
+  if (c === "/trust") {
+    // Owner-granted bounded trust window (live-observed approval storm: 52
+    // inline Allow taps in one 30-min audit session). Raises the auto-approve
+    // ceiling to "risky" for a bounded time; critical ALWAYS still pends.
+    const gate = getSharedApprovalGate(cfg);
+    const a = arg.toLowerCase();
+    if (!a || a === "status") {
+      const t = gate.activeTrustWindow?.();
+      return {
+        handled: true,
+        reply: t
+          ? `Trust window ACTIVE: ≤${t.maxTier} auto-runs until ${new Date(t.expiresAt).toISOString()} (critical still asks). /trust off to end.`
+          : "No trust window. /trust 30m grants ≤risky auto-run for 30 minutes (max 4h; critical always asks).",
+      };
+    }
+    if (a === "off" || a === "stop" || a === "end") {
+      const r = gate.clearTrustWindow?.(`${channel}:${userId || chatId || "owner"}`);
+      return { handled: true, reply: r?.cleared ? "Trust window ended." : "No trust window was active." };
+    }
+    const m = a.match(/^(\d+)\s*(m|min|h|hr)?$/);
+    if (!m) return { handled: true, reply: "Usage: /trust <minutes|Nh|off|status> — e.g. /trust 30m" };
+    const n = Number(m[1]);
+    const ttlMs = (m[2] === "h" || m[2] === "hr" ? n * 60 : n) * 60_000;
+    const t = gate.setTrustWindow?.({ ttlMs, by: `${channel}:${userId || chatId || "owner"}` });
+    return {
+      handled: true,
+      reply: `Trust window set: ≤${t.maxTier} auto-runs until ${new Date(t.expiresAt).toISOString()} (critical still asks). /trust off to end early.`,
     };
   }
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## 3.125.0 — quote-aware read-only classifier + /trust bounded auto-run window
+
+Live observation an hour after 3.124.0: an owner audit session produced an
+approval storm — 52 manual inline-button approvals in ~30 minutes, nearly all
+for provably read-only commands the regex classifier could not admit
+(`cd X && cat Y`, `sed -n '1,120p' f`, `awk 'NR>=6 && NR<=30' f`, quoted
+`grep "TODO|FIXME"` patterns).
+
+- **Classifier v2 — quote-aware scanner** (`scanCommand`): models real bash
+  semantics — single-quoted text is inert; inside double quotes `$(` and
+  backtick still substitute but `>` `<` `|` `;` `&` are inert; splits chains
+  only outside quotes; unterminated quotes/subshells/redirects fail closed.
+  New heads: `cd` (process-local), `sed` (print-slice shape only, `-i`/`-f`
+  reject), `awk` (inline single-quoted program; comparisons fine; residual
+  `>` `<` `|`, `system`, `getline` reject).
+- **`/trust <30m|2h|off|status>`** channel command: owner-granted bounded
+  trust window on the approval gate — raises the auto-approve ceiling to
+  **risky** (hard ceiling; critical ALWAYS pends) for 1min–4h, in-memory
+  (a gateway restart clears it), journaled to the ops ledger on set/clear.
+  Per-command pins can't absorb a varied audit session; a supervised window
+  can.
+
 ## 3.124.0 — eviction protects the current ask + approval-prompt precision
 
 All three from watching the owner's live DM session minutes after 3.123.0

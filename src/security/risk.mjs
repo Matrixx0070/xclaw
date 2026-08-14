@@ -99,11 +99,109 @@ const CONSTRAINED_HEADS = {
 const FIND_MUTATORS = /-(delete|exec|execdir|ok|okdir|fprint|fprintf|fls)\b/;
 const JOURNALCTL_MUTATORS = /--(vacuum|rotate|flush)/;
 
+/**
+ * Quote-aware command scanner (classifier v2). The regex classifier false-
+ * pended real audit traffic — `cd X && cat Y`, `sed -n '1,120p' f`,
+ * `awk 'NR>=6 && NR<=30' f`, `grep "TODO|FIXME" src` — because it could not
+ * tell quoted (inert) metacharacters from active ones. Bash semantics
+ * modeled: single-quoted text is fully inert; inside double quotes `$(` and
+ * backtick still substitute but `>` `<` `|` `;` `&` are inert; a backslash
+ * escapes the next char. Splits on |, ||, &&, ;, &, newline OUTSIDE quotes
+ * only. Anything ambiguous (unterminated quote, subshell, remaining
+ * redirect) → unsafe, fail closed.
+ */
+function scanCommand(raw) {
+  const segments = [];
+  let cur = "";
+  let inS = false;
+  let inD = false;
+  let unsafe = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    const n = raw[i + 1];
+    if (inS) {
+      if (c === "'") inS = false;
+      cur += c;
+      continue;
+    }
+    if (inD) {
+      if (c === '"') inD = false;
+      else if (c === "`" || (c === "$" && n === "(")) unsafe = true;
+      else if (c === "\\") {
+        cur += c + (raw[++i] ?? "");
+        continue;
+      }
+      cur += c;
+      continue;
+    }
+    if (c === "'") { inS = true; cur += c; continue; }
+    if (c === '"') { inD = true; cur += c; continue; }
+    if (c === "\\") { cur += c + (raw[++i] ?? ""); continue; }
+    if (c === "`" || (c === "$" && n === "(") || c === "(" || c === ">" || c === "<") {
+      unsafe = true;
+      cur += c;
+      continue;
+    }
+    if (c === "|" || c === ";" || c === "&" || c === "\n") {
+      segments.push(cur);
+      cur = "";
+      if ((c === "|" || c === "&") && n === c) i++;
+      continue;
+    }
+    cur += c;
+  }
+  if (inS || inD) unsafe = true; // unterminated quote
+  segments.push(cur);
+  return { segments, unsafe };
+}
+
+/** Tokenize a segment: whitespace-split, quoted spans stay single tokens. */
+function tokenizeSegment(segment) {
+  return segment.match(/(?:[^\s'"]+|'[^']*'|"(?:[^"\\]|\\.)*")+/g) || [];
+}
+
+function unquote(t) {
+  if (t.length >= 2 && ((t[0] === "'" && t.at(-1) === "'") || (t[0] === '"' && t.at(-1) === '"'))) {
+    return t.slice(1, -1);
+  }
+  return t;
+}
+
+// sed: only the print-slice shape (`sed -n '1,120p' file`) — live-observed
+// as the standard file-range read. -i/-f/-s and any non-range program reject.
+function sedIsReadOnly(tokens) {
+  const flags = tokens.slice(1).filter((t) => t.startsWith("-"));
+  if (flags.some((f) => /^-(i|s|f|-in-place|-file|-separate)/.test(f))) return false;
+  const rest = tokens.slice(1).filter((t) => !t.startsWith("-"));
+  if (!rest.length) return false;
+  const program = unquote(rest[0]);
+  return /^[0-9,$;\s]*p$/.test(program); // pure print ranges only
+}
+
+// awk: inline single-quoted program only; comparisons (>=, <=) are fine but
+// any residual > < (output redirect / cmd pipe) or system/getline rejects.
+function awkIsReadOnly(tokens) {
+  if (tokens.slice(1).some((t) => /^-(f|e|-file)/.test(t))) return false;
+  const rest = tokens.slice(1).filter((t) => !t.startsWith("-"));
+  if (!rest.length) return false;
+  const prog = rest[0];
+  if (!(prog.startsWith("'") && prog.endsWith("'"))) return false;
+  const body = prog.slice(1, -1);
+  if (/\b(system|getline|close|ENVIRON\s*\[.*\]\s*=)\b/.test(body)) return false;
+  const noCmp = body.replace(/>=|<=|==|!=/g, "");
+  return !/[<>|]/.test(noCmp);
+}
+
 function segmentIsReadOnly(segment) {
-  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  const tokens = tokenizeSegment(segment.trim());
   if (!tokens.length) return true; // empty side of a separator
   const head = tokens[0];
-  if (head.includes("/") || head.includes("=")) return false; // path heads / env prefixes: fail closed
+  if (head.includes("/") || head.includes("=") || head.includes("'") || head.includes('"')) {
+    return false; // path heads / env prefixes / quoted heads: fail closed
+  }
+  if (head === "cd") return true; // process-local; target already metachar-gated
+  if (head === "sed") return sedIsReadOnly(tokens);
+  if (head === "awk") return awkIsReadOnly(tokens);
   if (head === "find") return !FIND_MUTATORS.test(segment);
   if (head === "journalctl") return !JOURNALCTL_MUTATORS.test(segment);
   if (head === "env") return tokens.length === 1; // bare env lists; `env X cmd` runs cmd
@@ -124,19 +222,14 @@ export function isReadOnlyExecCommand(cmdRaw) {
   let cmd = String(cmdRaw || "").trim();
   if (!cmd) return false;
   // Harmless stream redirects don't disqualify: fd duplication (2>&1) and
-  // /dev/null sinks mutate nothing. Live-observed: `pm2 describe x 2>&1 |
-  // head -50` — the single most common diagnostic idiom — was pending on
-  // the raw `>` gate. Strip ONLY these exact forms before the gate.
+  // /dev/null sinks mutate nothing. Strip ONLY these exact forms before the
+  // scanner (boundary-guarded: 2>/dev/nullX is a real file write and stays).
   cmd = cmd
     .replace(/\d?\s*>\s*&\s*\d(?!\S)/g, " ")
     .replace(/\d?\s*>{1,2}\s*\/dev\/null(?![\w.-])/g, " ")
     .replace(/<\s*\/dev\/null(?![\w.-])/g, " ");
-  // structure gate on the remaining string: redirections, substitutions,
-  // subshells, and here-docs disqualify outright (a `>` inside a quoted grep
-  // pattern false-positives to the normal exec path — fail-closed, costs a
-  // prompt)
-  if (/[><]|\$\(|`|\(/.test(cmd)) return false;
-  const segments = cmd.split(/\|\||&&|;|\||&|\n/);
+  const { segments, unsafe } = scanCommand(cmd);
+  if (unsafe) return false;
   return segments.every(segmentIsReadOnly);
 }
 
