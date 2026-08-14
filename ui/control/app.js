@@ -1997,6 +1997,17 @@ loadChannels().catch(() => {});
 // a time (or an explicit "All"), selected by the chip bar — usage charts,
 // breakdown, models and logs all rescope together so nothing ever mixes.
 
+const UL_PROV_COLORS = {
+  xai: "#1DA1F2",
+  anthropic: "#D4A27F",
+  openai: "#10A37F",
+  google: "#EA4335",
+  deepseek: "#4D6BFE",
+  mistral: "#FF7000",
+  ollama: "#EEEEEE",
+  nvidia: "#76B900",
+  unknown: "#8b98a8",
+};
 const UL_TYPE_COLORS = {
   prompt: "#6ea8ff",
   cached: "#3dd68c",
@@ -2121,6 +2132,59 @@ async function ulLoadUsage() {
       (m) => `<tr><td>${esc(m.model)}</td><td>${ulFmt(m.runs)}</td><td>${ulFmt(m.tokens)}</td><td>${ulUsd(m.costUsd)}</td></tr>`
     )
     .join("") || `<tr><td colspan="4" class="muted">no runs in range</td></tr>`;
+
+  await ulRenderProviderCosts(data);
+}
+
+async function ulRenderProviderCosts(scopedData) {
+  const bars = $("ulByProviderBars");
+  const table = $("ulByProvider")?.querySelector("tbody");
+  if (!bars || !table) return;
+
+  let rows = scopedData.byProvider || [];
+  if (ulProvider !== "all" || !rows.length) {
+    try {
+      const all = await getJSON(`/usage?provider=all&days=${ulDays}`);
+      rows = all.byProvider || rows;
+    } catch {
+      /* keep scoped */
+    }
+  }
+  rows = [...rows].sort((a, b) => (b.costUsd || 0) - (a.costUsd || 0));
+  const totalSpend = rows.reduce((s, r) => s + (Number(r.costUsd) || 0), 0) || 1;
+
+  if (!rows.length) {
+    bars.innerHTML = `<div class="muted" style="font-size:0.85rem;">No provider spend in this window.</div>`;
+    table.innerHTML = "";
+    return;
+  }
+
+  bars.innerHTML = rows
+    .map((r) => {
+      const pct = Math.max(1, Math.round(((r.costUsd || 0) / totalSpend) * 100));
+      const color = UL_PROV_COLORS[r.provider] || UL_PROV_COLORS.unknown;
+      return `<div class="ul-prov-row" title="${esc(r.provider)}: ${ulUsd(r.costUsd)} (${pct}%)">
+        <span class="name">${esc(r.provider)}</span>
+        <div class="track"><div class="fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="usd">${ulUsd(r.costUsd)}</span>
+      </div>`;
+    })
+    .join("");
+
+  table.innerHTML = rows
+    .map((r) => {
+      const pct = Math.round(((r.costUsd || 0) / totalSpend) * 100);
+      const color = UL_PROV_COLORS[r.provider] || UL_PROV_COLORS.unknown;
+      return `<tr>
+        <td><i class="ul-dot" style="background:${color}"></i> ${esc(r.provider)}</td>
+        <td>${ulFmt(r.runs)}</td>
+        <td>${ulFmt(r.promptTokens)}</td>
+        <td>${ulFmt(r.completionTokens)}</td>
+        <td>${ulUsd(r.costUsd)}</td>
+        <td><div class="ul-share"><div style="width:${pct}%;background:${color}"></div></div> ${pct}%</td>
+      </tr>`;
+    })
+    .join("");
 }
 
 async function ulLoadLogs() {
