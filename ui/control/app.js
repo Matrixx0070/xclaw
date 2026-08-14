@@ -2083,7 +2083,42 @@ async function ulLoadProviders() {
   );
 }
 
+async function ulLoadCacheMonitor() {
+  try {
+    const mon = await getJSON(`/usage/cache?days=${ulDays}&recent=12&warnBelow=40`);
+    const tb = $("ulCacheRecent")?.querySelector("tbody");
+    if (!tb) return;
+    const rows = mon.recent || [];
+    tb.innerHTML = rows.length
+      ? rows
+          .map((r) => {
+            const warn = r.warn ? ' style="color:#ff5d5d"' : "";
+            const when = (r.at || "—").toString().slice(0, 19).replace("T", " ");
+            return `<tr${warn}>
+              <td>${esc(when)}</td>
+              <td>${r.cacheHitRatePct != null ? r.cacheHitRatePct + "%" : "—"}</td>
+              <td>${ulFmt(r.cachedTokens)}/${ulFmt(r.promptTokens)}</td>
+              <td>${esc(r.model || "—")}</td>
+              <td>${r.turnCount ?? "—"}</td>
+            </tr>`;
+          })
+          .join("")
+      : `<tr><td colspan="5" class="muted">No ledger runs yet — run an agent session</td></tr>`;
+    const al = $("ulCacheAlerts");
+    if (al) {
+      const t = mon.totals || {};
+      al.textContent = t.cacheHitRatePct != null
+        ? `Window hit rate ${t.cacheHitRatePct}% · ${t.turnsWithCache || 0}/${t.turns || 0} turns with cache` +
+          (mon.alerts?.lowHitRuns ? ` · ${mon.alerts.lowHitRuns} low-hit run(s)` : "")
+        : "";
+    }
+  } catch (e) {
+    console.warn("cache monitor", e);
+  }
+}
+
 async function ulLoadUsage() {
+  ulLoadCacheMonitor().catch(() => {});
   const data = await getJSON(`/usage?provider=${encodeURIComponent(ulProvider)}&days=${ulDays}`);
   const t = data.totals || {};
   $("ulTitle").textContent =
