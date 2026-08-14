@@ -1,5 +1,44 @@
 # Changelog
 
+## 3.102.0 — Mission integrity: tool scoping, complete merge evidence, artifact-free merges
+
+Evidence-driven increment. The planned "local-plane fast file ops" roadmap item
+was killed by measurement (an instrumented live mission put ALL tool time at
+0.6s of a 260s wall — computer-plane file ops run in 5–20ms; the wall-clock is
+model turns + npm install/test). What the measurement surfaced instead:
+
+- **Run-scoped tool allowlist** (`cfg.agent.allowTools`, new
+  `src/agent/tool-filter.mjs`): exact names + trailing-`*` globs, enforced on
+  BOTH the advertised schema list and dispatch (hallucinated names get a
+  blocked tool result). When the filter can never match `mcp__*`, MCP servers
+  are not connected/spawned at all for that run. No filter configured = no
+  behavior change.
+- **Missions default to a code-work tool scope** (`DEFAULT_MISSION_TOOLS`;
+  override `cfg.missions.allowTools`, `false` disables): bash + file ops +
+  glob/grep + web search/fetch + skills/recall. Closes a real autonomy gap:
+  mission agents run `autoApprove: true` for worktree isolation, but that
+  blanket approval also covered 58 MCP tools (incl. Linear WRITE ops), browser,
+  image-gen, X/finance tools — side effects far outside the worktree. It also
+  drops ~100 irrelevant schemas from every mission model turn.
+- **Merge evidence now shows everything the merge will do**: mission diffs
+  include untracked (new) files — previously the human approved a merge seeing
+  only the tracked patch while `applyWorktreeMerge` silently copied new files.
+  New-file contents are synthesized into the patch via
+  `git diff --no-index` (`untrackedPatch`), listed in `diff.untracked`, and
+  shown in Mission Control ("New files" row).
+- **Verification artifacts never merge**: `runVerification` snapshots untracked
+  files before/after (its own `npm install` creates lockfiles etc. →
+  `mission.verify.artifacts`), and `applyWorktreeMerge` gained
+  `excludeUntracked` patterns (`partitionUntrackedByExcludes`). Missions merge
+  with `DEFAULT_MERGE_EXCLUDES` (node_modules, package-lock.json, venv/pycache
+  caches; extend via `cfg.missions.mergeExclude`) + recorded artifacts.
+  Excluded paths are reported honestly (`diff.excludedUntracked`, merge result
+  `excluded`, "Excluded" row in Mission Control).
+- Tests: `test/tool-filter.test.mjs` (filter semantics + loop advertise/dispatch
+  enforcement, hermetic) and `test/mission-merge-evidence.test.mjs` (pattern
+  partition, untracked patch synthesis, real-git merge with exclusions,
+  missionCfg scoping).
+
 ## 3.101.0 — Autonomous engineering missions (plan→verify→repair→prove) + Mission Control
 
 The first increment of XClaw's autonomous-engineering core: take a high-level

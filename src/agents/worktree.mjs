@@ -365,10 +365,73 @@ async function assertWritableAncestor(target) {
   }
 }
 
+/**
+ * Match a repo-relative path against an exclude pattern.
+ * Supported shapes: exact path, directory prefix ("dir" or "dir/**" both
+ * cover the dir and everything under it), trailing-* name globs.
+ */
+export function matchesPathPattern(rel, pattern) {
+  const r = String(rel || "");
+  let p = String(pattern || "").trim();
+  if (!r || !p) return false;
+  if (p.endsWith("/**")) p = p.slice(0, -3);
+  if (r === p) return true;
+  if (r.startsWith(p + "/")) return true;
+  if (p.endsWith("*") && !p.includes("/")) {
+    // bare name glob (e.g. "npm-debug.log*") — match against basename
+    const base = r.split("/").pop();
+    return base.startsWith(p.slice(0, -1));
+  }
+  return false;
+}
+
+/** @returns {{ kept: string[], excluded: string[] }} */
+export function partitionUntrackedByExcludes(untracked = [], excludes = []) {
+  const kept = [];
+  const excluded = [];
+  for (const rel of untracked) {
+    if (excludes.some((p) => matchesPathPattern(rel, p))) excluded.push(rel);
+    else kept.push(rel);
+  }
+  return { kept, excluded };
+}
+
+/**
+ * Synthesize git-style new-file patches for untracked files so diff evidence
+ * can show their content (git diff <base> only covers tracked paths).
+ * Uses `git diff --no-index /dev/null <file>` per file (exit 1 = has diff).
+ */
+export async function untrackedPatch(
+  worktreePath,
+  files = [],
+  { maxPerFile = 40_000, maxTotal = 160_000 } = {}
+) {
+  let out = "";
+  for (const rel of files) {
+    if (out.length >= maxTotal) {
+      out += `\n# … untracked patch truncated (${files.length} files total)\n`;
+      break;
+    }
+    const r = await run(
+      "git",
+      ["diff", "--no-index", "--", "/dev/null", rel],
+      worktreePath
+    );
+    // --no-index exits 1 when files differ (expected); >1 = real error
+    if (r.code > 1) continue;
+    let piece = r.stdout || "";
+    if (piece.length > maxPerFile) {
+      piece = piece.slice(0, maxPerFile) + `\n# … ${rel} truncated\n`;
+    }
+    out += piece;
+  }
+  return out;
+}
+
 export async function applyWorktreeMerge(
   repoDir,
   worktreePath,
-  { checkOnly = false, useIndex = false } = {}
+  { checkOnly = false, useIndex = false, excludeUntracked = [] } = {}
 ) {
   if (!(await isGitRepo(repoDir))) {
     return {
@@ -409,16 +472,21 @@ export async function applyWorktreeMerge(
       ? meta.diff
       : meta.diff + "\n"
     : "";
-  const untracked = Array.isArray(meta.untracked) ? meta.untracked : [];
+  const allUntracked = Array.isArray(meta.untracked) ? meta.untracked : [];
+  const { kept: untracked, excluded: excludedUntracked } =
+    partitionUntrackedByExcludes(allUntracked, excludeUntracked);
 
   if (!trackedDiff && !untracked.length) {
     return {
       ok: true,
       code: MERGE_ERROR_CODES.NOOP,
       method: "noop",
-      stat: "no changes",
+      stat: excludedUntracked.length
+        ? `no changes (${excludedUntracked.length} untracked excluded)`
+        : "no changes",
       conflicts: [],
       copied: [],
+      excluded: excludedUntracked,
     };
   }
 
@@ -545,6 +613,7 @@ export async function applyWorktreeMerge(
     conflicts: copyConflicts,
     patchPath,
     copied,
+    excluded: excludedUntracked,
   };
 }
 

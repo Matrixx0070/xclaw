@@ -28,6 +28,8 @@ import {
   worktreeDiff,
   isGitRepo,
   applyWorktreeMerge,
+  partitionUntrackedByExcludes,
+  untrackedPatch,
 } from "../agents/worktree.mjs";
 import { buildTaskContext } from "../intel/repo-intel.mjs";
 import {
@@ -89,8 +91,65 @@ export async function detectVerifyCommands(dir, configured) {
   return []; // nothing detectable — verification will report "no checks"
 }
 
+/**
+ * Code-work tool scope for mission agents. Missions run autoApprove inside
+ * the worktree — but blanket auto-approval must not extend to tools with
+ * side effects OUTSIDE the workspace (MCP servers, browser, image gen, …).
+ * The allowlist keeps the autonomy story honest ("isolated shadow workspace")
+ * and drops ~100 irrelevant tool schemas from every model turn.
+ * Override via cfg.missions.allowTools (array), or `false` to disable.
+ */
+export const DEFAULT_MISSION_TOOLS = [
+  "xclaw_bash",
+  "xclaw_file_*",
+  // engine-variant file tool names (thin/module engines)
+  "file_*",
+  "read_file",
+  "write_file",
+  "edit_file",
+  "list_dir",
+  // local code-navigation + reference lookup (SSRF-guarded web plane)
+  "glob",
+  "grep",
+  "web_search",
+  "web_fetch",
+  "xclaw_web_search",
+  "xclaw_web_fetch",
+  "xclaw_skill",
+  "xclaw_recall",
+  "recall",
+];
+
+/**
+ * Untracked paths that must never merge into the user's repo: ecosystem
+ * artifacts created by verification (npm install) or the agent's own test
+ * runs. Tracked files are unaffected (their changes ride the git patch).
+ * Extend via cfg.missions.mergeExclude.
+ */
+const DEFAULT_MERGE_EXCLUDES = [
+  "node_modules/**",
+  "package-lock.json",
+  "npm-debug.log*",
+  ".venv/**",
+  "__pycache__/**",
+  ".pytest_cache/**",
+];
+
+export function missionMergeExcludes(cfg, mission) {
+  const base = Array.isArray(cfg.missions?.mergeExclude)
+    ? cfg.missions.mergeExclude
+    : DEFAULT_MERGE_EXCLUDES;
+  return [...base, ...(mission.verify?.artifacts || [])];
+}
+
 /** Mission-scoped cfg: full autonomy INSIDE the worktree, guards intact. */
-function missionCfg(cfg, worktreePath) {
+export function missionCfg(cfg, worktreePath) {
+  const allowTools =
+    cfg.missions?.allowTools === false
+      ? undefined
+      : Array.isArray(cfg.missions?.allowTools)
+        ? cfg.missions.allowTools
+        : DEFAULT_MISSION_TOOLS;
   return {
     ...cfg,
     security: {
@@ -106,6 +165,7 @@ function missionCfg(cfg, worktreePath) {
       ...(cfg.agent || {}),
       maxTurns: cfg.missions?.maxTurnsPerPhase ?? 20,
       persistTranscript: false,
+      ...(allowTools ? { allowTools } : {}),
     },
   };
 }
@@ -161,6 +221,13 @@ async function runVerification(cfg, mission) {
   const dir = mission.worktree.path;
   const commands = await detectVerifyCommands(dir, mission.verify.commands);
   mission.verify.commands = commands;
+  // Snapshot untracked files BEFORE running anything: whatever verification
+  // itself creates (npm install lockfiles, caches, …) is a verify artifact,
+  // excluded from merge evidence and from the merge copy.
+  let untrackedBefore = null;
+  try {
+    untrackedBefore = new Set((await worktreeDiff(dir)).untracked || []);
+  } catch {}
   // node projects need deps in the fresh worktree
   try {
     await fs.access(path.join(dir, "package.json"));
@@ -177,6 +244,15 @@ async function runVerification(cfg, mission) {
     if (r.code !== 0) break; // fail fast — the failure is the repair input
   }
   const ok = commands.length > 0 && results.every((r) => r.pass);
+  if (untrackedBefore) {
+    try {
+      const after = (await worktreeDiff(dir)).untracked || [];
+      const created = after.filter((rel) => !untrackedBefore.has(rel));
+      mission.verify.artifacts = Array.from(
+        new Set([...(mission.verify.artifacts || []), ...created])
+      );
+    } catch {}
+  }
   mission.verify.results = results;
   mission.verify.history.push({
     at: new Date().toISOString(),
@@ -187,12 +263,33 @@ async function runVerification(cfg, mission) {
   return { ok, results, noChecks: commands.length === 0 };
 }
 
-async function captureDiff(mission) {
+/**
+ * Evidence for the merge gate. Must show EVERYTHING the merge would do:
+ * the tracked patch AND new (untracked) files — which applyWorktreeMerge
+ * copies but `git diff <base>` never lists. Verify artifacts + configured
+ * excludes are partitioned out (they will not merge) but recorded honestly.
+ */
+async function captureDiff(cfg, mission) {
   const d = await worktreeDiff(mission.worktree.path);
+  const { kept: untracked, excluded } = partitionUntrackedByExcludes(
+    d.untracked || [],
+    missionMergeExcludes(cfg, mission)
+  );
+  let patch = String(d.diff || "");
+  if (untracked.length) {
+    try {
+      const extra = await untrackedPatch(mission.worktree.path, untracked);
+      if (extra) patch += (patch.endsWith("\n") || !patch ? "" : "\n") + extra;
+    } catch {}
+  }
+  const trackedStat = (d.diffStat || d.stat || "").trim();
   mission.diff = {
-    stat: d.diffStat || d.stat || null,
-    patch: String(d.diff || "").slice(0, 200_000),
-    files: d.files || null,
+    stat:
+      trackedStat +
+      (untracked.length ? `${trackedStat ? " · " : ""}${untracked.length} new file(s): ${untracked.slice(0, 20).join(", ")}` : ""),
+    patch: patch.slice(0, 200_000),
+    untracked,
+    excludedUntracked: excluded,
     committedCount: d.committedCount ?? null,
   };
   return mission.diff;
@@ -388,7 +485,7 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride } = 
       mission.status = "failed";
       mission.error = `verification failed after ${mission.attempts} attempts`;
       emit("verify", mission.error);
-      await captureDiff(mission);
+      await captureDiff(cfg, mission);
       await saveMission(cfg, mission);
       return mission;
     }
@@ -414,7 +511,7 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride } = 
   }
 
   // ── evidence + gate
-  await captureDiff(mission);
+  await captureDiff(cfg, mission);
   mission.status = "merge_ready";
   emit("ready", `verified — diff ready (${(mission.diff.patch || "").length} chars of patch)`);
   await saveMission(cfg, mission);
@@ -434,7 +531,11 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
   }
   mission.status = "merging";
   await saveMission(cfg, mission);
-  const out = await applyWorktreeMerge(mission.repoDir, mission.worktree.path, { checkOnly });
+  const out = await applyWorktreeMerge(mission.repoDir, mission.worktree.path, {
+    checkOnly,
+    // never carry verification/ecosystem artifacts into the user's repo
+    excludeUntracked: missionMergeExcludes(cfg, mission),
+  });
   if (checkOnly) {
     mission.status = "merge_ready";
     addEvent(mission, "merge", `check-only: ${out.ok ? "clean" : out.error || out.code}`);

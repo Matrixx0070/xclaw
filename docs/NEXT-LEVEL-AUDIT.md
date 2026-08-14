@@ -93,7 +93,16 @@ aborted run) was found and fixed with a regression test.
 
 ## Roadmap (next increments)
 
-- Local-plane fast file ops for worktree edits (latency).
+- ~~Local-plane fast file ops for worktree edits (latency)~~ **KILLED by
+  measurement (v3.102.0)**: an instrumented live mission showed ALL tool calls
+  (11 file ops + 4 bash) total 0.6s of a 260s wall; computer-plane file ops run
+  in 5–20ms and do not queue behind in-flight bash. The wall-clock goes to
+  model turns (~31%) and verification (npm install/test). The observed
+  "1–2min/call" was model-turn latency, not the plane. What v3.102.0 shipped
+  instead (the measured bottleneck + what measurement surfaced): mission tool
+  scoping (113→~15 schemas/turn — also closes MCP/browser/image tools escaping
+  the worktree-isolation story under mission autoApprove), untracked files in
+  merge evidence, and verify-artifact merge exclusion.
 - Swarm-backed missions (parallel specialized agents under one mission +
   dependency-aware merge).
 - Visual "point-and-prompt" (element → source → change → rebuild → verify).

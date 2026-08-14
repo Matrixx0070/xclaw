@@ -2938,6 +2938,10 @@ async function openMission(id, { silent } = {}) {
       ["Verified", m.verify?.history?.length ? (m.verify.history.at(-1).ok ? "yes" : "no") : "—",
         m.verify?.history?.at(-1)?.ok ? "good" : "warn"],
       ["Diff", m.diff ? `${m.diff.patchChars} chars` : "—"],
+      ["New files", m.diff?.untracked?.length ? m.diff.untracked.join(", ").slice(0, 200) : "—"],
+      ["Excluded", m.diff?.excludedUntracked?.length
+        ? `${m.diff.excludedUntracked.length} artifact(s) won't merge: ${m.diff.excludedUntracked.join(", ").slice(0, 160)}`
+        : "—"],
       ["Agent runs", String((m.agentRuns || []).length)],
     ]);
     $("msnVerify").textContent = (m.verify?.history || [])

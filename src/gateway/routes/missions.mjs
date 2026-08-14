@@ -83,7 +83,14 @@ export async function tryHandleMissionsRoute({ p, method, req, res, url, cfg, js
     json(res, 200, {
       ...rest,
       running: engine.missionRunning(id),
-      diff: diff ? { stat: diff.stat, files: diff.files, patchChars: (diff.patch || "").length } : null,
+      diff: diff
+        ? {
+            stat: diff.stat,
+            untracked: diff.untracked || [],
+            excludedUntracked: diff.excludedUntracked || [],
+            patchChars: (diff.patch || "").length,
+          }
+        : null,
     });
     return true;
   }
@@ -93,7 +100,13 @@ export async function tryHandleMissionsRoute({ p, method, req, res, url, cfg, js
       json(res, 404, { error: "mission not found" });
       return true;
     }
-    json(res, 200, { id, stat: mission.diff?.stat || null, patch: mission.diff?.patch || "" });
+    json(res, 200, {
+      id,
+      stat: mission.diff?.stat || null,
+      patch: mission.diff?.patch || "",
+      untracked: mission.diff?.untracked || [],
+      excludedUntracked: mission.diff?.excludedUntracked || [],
+    });
     return true;
   }
   if (action === "resume" && method === "POST") {

@@ -32,6 +32,7 @@ import {
 } from "../sessions/transcript.mjs";
 import { revalidatePlan, isExecTool } from "../security/system-run-plan.mjs";
 import { createRunBudget } from "./run-budget.mjs";
+import { compileToolFilter, filterToolDefs } from "./tool-filter.mjs";
 import { resolveProviderRoute, resolveProviderRouteAsync } from "../providers/router.mjs";
 import { createSpawnTool, spawnSubagent } from "../agents/spawn.mjs";
 import { createSwarmRunTool } from "../agents/swarm-run.mjs";
@@ -403,6 +404,11 @@ export async function runAgentLoop(options) {
   const sessionId = await computer.createSession(workingDir);
   onEvent({ type: "computer", phase: "session", sessionId });
 
+  // Optional run-scoped tool allowlist (cfg.agent.allowTools): narrows which
+  // tools this run advertises AND dispatches. Missions use it to scope agents
+  // to code work; approval gate/hooks/sandbox still apply to what remains.
+  const toolFilter = compileToolFilter(cfg.agent?.allowTools);
+
   let tools;
   try {
     const computerTools = await computer.listTools(sessionId);
@@ -480,9 +486,25 @@ export async function runAgentLoop(options) {
       });
     }
     // MCP servers (cfg.mcp.servers) — discovered tools join the loop and are
-    // dispatched via the Tool Router's agent plane (same security path)
-    var mcpTools = await createAgentMcpTools({ cfg, onEvent });
+    // dispatched via the Tool Router's agent plane (same security path).
+    // Skipped entirely when the run's tool filter can never match an mcp__
+    // name: no point connecting/spawning servers whose tools can't be used.
+    var mcpTools =
+      toolFilter && !toolFilter.allowsPrefix("mcp__")
+        ? { enabled: false, toolDefs: [], names: [], close() {} }
+        : await createAgentMcpTools({ cfg, onEvent });
     tools.push(...mcpTools.toolDefs);
+    if (toolFilter) {
+      const before = tools.length;
+      tools = filterToolDefs(tools, toolFilter);
+      onEvent({
+        type: "tools",
+        phase: "filtered",
+        allow: toolFilter.patterns,
+        before,
+        after: tools.length,
+      });
+    }
     onEvent({
       type: "tools",
       count: tools.length,
@@ -880,6 +902,27 @@ export async function runAgentLoop(options) {
           args = JSON.parse(call.function?.arguments || "{}");
         } catch {
           args = {};
+        }
+
+        // Run-scoped allowlist: excluded tools are never advertised, but a
+        // hallucinated name must not reach the router either (defense in depth).
+        if (toolFilter && !toolFilter.match(name)) {
+          const msg = `Tool ${name} is not available in this run (allowTools).`;
+          onEvent({ type: "tool", phase: "blocked", name, reason: "allowTools" });
+          messages.push(
+            makeToolMessage({ tool_call_id: call.id, content: msg, source: "filter" })
+          );
+          toolTrace.push(
+            finalizeToolTraceEntry(
+              beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
+              {
+                resultText: msg,
+                blocked: true,
+                policy: { phase: "filter", decision: "deny", reason: "allowTools" },
+              }
+            )
+          );
+          return;
         }
 
         // ── Hook: pre_tool_use — matcher-scoped; system hooks may rewrite
