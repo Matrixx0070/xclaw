@@ -225,12 +225,22 @@ export async function foldAgedTurns(messages, opts = {}) {
   }
 
   const aged = rest.slice(0, rest.length - keepRecent);
-  const recent = rest.slice(rest.length - keepRecent);
+  let recent = rest.slice(rest.length - keepRecent);
+  // B2 fold-of-folds invariant: at most ONE [xclaw-compaction] note survives
+  // a fold. A prior summary inside the recent window is promoted into aged
+  // (its facts merge into the new note) instead of stacking.
+  const priorInRecent = recent.filter((m) => m._compaction);
+  if (priorInRecent.length) {
+    aged.unshift(...priorInRecent);
+    recent = recent.filter((m) => !m._compaction);
+  }
 
   let summaryText;
+  let llmUsed = false;
   if (typeof opts.summarizeFn === "function") {
     try {
       summaryText = await opts.summarizeFn(aged);
+      llmUsed = Boolean(summaryText);
     } catch {
       summaryText = null;
     }
@@ -252,7 +262,7 @@ export async function foldAgedTurns(messages, opts = {}) {
       agedCount: aged.length,
       recentCount: recent.length,
       summaryChars: summaryText.length,
-      llm: Boolean(opts.summarizeFn && summaryText),
+      llm: llmUsed,
     },
   };
 }

@@ -314,11 +314,29 @@ function mledger(cfg, mission, kind, data, actor = "agent") {
   }
 }
 
+// B2: bounded cross-phase carry — repair finally sees what execute changed.
+function digestPhase(phase, out) {
+  const tools = (out.toolTrace || [])
+    .filter((t) => t.status !== "blocked")
+    .slice(-12)
+    .map((t) => `${t.name}${t.argsSummary ? `(${String(t.argsSummary).slice(0, 60)})` : ""}=${t.status}`)
+    .join(" · ");
+  const finalText = String(out.finalText ?? out.text ?? "").slice(0, 400);
+  return `[${phase}] turns=${out.turns ?? "?"}${tools ? `\ntools: ${tools}` : ""}${finalText ? `\nsaid: ${finalText}` : ""}`;
+}
+
+const CARRY_MAX_CHARS = 2500;
+
 async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provider, providerOverride }) {
   const t0 = Date.now();
   const mcfg = missionCfg(cfg, mission.worktree.path);
+  const carry = mission.context?.carry;
+  const userMessage =
+    carry && phase !== "plan"
+      ? `${message}\n\nSTATE FROM PRIOR PHASES (compact notes — trust but verify):\n${carry}`
+      : message;
   const out = await runAgentLoop({
-    userMessage: message,
+    userMessage,
     cfg: mcfg,
     workingDir: mission.worktree.path,
     // The loop defaults to the process-wide shared approval gate, which a
@@ -345,6 +363,14 @@ async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provi
     ms: Date.now() - t0,
     at: new Date().toISOString(),
   });
+  // B2: append this phase's digest to the mission carry (newest kept)
+  try {
+    mission.context = mission.context || {};
+    const next = `${mission.context.carry ? mission.context.carry + "\n" : ""}${digestPhase(phase, out)}`;
+    mission.context.carry = next.length > CARRY_MAX_CHARS ? next.slice(-CARRY_MAX_CHARS) : next;
+  } catch {
+    /* carry is best-effort */
+  }
   // A3: free snapshot — commit phase work on the mission branch (skips when
   // clean). Failed missions keep their worktree, so these commits are the
   // forensic timeline; worktreeDiff is merge-base-aware and already folds

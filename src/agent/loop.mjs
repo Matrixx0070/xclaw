@@ -688,6 +688,7 @@ export async function runAgentLoop(options) {
   const guard = createLoopGuard(cfg.agent?.loopGuard || {});
   const approvalGate = options.approvalGate || getSharedApprovalGate(cfg);
   const toolTrace = [];
+  let llmSummarizer; // B2: lazily resolved once per run (undefined = not yet)
   // A1 operational ledger — every finalized trace entry (including denials,
   // which post_tool_use hooks never see) is journaled durably. Best-effort:
   // ledger failures never block the loop.
@@ -785,12 +786,17 @@ export async function runAgentLoop(options) {
         }
       }
       // P0 compaction: reversible tool offload + extractive fold under pressure
+      // (B2: folds route through a cheap LLM when configured; error → extractive)
       {
         const cOpts = compactionOptsFromConfig(cfg);
         if (cOpts.enabled) {
+          if (llmSummarizer === undefined) {
+            const { createLlmSummarizer } = await import("../tokens/summarize.mjs");
+            llmSummarizer = createLlmSummarizer(cfg, { onEvent });
+          }
           const { messages: compacted, report: cReport } = await compactMessages(
             messages,
-            { ...cOpts, pressure }
+            { ...cOpts, pressure, summarizeFn: llmSummarizer || undefined }
           );
           if (!cReport.skipped) {
             messages = compacted;
