@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.103.0 — Swarm-backed missions
+
+Missions can now execute as a dependency-aware swarm instead of a single
+agent (`strategy: "swarm"` on POST /missions / the Control-UI selector, or
+`cfg.missions.strategy`). Roadmap increment "swarm-backed missions".
+
+- The plan phase asks the model for a fenced ` ```xclaw-mission-tasks ` JSON
+  graph (2–6 nodes, roles implement/research/verify, `dependsOn` ordering);
+  `parseMissionTasks` validates via the swarm's own `normalizeTaskGraph`
+  (last block wins). Caller-provided `tasks` skip the plan model run
+  entirely. An unparseable graph degrades honestly to solo execute.
+- Execute fans out via `runSwarmFanOut` INSIDE the mission worktree:
+  implement nodes get their own worktrees branched from the shadow
+  workspace and early-merge back into it — the user's repo stays untouched
+  and the evidence gate (verification-before-merge_ready) is unchanged. A
+  failed fan-out degrades to the solo execute path.
+- `approvalGate` is threaded through `spawnSubagent` and the swarm input so
+  every node inherits the mission's worktree autonomy (same shared-gate
+  singleton hazard fixed for solo missions in 3.102.1).
+- Mission records carry `strategy` + `swarm {tasks, runId, nodes}`; Control
+  UI shows Strategy and per-node status in the mission detail.
+- Live-proven: a swarm mission on a real repo — model authored a 2-node
+  graph, both nodes ran in parallel, early-merged, verification passed with
+  the nodes' own tests, merge landed 4 new files.
+
 ## 3.102.1 — Mission approval-gate override + tool pairing invariant + resume evidence gate
 
 Three real bugs found while live-verifying 3.102.0 through the gateway (a
