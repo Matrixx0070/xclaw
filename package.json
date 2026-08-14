@@ -64,7 +64,9 @@
     "ci": "node scripts/ci-gate.mjs",
     "ci:live": "XCLAW_CI_LIVE=1 node scripts/ci-gate.mjs --live",
     "ci-gate": "node scripts/ci-gate.mjs",
-    "p2:swarm-fail": "node scripts/p2-swarm-fail.mjs"
+    "p2:swarm-fail": "node scripts/p2-swarm-fail.mjs",
+    "migrate:receipt-status": "node scripts/migrate-receipt-status.mjs",
+    "migrate:receipt-status:write": "node scripts/migrate-receipt-status.mjs --write"
   },
   "files": [
     "bin/",

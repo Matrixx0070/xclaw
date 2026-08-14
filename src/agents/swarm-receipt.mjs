@@ -633,6 +633,104 @@ export function buildRunReceiptSummary(results = []) {
 }
 
 
+
+/**
+ * Migrate a receipt object's status (and optional ok/status consistency).
+ * @returns {{ receipt: object, changed: boolean, from: string|null, to: string|null }}
+ */
+export function migrateReceiptStatusFields(receipt, opts = {}) {
+  if (!receipt || typeof receipt !== "object") {
+    return { receipt, changed: false, from: null, to: null, error: "not_object" };
+  }
+  const from = receipt.status != null ? String(receipt.status) : null;
+  const to = normalizeReceiptStatus(from, receipt.ok);
+  let changed = from !== to;
+  const next = { ...receipt, status: to };
+  if (opts.fixOk === true && typeof next.ok === "boolean") {
+    if (next.ok === true && ["error", "failed", "skipped", "aborted"].includes(to)) {
+      next.ok = false;
+      changed = true;
+    }
+    if (next.ok === false && to === "done") {
+      // keep ok=false; map status to error for consistency when requested
+      if (opts.preferErrorOnFail === true) {
+        next.status = "error";
+        changed = true;
+      }
+    }
+  }
+  if (next.v == null) next.v = 1;
+  if (!next.kind) next.kind = "swarm_node";
+  return { receipt: next, changed, from, to: next.status };
+}
+
+/**
+ * Scan a receipts directory, migrate status fields, optionally write.
+ * @param {string} dir
+ * @param {{ dryRun?: boolean, fixOk?: boolean }} [opts]
+ */
+export async function migrateReceiptsInDir(dir, opts = {}) {
+  const dryRun = opts.dryRun !== false && opts.write !== true;
+  // dryRun default true unless write:true
+  const doWrite = opts.write === true || opts.dryRun === false;
+  let files = [];
+  try {
+    files = (await fs.readdir(dir)).filter(
+      (f) => f.endsWith(".json") && !f.startsWith("id-")
+    );
+  } catch (e) {
+    return { ok: false, error: e.message, dir, results: [] };
+  }
+  const results = [];
+  for (const f of files) {
+    const fp = path.join(dir, f);
+    let data;
+    try {
+      data = JSON.parse(await fs.readFile(fp, "utf8"));
+    } catch (e) {
+      results.push({ file: f, ok: false, error: e.message });
+      continue;
+    }
+    const mig = migrateReceiptStatusFields(data, {
+      fixOk: opts.fixOk === true,
+      preferErrorOnFail: opts.preferErrorOnFail === true,
+    });
+    if (!mig.changed) {
+      const shape = validateReceiptShape(mig.receipt);
+      results.push({
+        file: f,
+        ok: true,
+        changed: false,
+        status: mig.to,
+        shapeOk: shape.ok,
+        shapeErrors: shape.errors,
+      });
+      continue;
+    }
+    const shape = validateReceiptShape(mig.receipt);
+    if (doWrite && shape.ok) {
+      await fs.writeFile(fp, JSON.stringify(mig.receipt, null, 2) + "\n");
+    }
+    results.push({
+      file: f,
+      ok: shape.ok,
+      changed: true,
+      from: mig.from,
+      to: mig.to,
+      written: Boolean(doWrite && shape.ok),
+      shapeOk: shape.ok,
+      shapeErrors: shape.errors,
+    });
+  }
+  return {
+    ok: results.every((r) => r.ok !== false || r.changed === false),
+    dir,
+    dryRun: !doWrite,
+    results,
+    changed: results.filter((r) => r.changed).length,
+  };
+}
+
 export default {
   DEFAULT_CRITICAL_ROLES,
   CRITICAL_ROLES,
@@ -641,6 +739,8 @@ export default {
   RECEIPT_STATUS_ENUM,
   normalizeReceiptStatus,
   validateReceiptShape,
+  migrateReceiptStatusFields,
+  migrateReceiptsInDir,
   buildNodeReceipt,
   writeNodeReceipt,
   readNodeReceipt,
