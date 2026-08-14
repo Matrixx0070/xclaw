@@ -1695,6 +1695,38 @@ export async function runAgentLoop(options) {
     }
   }
   if (tokensEnabled && usageSnap && (usageSnap.hasCost || usageSnap.hasRealUsage)) {
+    // Providers that return no cost (anthropic OAuth) used to land $null
+    // rows — the governor and economy band saw $0 for the dominant traffic.
+    // Estimate from getModelMeta list rates and mark the row estimated.
+    let runCostUsd = usageSnap.hasCost ? usageSnap.costUsd : null;
+    let costEstimated = false;
+    if (runCostUsd == null) {
+      try {
+        const { estimateUsdFromUsage } = await import("../tokens/cost-governor.mjs");
+        const est = estimateUsdFromUsage(
+          { prompt_tokens: usageSnap.promptTokens, completion_tokens: usageSnap.completionTokens },
+          cfg,
+          { modelRef: provider?.modelRef || provider?.model || cfg.agent?.model }
+        );
+        if (est > 0) {
+          runCostUsd = est;
+          costEstimated = true;
+        }
+      } catch {
+        /* estimation optional */
+      }
+    }
+    // Feed the DAILY governor — before this, only /job mode recorded spend,
+    // so normal channel/mission traffic never moved the soft/hard caps or
+    // the economy band.
+    if (runCostUsd > 0) {
+      try {
+        const { recordJobCost } = await import("../tokens/cost-governor.mjs");
+        await recordJobCost(cfg, { usd: runCostUsd, jobId: sessionId });
+      } catch {
+        /* governor best-effort */
+      }
+    }
     await usageTracker.persistLedger({
       // runId + provider power the per-provider Usage & Logs views — every
       // ledger entry must say which provider actually served it (model name
@@ -1703,6 +1735,7 @@ export async function runAgentLoop(options) {
       provider: provider?.providerName || route?.provider || cfg.agent?.provider || null,
       sessionId,
       userMessagePreview: String(userMessage || "").slice(0, 120),
+      ...(costEstimated ? { costUsd: runCostUsd, costEstimated: true } : {}),
       cache: usageSnap.cache,
     });
   }

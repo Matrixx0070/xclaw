@@ -12,7 +12,7 @@ import { recordJob } from "./history.mjs";
 import { rememberJob } from "../memory/durable.mjs";
 import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
 import { saveCheckpoint } from "./checkpoint.mjs";
-import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
+import { checkCostBudget, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
 import { checkSeatBudget, recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
 
 /** @typedef {"pending"|"running"|"succeeded"|"failed"|"cancelled"|"budget_exceeded"} JobStatus */
@@ -273,7 +273,9 @@ export async function runJob(opts) {
         estimateUsdFromUsage(job.usage, cfg) ??
         0;
       job.costUsd = usd;
-      await recordJobCost(cfg, { usd, jobId: job.id });
+      // NOTE: no recordJobCost here anymore — the agent loop itself feeds
+      // the daily governor for every run now; recording again here would
+      // double-count job traffic.
       if (seatsEnabled(cfg)) {
         const peer = opts.peer || opts.seatPeer || opts.from || null;
         const tok =

@@ -300,6 +300,17 @@ export function parseModelRef(ref) {
  * Returns { cost: {in, out} ($/token), latency: fast|standard|slow,
  *           tier: 1..4, context, source }.
  */
+// $/token list prices for widely-known paid model families (fallback only —
+// tokens.rates and models.meta override). Estimates are marked as such
+// downstream; local/self-hosted models deliberately absent.
+const DEFAULT_FAMILY_RATES = {
+  opus: { in: 15e-6, out: 75e-6 },
+  fable: { in: 15e-6, out: 75e-6 },
+  sonnet: { in: 3e-6, out: 15e-6 },
+  haiku: { in: 0.8e-6, out: 4e-6 },
+  "grok-4": { in: 3e-6, out: 15e-6 },
+};
+
 export function getModelMeta(cfg = {}, modelRef = "") {
   const ref = String(modelRef || "");
   const { provider, model } = parseModelRef(ref);
@@ -319,6 +330,20 @@ export function getModelMeta(cfg = {}, modelRef = "") {
   if (!cost && rates.default) {
     cost = { in: rates.default.in || 0, out: rates.default.out || 0 };
     costSource = "rates:default";
+  }
+  // Fallback list prices for well-known PAID families ($/token). Without
+  // these, a host with no tokens.rates config recorded $0 for every
+  // anthropic OAuth run (observed live: 115 runs / 1.78M input tokens in a
+  // day, ledger $0.0000) — leaving the cost governor and the B3 economy
+  // band completely blind. Config (tokens.rates / models.meta) still wins.
+  if (!cost) {
+    for (const [fam, r] of Object.entries(DEFAULT_FAMILY_RATES)) {
+      if ((model || ref).toLowerCase().includes(fam)) {
+        cost = { in: r.in, out: r.out };
+        costSource = `default:${fam}`;
+        break;
+      }
+    }
   }
 
   // registry entry for context + tags
