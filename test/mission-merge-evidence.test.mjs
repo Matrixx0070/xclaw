@@ -152,6 +152,7 @@ describe("resume of a failed mission cannot bypass the evidence gate", () => {
     mission.status = "failed";
     mission.error = "boom (simulated prior model error)";
     mission.plan = { summary: "plan", contextFiles: [] };
+    mission.executedAt = new Date().toISOString(); // failed AFTER execute
     mission.worktree = { path: w.path, branch: w.branch };
     await saveMission(cfg, mission);
 
@@ -241,6 +242,110 @@ describe("mission autonomy survives a gateway-primed shared approval gate", () =
       "mission bash must never pend for human approval (dedicated mission gate)");
     const bashEnd = events.find((e) => e.type === "tool" && e.phase === "end" && e.name === "xclaw_bash");
     assert.ok(bashEnd, "bash actually executed");
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+describe("phase-aware resume", () => {
+  it("failed BEFORE execute completed → re-enters at executing, not verifying", async () => {
+    const os4 = await import("node:os");
+    const tmp = fs.mkdtempSync(path.join(os4.default.tmpdir(), "xclaw-phase-resume-"));
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    git(["init", "-q"], repo);
+    git(["config", "user.email", "t@x"], repo);
+    git(["config", "user.name", "t"], repo);
+    fs.writeFileSync(path.join(repo, "a.txt"), "x\n");
+    git(["add", "."], repo);
+    git(["commit", "-qm", "init"], repo);
+    const w = await createWorktree(repo, { branchPrefix: "phase" });
+    assert.equal(w.ok, true);
+
+    const cfg = { paths: { configDir: path.join(tmp, "cfgdir") }, missions: {} };
+    const { newMission, saveMission, loadMission } = await import("../src/missions/store.mjs");
+    const { resumeMission } = await import("../src/missions/engine.mjs");
+    const mission = newMission({ goal: "g", repoDir: repo });
+    mission.status = "failed";
+    mission.error = "died mid-execute";
+    mission.plan = { summary: "plan", contextFiles: [] };
+    // executedAt NOT set — execute never finished
+    mission.worktree = { path: w.path, branch: w.branch };
+    await saveMission(cfg, mission);
+
+    const res = await resumeMission(cfg, mission.id, {});
+    assert.equal(res.status, "executing", "re-enters the execute phase");
+    // background run will fail (no provider in this hermetic cfg) — that is
+    // fine; the assertion above is the phase mapping. Wait for it to settle
+    // so the tmp dir can be removed safely.
+    for (let i = 0; i < 100; i++) {
+      const m = await loadMission(cfg, mission.id);
+      if (["failed", "merge_ready", "done"].includes(m.status)) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const final = await loadMission(cfg, mission.id);
+    assert.notEqual(final.status, "merge_ready", "still cannot skip to the gate");
+    try { await removeWorktree(repo, w.path); } catch {}
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+describe("transactional merge", () => {
+  function mkRepoPair(tag) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `xclaw-txn-${tag}-`));
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(repo);
+    git(["init", "-q"], repo);
+    git(["config", "user.email", "t@x"], repo);
+    git(["config", "user.name", "t"], repo);
+    fs.writeFileSync(path.join(repo, "a.js"), "one\n");
+    git(["add", "."], repo);
+    git(["commit", "-qm", "init"], repo);
+    return { tmp, repo };
+  }
+
+  it("failing tracked patch → NOTHING lands (no partial untracked copies)", async () => {
+    const { tmp, repo } = mkRepoPair("patchfail");
+    const w = await createWorktree(repo, { branchPrefix: "txn" });
+    fs.writeFileSync(path.join(w.path, "a.js"), "two\n");     // tracked change
+    fs.writeFileSync(path.join(w.path, "new.js"), "brand\n"); // untracked
+    // make the repo-side file conflict so the patch cannot apply
+    fs.writeFileSync(path.join(repo, "a.js"), "conflicting local edit\n");
+    const out = await applyWorktreeMerge(repo, w.path, {});
+    assert.equal(out.ok, false);
+    assert.equal(fs.existsSync(path.join(repo, "new.js")), false,
+      "untracked copy must NOT land when the patch fails");
+    assert.deepEqual(out.copied, []);
+    try { await removeWorktree(repo, w.path); } catch {}
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("existing dest with DIFFERENT content → conflict + full rollback", async () => {
+    const { tmp, repo } = mkRepoPair("collide");
+    const w = await createWorktree(repo, { branchPrefix: "txn" });
+    fs.writeFileSync(path.join(w.path, "keep.js"), "from-mission\n");
+    fs.writeFileSync(path.join(w.path, "clash.js"), "mission version\n");
+    fs.writeFileSync(path.join(repo, "clash.js"), "USER DATA — precious\n"); // untracked user file
+    const out = await applyWorktreeMerge(repo, w.path, {});
+    assert.equal(out.ok, false);
+    assert.match(out.error, /refusing to overwrite/);
+    assert.equal(fs.readFileSync(path.join(repo, "clash.js"), "utf8"), "USER DATA — precious\n",
+      "user's untracked file untouched");
+    assert.equal(fs.existsSync(path.join(repo, "keep.js")), false,
+      "sibling copy rolled back");
+    assert.equal(out.rolledBack, true);
+    try { await removeWorktree(repo, w.path); } catch {}
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("identical content at dest → idempotent re-merge, no conflict", async () => {
+    const { tmp, repo } = mkRepoPair("idem");
+    const w = await createWorktree(repo, { branchPrefix: "txn" });
+    fs.writeFileSync(path.join(w.path, "same.js"), "identical\n");
+    fs.writeFileSync(path.join(repo, "same.js"), "identical\n");
+    const out = await applyWorktreeMerge(repo, w.path, {});
+    assert.equal(out.ok, true, out.error);
+    assert.ok(out.copied.includes("same.js"));
+    try { await removeWorktree(repo, w.path); } catch {}
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 });

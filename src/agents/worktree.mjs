@@ -490,58 +490,14 @@ export async function applyWorktreeMerge(
     };
   }
 
-  // --- untracked / new files: copy into main repo ---
-  const copied = [];
-  const copyConflicts = [];
-  for (const rel of untracked) {
-    // skip nested git or absolute escapes
-    if (!rel || rel.includes("..") || path.isAbsolute(rel)) {
-      copyConflicts.push(`skip unsafe path: ${rel}`);
-      continue;
-    }
-    const src = path.join(worktreePath, rel);
-    const dest = path.join(repoDir, rel);
-    try {
-      const st = await fs.stat(src);
-      if (checkOnly) {
-        // Pure dry-run: probe writability of the nearest existing ancestor —
-        // NO filesystem writes of any kind on the checkOnly path.
-        await assertWritableAncestor(st.isDirectory() ? dest : path.dirname(dest));
-        copied.push(rel);
-        continue;
-      }
-      if (st.isDirectory()) {
-        await fs.cp(src, dest, { recursive: true, force: false, errorOnExist: false });
-      } else {
-        await fs.mkdir(path.dirname(dest), { recursive: true });
-        await fs.copyFile(src, dest);
-      }
-      copied.push(rel);
-    } catch (e) {
-      copyConflicts.push(`${rel}: ${e.message || e}`);
-    }
-  }
-  if (copyConflicts.length && !trackedDiff) {
-    return {
-      ok: false,
-      code: classifyCopyConflicts(copyConflicts),
-      method: "copy-untracked",
-      error: copyConflicts.join("; "),
-      conflicts: copyConflicts,
-      copied,
-    };
-  }
-  if (checkOnly && !trackedDiff) {
-    return {
-      ok: true,
-      method: "copy-untracked-check",
-      stat: `${copied.length} untracked to copy`,
-      conflicts: [],
-      copied,
-    };
-  }
-
-  // --- tracked modifications via git apply ---
+  // --- TRANSACTIONAL ordering ---
+  // 1. patch --check FIRST: a failing tracked patch must leave the repo
+  //    byte-untouched (previously untracked copies landed before the patch
+  //    failed — a partial merge the caller had to clean up).
+  // 2. copy untracked WITHOUT overwriting: an existing destination is a
+  //    conflict (identical content = idempotent re-merge, skipped silently).
+  // 3. apply the patch; if it fails after a passing check (race), roll the
+  //    copies back.
   let patchPath = null;
   if (trackedDiff) {
     patchPath = path.join(
@@ -549,7 +505,6 @@ export async function applyWorktreeMerge(
       `xclaw-merge-${randomUUID().slice(0, 8)}.patch`
     );
     await fs.writeFile(patchPath, patchText);
-
     const checkArgs = useIndex
       ? ["apply", "--check", "--index", patchPath]
       : ["apply", "--check", patchPath];
@@ -561,26 +516,130 @@ export async function applyWorktreeMerge(
         code: classifyPatchError(errText),
         method: useIndex ? "git-apply-index" : "git-apply",
         error: errText,
-        conflicts: [errText, ...copyConflicts],
+        conflicts: [errText],
         patchPath,
-        copied,
+        copied: [],
+        excluded: excludedUntracked,
       };
     }
-    if (checkOnly) {
+  }
+
+  // --- untracked / new files ---
+  const copied = [];
+  const copyConflicts = [];
+  const createdPaths = []; // for rollback: paths that did NOT exist before us
+  async function rollbackCopies() {
+    for (const p2 of createdPaths.reverse()) {
+      try {
+        await fs.rm(p2, { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
+    }
+  }
+  async function sameContent(a, b) {
+    try {
+      const [x, y] = await Promise.all([fs.readFile(a), fs.readFile(b)]);
+      return x.equals(y);
+    } catch {
+      return false;
+    }
+  }
+  for (const rel of untracked) {
+    // skip nested git or absolute escapes
+    if (!rel || rel.includes("..") || path.isAbsolute(rel)) {
+      copyConflicts.push(`skip unsafe path: ${rel}`);
+      continue;
+    }
+    const src2 = path.join(worktreePath, rel);
+    const dest = path.join(repoDir, rel);
+    try {
+      const st = await fs.stat(src2);
+      if (checkOnly) {
+        // Pure dry-run: probe writability of the nearest existing ancestor —
+        // NO filesystem writes of any kind on the checkOnly path.
+        await assertWritableAncestor(st.isDirectory() ? dest : path.dirname(dest));
+        copied.push(rel);
+        continue;
+      }
+      let destExists = false;
+      try {
+        await fs.stat(dest);
+        destExists = true;
+      } catch {
+        /* absent — normal case */
+      }
+      if (destExists) {
+        if (!st.isDirectory() && (await sameContent(src2, dest))) {
+          copied.push(rel); // idempotent re-merge of identical content
+          continue;
+        }
+        copyConflicts.push(
+          `${rel}: destination already exists (refusing to overwrite untracked data)`
+        );
+        continue;
+      }
+      if (st.isDirectory()) {
+        await fs.cp(src2, dest, { recursive: true, force: false, errorOnExist: false });
+      } else {
+        await fs.mkdir(path.dirname(dest), { recursive: true });
+        await fs.copyFile(src2, dest);
+      }
+      createdPaths.push(dest);
+      copied.push(rel);
+    } catch (e) {
+      copyConflicts.push(`${rel}: ${e.message || e}`);
+    }
+  }
+  if (copyConflicts.length && !checkOnly) {
+    // transactional: any copy conflict aborts the merge and undoes our copies
+    await rollbackCopies();
+    return {
+      ok: false,
+      code: classifyCopyConflicts(copyConflicts),
+      method: "copy-untracked",
+      error: copyConflicts.join("; "),
+      conflicts: copyConflicts,
+      copied: [],
+      rolledBack: true,
+      patchPath,
+      excluded: excludedUntracked,
+    };
+  }
+  if (checkOnly) {
+    if (copyConflicts.length && !trackedDiff) {
       return {
-        ok: true,
-        method: useIndex ? "git-apply-index-check" : "git-apply-check",
-        stat: "clean",
-        patchPath,
+        ok: false,
+        code: classifyCopyConflicts(copyConflicts),
+        method: "copy-untracked-check",
+        error: copyConflicts.join("; "),
+        conflicts: copyConflicts,
         copied,
+        excluded: excludedUntracked,
       };
     }
+    return {
+      ok: true,
+      method: trackedDiff
+        ? (useIndex ? "git-apply-index-check" : "git-apply-check")
+        : "copy-untracked-check",
+      stat: trackedDiff ? "clean" : `${copied.length} untracked to copy`,
+      conflicts: copyConflicts,
+      patchPath,
+      copied,
+      excluded: excludedUntracked,
+    };
+  }
+
+  // --- tracked modifications via git apply (check already passed) ---
+  if (trackedDiff) {
     const applyArgs = useIndex
       ? ["apply", "--index", patchPath]
       : ["apply", patchPath];
     const apply = await run("git", applyArgs, repoDir);
     if (apply.code !== 0) {
       const errText = apply.stderr || "apply failed";
+      await rollbackCopies();
       return {
         ok: false,
         code: classifyPatchError(errText) === MERGE_ERROR_CODES.PATCH_REJECT
@@ -588,19 +647,13 @@ export async function applyWorktreeMerge(
           : classifyPatchError(errText),
         method: useIndex ? "git-apply-index" : "git-apply",
         error: errText,
-        conflicts: [errText, ...copyConflicts],
+        conflicts: [errText],
         patchPath,
-        copied,
+        copied: [],
+        rolledBack: true,
+        excluded: excludedUntracked,
       };
     }
-  } else if (checkOnly) {
-    return {
-      ok: true,
-      method: "copy-untracked-check",
-      stat: `${copied.length} untracked`,
-      copied,
-      conflicts: [],
-    };
   }
 
   const st = await run("git", ["status", "--porcelain"], repoDir);

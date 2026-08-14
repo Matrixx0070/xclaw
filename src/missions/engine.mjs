@@ -33,7 +33,7 @@ import {
 } from "../agents/worktree.mjs";
 import { buildTaskContext } from "../intel/repo-intel.mjs";
 import { createApprovalGate } from "../security/approvals.mjs";
-import { runSwarmFanOut, normalizeTaskGraph } from "../agents/swarm-run.mjs";
+import { runSwarmFanOut, resumeSwarmRun, normalizeTaskGraph } from "../agents/swarm-run.mjs";
 import {
   newMission,
   saveMission,
@@ -213,7 +213,7 @@ async function runMissionSwarm(cfg, mission, { onEvent, signal, spawnSeam }) {
   const mcfg = missionCfg(cfg, mission.worktree.path);
   const gate = createApprovalGate(mcfg);
   const t0 = Date.now();
-  const res = await runSwarmFanOut(mcfg, {
+  const swarmInput = {
     goal: mission.goal,
     tasks: mission.swarm.tasks,
     workingDir: mission.worktree.path,
@@ -230,7 +230,22 @@ async function runMissionSwarm(cfg, mission, { onEvent, signal, spawnSeam }) {
       } catch {}
     },
     ...(spawnSeam ? { spawnSubagent: spawnSeam } : {}),
-  });
+  };
+  // Phase-aware resume: a prior interrupted fan-out left a journal — replay
+  // its terminal-ok nodes and re-run only what's missing. Any journal/run
+  // mismatch degrades to a fresh fan-out (never a hard failure).
+  let res = null;
+  if (mission.swarm.runId) {
+    try {
+      const r = await resumeSwarmRun(mcfg, mission.swarm.runId, swarmInput);
+      if (r && !["RUN_NOT_FOUND", "JOURNAL_NOT_FOUND", "JOURNAL_GRAPH_MISMATCH"].includes(r.code)) {
+        res = r;
+      }
+    } catch {
+      /* fresh fan-out below */
+    }
+  }
+  if (!res) res = await runSwarmFanOut(mcfg, swarmInput);
   mission.agentRuns.push({
     phase: "execute-swarm",
     turns: null,
@@ -474,11 +489,19 @@ export async function resumeMission(cfg, id, opts = {}) {
   } else {
     addEvent(mission, "recovery", `resuming from status ${mission.status}`);
     if (["interrupted", "failed"].includes(mission.status)) {
-      // conservative: re-enter at verification — cheapest safe re-entry that
-      // re-proves whatever state the worktree is actually in. "failed" MUST
-      // be remapped too: a stale failed status would skip every phase block
-      // in runMission and fall through to merge_ready with zero evidence.
-      mission.status = mission.plan ? "verifying" : "planning";
+      // Phase-aware re-entry. "failed" MUST be remapped: a stale failed
+      // status would skip every phase block in runMission and fall through
+      // to merge_ready with zero evidence.
+      //  - no plan yet            → planning
+      //  - execute never finished → executing (solo re-runs; swarm resumes
+      //    its journal, replaying terminal-ok nodes)
+      //  - execute finished       → verifying (re-prove worktree state)
+      mission.status = !mission.plan
+        ? "planning"
+        : !mission.executedAt
+          ? "executing"
+          : "verifying";
+      addEvent(mission, "recovery", `re-entering at ${mission.status}`);
     }
   }
   await saveMission(cfg, mission);
@@ -625,6 +648,9 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
       );
     }
     await bailIfAborted();
+    // phase marker: resume distinguishes "execute never finished" (re-run
+    // execute) from "execute done, verify/repair from here"
+    mission.executedAt = new Date().toISOString();
     mission.status = "verifying";
     await saveMission(cfg, mission);
   }

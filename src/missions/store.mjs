@@ -98,6 +98,7 @@ export function newMission({ goal, repoDir, maxAttempts = 3, autoMerge = false, 
     attempts: 0,
     worktree: null, // {path, branch}
     plan: null, // {summary, contextFiles}
+    executedAt: null, // set when the execute phase completes (phase-aware resume)
     verify: { commands: verify, results: [], history: [] },
     diff: null, // {stat, patch}
     agentRuns: [], // {phase, turns, ms, at}
