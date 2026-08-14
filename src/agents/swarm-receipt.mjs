@@ -725,6 +725,68 @@ export function preValidateReceiptForMigration(receipt) {
  * @param {string} dir
  * @param {{ dryRun?: boolean, write?: boolean, fixOk?: boolean, hooks?: object, requirePreValid?: boolean }} [opts]
  */
+
+/**
+ * Normalize beforeWrite hook return value into a decision.
+ * @returns {{ allow: boolean, reason: string|null, detail: * }}
+ */
+export function resolveBeforeWriteDecision(result) {
+  if (result === undefined || result === null || result === true) {
+    return { allow: true, reason: null, detail: null };
+  }
+  if (result === false) {
+    return { allow: false, reason: "beforeWrite_rejected", detail: null };
+  }
+  if (typeof result === "string") {
+    return { allow: false, reason: result || "beforeWrite_rejected", detail: null };
+  }
+  if (typeof result === "object") {
+    if (result.allow === false || result.ok === false || result.write === false) {
+      return {
+        allow: false,
+        reason: result.reason || result.message || "beforeWrite_rejected",
+        detail: result.detail ?? result,
+      };
+    }
+    if (result.allow === true || result.ok === true || result.write === true) {
+      return { allow: true, reason: null, detail: result };
+    }
+  }
+  return { allow: true, reason: null, detail: result };
+}
+
+/**
+ * Built-in beforeWrite guards; optional userBeforeWrite runs after.
+ */
+export function createBeforeWriteGuard(opts = {}) {
+  const requireShape = opts.requireShape !== false;
+  const requireStatusEnum = opts.requireStatusEnum !== false;
+  const user = opts.userBeforeWrite;
+
+  return async function beforeWriteGuard(ctx) {
+    const { receipt } = ctx;
+    if (requireShape) {
+      const shape = validateReceiptShape(receipt);
+      if (!shape.ok) {
+        return { allow: false, reason: "post_shape_invalid", detail: shape.errors };
+      }
+    }
+    if (requireStatusEnum) {
+      const st = receipt?.status;
+      if (!RECEIPT_STATUS_ENUM.includes(st)) {
+        return { allow: false, reason: "status_not_in_enum", detail: { status: st } };
+      }
+    }
+    if (!receipt?.id || !String(receipt.id).startsWith("rcpt_")) {
+      return { allow: false, reason: "invalid_receipt_id", detail: receipt?.id };
+    }
+    if (typeof user === "function") {
+      return user(ctx);
+    }
+    return { allow: true };
+  };
+}
+
 export async function migrateReceiptsInDir(dir, opts = {}) {
   const doWrite = opts.write === true || opts.dryRun === false;
   const hooks = opts.hooks || {};
@@ -740,6 +802,7 @@ export async function migrateReceiptsInDir(dir, opts = {}) {
   const results = [];
   for (const f of files) {
     const fp = path.join(dir, f);
+    let writeDeniedReason = null;
     try {
       await hooks.beforeFile?.({ file: f, path: fp });
     } catch (e) {
@@ -832,37 +895,74 @@ export async function migrateReceiptsInDir(dir, opts = {}) {
     }
 
     let written = false;
-    if (mig.changed && doWrite && shape.ok) {
-      let allowWrite = true;
+        if (mig.changed && doWrite) {
+      const guard = createBeforeWriteGuard({
+        requireShape: opts.requireShape !== false,
+        requireStatusEnum: opts.requireStatusEnum !== false,
+        userBeforeWrite: hooks.beforeWrite,
+      });
+      let decision;
       try {
-        const hookResult = await hooks.beforeWrite?.({
+        const hookResult = await guard({
           file: f,
           path: fp,
           receipt: mig.receipt,
+          previous: data,
+          migration: mig,
+          postShape: shape,
         });
-        if (hookResult === false) allowWrite = false;
+        decision = resolveBeforeWriteDecision(hookResult);
       } catch (e) {
-        results.push({ file: f, ok: false, error: `beforeWrite: ${e.message}` });
+        results.push({
+          file: f,
+          ok: false,
+          phase: "beforeWrite",
+          error: `beforeWrite: ${e.message}`,
+        });
         continue;
       }
-      if (allowWrite) {
+      if (!decision.allow) {
+        writeDeniedReason = decision.reason || "beforeWrite_rejected";
+        try {
+          await hooks.onSkip?.({
+            file: f,
+            reason: writeDeniedReason,
+            detail: decision.detail,
+          });
+        } catch { /* */ }
+      } else {
         await fs.writeFile(fp, JSON.stringify(mig.receipt, null, 2) + "\n");
         written = true;
-      } else {
         try {
-          await hooks.onSkip?.({ file: f, reason: "beforeWrite_rejected" });
-        } catch { /* */ }
+          await hooks.afterWrite?.({
+            file: f,
+            path: fp,
+            receipt: mig.receipt,
+            from: mig.from,
+            to: mig.to,
+          });
+        } catch (e) {
+          results.push({
+            file: f,
+            ok: false,
+            phase: "afterWrite",
+            written: true,
+            error: `afterWrite: ${e.message}`,
+          });
+          continue;
+        }
       }
     }
 
     results.push({
       file: f,
-      ok: shape.ok || !mig.changed,
+      ok: (shape.ok || !mig.changed) && !writeDeniedReason,
       phase: "migrate",
       changed: mig.changed,
       from: mig.from,
       to: mig.to,
       written,
+      writeDeniedReason,
       preOk: pre.ok,
       canMigrate: pre.canMigrate,
       preErrors: pre.errors,
@@ -891,6 +991,8 @@ export default {
   validateReceiptShape,
   migrateReceiptStatusFields,
   preValidateReceiptForMigration,
+  createBeforeWriteGuard,
+  resolveBeforeWriteDecision,
   migrateReceiptsInDir,
   buildNodeReceipt,
   writeNodeReceipt,
