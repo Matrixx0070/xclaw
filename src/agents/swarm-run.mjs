@@ -1562,6 +1562,8 @@ export async function runSwarmFanOut(cfg, input = {}) {
     require: receiptsRequired(cfg, input),
     requireFailedReceipts: failedReceiptsRequired(cfg, input),
     forbidPending: input.forbidPending === true || cfg?.swarm?.forbidPending === true,
+    criticalRoles: input.criticalRoles || cfg?.swarm?.criticalRoles,
+    cfg,
   });
 
   const finalResult = {

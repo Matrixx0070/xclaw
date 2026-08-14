@@ -9,6 +9,40 @@ import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
 
+/**
+ * Roles whose outcomes gate trust / merge (receipt policy).
+ * Includes core swarm DAG roles + fabric-bound spawn roles that can change state.
+ * Override via opts.criticalRoles or cfg.swarm.criticalRoles.
+ */
+export const DEFAULT_CRITICAL_ROLES = Object.freeze([
+  "implement",
+  "verify",
+  "critic",
+  "research",
+  "actor",
+  "planner",
+]);
+
+/** @deprecated alias — prefer DEFAULT_CRITICAL_ROLES */
+export const CRITICAL_ROLES = DEFAULT_CRITICAL_ROLES;
+
+/**
+ * Resolve critical role set from opts and/or config.
+ * @param {object} [opts]
+ * @param {object} [cfg]
+ * @returns {string[]}
+ */
+export function resolveCriticalRoles(opts = {}, cfg = {}) {
+  const fromOpts = opts.criticalRoles;
+  const fromCfg = cfg?.swarm?.criticalRoles;
+  const list = Array.isArray(fromOpts) && fromOpts.length
+    ? fromOpts
+    : Array.isArray(fromCfg) && fromCfg.length
+      ? fromCfg
+      : DEFAULT_CRITICAL_ROLES;
+  return [...new Set(list.map((x) => String(x).toLowerCase()).filter(Boolean))];
+}
+
 function swarmsRoot(cfg) {
   return path.join(
     cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"),
@@ -287,7 +321,9 @@ export function receiptVoteWeight(nodeResult = {}, opts = {}) {
  *   require / requireReceipts — successful critical nodes must have receipts
  *   requireFailedReceipts — failed or skipped critical nodes must also have receipts
  *                           (durable proof of failure / UPSTREAM_FAILED)
- *   criticalRoles — default implement, verify, critic
+ *   criticalRoles — default DEFAULT_CRITICAL_ROLES (implement, verify, critic,
+ *                   research, actor, planner); override via opts or cfg.swarm.criticalRoles
+ *   cfg — optional config for resolveCriticalRoles
  *   forbidPending — if true, any status=pending fails the policy
  *
  * @returns {{ ok: boolean, reasons: string[], summary: object }}
@@ -297,11 +333,7 @@ export function evaluateReceiptPolicy(results = [], opts = {}) {
   const requireFailed =
     opts.requireFailedReceipts === true || opts.requireFailed === true;
   const forbidPending = opts.forbidPending === true;
-  const criticalRoles = new Set(
-    (opts.criticalRoles || ["implement", "verify", "critic"]).map((x) =>
-      String(x).toLowerCase()
-    )
-  );
+  const criticalRoles = new Set(resolveCriticalRoles(opts, opts.cfg || {}));
   const reasons = [];
   let withReceipt = 0;
   let withoutReceipt = 0;
@@ -399,6 +431,9 @@ export function buildRunReceiptSummary(results = []) {
 
 
 export default {
+  DEFAULT_CRITICAL_ROLES,
+  CRITICAL_ROLES,
+  resolveCriticalRoles,
   buildNodeReceipt,
   writeNodeReceipt,
   readNodeReceipt,

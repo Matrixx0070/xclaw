@@ -5,6 +5,8 @@ import {
   evaluateReceiptPolicy,
   failedReceiptsRequired,
   hasReceipt,
+  DEFAULT_CRITICAL_ROLES,
+  resolveCriticalRoles,
 } from "../src/agents/swarm-receipt.mjs";
 
 describe("receipt policy requireFailedReceipts", () => {
@@ -101,5 +103,42 @@ describe("receipt policy requireFailedReceipts", () => {
   it("hasReceipt accepts receiptId", () => {
     assert.equal(hasReceipt({ receiptId: "x" }), true);
     assert.equal(hasReceipt({}), false);
+  });
+});
+
+describe("critical roles list", () => {
+  it("DEFAULT_CRITICAL_ROLES includes research and actor", () => {
+    assert.ok(DEFAULT_CRITICAL_ROLES.includes("implement"));
+    assert.ok(DEFAULT_CRITICAL_ROLES.includes("verify"));
+    assert.ok(DEFAULT_CRITICAL_ROLES.includes("critic"));
+    assert.ok(DEFAULT_CRITICAL_ROLES.includes("research"));
+    assert.ok(DEFAULT_CRITICAL_ROLES.includes("actor"));
+    assert.ok(DEFAULT_CRITICAL_ROLES.includes("planner"));
+  });
+
+  it("resolveCriticalRoles prefers opts then cfg then default", () => {
+    assert.deepEqual(resolveCriticalRoles({ criticalRoles: ["merge"] }), ["merge"]);
+    assert.deepEqual(
+      resolveCriticalRoles({}, { swarm: { criticalRoles: ["implement", "Verify"] } }),
+      ["implement", "verify"]
+    );
+    assert.equal(resolveCriticalRoles().length, DEFAULT_CRITICAL_ROLES.length);
+  });
+
+  it("research success without receipt fails under default critical set", () => {
+    const r = evaluateReceiptPolicy(
+      [{ nodeId: "r1", role: "research", ok: true, status: "done" }],
+      { requireReceipts: true }
+    );
+    assert.equal(r.ok, false);
+    assert.ok(r.summary.criticalMissing.includes("r1"));
+  });
+
+  it("observer remains non-critical by default", () => {
+    const r = evaluateReceiptPolicy(
+      [{ nodeId: "o1", role: "observer", ok: true, status: "done" }],
+      { requireReceipts: true }
+    );
+    assert.equal(r.ok, true);
   });
 });
