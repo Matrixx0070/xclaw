@@ -44,6 +44,7 @@ import {
 } from "../skills/loader.mjs";
 import { loadDurableMemoryFile } from "../memory/durable.mjs";
 import { createRecallTool } from "../memory/recall.mjs";
+import { createRepoIntelTool } from "../intel/intel-tool.mjs";
 import { estimateRequestTokens, resolveTokenizer } from "../tokens/count.mjs";
 import { createUsageTracker, defaultLedgerPath } from "../tokens/usage-tracker.mjs";
 import {
@@ -484,6 +485,18 @@ export async function runAgentLoop(options) {
           name: recallTool.name,
           description: recallTool.description,
           parameters: recallTool.parameters,
+        },
+      });
+    }
+    // Persistent repo intelligence (B1) — compounding index for every run
+    if (cfg.intel?.tool !== false) {
+      const intelTool = createRepoIntelTool({ cfg, workingDir });
+      tools.push({
+        type: "function",
+        function: {
+          name: intelTool.name,
+          description: intelTool.description,
+          parameters: intelTool.parameters,
         },
       });
     }
@@ -1248,6 +1261,9 @@ export async function runAgentLoop(options) {
           } else if (name === "xclaw_recall") {
             const recallTool = createRecallTool({ cfg, workingDir });
             result = await recallTool.execute(args);
+          } else if (name === "xclaw_repo_intel") {
+            const intelTool = createRepoIntelTool({ cfg, workingDir });
+            result = await intelTool.execute(args);
           } else {
             // T1: single dispatch path via Tool Router (local | computer | search | mcp)
             let dispatchArgs = args;

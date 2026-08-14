@@ -160,6 +160,10 @@ export const DEFAULT_CONFIG = {
     perJobUsd: 1,
     pauseQueueOnHard: true,
   },
+  // B1 persistent repo intelligence — incremental per-repo index + brief
+  intel: {
+    tool: true, // register xclaw_repo_intel in every agent run
+  },
   // A1 operational ledger — the durable black box (docs/LEDGER.md)
   ledger: {
     enabled: true,

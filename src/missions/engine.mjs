@@ -32,6 +32,7 @@ import {
   untrackedPatch,
 } from "../agents/worktree.mjs";
 import { buildTaskContext } from "../intel/repo-intel.mjs";
+import { openIntelStore } from "../intel/intel-store.mjs";
 import { createApprovalGate } from "../security/approvals.mjs";
 import { getSharedLedger } from "../ops/ledger.mjs";
 import { runSwarmFanOut, resumeSwarmRun, normalizeTaskGraph } from "../agents/swarm-run.mjs";
@@ -104,6 +105,7 @@ export async function detectVerifyCommands(dir, configured) {
  */
 export const DEFAULT_MISSION_TOOLS = [
   "xclaw_bash",
+  "xclaw_repo_intel",
   "xclaw_file_*",
   // engine-variant file tool names (thin/module engines)
   "file_*",
@@ -580,8 +582,21 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
   if (!mission.plan) {
     mission.status = "planning";
     await saveMission(cfg, mission);
-    const intel = await buildTaskContext(mission.worktree.path, mission.goal);
-    emit("intel", `context: ${intel.files.length} ranked files of ${intel.stats.totalFiles} (${intel.stats.chars} chars)`);
+    // B1: persistent index (worktree shares the main repo's store) — the
+    // legacy per-call scan remains the fallback if the store breaks.
+    let intel;
+    try {
+      const store = await openIntelStore(cfg, mission.worktree.path);
+      intel = await store.query(mission.goal);
+      const r = intel.stats.refresh || {};
+      emit(
+        "intel",
+        `context: ${intel.files.length} ranked files of ${intel.stats.totalFiles} (${intel.stats.chars} chars) — index ${r.cold ? "cold build" : "warm"} (${r.changed ?? "?"} changed, ${r.ms ?? "?"}ms)`
+      );
+    } catch (e) {
+      intel = await buildTaskContext(mission.worktree.path, mission.goal);
+      emit("intel", `context (legacy scan — store failed: ${e.message}): ${intel.files.length} ranked files (${intel.stats.chars} chars)`);
+    }
     const wantsGraph = mission.strategy === "swarm" && !mission.swarm?.tasks;
     const planOut = await agentPhase(
       cfg,
@@ -779,16 +794,31 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
   mission.status = "done";
   mission.mergedAt = new Date().toISOString();
   addEvent(mission, "merge", "merged into repository");
+  const mergedFiles = String(out.stat || "")
+    .split("\n")
+    .map((l) => l.trim().replace(/^[A-Z?! ]{1,3}\s+/, ""))
+    .filter(Boolean)
+    .slice(0, 200);
   mledger(cfg, mission, "merge", {
     method: out.method,
-    files: String(out.stat || "")
-      .split("\n")
-      .map((l) => l.trim().replace(/^[A-Z?! ]{1,3}\s+/, ""))
-      .filter(Boolean)
-      .slice(0, 200),
+    files: mergedFiles,
     copied: (out.copied || []).slice(0, 200),
     excluded: (out.excluded || []).slice(0, 50),
   });
+  // B1: compound the repo brief — deterministic facts from this mission
+  try {
+    const store = await openIntelStore(cfg, mission.repoDir);
+    await store.addNote({
+      kind: "mission_done",
+      goal: mission.goal,
+      files: mergedFiles.slice(0, 30),
+      verifyCommands: (mission.verify?.commands || []).slice(0, 6),
+      ok: true,
+      missionId: mission.id,
+    });
+  } catch {
+    /* notes are best-effort */
+  }
   await saveMission(cfg, mission);
   try {
     await removeWorktree(mission.repoDir, mission.worktree.path);

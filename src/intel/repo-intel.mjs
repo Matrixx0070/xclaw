@@ -172,6 +172,10 @@ export async function gitHotFiles(repoDir, { commits = 50 } = {}) {
   return counts;
 }
 
+export function taskKeywords(task) {
+  return keywords(task);
+}
+
 function keywords(task) {
   const stop = new Set(
     "the a an and or of to in for on with is are be this that it as at by from into make fix add remove update refactor change ensure should must can will use using file files code test tests".split(" ")
@@ -184,6 +188,84 @@ function keywords(task) {
         .filter((w) => w.length > 2 && !stop.has(w))
     ),
   ].slice(0, 12);
+}
+
+/**
+ * Rank files by lexical hits, symbol matches, path hits, import centrality,
+ * git heat and kind. Shared between the per-call path (buildTaskContext) and
+ * the persistent store (intel-store.mjs) — the inputs may come from a live
+ * scan or from the persisted index.
+ */
+export function scoreFiles(files, { kws = [], hitCounts, importedBy, symbolIndex, hot }) {
+  const getSyms = (p) =>
+    symbolIndex instanceof Map ? symbolIndex.get(p) : symbolIndex?.[p];
+  const getMap = (m, p) => (m instanceof Map ? m.get(p) : m?.[p]) || 0;
+  return files
+    .map((f) => {
+      const symbols = getSyms(f.path) || [];
+      const symbolHits = symbols.filter((s) =>
+        kws.some((kw) => s.name.toLowerCase().includes(kw))
+      ).length;
+      const pathHits = kws.filter((kw) => f.path.toLowerCase().includes(kw)).length;
+      const score =
+        getMap(hitCounts, f.path) * 3 +
+        symbolHits * 4 +
+        pathHits * 4 +
+        getMap(importedBy, f.path) * 2 +
+        Math.min(getMap(hot, f.path), 5) +
+        (f.kind === "config" ? 1 : 0) +
+        (/test/i.test(f.path) ? 1 : 0);
+      return { ...f, score, symbols };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Assemble the bounded context string from scored files. Contents are read
+ * lazily via readFile(relPath) → string|null, so warm callers only pay for
+ * the files that actually make the cut.
+ */
+export async function assembleContext(
+  repoDir,
+  scored,
+  { budgetChars = 24_000, kws = [], allFiles = null, readFile, header = null } = {}
+) {
+  const files = allFiles || scored;
+  const parts = [];
+  if (header) parts.push(header);
+  parts.push(
+    `# Repository context (${path.basename(repoDir)}) — ${files.length} files\n` +
+      `Task keywords: ${kws.join(", ") || "(none)"}\n`
+  );
+  const tree = files
+    .slice(0, 200)
+    .map((f) => `  ${f.path}`)
+    .join("\n");
+  parts.push(`## File tree (top ${Math.min(files.length, 200)})\n${tree}\n`);
+
+  let used = parts.join("\n").length;
+  const included = [];
+  for (const f of scored) {
+    if (f.score <= 0 && included.length >= 3) break;
+    const content = await readFile(f.path);
+    let block;
+    if (content && content.length <= 6000) {
+      block = `## ${f.path} (full)\n\`\`\`\n${content}\n\`\`\`\n`;
+    } else if (content) {
+      const syms = (f.symbols || [])
+        .map((s) => `  ${s.kind} ${s.name} (line ${s.line})`)
+        .join("\n");
+      block = `## ${f.path} (head + symbols)\n\`\`\`\n${content.slice(0, 2500)}\n…\n\`\`\`\nSymbols:\n${syms}\n`;
+    } else {
+      block = `## ${f.path} (${f.kind}, ${f.bytes} bytes — not inlined)\n`;
+    }
+    if (used + block.length > budgetChars) continue;
+    used += block.length;
+    parts.push(block);
+    included.push({ path: f.path, score: f.score });
+    if (included.length >= 12) break;
+  }
+  return { contextText: parts.join("\n"), included, chars: used };
 }
 
 /**
@@ -231,67 +313,22 @@ export async function buildTaskContext(repoDir, task, { budgetChars = 24_000 } =
     }
   }
 
-  const scored = files
-    .map((f) => {
-      const symbols = symbolIndex.get(f.path) || [];
-      const symbolHits = symbols.filter((s) =>
-        kws.some((kw) => s.name.toLowerCase().includes(kw))
-      ).length;
-      const pathHits = kws.filter((kw) => f.path.toLowerCase().includes(kw)).length;
-      const score =
-        (hitCounts.get(f.path) || 0) * 3 +
-        symbolHits * 4 +
-        pathHits * 4 +
-        (importedBy.get(f.path) || 0) * 2 +
-        Math.min(hot.get(f.path) || 0, 5) +
-        (f.kind === "config" ? 1 : 0) +
-        (/test/i.test(f.path) ? 1 : 0);
-      return { ...f, score, symbols };
-    })
-    .sort((a, b) => b.score - a.score);
+  const scored = scoreFiles(files, { kws, hitCounts, importedBy, symbolIndex, hot });
 
-  // assemble
-  const parts = [];
-  parts.push(
-    `# Repository context (${path.basename(repoDir)}) — ${files.length} files\n` +
-      `Task keywords: ${kws.join(", ") || "(none)"}\n`
-  );
-  const tree = files
-    .slice(0, 200)
-    .map((f) => `  ${f.path}`)
-    .join("\n");
-  parts.push(`## File tree (top ${Math.min(files.length, 200)})\n${tree}\n`);
-
-  let used = parts.join("\n").length;
-  const included = [];
-  for (const f of scored) {
-    if (f.score <= 0 && included.length >= 3) break;
-    const content = contentCache.get(f.path);
-    let block;
-    if (content && content.length <= 6000) {
-      block = `## ${f.path} (full)\n\`\`\`\n${content}\n\`\`\`\n`;
-    } else if (content) {
-      const syms = (f.symbols || [])
-        .map((s) => `  ${s.kind} ${s.name} (line ${s.line})`)
-        .join("\n");
-      block = `## ${f.path} (head + symbols)\n\`\`\`\n${content.slice(0, 2500)}\n…\n\`\`\`\nSymbols:\n${syms}\n`;
-    } else {
-      block = `## ${f.path} (${f.kind}, ${f.bytes} bytes — not inlined)\n`;
-    }
-    if (used + block.length > budgetChars) continue;
-    used += block.length;
-    parts.push(block);
-    included.push({ path: f.path, score: f.score });
-    if (included.length >= 12) break;
-  }
+  const asm = await assembleContext(repoDir, scored, {
+    budgetChars,
+    kws,
+    allFiles: files,
+    readFile: async (rel) => contentCache.get(rel) ?? null,
+  });
 
   return {
-    contextText: parts.join("\n"),
-    files: included,
+    contextText: asm.contextText,
+    files: asm.included,
     stats: {
       totalFiles: files.length,
       keywords: kws,
-      chars: used,
+      chars: asm.chars,
     },
   };
 }

@@ -53,3 +53,4 @@ GET /ledger/who-touched?path=…
 `maxPerMin` (0 = off) samples only ok-status read-family tool entries under
 storms; policy/failure/blocked entries are never sampled away. Day segmentation
 is the rotation; `compact` deletes segments older than the retention window.
+

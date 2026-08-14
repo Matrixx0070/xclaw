@@ -1,0 +1,19 @@
+[
+  {
+    "id": "intel-symbol-locate",
+    "name": "Locate symbol + importer via repo intel tool",
+    "tags": ["intel", "autonomy"],
+    "timeoutMs": 120000,
+    "maxTurns": 4,
+    "fixture": "intel-repo",
+    "prompt": "Using the xclaw_repo_intel tool (not ad-hoc grepping), find which file defines the function computeDiscountedPrice and which file imports it. Write your answer to answer.txt as exactly two lines:\ndefined: <relative path>\nimported-by: <relative path>\nThen stop.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "answer.txt" },
+        { "type": "file_contains", "path": "answer.txt", "text": "defined: src/pricing.mjs" },
+        { "type": "file_contains", "path": "answer.txt", "text": "imported-by: src/checkout.mjs" }
+      ],
+      "budgets": { "maxTurns": 4, "maxToolCalls": 8 }
+    }
+  }
+]
