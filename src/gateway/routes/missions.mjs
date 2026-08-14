@@ -68,7 +68,7 @@ export async function tryHandleMissionsRoute({ p, method, req, res, url, cfg, js
         autoMerge: body.autoMerge === true,
         maxAttempts: body.maxAttempts,
         verify: Array.isArray(body.verify) ? body.verify : null,
-        strategy: body.strategy === "swarm" ? "swarm" : undefined,
+        strategy: ["swarm", "tournament"].includes(body.strategy) ? body.strategy : undefined,
         tasks: Array.isArray(body.tasks) ? body.tasks : undefined,
         onEvent: emitWs,
       });

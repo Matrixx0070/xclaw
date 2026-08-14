@@ -232,6 +232,12 @@ export function normalizeTaskGraph(tasks) {
       maxTurns: t.maxTurns,
       worktree: t.worktree,
       isolateWorkspace: t.isolateWorkspace,
+      // B4: model-defined roles (prompt label + tool NARROWING) and
+      // tournament competitors (earlyMerge:false keeps the worktree for the
+      // judge instead of merging on completion)
+      rolePrompt: typeof t.rolePrompt === "string" ? t.rolePrompt.slice(0, 2000) : undefined,
+      tools: Array.isArray(t.tools) ? t.tools.map(String).slice(0, 30) : undefined,
+      earlyMerge: t.earlyMerge === false ? false : undefined,
     };
   });
 
@@ -500,8 +506,17 @@ async function recordSkippedNode(cfg, run, node, skipRes, goal) {
 
 async function runNodeOnce(cfg, swarmCfg, run, node, goal, resultsByNodeId, input) {
   const roleName = String(node.role || "research").toLowerCase();
+  // B4 dynamic roles: an unknown role name is a LABEL — physics default to
+  // the research profile (no worktree, no motor). node.rolePrompt overrides
+  // the prompt prefix; node.tools can only NARROW the parent allowlist
+  // (intersection below). Motor/browser stays enum-gated: fabric role
+  // binding at spawn (bindSwarmSpawnRole) still only trusts the fixed enum.
   const role = ROLES[roleName] || ROLES.research;
   const roleOverride = swarmCfg.roles?.[roleName] || {};
+  const rolePrompt =
+    typeof node.rolePrompt === "string" && node.rolePrompt.trim()
+      ? node.rolePrompt.trim().slice(0, 2000) + "\n\n"
+      : null;
   const maxTurns =
     node.maxTurns ?? roleOverride.maxTurns ?? role.maxTurns ?? 6;
   const useWorktree =
@@ -512,11 +527,48 @@ async function runNodeOnce(cfg, swarmCfg, run, node, goal, resultsByNodeId, inpu
       roleOverride.requireWorktree !== false);
 
   const upstream = buildUpstreamContext(node, resultsByNodeId, swarmCfg);
+
+  // B4 blackboard: passive sibling visibility (digest) + active tool
+  let bbDigest = "";
+  let bbTool = null;
+  if (swarmCfg.blackboard !== false) {
+    try {
+      const bb = await import("./blackboard.mjs");
+      bbTool = bb.createBlackboardTool({
+        cfg,
+        runId: run.id,
+        nodeId: node.id,
+        role: roleName,
+      });
+      const d = await bb.tailDigest(cfg, run.id);
+      if (d) {
+        bbDigest = `Swarm blackboard (latest sibling findings — hints, verify with tools before relying on them). Use the xclaw_blackboard tool to post your own findings:\n${d}\n\n`;
+      }
+    } catch {
+      /* blackboard optional */
+    }
+  }
+
   const taskText =
-    (role.promptPrefix || "") +
+    (rolePrompt ?? role.promptPrefix ?? "") +
     (goal ? `Overall goal: ${goal}\n\n` : "") +
     upstream +
+    bbDigest +
     `Subtask (${node.id}): ${node.task}`;
+
+  // B4 dynamic tool narrowing: node.tools ∩ parent allowlist (never widens)
+  let nodeAllowTools;
+  if (Array.isArray(node.tools) && node.tools.length) {
+    const parentAllow = cfg.agent?.allowTools;
+    nodeAllowTools = Array.isArray(parentAllow) && parentAllow.length
+      ? node.tools.filter((t) =>
+          parentAllow.some(
+            (p) => p === t || (p.endsWith("*") && String(t).startsWith(p.slice(0, -1)))
+          )
+        )
+      : node.tools;
+    if (bbTool) nodeAllowTools = [...nodeAllowTools, "xclaw_blackboard"];
+  }
 
   let out;
   try {
@@ -543,6 +595,9 @@ async function runNodeOnce(cfg, swarmCfg, run, node, goal, resultsByNodeId, inpu
       // C2: fabric role bound at spawn (trusted)
       role: roleName,
       swarmRole: roleName,
+      // B4: blackboard tool + optional narrowed allowlist
+      extraTools: bbTool ? [bbTool] : undefined,
+      allowTools: nodeAllowTools,
     });
   } catch (e) {
     const msg = e.message || String(e);
@@ -586,6 +641,7 @@ async function runNodeOnce(cfg, swarmCfg, run, node, goal, resultsByNodeId, inpu
     toolTrace: out.result?.toolTrace || [],
     dependsOn: node.dependsOn || [],
     attempts: 1,
+    earlyMerge: node.earlyMerge,
   };
 }
 
@@ -788,6 +844,11 @@ async function runNode(cfg, swarmCfg, run, node, goal, resultsByNodeId, input) {
 export async function mergeImplementNodeEarly(cfg, result, input = {}, onEvent) {
   if (!result?.ok) return null;
   if (String(result.role || "").toLowerCase() !== "implement") return null;
+  // B4 tournament: competitors hold their worktree for the judge — the
+  // winner merges after the verdict, losers are discarded.
+  if (result.earlyMerge === false) {
+    return { ok: true, skipped: true, method: "compete-hold", nodeId: result.nodeId };
+  }
 
   const wt =
     result.workspace ||
@@ -1353,8 +1414,15 @@ export async function runSwarmFanOut(cfg, input = {}) {
   let voteReport = null;
   if (swarmCfg.voteEnabled !== false) {
     try {
-      voteReport = structuredMajorityVote(results, {
-        roles: swarmCfg.voteRoles || ["research"],
+      // B4 voteNodes: an explicit node subset ballots regardless of role —
+      // the converge half of challenge/converge graph patterns.
+      const voteSubset = Array.isArray(input.voteNodes) && input.voteNodes.length
+        ? results.filter((r) => input.voteNodes.includes(r.nodeId))
+        : null;
+      voteReport = structuredMajorityVote(voteSubset || results, {
+        roles: voteSubset
+          ? [...new Set(voteSubset.map((r) => String(r.role || "research").toLowerCase()))]
+          : swarmCfg.voteRoles || ["research"],
         minBallots: swarmCfg.voteMinBallots ?? 2,
         minShare: swarmCfg.voteMinShare ?? 0.5,
         fields: swarmCfg.voteFields || undefined,

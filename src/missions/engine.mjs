@@ -36,6 +36,7 @@ import { openIntelStore } from "../intel/intel-store.mjs";
 import { createApprovalGate } from "../security/approvals.mjs";
 import { getSharedLedger } from "../ops/ledger.mjs";
 import { runSwarmFanOut, resumeSwarmRun, normalizeTaskGraph } from "../agents/swarm-run.mjs";
+import { spawnSubagent } from "../agents/spawn.mjs";
 import {
   newMission,
   saveMission,
@@ -218,6 +219,146 @@ export function parseMissionTasks(text) {
  * (branched from the mission worktree) and early-merge back into it — the
  * real repo stays untouched; the mission's evidence gate is unchanged.
  */
+/**
+ * B4 tournament ("simulation/dream" as composition — no simulator):
+ * N competitors implement independently in parallel worktrees
+ * (earlyMerge:false), each candidate is verified DETERMINISTICALLY by the
+ * mission's verify commands inside its own worktree, the first passing
+ * candidate merges into the mission worktree (a critic agent tie-breaks only
+ * when several pass), losers are discarded. The mission's own verify/evidence
+ * gate still runs afterward — the winner proves itself again before
+ * merge_ready.
+ */
+async function runMissionTournament(cfg, mission, { onEvent, signal, spawnSeam }) {
+  const emitT = (note) => {
+    try {
+      onEvent?.({ missionId: mission.id, type: "mission", phase: "tournament", note });
+    } catch {}
+  };
+  // economics: economy/halt governor mode clamps to a normal solo mission
+  try {
+    const { governorMode } = await import("../tokens/cost-governor.mjs");
+    const g = await governorMode(cfg);
+    if (g.mode !== "normal") {
+      emitT(`governor mode=${g.mode} — tournament clamped to solo`);
+      return { ok: false, degrade: true };
+    }
+  } catch {}
+  const n = Math.max(2, Math.min(4, Number(cfg.missions?.tournament?.n ?? 2)));
+  const mcfg = missionCfg(cfg, mission.worktree.path);
+  const gate = createApprovalGate(mcfg);
+  const tasks = Array.from({ length: n }, (_, i) => ({
+    id: `impl${i + 1}`,
+    role: "implement",
+    earlyMerge: false,
+    task:
+      `Independent implementation attempt #${i + 1} of ${n}. Implement the mission in this repository. ` +
+      (i > 0 ? `Deliberately try a DIFFERENT approach than the most obvious one. ` : "") +
+      `MISSION: ${mission.goal}` +
+      (mission.plan?.summary ? `\nPLAN (shared):\n${String(mission.plan.summary).slice(0, 3000)}` : ""),
+  }));
+  emitT(`tournament: ${n} competitors in parallel worktrees`);
+  const res = await runSwarmFanOut(mcfg, {
+    goal: mission.goal,
+    tasks,
+    workingDir: mission.worktree.path,
+    approvalGate: gate,
+    parentId: mission.id,
+    signal,
+    onEvent: (e) => {
+      try {
+        onEvent?.({ missionId: mission.id, phase: "execute", ...e });
+      } catch {}
+    },
+    ...(spawnSeam ? { spawnSubagent: spawnSeam } : {}),
+  });
+  const candidates = (res.results || []).filter((r) => r.ok && (r.worktree?.path || r.workspace));
+  if (!candidates.length) {
+    emitT("no surviving candidates — degrading to solo");
+    return { ok: false, degrade: true, swarmId: res.swarmId };
+  }
+  // deterministic judge: the mission's verify commands inside each candidate
+  const commands = await detectVerifyCommands(mission.worktree.path, mission.verify.commands);
+  const verdicts = [];
+  for (const c of candidates) {
+    const dir = c.worktree?.path || c.workspace;
+    let pass = commands.length > 0;
+    const outputs = [];
+    for (const cmd of commands) {
+      const r = await sh(cmd, dir);
+      outputs.push({ cmd, exitCode: r.code });
+      if (r.code !== 0) {
+        pass = false;
+        break;
+      }
+    }
+    verdicts.push({ nodeId: c.nodeId, dir, pass, outputs });
+    emitT(`candidate ${c.nodeId}: verify ${pass ? "PASS" : "FAIL"}`);
+  }
+  let winners = verdicts.filter((v) => v.pass);
+  let judge = "verify";
+  if (!winners.length) {
+    emitT("no candidate passed verification — degrading to solo");
+    return { ok: false, degrade: true, swarmId: res.swarmId, verdicts };
+  }
+  if (winners.length > 1) {
+    // critic tie-break over the diffs (agent judgment only where determinism ran out)
+    try {
+      const diffs = [];
+      for (const w of winners) {
+        const d = await worktreeDiff(w.dir).catch(() => null);
+        diffs.push(`### ${w.nodeId}\n${String(d?.diff || "").slice(0, 6000)}`);
+      }
+      const spawn = spawnSeam || spawnSubagent;
+      const critic = await spawn({
+        task:
+          `Two or more verified implementations of the same mission. Pick the best by correctness, simplicity and maintainability. Reply with exactly one line: WINNER: <nodeId>\n\nMISSION: ${mission.goal}\n\n${diffs.join("\n\n")}`,
+        maxTurns: 2,
+        cfg: mcfg,
+        approvalGate: gate,
+        parentId: mission.id,
+        role: "critic",
+        swarmRole: "critic",
+        signal,
+      });
+      const pick = String(critic?.result?.text || "").match(/WINNER:\s*(\S+)/i)?.[1];
+      const chosen = winners.find((w) => w.nodeId === pick);
+      if (chosen) {
+        winners = [chosen];
+        judge = "critic";
+      } else {
+        emitT(`critic tie-break unparseable (picked "${pick || "?"}") — first-passing wins`);
+      }
+    } catch (e) {
+      emitT(`critic tie-break failed (${e.message}) — first-passing wins`);
+    }
+  }
+  const winner = winners[0];
+  const merge = await applyWorktreeMerge(mission.worktree.path, winner.dir, {});
+  emitT(`winner ${winner.nodeId} (judge: ${judge}) merge: ${merge.ok ? "ok" : merge.error || merge.code}`);
+  // discard all candidate worktrees (winner's changes now live in the mission worktree)
+  for (const v of verdicts) {
+    try {
+      await removeWorktree(mission.worktree.path, v.dir);
+    } catch {}
+  }
+  mission.swarm = mission.swarm || {};
+  mission.swarm.runId = res.swarmId;
+  mission.swarm.tournament = {
+    n,
+    winner: winner.nodeId,
+    judge,
+    verdicts: verdicts.map((v) => ({ nodeId: v.nodeId, pass: v.pass })),
+  };
+  mledger(cfg, mission, "phase", {
+    phase: "tournament",
+    n,
+    winner: winner.nodeId,
+    judge,
+  });
+  return { ok: merge.ok, swarmId: res.swarmId, winner: winner.nodeId, judge };
+}
+
 async function runMissionSwarm(cfg, mission, { onEvent, signal, spawnSeam }) {
   const mcfg = missionCfg(cfg, mission.worktree.path);
   const gate = createApprovalGate(mcfg);
@@ -527,13 +668,18 @@ export async function startMission(cfg, opts = {}) {
     autoMerge: opts.autoMerge === true,
     verify: opts.verify || null,
   });
-  // Execution strategy: "solo" (single agent, default) or "swarm" (plan
-  // emits a task graph → dependency-aware fan-out in the worktree). Explicit
-  // caller-provided tasks skip plan-time graph extraction.
+  // Execution strategy: "solo" (single agent, default), "swarm" (plan emits
+  // a task graph → dependency-aware fan-out in the worktree), or
+  // "tournament" (B4: N competing implementations → deterministic verify
+  // judge → winner merges). Explicit caller-provided tasks skip plan-time
+  // graph extraction.
   mission.strategy =
-    opts.strategy === "swarm" || (!opts.strategy && cfg.missions?.strategy === "swarm")
-      ? "swarm"
-      : "solo";
+    opts.strategy === "tournament" ||
+    (!opts.strategy && cfg.missions?.strategy === "tournament")
+      ? "tournament"
+      : opts.strategy === "swarm" || (!opts.strategy && cfg.missions?.strategy === "swarm")
+        ? "swarm"
+        : "solo";
   if (mission.strategy === "swarm") {
     const explicit = Array.isArray(opts.tasks) && opts.tasks.length ? opts.tasks : null;
     if (explicit) {
@@ -704,7 +850,7 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
               "```xclaw-mission-tasks",
               `[{"id":"a","role":"implement","task":"...","dependsOn":[]},{"id":"b","role":"implement","task":"...","dependsOn":[]}]`,
               "```",
-              `Rules: role is one of implement|research|verify; use dependsOn (ids) only for true ordering needs; each implement task must be self-contained (its agent works in an isolated copy and only sees upstream results, not siblings).`,
+              `Rules: role is one of implement|research|verify (or a custom label with "rolePrompt" — a short role instruction — and optional "tools": [tool name patterns] which can only NARROW the default toolset); use dependsOn (ids) only for true ordering needs; each implement task must be self-contained (its agent works in an isolated copy; siblings share findings only via the xclaw_blackboard tool). Useful patterns: competing nodes + a downstream judge node comparing them; parallel researchers whose "dependsOn" fan into one synthesizer.`,
             ]
           : []),
       ].join("\n"),
@@ -734,7 +880,17 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     mission.status = "executing";
     await saveMission(cfg, mission);
     let soloNeeded = true;
-    if (mission.strategy === "swarm" && mission.swarm?.tasks?.length) {
+    if (mission.strategy === "tournament") {
+      const t = await runMissionTournament(cfg, mission, { onEvent, signal, spawnSeam });
+      await saveMission(cfg, mission);
+      if (t.ok) {
+        soloNeeded = false;
+        emit("execute", `tournament winner ${t.winner} merged (judge: ${t.judge})`);
+      } else {
+        emit("execute", "tournament degraded — solo execute");
+      }
+    }
+    if (soloNeeded && mission.strategy === "swarm" && mission.swarm?.tasks?.length) {
       emit("execute", `swarm fan-out: ${mission.swarm.tasks.length} nodes in the shadow workspace`);
       const sw = await runMissionSwarm(cfg, mission, { onEvent, signal, spawnSeam });
       await saveMission(cfg, mission);

@@ -500,6 +500,15 @@ export async function runAgentLoop(options) {
         },
       });
     }
+    // B4: caller-injected local tools (e.g. the swarm blackboard) — same
+    // security pipeline as every other tool, dispatched by name before the
+    // router.
+    for (const t of options.extraTools || []) {
+      tools.push({
+        type: "function",
+        function: { name: t.name, description: t.description, parameters: t.parameters },
+      });
+    }
     // MCP servers (cfg.mcp.servers) — discovered tools join the loop and are
     // dispatched via the Tool Router's agent plane (same security path).
     // Skipped entirely when the run's tool filter can never match an mcp__
@@ -1276,6 +1285,9 @@ export async function runAgentLoop(options) {
           } else if (name === "xclaw_repo_intel") {
             const intelTool = createRepoIntelTool({ cfg, workingDir });
             result = await intelTool.execute(args);
+          } else if ((options.extraTools || []).some((t) => t.name === name)) {
+            const extra = options.extraTools.find((t) => t.name === name);
+            result = await extra.execute(args);
           } else {
             // T1: single dispatch path via Tool Router (local | computer | search | mcp)
             let dispatchArgs = args;

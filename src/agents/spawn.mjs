@@ -177,6 +177,11 @@ export async function spawnSubagent(opts = {}) {
     agent: {
       ...(opts.cfg?.agent || {}),
       maxTurns: opts.maxTurns ?? Math.min(opts.cfg?.agent?.maxTurns ?? 8, 8),
+      // B4 dynamic roles: caller-narrowed allowlist (already intersected with
+      // the parent's — callers can only narrow, never widen)
+      ...(Array.isArray(opts.allowTools) && opts.allowTools.length
+        ? { allowTools: opts.allowTools }
+        : {}),
     },
     // Children run in-process via runAgentLoop, so cfg is the reliable depth
     // carrier: any spawn/swarm tool the child invokes receives this cfg.
@@ -226,6 +231,8 @@ export async function spawnSubagent(opts = {}) {
         // the loop's default shared gate is primed with the GATEWAY's policy
         // and would silently override the child cfg's autoApprove.
         approvalGate: opts.approvalGate,
+        // B4: injected local tools (swarm blackboard etc.)
+        extraTools: opts.extraTools,
       });
     } finally {
       nest.dispose();
