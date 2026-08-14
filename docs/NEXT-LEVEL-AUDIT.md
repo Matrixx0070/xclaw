@@ -128,14 +128,21 @@ aborted run) was found and fixed with a regression test.
   buffer-first import resolution for new files. Live-proven via gateway and
   CLI.
 
-### Candidate next increments (post-roadmap, unranked)
+### Post-roadmap candidates — ALL SHIPPED (2026-08-14, v3.107.0 → v3.110.0)
 
-- Mission resume of a never-executed mission re-enters at verification and
-  skips the execute phase (conservative re-entry) — implement phase-aware
-  resume.
-- Partial-merge trait: untracked copies land before a failing tracked patch —
-  make the merge transactional or auto-clean copies on patch failure.
-- Point-and-prompt inside the webchat UI (currently Control-only).
-- Worker credential bootstrap (`xclaw workers init`) + TLS guidance for
-  non-loopback federation.
-- Editor plugin (LSP or VS Code) over `POST /complete`.
+- ~~Phase-aware resume~~ **v3.107.0**: `executedAt` marker; failed/interrupted
+  missions re-enter at planning | executing | verifying by actual progress;
+  swarm missions resume their fan-out journal. Live-proven with a real
+  mid-execute gateway kill → resume → merge.
+- ~~Transactional merge~~ **v3.107.0**: patch --check before untracked copies,
+  no silent overwrite of existing untracked files (identical content stays
+  idempotent), copies rolled back on late patch failure.
+- ~~Webchat point-and-prompt~~ **v3.108.0**: 🎯 composer button → picker →
+  element descriptor + resolved sources dropped into the chat.
+- ~~Worker bootstrap + TLS guidance~~ **v3.109.0**: `xclaw workers
+  list|add|remove|ping|token|join-command` + docs/FEDERATION.md.
+- ~~Editor integration~~ **v3.110.0**: `xclaw lsp` (stdio LSP over the
+  completion service) + docs/COMPLETION.md.
+
+This document's mandate (15-point audit → roadmap → post-roadmap) is fully
+executed. Future work starts from fresh observations, not this list.
