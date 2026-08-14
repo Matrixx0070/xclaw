@@ -945,7 +945,7 @@ function connectEventsWs() {
       if (status) status.textContent = "ws live";
       ws.send(JSON.stringify({
         type: "subscribe",
-        channels: ["admission", "queue", "eviction", "swarm", "mission", "all"],
+        channels: ["admission", "queue", "eviction", "swarm", "mission", "objective", "all"],
       }));
     };
 
@@ -997,6 +997,10 @@ function connectEventsWs() {
         }
         if (ch === "mission" && typeof loadMissions === "function") {
           loadMissions().catch(() => {});
+  loadObjectivesCard().catch(() => {});
+        }
+        if (ch === "objective" && typeof loadObjectivesCard === "function") {
+          loadObjectivesCard().catch(() => {});
         }
         if (status && ch === "admission") {
           status.textContent = "ws · " + (msg.data?.kind || "event") + " · " + new Date().toLocaleTimeString();
@@ -2902,6 +2906,48 @@ const MSN_STATUS_CLS = {
   failed: " danger", interrupted: " danger", rolled_back: "",
 };
 
+const OBJ_STATUS_CLS = { running: " ok", done: " ok", awaiting_human: " warn", interrupted: " warn", paused_budget: " warn", failed: " err", stopped: "" };
+async function loadObjectivesCard() {
+  const tbody = $("objTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/objectives");
+    const list = data.objectives || [];
+    if ($("objCount")) {
+      const attn = list.filter((o) => ["awaiting_human", "interrupted", "paused_budget"].includes(o.status)).length;
+      $("objCount").textContent = `${list.length} missions${attn ? ` · ${attn} need attention` : ""}`;
+    }
+    tbody.innerHTML = list.slice(0, 12)
+      .map((o) => `<tr>
+        <td><span class="pill${OBJ_STATUS_CLS[o.status] ?? ""}">${esc(o.status)}</span></td>
+        <td title="${esc(o.objective)}">${esc(o.objective.slice(0, 52))}${o.humanQuestion ? `<div class="muted" style="font-size:0.72rem;">❓ ${esc(o.humanQuestion.slice(0, 60))}</div>` : ""}</td>
+        <td>${o.segments}</td><td>${o.toolCalls}</td>
+        <td>${o.criteriaDone}/${o.criteriaTotal}</td>
+        <td style="font-size:0.72rem;" class="muted">${esc((o.currentSubtask || "").slice(0, 40))}</td>
+        <td>${o.status === "running"
+          ? `<button class="btn ghost obj-stop" data-id="${esc(o.id)}">Stop</button>`
+          : ["awaiting_human", "interrupted", "paused_budget", "stopped"].includes(o.status)
+            ? `<button class="btn ghost obj-resume" data-id="${esc(o.id)}">Resume</button>`
+            : ""}</td>
+      </tr>`)
+      .join("") || `<tr><td colspan="7" class="muted">No long-run objectives yet — start one with /objective in chat or POST /objectives.</td></tr>`;
+    tbody.querySelectorAll(".obj-stop").forEach((b) =>
+      b.addEventListener("click", async () => {
+        await fetch("/objectives/" + encodeURIComponent(b.dataset.id) + "/stop", { method: "POST" });
+        loadObjectivesCard().catch(() => {});
+      })
+    );
+    tbody.querySelectorAll(".obj-resume").forEach((b) =>
+      b.addEventListener("click", async () => {
+        await fetch("/objectives/" + encodeURIComponent(b.dataset.id) + "/resume", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+        loadObjectivesCard().catch(() => {});
+      })
+    );
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="muted">objectives unavailable: ${esc(e.message || String(e))}</td></tr>`;
+  }
+}
+
 async function loadMissions() {
   const tbody = $("msnTable")?.querySelector("tbody");
   if (!tbody) return;
@@ -3198,7 +3244,7 @@ if ($("msnTable")) {
   loadMissions().catch(() => {});
   // live refresh straight from mission WS events + a slow safety poll
   setInterval(() => {
-    if (location.hash.includes("missions")) loadMissions().catch(() => {});
+    if (location.hash.includes("missions")) { loadMissions().catch(() => {}); loadObjectivesCard().catch(() => {}); }
   }, 10_000);
 }
 

@@ -656,6 +656,30 @@ export async function runDoctor(opts = {}) {
     push("ops.tmp", "warn", err.message);
   }
 
+  // Long-run objectives needing attention: a missed escalation DM used to
+  // leave an awaiting_human mission invisible forever.
+  try {
+    const { listObjectives } = await import("../agent/objective-store.mjs");
+    const active = await listObjectives(cfg, { activeOnly: true });
+    const staleMs = 60 * 60 * 1000;
+    const attention = active.filter(
+      (o) =>
+        ["awaiting_human", "interrupted", "paused_budget"].includes(o.status) &&
+        Date.now() - Date.parse(o.updatedAt || 0) > staleMs
+    );
+    push(
+      "objectives.attention",
+      attention.length ? "warn" : "ok",
+      attention.length
+        ? `${attention.length} mission(s) waiting >1h: ` +
+            attention.map((o) => `${o.id}(${o.status})`).join(", ") +
+            " — /objective resume <id> or GET /objectives"
+        : `${active.length} active mission(s), none stuck`
+    );
+  } catch (err) {
+    push("objectives.attention", "warn", err.message);
+  }
+
 
 
   // P5: connected OAuth token health

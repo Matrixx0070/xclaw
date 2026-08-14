@@ -813,6 +813,13 @@
     <!-- ═══ Mission Control ═══ -->
     <div class="view" data-view="missions">
       <div class="grid">
+        <section class="card span2" id="cardObjectives">
+          <h2>Long-run objectives <span id="objCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">Channel/API missions that survive turn caps, context boundaries, and restarts (docs/LONGRUN.md). Stuck ones warn in doctor.</p>
+          <div style="overflow-x:auto;">
+            <table id="objTable"><thead><tr><th>Status</th><th>Objective</th><th>Seg</th><th>Tools</th><th>Criteria</th><th>Current</th><th></th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
         <section class="card span2" id="cardMissions">
           <h2>Missions <span id="msnCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
           <p class="muted">

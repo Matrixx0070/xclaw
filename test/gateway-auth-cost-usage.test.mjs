@@ -32,6 +32,8 @@ const PATHS = [
   "/hooks", "/hooks/history", "/hooks/toggle", "/hooks/commands",
   // missions run autonomous agents against repos
   "/missions", "/missions/abc", "/missions/abc/merge", "/missions/abc/rollback",
+  // objectives start/steer long-running autonomous missions
+  "/objectives", "/objectives/obj_x", "/objectives/obj_x/stop", "/objectives/obj_x/resume",
 ];
 
 describe("cost/usage/logs auth coverage", () => {

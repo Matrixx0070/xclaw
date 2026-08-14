@@ -204,10 +204,23 @@ export async function runObjective(cfg, opts = {}) {
   const {
     runSegment,
     notify = async () => {},
-    onEvent = () => {},
     signal = null,
   } = opts;
   if (typeof runSegment !== "function") throw new Error("runSegment required");
+  // Every lifecycle event also reaches the WS hub (B5 pattern) so Control
+  // surfaces see missions live regardless of which channel runs them.
+  const onEvent = (e) => {
+    try {
+      globalThis.__xclawWsBroadcast?.("objective", e);
+    } catch {
+      /* hub optional */
+    }
+    try {
+      opts.onEvent?.(e);
+    } catch {
+      /* observer errors never break the mission */
+    }
+  };
 
   let obj;
   let reconcile = false;

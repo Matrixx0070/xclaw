@@ -100,11 +100,16 @@ export function newObjective({
   };
 }
 
+let saveSeq = 0;
 export async function saveObjective(cfg, obj) {
   const dir = objectivesDir(cfg);
   await fs.mkdir(dir, { recursive: true });
   const fp = fileFor(cfg, obj.id);
-  const tmp = `${fp}.tmp-${process.pid}`;
+  // tmp name must be unique PER CALL, not per process: the stop/resume
+  // routes save the same objective the orchestrator is saving — a shared
+  // `.tmp-<pid>` collided (writer A renames the tmp away, writer B's rename
+  // ENOENTs). Found as a 2-in-5 test flake; same race exists live.
+  const tmp = `${fp}.tmp-${process.pid}-${++saveSeq}`;
   obj.updatedAt = new Date().toISOString();
   await fs.writeFile(tmp, JSON.stringify(obj, null, 1));
   await fs.rename(tmp, fp);

@@ -19,6 +19,7 @@ import { tryHandleMcpRoute } from "./routes/mcp.mjs";
 import { tryHandleMediaRoute } from "./routes/media.mjs";
 import { tryHandleHooksRoute } from "./routes/hooks.mjs";
 import { tryHandleMissionsRoute } from "./routes/missions.mjs";
+import { tryHandleObjectivesRoute } from "./routes/objectives.mjs";
 import { tryHandlePointRoute } from "./routes/point.mjs";
 import { tryHandleCompletionRoute } from "./routes/completion.mjs";
 import { tryHandleProvidersRoute } from "./routes/providers.mjs";
@@ -1174,6 +1175,7 @@ export async function startGateway({ root } = {}) {
       if (await tryHandleMediaRoute(routeArgs)) return;
       if (await tryHandleHooksRoute(routeArgs)) return;
       if (await tryHandleMissionsRoute(routeArgs)) return;
+      if (await tryHandleObjectivesRoute(routeArgs)) return;
       if (await tryHandlePointRoute(routeArgs)) return;
       if (await tryHandleCompletionRoute(routeArgs)) return;
 

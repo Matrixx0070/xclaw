@@ -104,6 +104,9 @@ export function createGatewayAuth(cfg = {}) {
       // missions run autonomous agents against repositories
       p === "/missions" ||
       p.startsWith("/missions/") ||
+      // objectives start/steer long-running autonomous missions
+      p === "/objectives" ||
+      p.startsWith("/objectives/") ||
       // point-and-prompt drives the operator's browser + starts missions
       p === "/point" ||
       p.startsWith("/point/") ||
