@@ -1473,6 +1473,99 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "timeline": {
+      const tl = await import("../src/git/timeline.mjs");
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const cfg = await loadConfig();
+      const flag = (name, dflt = null) => {
+        const i = args.indexOf(`--${name}`);
+        return i >= 0 ? args[i + 1] : dflt;
+      };
+      const repo = flag("repo", process.cwd());
+      const sub = args[1] || "list";
+      if (sub === "list") {
+        const { ok, states, error } = await tl.listStates(repo);
+        if (!ok) {
+          console.error(`timeline: ${error}`);
+          process.exitCode = 1;
+          break;
+        }
+        if (!states.length) console.log("(no xclaw states — merges before v3.116 carry no refs)");
+        for (const s of states) {
+          const kind = s.missionId ? `mission ${s.missionId}` : `known-good ${s.knownGood}`;
+          console.log(`${s.date}  ${s.sha.slice(0, 10)}  ${kind}  ${s.subject}`);
+        }
+        break;
+      }
+      if (sub === "diff") {
+        const [a, b] = [args[2], args[3]];
+        if (!a || !b) {
+          console.error("Usage: xclaw timeline diff <refA> <refB> [--patch] [--repo dir]");
+          process.exitCode = 1;
+          break;
+        }
+        const out = await tl.diffStates(repo, a, b, { patch: args.includes("--patch") });
+        if (!out.ok) {
+          console.error(`timeline diff: ${out.error}`);
+          process.exitCode = 1;
+          break;
+        }
+        console.log(out.diff || "(no differences)");
+        break;
+      }
+      if (sub === "revert") {
+        const missionId = args[2];
+        if (!missionId) {
+          console.error("Usage: xclaw timeline revert <missionId> [--repo dir]");
+          process.exitCode = 1;
+          break;
+        }
+        const out = await tl.revertMission(repo, missionId);
+        if (!out.ok) {
+          console.error(`revert: ${out.error}`);
+          process.exitCode = 1;
+          break;
+        }
+        console.log(`reverted ${out.reverted.slice(0, 10)} → revert commit ${out.revertCommit.slice(0, 10)}`);
+        // honest scope: surface effects git cannot undo (ledger join)
+        try {
+          const { queryLedger } = await import("../src/ops/ledger.mjs");
+          const { events } = await queryLedger(cfg, { missionId, kind: "tool", since: "90d", limit: 1000 });
+          const outside = new Set();
+          for (const e of events) {
+            for (const eff of e.data?.effects || []) {
+              if (!["files", "repo", "workspace"].includes(eff)) outside.add(eff);
+            }
+          }
+          if (outside.size) {
+            console.log(`note: mission also had non-git effects git revert cannot undo: ${[...outside].join(", ")}`);
+          }
+        } catch {}
+        break;
+      }
+      if (sub === "known-good" || sub === "mark") {
+        const out = await tl.markKnownGood(repo, { sha: args[2] || "HEAD", note: flag("note", "") });
+        console.log(out.ok ? `marked ${out.sha.slice(0, 10)} known-good (${out.ref})` : `failed: ${out.error}`);
+        if (!out.ok) process.exitCode = 1;
+        break;
+      }
+      if (sub === "attribute" || sub === "who") {
+        const target = args[2];
+        if (!target) {
+          console.error("Usage: xclaw timeline attribute <path> [--repo dir]");
+          process.exitCode = 1;
+          break;
+        }
+        const out = await tl.attribute(repo, target);
+        for (const c of out.commits || []) {
+          console.log(`${c.date}  ${c.sha.slice(0, 10)}  ${c.missionId || "(no mission)"}  ${c.subject}`);
+        }
+        break;
+      }
+      console.error("Usage: xclaw timeline list | diff <a> <b> | revert <missionId> | known-good [sha] | attribute <path>  [--repo dir]");
+      process.exitCode = 1;
+      break;
+    }
     case "ledger": {
       const { queryLedger, ledgerStats, whoTouched, compactLedger } = await import("../src/ops/ledger.mjs");
       const { loadConfig } = await import("../src/config/load.mjs");
@@ -2214,6 +2307,7 @@ Commands:
   sessions-active      List in-process agent sessions
   transcripts          list | show <sessionId>
   ledger               tail | query | who-touched <path> | stats | compact
+  timeline             list | diff <a> <b> | revert <missionId> | known-good | attribute <path>
   eval                 Eval suite (--tag, --mock, --json)
   job <goal>           Verified job in a temp workspace
   version              Print version

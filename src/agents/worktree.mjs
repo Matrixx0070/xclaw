@@ -431,7 +431,7 @@ export async function untrackedPatch(
 export async function applyWorktreeMerge(
   repoDir,
   worktreePath,
-  { checkOnly = false, useIndex = false, excludeUntracked = [] } = {}
+  { checkOnly = false, useIndex = false, excludeUntracked = [], commit = null } = {}
 ) {
   if (!(await isGitRepo(repoDir))) {
     return {
@@ -462,6 +462,11 @@ export async function applyWorktreeMerge(
       noop: true,
     };
   }
+
+  // A3: cleanliness before we touch anything — commit-on-merge only ever
+  // commits changes THIS merge introduced.
+  const preSt = await run("git", ["status", "--porcelain"], repoDir);
+  const preClean = !preSt.stdout.trim();
 
   const meta = await worktreeDiff(worktreePath);
   const trackedDiff = (meta.diff || "").trim(); // emptiness signal only
@@ -657,6 +662,36 @@ export async function applyWorktreeMerge(
   }
 
   const st = await run("git", ["status", "--porcelain"], repoDir);
+
+  // A3: commit the applied changes so the merge is revertable, attributable
+  // (trailers), and anchorable (refs). Only when the repo was clean before
+  // the merge — a dirty repo keeps today's behavior with an honest
+  // commit:null, never a commit that swallows unrelated operator work.
+  let commitSha = null;
+  let commitSkipped = null;
+  if (commit && !checkOnly) {
+    if (preClean) {
+      try {
+        const { commitWithXclawTrailers } = await import("../git/commit-trailers.mjs");
+        const c = await commitWithXclawTrailers(repoDir, {
+          subject: commit.subject || "chore: apply verified worktree merge",
+          body: commit.body || "",
+          cfg: commit.cfg || {},
+        });
+        if (c.ok && !c.skipped) {
+          const head = await run("git", ["rev-parse", "HEAD"], repoDir);
+          if (head.code === 0) commitSha = head.stdout.trim();
+        } else if (!c.ok) {
+          commitSkipped = c.error || c.code || "commit failed";
+        }
+      } catch (e) {
+        commitSkipped = e.message;
+      }
+    } else {
+      commitSkipped = "repo dirty before merge";
+    }
+  }
+
   return {
     ok: true,
     method: trackedDiff
@@ -667,6 +702,8 @@ export async function applyWorktreeMerge(
     patchPath,
     copied,
     excluded: excludedUntracked,
+    commit: commitSha,
+    commitSkipped,
   };
 }
 

@@ -345,8 +345,64 @@ async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provi
     ms: Date.now() - t0,
     at: new Date().toISOString(),
   });
+  // A3: free snapshot — commit phase work on the mission branch (skips when
+  // clean). Failed missions keep their worktree, so these commits are the
+  // forensic timeline; worktreeDiff is merge-base-aware and already folds
+  // committed work into the merge patch. Ecosystem/verify artifacts are
+  // excluded — they must stay untracked for the merge-exclusion machinery.
+  if (phase !== "plan") await snapshotWorktree(mission, phase).catch(() => {});
   mledger(cfg, mission, "phase", { phase, turns: out.turns ?? null, ms: Date.now() - t0 });
   return out;
+}
+
+const SNAPSHOT_EXCLUDES = [
+  "node_modules", ".venv", "venv", "__pycache__", "target", "dist", "build",
+  "out", "coverage", ".next",
+];
+
+async function snapshotWorktree(mission, phase) {
+  const dir = mission.worktree?.path;
+  if (!dir) return;
+  const excludes = [
+    ...SNAPSHOT_EXCLUDES,
+    ...(mission.verify?.artifacts || []),
+  ].map((e) => `:(exclude)${e}`);
+  const addArgs = ["add", "-A", "--", ".", ...excludes];
+  const add = await shArgs("git", addArgs, dir);
+  if (add.code !== 0) return;
+  const staged = await shArgs("git", ["diff", "--cached", "--quiet"], dir);
+  if (staged.code === 0) return; // nothing staged
+  await shArgs(
+    "git",
+    [
+      "-c", "user.email=xclaw@local", "-c", "user.name=xclaw",
+      "commit", "-q",
+      "-m", `wip(${mission.id}): ${phase} snapshot`,
+      "-m", `XClaw-Mission: ${mission.id}`,
+    ],
+    dir
+  );
+}
+
+/** argv-style runner (no shell quoting hazards) for snapshot git plumbing. */
+function shArgs(cmd, args, cwd, timeoutMs = 30_000) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { cwd });
+    let output = "";
+    const timer = setTimeout(() => {
+      try { child.kill("SIGKILL"); } catch {}
+    }, timeoutMs);
+    child.stdout?.on("data", (d) => (output += d));
+    child.stderr?.on("data", (d) => (output += d));
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? 1, output });
+    });
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      resolve({ code: 1, output: e.message });
+    });
+  });
 }
 
 async function runVerification(cfg, mission) {
@@ -784,6 +840,16 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
     checkOnly,
     // never carry verification/ecosystem artifacts into the user's repo
     excludeUntracked: missionMergeExcludes(cfg, mission),
+    // A3: commit-on-merge (default on) — the merge becomes revertable,
+    // attributable (XClaw-Mission trailer) and anchorable (refs/xclaw/*)
+    commit:
+      cfg.missions?.commitOnMerge === false
+        ? null
+        : {
+            subject: `xclaw mission: ${String(mission.goal).slice(0, 60)}`,
+            body: `XClaw-Mission: ${mission.id}`,
+            cfg,
+          },
   });
   if (checkOnly) {
     mission.status = "merge_ready";
@@ -799,7 +865,25 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
   }
   mission.status = "done";
   mission.mergedAt = new Date().toISOString();
-  addEvent(mission, "merge", "merged into repository");
+  mission.mergeCommit = out.commit || null;
+  addEvent(
+    mission,
+    "merge",
+    out.commit
+      ? `merged into repository (commit ${out.commit.slice(0, 10)})`
+      : `merged into repository (uncommitted${out.commitSkipped ? ` — ${out.commitSkipped}` : ""})`
+  );
+  if (out.commit) {
+    try {
+      const { setMissionRef, markKnownGood } = await import("../git/timeline.mjs");
+      await setMissionRef(mission.repoDir, mission.id, out.commit);
+      if (cfg.missions?.markKnownGoodOnMerge !== false) {
+        await markKnownGood(mission.repoDir, { sha: out.commit, note: mission.id });
+      }
+    } catch {
+      /* refs are best-effort — the commit itself is the recovery anchor */
+    }
+  }
   const mergedFiles = String(out.stat || "")
     .split("\n")
     .map((l) => l.trim().replace(/^[A-Z?! ]{1,3}\s+/, ""))
@@ -807,6 +891,7 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
     .slice(0, 200);
   mledger(cfg, mission, "merge", {
     method: out.method,
+    commit: out.commit || null,
     files: mergedFiles,
     copied: (out.copied || []).slice(0, 200),
     excluded: (out.excluded || []).slice(0, 50),
