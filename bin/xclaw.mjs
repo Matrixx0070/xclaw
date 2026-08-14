@@ -871,6 +871,15 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "lsp": {
+      // Language Server Protocol over stdio — editor-agnostic completions
+      // backed by the repo-aware completion service. Point any LSP client at
+      // `xclaw lsp` (see docs/COMPLETION.md).
+      const { runLspStdio } = await import("../src/completion/lsp.mjs");
+      runLspStdio();
+      // keep the process alive on stdin
+      return;
+    }
     case "workers": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const wcli = await import("../src/missions/workers-cli.mjs");

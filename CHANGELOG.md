@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.110.0 — LSP server over the completion service
+
+Post-roadmap candidate 5 (final): editor integration without an editor-
+specific plugin.
+
+- `xclaw lsp` — zero-dep Language Server Protocol over stdio
+  (`src/completion/lsp.mjs`): Content-Length framing with an incremental
+  parser, full-document sync, `textDocument/completion` backed by the
+  repo-aware completion service. Workspace root → `repoDir`; the completion
+  is built from the LIVE buffer at the cursor (prefix ≤8k, suffix ≤2k).
+  Works with neovim, helix, or any generic LSP client (docs/COMPLETION.md
+  has copy-paste configs).
+- 35ms initialize; live-proven end-to-end: real
+  `textDocument/completion` returned `return farewell(name).toUpperCase();`
+  for a buffer importing the repo's own module, 1.65s via claude-sonnet-5.
+- Also documents the full completion surface (HTTP/CLI/LSP) in
+  docs/COMPLETION.md.
+
 ## 3.109.0 — Workers CLI bootstrap + federation TLS guidance
 
 Post-roadmap candidate 4.
