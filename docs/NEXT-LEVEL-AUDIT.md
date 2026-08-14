@@ -91,7 +91,7 @@ aborted run) was found and fixed with a regression test.
   as a mission execution strategy (architecture/backend/frontend/test agents
   under one mission) is the next orchestration increment.
 
-## Roadmap (next increments)
+## Roadmap — COMPLETE (2026-08-14, v3.102.0 → v3.106.0)
 
 - ~~Local-plane fast file ops for worktree edits (latency)~~ **KILLED by
   measurement (v3.102.0)**: an instrumented live mission showed ALL tool calls
@@ -102,9 +102,40 @@ aborted run) was found and fixed with a regression test.
   instead (the measured bottleneck + what measurement surfaced): mission tool
   scoping (113→~15 schemas/turn — also closes MCP/browser/image tools escaping
   the worktree-isolation story under mission autoApprove), untracked files in
-  merge evidence, and verify-artifact merge exclusion.
-- Swarm-backed missions (parallel specialized agents under one mission +
-  dependency-aware merge).
-- Visual "point-and-prompt" (element → source → change → rebuild → verify).
-- Remote/cloud workers as a mission execution target.
-- Completion-aware code completion service.
+  merge evidence, and verify-artifact merge exclusion. v3.102.1 closed the
+  bugs live-verification surfaced: per-mission approval gate (the shared-gate
+  singleton silently broke mission autonomy on live gateways), the
+  tool_use/tool_result pairing invariant, and the resume-of-failed
+  evidence-gate bypass.
+- ~~Swarm-backed missions~~ **SHIPPED v3.103.0**: `strategy:"swarm"` — the
+  plan emits a fenced task graph (or the caller provides one), execute fans
+  out via the dependency-aware swarm inside the mission worktree, implement
+  nodes early-merge back into the shadow workspace, evidence gate unchanged;
+  degraded-to-solo on fan-out failure. Live-proven (model-authored 2-node
+  graph, parallel execution, verified, merged).
+- ~~Visual "point-and-prompt"~~ **SHIPPED v3.104.0**: CDP client primitive
+  drives the operator's display browser, one-shot picker overlay captures the
+  element, lexical resolver ranks its source locations, `/point/*` routes +
+  Control-UI card launch a pinned mission. Live-proven (real click →
+  `.hero-title` red→#0b57d0 → merged → computed style verified).
+- ~~Remote/cloud workers~~ **SHIPPED v3.105.0**: mission federation — worker
+  registry, validated URLs, start/track/diff/merge/rollback proxies over the
+  worker's own token-gated API, Control-UI workers card + launch-target
+  selector. Live-proven against a second gateway running a different model
+  (ollama glm-5.2:cloud), remote merge landed on the worker repo.
+- ~~Completion-aware code completion service~~ **SHIPPED v3.106.0**:
+  repo-intel fill-in-the-middle (`POST /complete` + `xclaw complete`),
+  buffer-first import resolution for new files. Live-proven via gateway and
+  CLI.
+
+### Candidate next increments (post-roadmap, unranked)
+
+- Mission resume of a never-executed mission re-enters at verification and
+  skips the execute phase (conservative re-entry) — implement phase-aware
+  resume.
+- Partial-merge trait: untracked copies land before a failing tracked patch —
+  make the merge transactional or auto-clean copies on patch failure.
+- Point-and-prompt inside the webchat UI (currently Control-only).
+- Worker credential bootstrap (`xclaw workers init`) + TLS guidance for
+  non-loopback federation.
+- Editor plugin (LSP or VS Code) over `POST /complete`.
