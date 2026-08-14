@@ -1,5 +1,45 @@
 # Changelog
 
+## 3.101.0 — Autonomous engineering missions (plan→verify→repair→prove) + Mission Control
+
+The first increment of XClaw's autonomous-engineering core: take a high-level
+objective and a repo, and carry it through to a proven result with minimal
+intervention. Built by COMPOSING existing primitives (worktrees, approval gate,
+sandbox/egress, hooks, provider routing) — nothing ripped out. Full audit +
+roadmap: docs/NEXT-LEVEL-AUDIT.md; guide: docs/MISSIONS.md.
+
+- **Codebase intelligence** (src/intel/repo-intel.mjs) — assembles the RIGHT
+  task context (repo structure + regex symbols + import graph + lexical search
+  + git change-frequency, ranked) instead of dumping code at the model.
+- **Mission engine** (src/missions/engine.mjs) — plan → execute → verify →
+  repair → merge_ready → merge/rollback, entirely in an isolated git
+  worktree (the shadow workspace). The user's repo is byte-untouched until an
+  explicit gated merge; rollback discards the worktree. Verification runs the
+  project's OWN checks (npm/pytest/go/cargo auto-detected); a mission can NEVER
+  reach merge_ready without a recorded passing run — success is never claimed
+  without evidence. Bounded repair loop on failures.
+- **Durable state + recovery** (src/missions/store.mjs) — atomic per-mission
+  persistence; boot reconciliation marks crash-interrupted missions resumable;
+  resumeMission continues from the recorded phase (recreating a vanished
+  worktree if needed). Terminal statuses guarded against late-handler clobber.
+- **Mission Control** — /missions routes (token-gated both auth modes) + WS
+  mission channel + a Control-UI section: launch, live progress, verification
+  evidence, timeline, diff, and gated Merge / Resume / Rollback.
+- Carried-over fix: approvals now show a **hook** origin badge when a
+  pre_tool_use hook (not policy) demanded human review.
+- runAgentLoop gained provider/hookManager injection seams (hermetic tests).
+
+Live-proven end-to-end on the operator display: a real model fixed a real bug
+(cart total ignoring quantity) in a real repo through Mission Control — planned,
+edited in a shadow worktree, verified with the project's own npm test (PASS),
+and merged only after the human clicked Merge; the repo stayed byte-identical
+until then and npm test passed afterward.
+
+Adversarial pass found + fixed a path-traversal (a crafted mission id read
+arbitrary .json under the config dir, e.g. credentials.json) and a rollback
+race (an aborted run clobbered the terminal status) — both regression-pinned.
+Suite 1463/0.
+
 ## 3.100.1 — command-hook runner: survive fast-exiting hook scripts (EPIPE)
 
 A command hook that exits before stdin is written (one-liner `exit 2` guards

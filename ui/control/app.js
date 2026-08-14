@@ -945,7 +945,7 @@ function connectEventsWs() {
       if (status) status.textContent = "ws live";
       ws.send(JSON.stringify({
         type: "subscribe",
-        channels: ["admission", "queue", "eviction", "swarm", "all"],
+        channels: ["admission", "queue", "eviction", "swarm", "mission", "all"],
       }));
     };
 
@@ -985,6 +985,9 @@ function connectEventsWs() {
           // honest, so a pending approval is visible the moment it happens.
           if (typeof loadApprovals === "function") loadApprovals().catch(() => {});
           updateAprBadge().catch(() => {});
+        }
+        if (ch === "mission" && typeof loadMissions === "function") {
+          loadMissions().catch(() => {});
         }
         if (status && ch === "admission") {
           status.textContent = "ws · " + (msg.data?.kind || "event") + " · " + new Date().toLocaleTimeString();
@@ -1154,7 +1157,11 @@ async function loadApprovals() {
     tbody.innerHTML = "";
     for (const p of data.pending || []) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${p.tool}</td><td>${(p.at || "").replace("T", " ").slice(0, 19)} ${p.remainingMs!=null?"("+Math.round(p.remainingMs/1000)+"s left)":""}</td>
+      const originBadge =
+        p.origin === "hook"
+          ? ' <span class="pill warn" title="a pre_tool_use hook demanded human review (decision: ask)">hook</span>'
+          : "";
+      tr.innerHTML = `<td>${p.tool}${originBadge}</td><td>${(p.at || "").replace("T", " ").slice(0, 19)} ${p.remainingMs!=null?"("+Math.round(p.remainingMs/1000)+"s left)":""}</td>
         <td>
           <button data-id="${p.id}" data-ok="1" class="btn primary apr-dec">Allow</button>
           <button data-id="${p.id}" data-ok="0" class="btn ghost apr-dec">Deny</button>
@@ -2873,6 +2880,154 @@ $("btnSaMerge")?.addEventListener("click", async () => {
   } catch (e) { $("saOut").textContent = String(e.message || e); }
 });
 if ($("saTable")) loadSubagents().catch(() => {});
+
+/* ── Mission Control (autonomous engineering) ────────────────────── */
+let msnSelected = null;
+
+const MSN_STATUS_CLS = {
+  done: " on", merge_ready: " on", verifying: " warn", repairing: " warn",
+  executing: " warn", planning: " warn", merging: " warn",
+  failed: " danger", interrupted: " danger", rolled_back: "",
+};
+
+async function loadMissions() {
+  const tbody = $("msnTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/missions");
+    const list = data.missions || [];
+    if ($("msnCount")) {
+      const active = list.filter((x) => x.running).length;
+      $("msnCount").textContent = `${list.length} missions · ${active} active`;
+    }
+    tbody.innerHTML = list
+      .map((mi) => `<tr class="msn-row" data-id="${esc(mi.id)}" style="cursor:pointer;">
+        <td><span class="pill${MSN_STATUS_CLS[mi.status] ?? ""}">${esc(mi.status)}</span>${mi.running ? ' <span class="pill warn">live</span>' : ""}</td>
+        <td title="${esc(mi.goal)}">${esc(mi.goal.slice(0, 56))}</td>
+        <td style="font-size:0.72rem;" class="muted">${esc((mi.repoDir || "").split("/").slice(-2).join("/"))}</td>
+        <td>${mi.attempts}/${mi.maxAttempts}</td>
+        <td style="font-size:0.72rem;">${esc((mi.lastEvent?.note || "").slice(0, 48))}</td>
+        <td><button class="btn ghost msn-open" data-id="${esc(mi.id)}">Open</button></td>
+      </tr>`)
+      .join("") || `<tr><td colspan="6" class="muted">No missions yet — launch one above.</td></tr>`;
+    tbody.querySelectorAll(".msn-open").forEach((b) => {
+      b.onclick = (ev) => { ev.stopPropagation(); openMission(b.dataset.id); };
+    });
+    tbody.querySelectorAll(".msn-row").forEach((tr) => {
+      tr.onclick = () => openMission(tr.dataset.id);
+    });
+    if (msnSelected) await openMission(msnSelected, { silent: true });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+
+async function openMission(id, { silent } = {}) {
+  msnSelected = id;
+  try {
+    const m = await getJSON("/missions/" + encodeURIComponent(id));
+    const card = $("cardMissionDetail");
+    card.style.display = "block";
+    $("msnDetailTitle").textContent = m.goal.slice(0, 90);
+    $("msnDetailStatus").textContent = m.status + (m.running ? " · live" : "");
+    $("msnDetailStatus").className = "pill" + (MSN_STATUS_CLS[m.status] ?? "");
+    $("msnDetailKv").innerHTML = kvHtml([
+      ["Repo", m.repoDir],
+      ["Workspace", m.worktree ? m.worktree.branch : "—"],
+      ["Attempts", `${m.attempts}/${m.maxAttempts}`],
+      ["Verified", m.verify?.history?.length ? (m.verify.history.at(-1).ok ? "yes" : "no") : "—",
+        m.verify?.history?.at(-1)?.ok ? "good" : "warn"],
+      ["Diff", m.diff ? `${m.diff.patchChars} chars` : "—"],
+      ["Agent runs", String((m.agentRuns || []).length)],
+    ]);
+    $("msnVerify").textContent = (m.verify?.history || [])
+      .map((h) => `[${h.at.slice(11, 19)}] attempt ${h.attempt}: ${h.ok ? "PASS" : "FAIL"} — ${h.summary}`)
+      .join("\n") +
+      "\n\n" +
+      (m.verify?.results || [])
+        .map((r) => `$ ${r.cmd}\n${r.pass ? "PASS" : "FAIL (exit " + r.exitCode + ")"}\n${(r.output || "").slice(-1200)}`)
+        .join("\n\n") || "—";
+    $("msnPlan").textContent = m.plan?.summary || "—";
+    $("msnEvents").querySelector("tbody").innerHTML = (m.events || [])
+      .slice()
+      .reverse()
+      .map((e) => `<tr>
+        <td style="font-size:0.7rem;">${esc((e.at || "").slice(11, 19))}</td>
+        <td><span class="pill">${esc(e.phase)}</span></td>
+        <td style="font-size:0.78rem;">${esc(e.note)}</td>
+      </tr>`)
+      .join("");
+    $("btnMsnMerge").disabled = m.status !== "merge_ready";
+    $("btnMsnResume").disabled = !["interrupted", "failed", "merge_ready"].includes(m.status) || m.running;
+    $("btnMsnRollback").disabled = ["done", "rolled_back"].includes(m.status);
+    $("btnMsnDiff").disabled = !m.diff;
+    if (!silent) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) {
+    $("msnDetailKv").innerHTML = kvHtml([["Error", esc(e.message || e), "bad"]]);
+  }
+}
+
+$("btnMsnStart")?.addEventListener("click", async () => {
+  const goal = $("msnGoal").value.trim();
+  const repoDir = $("msnRepo").value.trim();
+  if (!goal || !repoDir) {
+    $("msnLive").textContent = "goal + repo required";
+    return;
+  }
+  $("btnMsnStart").disabled = true;
+  try {
+    const r = await postJSON("/missions", { goal, repoDir });
+    $("msnGoal").value = "";
+    $("msnLive").textContent = "launched " + r.mission.id.slice(0, 12);
+    await loadMissions();
+    await openMission(r.mission.id);
+  } catch (e) {
+    $("msnLive").textContent = String(e.message || e).slice(0, 60);
+  } finally {
+    $("btnMsnStart").disabled = false;
+  }
+});
+$("btnMsnRefresh")?.addEventListener("click", () => loadMissions());
+$("btnMsnMerge")?.addEventListener("click", async () => {
+  if (!msnSelected) return;
+  if (!confirm("Merge the verified changes into the repository?")) return;
+  try {
+    const r = await postJSON(`/missions/${encodeURIComponent(msnSelected)}/merge`, {});
+    $("msnLive").textContent = r.ok ? "merged ✓" : `merge: ${r.merge?.error || r.merge?.code || "failed"}`;
+    await loadMissions();
+  } catch (e) { $("msnLive").textContent = String(e.message || e).slice(0, 60); }
+});
+$("btnMsnResume")?.addEventListener("click", async () => {
+  if (!msnSelected) return;
+  try {
+    await postJSON(`/missions/${encodeURIComponent(msnSelected)}/resume`, {});
+    $("msnLive").textContent = "resuming";
+    await loadMissions();
+  } catch (e) { $("msnLive").textContent = String(e.message || e).slice(0, 60); }
+});
+$("btnMsnRollback")?.addEventListener("click", async () => {
+  if (!msnSelected) return;
+  if (!confirm("Discard this mission's workspace? The repository stays untouched.")) return;
+  try {
+    await postJSON(`/missions/${encodeURIComponent(msnSelected)}/rollback`, {});
+    $("msnLive").textContent = "rolled back";
+    await loadMissions();
+  } catch (e) { $("msnLive").textContent = String(e.message || e).slice(0, 60); }
+});
+$("btnMsnDiff")?.addEventListener("click", async () => {
+  if (!msnSelected) return;
+  try {
+    const d = await getJSON(`/missions/${encodeURIComponent(msnSelected)}/diff`);
+    $("msnDiff").textContent = (d.stat ? d.stat + "\n\n" : "") + (d.patch || "(empty diff)");
+  } catch (e) { $("msnDiff").textContent = String(e.message || e); }
+});
+if ($("msnTable")) {
+  loadMissions().catch(() => {});
+  // live refresh straight from mission WS events + a slow safety poll
+  setInterval(() => {
+    if (location.hash.includes("missions")) loadMissions().catch(() => {});
+  }, 10_000);
+}
 
 /* ── Hooks (lifecycle hook system) ───────────────────────────────── */
 async function loadHooks() {

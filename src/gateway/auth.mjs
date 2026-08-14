@@ -100,7 +100,10 @@ export function createGatewayAuth(cfg = {}) {
       p.startsWith("/doctor") ||
       // hook management: command hooks EXECUTE arbitrary shell on the host
       p === "/hooks" ||
-      p.startsWith("/hooks/");
+      p.startsWith("/hooks/") ||
+      // missions run autonomous agents against repositories
+      p === "/missions" ||
+      p.startsWith("/missions/");
     if (core) return true;
     if (!strict) {
       // legacy subset

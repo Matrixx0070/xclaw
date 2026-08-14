@@ -17,6 +17,7 @@ import { tryHandleSubagentsRoute } from "./routes/subagents.mjs";
 import { tryHandleMcpRoute } from "./routes/mcp.mjs";
 import { tryHandleMediaRoute } from "./routes/media.mjs";
 import { tryHandleHooksRoute } from "./routes/hooks.mjs";
+import { tryHandleMissionsRoute } from "./routes/missions.mjs";
 import { tryHandleProvidersRoute } from "./routes/providers.mjs";
 import { tryHandleChannelsRoute } from "./routes/channels.mjs";
 import { applyCors } from "./cors.mjs";
@@ -949,6 +950,15 @@ export async function startGateway({ root } = {}) {
   await channelManager.startAll();
   try {
     configureSubagentPersistence(cfg);
+    // Missions interrupted by a crash/restart become resumable, never lost.
+    import("../missions/store.mjs")
+      .then((m) => m.reconcileInterrupted(cfg))
+      .then((ids) => {
+        if (ids.length) {
+          console.log(`[xclaw:missions] marked ${ids.length} interrupted mission(s) resumable: ${ids.join(", ")}`);
+        }
+      })
+      .catch(() => {});
   } catch (e) {
     console.warn("[xclaw] subagent persistence:", e.message);
   }
@@ -1113,6 +1123,7 @@ export async function startGateway({ root } = {}) {
       if (await tryHandleMcpRoute({ ...routeArgs, mcpClient, mcpServer })) return;
       if (await tryHandleMediaRoute(routeArgs)) return;
       if (await tryHandleHooksRoute(routeArgs)) return;
+      if (await tryHandleMissionsRoute(routeArgs)) return;
 
 
 

@@ -30,6 +30,8 @@ const PATHS = [
   "/doctor", "/doctor/run",
   // hook management adds SHELL EXECUTION config — must be token-gated
   "/hooks", "/hooks/history", "/hooks/toggle", "/hooks/commands",
+  // missions run autonomous agents against repos
+  "/missions", "/missions/abc", "/missions/abc/merge", "/missions/abc/rollback",
 ];
 
 describe("cost/usage/logs auth coverage", () => {

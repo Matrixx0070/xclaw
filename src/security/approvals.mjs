@@ -230,6 +230,9 @@ export function createApprovalGate(cfg = {}) {
         tool: name,
         args,
         plan,
+        // why a human is being asked: "policy" (requireApproval list) vs
+        // "hook" (a pre_tool_use hook returned decision:"ask")
+        origin: forceHuman ? "hook" : "policy",
         at: new Date().toISOString(),
         atMs: Date.now(),
         deadline: Date.now() + slaMs,
@@ -345,6 +348,7 @@ export function createApprovalGate(cfg = {}) {
       id: item.id,
       tool: item.tool,
       args: item.args,
+      origin: item.origin || "policy",
       at: item.at,
       ageMs: item.atMs ? now - item.atMs : null,
       deadline: item.deadline ? new Date(item.deadline).toISOString() : null,

@@ -30,6 +30,7 @@
 
     <div class="nav-group">
       <div class="nav-label">Run</div>
+      <a class="nav-item" href="#/missions" data-view="missions"><span class="ni-ico">🎯</span>Missions</a>
       <a class="nav-item" href="#/agents" data-view="agents"><span class="ni-ico">▶</span>Agents &amp; Jobs</a>
       <a class="nav-item" href="#/sessions" data-view="sessions"><span class="ni-ico">❖</span>Sessions</a>
       <a class="nav-item" href="#/subagents" data-view="subagents"><span class="ni-ico">⑂</span>Subagents</a>
@@ -806,6 +807,60 @@
       </div>
     </div>
 
+    <!-- ═══ Mission Control ═══ -->
+    <div class="view" data-view="missions">
+      <div class="grid">
+        <section class="card span2" id="cardMissions">
+          <h2>Missions <span id="msnCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">
+            Autonomous engineering: give XClaw a high-level objective and a repository.
+            It builds context, plans, implements in an isolated <b>shadow workspace</b>,
+            runs the project's own tests, repairs failures, and only offers a <b>Merge</b>
+            once verification passed — your repo is untouched until then. Rollback
+            discards the workspace.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="msnGoal" placeholder="engineering objective…" style="flex:3;min-width:260px;" />
+            <input id="msnRepo" placeholder="repository path" style="flex:2;min-width:180px;" />
+            <button class="btn primary" id="btnMsnStart">Launch mission</button>
+            <button class="btn ghost" id="btnMsnRefresh">Refresh</button>
+            <span id="msnLive" class="pill" style="font-size:0.7rem;">—</span>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="msnTable">
+              <thead><tr><th>Status</th><th>Goal</th><th>Repo</th><th>Attempts</th><th>Last activity</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span2" id="cardMissionDetail" style="display:none;">
+          <h2 id="msnDetailTitle">Mission</h2>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn primary" id="btnMsnMerge" disabled>Merge</button>
+            <button class="btn ghost" id="btnMsnResume" disabled>Resume</button>
+            <button class="btn ghost" id="btnMsnRollback" disabled>Rollback</button>
+            <button class="btn ghost" id="btnMsnDiff" disabled>View diff</button>
+            <span id="msnDetailStatus" class="pill">—</span>
+          </div>
+          <div class="kv" id="msnDetailKv" style="margin-top:0.5rem;">—</div>
+          <h3 class="subhead">Verification evidence</h3>
+          <pre id="msnVerify" class="log" style="max-height:180px;">—</pre>
+          <h3 class="subhead">Plan</h3>
+          <pre id="msnPlan" class="log" style="max-height:200px;">—</pre>
+          <h3 class="subhead">Timeline</h3>
+          <div class="table-wrap" style="max-height:220px;">
+            <table id="msnEvents">
+              <thead><tr><th>When</th><th>Phase</th><th>Note</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h3 class="subhead">Diff</h3>
+          <pre id="msnDiff" class="log" style="max-height:380px;">— (View diff loads it)</pre>
+        </section>
+      </div>
+    </div>
+
     <!-- ═══ Hooks ═══ -->
     <div class="view" data-view="hooks">
       <div class="grid">
@@ -899,6 +954,7 @@
         automations: "Automations", alerts: "Alerts", skills: "Skills",
         mcp: "MCP", media: "Images", sessions: "Sessions",
         subagents: "Subagents", memory: "Memory", hooks: "Hooks",
+        missions: "Mission Control",
       };
       const views = [...document.querySelectorAll(".view")];
       const items = [...document.querySelectorAll(".nav-item")];
