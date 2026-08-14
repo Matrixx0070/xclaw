@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.105.0 — Remote mission workers (federation)
+
+Roadmap increment: dispatch missions to OTHER xclaw gateways and drive them
+from one Mission Control.
+
+- `src/missions/remote.mjs`: worker registry (`cfg.missions.workers`
+  `[{name,url,token,allowInsecure?}]`, tokens redacted in every listing),
+  URL policy mirroring provider base-urls (https anywhere, plain http
+  loopback-only unless allowInsecure), start/list/get/diff/merge/rollback
+  proxies + `pingWorker` (version + computer health via the sanitized
+  `/gateway/info`).
+- Routes under the existing `/missions` auth umbrella, matched BEFORE the
+  `:id` regex: `GET|POST /missions/workers`, `DELETE /missions/workers/:name`
+  (config-persisted via saveConfigPatch), `POST /missions/remote` dispatch,
+  `GET /missions/remote/:worker[/:id[/diff]]`, `POST …/merge`, `POST …/rollback`.
+- Control UI: Remote workers card (add/ping/list/remove; per-worker mission
+  table with remote Merge/Rollback) and a launch-target selector (local or
+  any worker) on the mission form.
+- The worker's OWN evidence gate, approval story, and token auth apply
+  unchanged on its host; `repoDir` is a worker-side path. Coordinator and
+  worker can run different models.
+- Live-proven: a second gateway (ollama `glm-5.2:cloud`, shared computer
+  plane) registered as `w1`; the coordinator dispatched a mission, tracked
+  it to merge_ready through the proxy, merged remotely, and the worker's
+  repo gained the module + test (suite green on the worker repo).
+
 ## 3.104.0 — Visual point-and-prompt (element → source → change → rebuild → verify)
 
 Roadmap increment: point at an element in the RUNNING app, describe the
