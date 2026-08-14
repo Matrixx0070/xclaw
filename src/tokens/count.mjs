@@ -346,10 +346,21 @@ export function normalizeUsage(usage) {
     usage.output_tokens_details?.reasoning_tokens,
     usage.reasoning_tokens
   );
+  // Cache hits: xAI prompt_tokens_details.cached_tokens; Anthropic
+  // cache_read_input_tokens; OpenAI cached_tokens / input_tokens_details.
   const cached = firstNumber(
     usage.prompt_tokens_details?.cached_tokens,
     usage.input_tokens_details?.cached_tokens,
-    usage.cached_tokens
+    usage.cache_read_input_tokens,
+    usage.cacheReadInputTokens,
+    usage.cached_tokens,
+    usage.cachedTokens
+  );
+  const cacheCreation = firstNumber(
+    usage.cache_creation_input_tokens,
+    usage.cacheCreationInputTokens,
+    usage.prompt_tokens_details?.cache_write_tokens,
+    usage.input_tokens_details?.cache_write_tokens
   );
 
   return {
@@ -360,6 +371,7 @@ export function normalizeUsage(usage) {
     costUsd: costUsd != null ? costUsd : null,
     reasoningTokens: reasoning,
     cachedTokens: cached,
+    cacheCreationTokens: cacheCreation,
     raw: usage,
     estimated: false,
     mode: "usage",

@@ -81,7 +81,7 @@ export function aggregateCacheStats(turns = []) {
       turnsWithCache: 0,
     };
   }
-  const turnsWithCache = turns.filter((t) => (t.cachedTokens || 0) > 0).length;
+  const turnsWithCache = turns.filter((t) => !t.estimated && (t.cachedTokens || 0) > 0).length;
   const hitRate = cached / prompt;
   return {
     promptTokens: prompt,

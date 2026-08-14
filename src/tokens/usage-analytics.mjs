@@ -100,11 +100,14 @@ export async function usageSummary(cfg, { provider = "all", days = 7 } = {}) {
       runs: 0,
       promptTokens: 0,
       completionTokens: 0,
+      cachedTokens: 0,
       costUsd: 0,
     };
     pv.runs += 1;
     pv.promptTokens += e.promptTokens || 0;
     pv.completionTokens += e.completionTokens || 0;
+    pv.cachedTokens += e.cachedTokens || 0;
+    // prefer cache object from ledger if present
     pv.costUsd += e.costUsd || 0;
     byProvider.set(prov, pv);
     for (const t of turns) {
@@ -148,6 +151,18 @@ export async function usageSummary(cfg, { provider = "all", days = 7 } = {}) {
       ...totals,
       totalTokens:
         totals.promptTokens + totals.completionTokens + totals.reasoningTokens,
+      cacheHitRate:
+        totals.promptTokens > 0
+          ? Math.round(
+              Math.min(1, totals.cachedTokens / totals.promptTokens) * 1000
+            ) / 1000
+          : 0,
+      cacheHitRatePct:
+        totals.promptTokens > 0
+          ? Math.round(
+              Math.min(1, totals.cachedTokens / totals.promptTokens) * 1000
+            ) / 10
+          : 0,
     },
     breakdown: [
       { type: "prompt", label: "Prompt tokens", tokens: totals.promptTokens },
@@ -157,7 +172,19 @@ export async function usageSummary(cfg, { provider = "all", days = 7 } = {}) {
     ],
     daily: daysOut,
     byModel: [...byModel.values()].sort((a, b) => b.tokens - a.tokens),
-    byProvider: [...byProvider.values()].sort((a, b) => b.costUsd - a.costUsd),
+    byProvider: [...byProvider.values()]
+      .map((p) => ({
+        ...p,
+        cacheHitRate:
+          p.promptTokens > 0
+            ? Math.round(Math.min(1, (p.cachedTokens || 0) / p.promptTokens) * 1000) / 1000
+            : 0,
+        cacheHitRatePct:
+          p.promptTokens > 0
+            ? Math.round(Math.min(1, (p.cachedTokens || 0) / p.promptTokens) * 1000) / 10
+            : 0,
+      }))
+      .sort((a, b) => b.costUsd - a.costUsd),
     providersSeen: [...providersSeen],
   };
 }

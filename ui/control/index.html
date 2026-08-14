@@ -132,6 +132,11 @@
               <div class="ul-stat-value" id="ulRequests">—</div>
               <div class="ul-chart" id="ulRequestsChart"></div>
             </div>
+            <div class="ul-stat">
+              <div class="ul-stat-label">Cache hit</div>
+              <div class="ul-stat-value" id="ulCacheHit">—</div>
+              <div class="ul-chart muted" id="ulCacheNote" style="font-size:0.75rem;min-height:1.2rem;"></div>
+            </div>
           </div>
           <div class="ul-legend" id="ulLegend"></div>
 
@@ -147,7 +152,7 @@
           <div id="ulByProviderBars" class="ul-prov-bars" aria-label="Provider cost breakdown"></div>
           <div class="table-wrap" style="max-height:180px;">
             <table id="ulByProvider">
-              <thead><tr><th>Provider</th><th>Runs</th><th>Tokens in</th><th>Tokens out</th><th>Spend</th><th>Share</th></tr></thead>
+              <thead><tr><th>Provider</th><th>Runs</th><th>Tokens in</th><th>Tokens out</th><th>Cache hit</th><th>Spend</th><th>Share</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>

@@ -31,6 +31,7 @@ export function createUsageTracker({ enabled = true, model = null, ledgerPath = 
     totalTokens: 0,
     reasoningTokens: 0,
     cachedTokens: 0,
+    cacheCreationTokens: 0,
     costInUsdTicks: 0,
     costUsd: 0,
     hasCost: false,
@@ -75,6 +76,7 @@ export function createUsageTracker({ enabled = true, model = null, ledgerPath = 
 
       if (norm.reasoningTokens) state.reasoningTokens += norm.reasoningTokens;
       if (norm.cachedTokens) state.cachedTokens += norm.cachedTokens;
+      if (norm.cacheCreationTokens) state.cacheCreationTokens += norm.cacheCreationTokens;
 
       if (norm.costInUsdTicks != null) {
         state.costInUsdTicks += norm.costInUsdTicks;
@@ -95,6 +97,11 @@ export function createUsageTracker({ enabled = true, model = null, ledgerPath = 
         totalTokens: total,
         reasoningTokens: norm.reasoningTokens ?? null,
         cachedTokens: norm.cachedTokens ?? null,
+        cacheCreationTokens: norm.cacheCreationTokens ?? null,
+        cacheHitRate:
+          norm.promptTokens > 0 && norm.cachedTokens != null
+            ? Math.min(1, norm.cachedTokens / norm.promptTokens)
+            : null,
         costInUsdTicks: norm.costInUsdTicks ?? null,
         costUsd: norm.costUsd ?? null,
         estimated: false,
@@ -155,12 +162,19 @@ export function createUsageTracker({ enabled = true, model = null, ledgerPath = 
 
   function snapshot() {
     if (!enabled) return null;
+    const hitRate =
+      state.promptTokens > 0
+        ? Math.min(1, state.cachedTokens / state.promptTokens)
+        : 0;
     return {
       promptTokens: state.promptTokens,
       completionTokens: state.completionTokens,
       totalTokens: state.totalTokens,
       reasoningTokens: state.reasoningTokens,
       cachedTokens: state.cachedTokens,
+      cacheCreationTokens: state.cacheCreationTokens,
+      cacheHitRate: hitRate,
+      cacheHitRatePct: Number((hitRate * 100).toFixed(1)),
       costInUsdTicks: state.hasCost ? state.costInUsdTicks : null,
       costUsd: state.hasCost ? state.costUsd : null,
       costUsdFormatted: state.hasCost ? formatUsd(state.costUsd) : null,
@@ -183,6 +197,7 @@ export function createUsageTracker({ enabled = true, model = null, ledgerPath = 
       if (s.hasCost) line += ` · cost ${formatUsd(s.costUsd)}`;
       if (s.reasoningTokens) line += ` · reason=${s.reasoningTokens}`;
       if (s.cachedTokens) line += ` · cached=${s.cachedTokens}`;
+      if (s.cacheHitRatePct) line += ` · cacheHit=${s.cacheHitRatePct}%`;
       if (s.usedFallback) line += ` (partial fallbacks)`;
       return line;
     }

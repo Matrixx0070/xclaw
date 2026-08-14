@@ -2091,6 +2091,15 @@ async function ulLoadUsage() {
   $("ulSpend").textContent = ulUsd(t.costUsd);
   $("ulTokens").textContent = ulFmt(t.totalTokens);
   $("ulRequests").textContent = ulFmt(t.requests);
+  if ($("ulCacheHit")) {
+    const pct = t.cacheHitRatePct != null ? t.cacheHitRatePct : (t.cacheHitRate != null ? Math.round(t.cacheHitRate * 1000) / 10 : null);
+    $("ulCacheHit").textContent = pct != null ? pct + "%" : "—";
+    if ($("ulCacheNote")) {
+      $("ulCacheNote").textContent = t.cachedTokens
+        ? `${ulFmt(t.cachedTokens)} cached of ${ulFmt(t.promptTokens)} prompt`
+        : "no cache tokens reported";
+    }
+  }
 
   const days = data.daily || [];
   const labels = days.map((d) => d.day.slice(5));
@@ -2175,11 +2184,15 @@ async function ulRenderProviderCosts(scopedData) {
     .map((r) => {
       const pct = Math.round(((r.costUsd || 0) / totalSpend) * 100);
       const color = UL_PROV_COLORS[r.provider] || UL_PROV_COLORS.unknown;
+      const cachePct = r.cacheHitRatePct != null ? r.cacheHitRatePct : (r.promptTokens > 0 && r.cachedTokens != null
+        ? Math.round(Math.min(1, r.cachedTokens / r.promptTokens) * 1000) / 10
+        : null);
       return `<tr>
         <td><i class="ul-dot" style="background:${color}"></i> ${esc(r.provider)}</td>
         <td>${ulFmt(r.runs)}</td>
         <td>${ulFmt(r.promptTokens)}</td>
         <td>${ulFmt(r.completionTokens)}</td>
+        <td>${cachePct != null ? cachePct + "%" : "—"}</td>
         <td>${ulUsd(r.costUsd)}</td>
         <td><div class="ul-share"><div style="width:${pct}%;background:${color}"></div></div> ${pct}%</td>
       </tr>`;
