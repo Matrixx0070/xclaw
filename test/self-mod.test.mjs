@@ -56,6 +56,38 @@ describe("A4 self profile", () => {
     assert.equal(read.decision, undefined, "reads are allowed everywhere");
   });
 
+  it("guard is segment-anchored: closes the unnormalized-substring bypass (review finding)", () => {
+    const guard = editSurfaceGuard(SELF_DENY_PATHS, "/root/xclaw");
+    // `.`-segment obfuscation that a raw includes() would MISS
+    for (const p of [
+      "src/./security/approvals.mjs",
+      "src/security/../security/approvals.mjs",
+      "/root/xclaw/src/security/approvals.mjs",
+      "./bin/xclaw.mjs",
+    ]) {
+      assert.equal(
+        guard({ toolName: "xclaw_file_write", args: { path: p } }).decision,
+        "deny",
+        `path bypass not closed: ${p}`
+      );
+    }
+    // exec obfuscation
+    assert.equal(
+      guard({ toolName: "xclaw_bash", args: { command: "echo x > src/./self/deploy.mjs" } }).decision,
+      "deny"
+    );
+    // false-positive guard: a similarly-named but DIFFERENT path is allowed
+    assert.equal(
+      guard({ toolName: "xclaw_file_write", args: { path: "src/security-docs/notes.md" } }).decision,
+      undefined,
+      "must not over-match sibling names"
+    );
+    assert.equal(
+      guard({ toolName: "xclaw_file_write", args: { path: "mybin/tool.mjs" } }).decision,
+      undefined
+    );
+  });
+
   it("guard registers as a system hook and denies through executeAll", async () => {
     const mgr = registerEditSurfaceHook(createHookManager({ cfg: {} }));
     const denied = await mgr.executeAll(

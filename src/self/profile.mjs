@@ -15,7 +15,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-/** Paths the agent may NEVER edit in a self mission (relative, prefix match). */
+/** Paths the agent may NEVER edit in a self mission (repo-relative prefixes). */
 export const SELF_DENY_PATHS = [
   "src/security/",
   "src/self/",
@@ -24,6 +24,40 @@ export const SELF_DENY_PATHS = [
   ".git/",
   ".github/workflows/",
 ];
+
+/**
+ * Normalize an operand to a repo-relative POSIX path for segment-anchored
+ * matching. Strips a repoDir prefix, collapses `.`/`..`, forward-slashes, and
+ * drops a leading `./` — so `src/./security/x`, `/repo/src/security/x` and
+ * `./src/security/x` all reduce to `src/security/x`. Anchored substring match
+ * (`includes(raw)`) is intentionally NOT used — that was the review finding.
+ */
+export function normalizeOperand(operand, repoDir = "") {
+  let p = String(operand || "").trim();
+  if (!p) return "";
+  // resolve against repoDir when absolute-looking or repoDir-prefixed
+  if (repoDir && (path.isAbsolute(p) || p.startsWith(repoDir))) {
+    p = path.relative(repoDir, path.resolve(repoDir, p));
+  } else {
+    p = path.normalize(p);
+  }
+  p = p.replace(/\\/g, "/").replace(/^\.\//, "");
+  return p;
+}
+
+/** Does a normalized path fall under any denied prefix (segment-anchored)? */
+export function isDeniedPath(normPath, denyPaths = SELF_DENY_PATHS) {
+  for (const deny of denyPaths) {
+    const d = deny.replace(/\\/g, "/");
+    if (d.endsWith("/")) {
+      // directory prefix: exact dir or anything beneath it
+      if (normPath === d.slice(0, -1) || normPath.startsWith(d)) return deny;
+    } else if (normPath === d) {
+      return deny; // exact file
+    }
+  }
+  return null;
+}
 
 export async function detectSelfTarget(cfg, repoDir) {
   try {
@@ -47,25 +81,43 @@ export async function detectSelfTarget(cfg, repoDir) {
  * new enforcement layer. Denies write/edit tools and bash targeting denied
  * paths. The sandbox already pins the worktree; this narrows WITHIN it.
  */
-export function editSurfaceGuard(denyPaths = SELF_DENY_PATHS) {
+export function editSurfaceGuard(denyPaths = SELF_DENY_PATHS, repoDir = "") {
   return function selfEditSurface(ctx) {
     const name = String(ctx.toolName || "");
     const args = ctx.args || {};
     const isWrite = /write|edit|append|delete|remove|move/i.test(name);
     const isExec = /bash|shell|exec/i.test(name);
     if (!isWrite && !isExec) return {};
-    const texts = [];
+
+    // Path-arg tools: normalize the operand and match on path segments.
     for (const k of ["path", "file", "filepath", "target", "dest"]) {
-      if (typeof args[k] === "string") texts.push(args[k]);
+      if (typeof args[k] !== "string") continue;
+      const hit = isDeniedPath(normalizeOperand(args[k], repoDir), denyPaths);
+      if (hit) {
+        return { decision: "deny", reason: `self-mission edit surface: ${hit} is not agent-editable` };
+      }
     }
-    if (isExec) texts.push(String(args.command ?? args.cmd ?? ""));
-    for (const t of texts) {
+
+    // Exec: a shell command can reach any path with arbitrary quoting, so
+    // extract candidate path-like tokens AND fall back to a normalized
+    // substring check per deny prefix (defense in depth — a shell command is
+    // opaque enough that we fail closed on any mention).
+    if (isExec) {
+      const cmd = String(args.command ?? args.cmd ?? args.script ?? args.input ?? "");
+      // token scan: normalize each whitespace/=-separated token
+      for (const tok of cmd.split(/[\s='";|&()><]+/)) {
+        if (!tok) continue;
+        const hit = isDeniedPath(normalizeOperand(tok, repoDir), denyPaths);
+        if (hit) {
+          return { decision: "deny", reason: `self-mission edit surface: ${hit} referenced by exec` };
+        }
+      }
+      // whole-command normalized fallback (catches `.`-segment obfuscation
+      // that survived tokenization)
+      const flat = cmd.replace(/\\/g, "/").replace(/\/\.\//g, "/").replace(/\/+/g, "/");
       for (const deny of denyPaths) {
-        if (t.includes(deny)) {
-          return {
-            decision: "deny",
-            reason: `self-mission edit surface: ${deny} is not agent-editable`,
-          };
+        if (flat.includes(deny)) {
+          return { decision: "deny", reason: `self-mission edit surface: ${deny} referenced by exec` };
         }
       }
     }
@@ -74,8 +126,8 @@ export function editSurfaceGuard(denyPaths = SELF_DENY_PATHS) {
 }
 
 /** Register the guard on a hook manager (system tier). */
-export function registerEditSurfaceHook(manager, denyPaths = SELF_DENY_PATHS) {
-  manager.registerHook("pre_tool_use", editSurfaceGuard(denyPaths), {
+export function registerEditSurfaceHook(manager, denyPaths = SELF_DENY_PATHS, repoDir = "") {
+  manager.registerHook("pre_tool_use", editSurfaceGuard(denyPaths, repoDir), {
     tier: "system",
     name: "self-edit-surface",
   });

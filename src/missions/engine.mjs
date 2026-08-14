@@ -480,7 +480,8 @@ async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provi
     mcfg = applySelfOverlay(mcfg, cfg);
     hookManager = registerEditSurfaceHook(
       createHookManager({ cfg: mcfg }),
-      mcfg.self?.denyPaths
+      mcfg.self?.denyPaths,
+      mission.worktree.path
     );
   }
   const carry = mission.context?.carry;
