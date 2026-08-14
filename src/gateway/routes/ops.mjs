@@ -168,6 +168,31 @@ export async function tryHandleOpsRoute({
         webchat: { enabled: webchatEnabled, path: "/chat/", sse: true },
         messaging: channelManager.status(),
       },
+      // In-process ops state for the out-of-process doctor: watchdogStatus()
+      // etc. are process-local, so `xclaw doctor` used to report them as
+      // "not running (start gateway)" even while this gateway WAS running.
+      ops: await (async () => {
+        const ops = {};
+        try {
+          const { watchdogStatus } = await import("../../computer/watchdog.mjs");
+          ops.computerWatchdogActive = Boolean(watchdogStatus()?.active);
+        } catch {
+          ops.computerWatchdogActive = null;
+        }
+        try {
+          const { evalCronStatus } = await import("../../cron/eval-job.mjs");
+          ops.evalCronRegistered = Boolean(evalCronStatus()?.registered);
+        } catch {
+          ops.evalCronRegistered = null;
+        }
+        try {
+          const { channelHealthStatus } = await import("../../channels/health-watchdog.mjs");
+          ops.channelWatchdogRunning = Boolean(channelHealthStatus()?.running);
+        } catch {
+          ops.channelWatchdogRunning = null;
+        }
+        return ops;
+      })(),
       paths: cfg.paths,
     });
     return true;

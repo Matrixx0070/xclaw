@@ -871,6 +871,26 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "sweep-tmp": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const { sweepStaleTmp } = await import("../src/ops/tmp-sweeper.mjs");
+      const cfg = await loadConfig();
+      let dryRun = false, maxAgeMs;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === "--dry-run") dryRun = true;
+        else if (args[i] === "--max-age-h" && args[i + 1]) maxAgeMs = Number(args[++i]) * 3600 * 1000;
+      }
+      const r = await sweepStaleTmp(cfg, { dryRun, maxAgeMs });
+      console.log(JSON.stringify({
+        dryRun,
+        removed: r.removed.length,
+        keptFresh: r.kept,
+        skippedReferenced: r.skippedReferenced,
+        errors: r.errors,
+        sample: r.removed.slice(0, 10),
+      }, null, 2));
+      break;
+    }
     case "browser": {
       // Dedicated UI browser with singleton-lock self-healing (pm2-friendly:
       // runs Chrome in the foreground; exits with its code).

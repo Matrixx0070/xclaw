@@ -132,3 +132,56 @@ describe("spawned `xclaw lsp` stdio handshake", () => {
     assert.equal(replies[1].result, null);
   });
 });
+
+describe("LSP cancellation", () => {
+  function makeServer(completeImpl) {
+    const out = [];
+    const server = createLspServer({
+      complete: completeImpl,
+      loadCfg: () => ({}),
+      write: (m) => out.push(m),
+      exit: () => {},
+    });
+    return { server, out };
+  }
+
+  it("$/cancelRequest during an in-flight completion → -32800, no result", async () => {
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const { server, out } = makeServer(async () => {
+      await gate;
+      return { completion: "late result", model: "fake" };
+    });
+    await server.handle({ method: "textDocument/didOpen", params: { textDocument: { uri: "u", text: "abc def" } } });
+    const p = server.handle({ id: 5, method: "textDocument/completion", params: { textDocument: { uri: "u" }, position: { line: 0, character: 3 } } });
+    await server.handle({ method: "$/cancelRequest", params: { id: 5 } });
+    release();
+    await p;
+    const reply = out.find((m) => m.id === 5);
+    assert.equal(reply.error.code, -32800);
+    assert.equal(reply.result, undefined);
+  });
+
+  it("a newer completion for the same doc supersedes the older in-flight one", async () => {
+    let calls = 0;
+    let release1;
+    const gate1 = new Promise((r) => (release1 = r));
+    const { server, out } = makeServer(async () => {
+      calls += 1;
+      if (calls === 1) {
+        await gate1;
+        return { completion: "old", model: "fake" };
+      }
+      return { completion: "new", model: "fake" };
+    });
+    await server.handle({ method: "textDocument/didOpen", params: { textDocument: { uri: "u", text: "abc def" } } });
+    const p1 = server.handle({ id: 10, method: "textDocument/completion", params: { textDocument: { uri: "u" }, position: { line: 0, character: 3 } } });
+    const p2 = server.handle({ id: 11, method: "textDocument/completion", params: { textDocument: { uri: "u" }, position: { line: 0, character: 4 } } });
+    release1();
+    await Promise.all([p1, p2]);
+    const r10 = out.find((m) => m.id === 10);
+    const r11 = out.find((m) => m.id === 11);
+    assert.equal(r10.error?.code, -32800, "superseded request cancelled");
+    assert.equal(r11.result.items[0].insertText, "new");
+  });
+});

@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.112.0 — tmp sweeper + LSP cancellation + doctor accuracy
+
+Fresh-observation release #2 (all three from reading the live host).
+
+- **Stale-tmp sweeper**: `xclaw sweep-tmp [--dry-run] [--max-age-h N]` +
+  `src/ops/tmp-sweeper.mjs` — removes `/tmp/xclaw-*` entries older than 24h
+  that no stored mission worktree references (a live host had accumulated
+  10k+ from suite runs; the first sweep removed 10,330 with zero errors).
+  The gateway runs it daily (`ops.tmpSweep.enabled: false` to opt out) and
+  doctor warns at >50 stale entries (`ops.tmp`).
+- **LSP cancellation**: `$/cancelRequest` honored (in-flight completions
+  answer -32800 instead of landing late), and a newer completion request
+  for the same document supersedes the older in-flight one — safe to use
+  with aggressive editor auto-trigger.
+- **Doctor accuracy**: `computer.watchdog` and `eval.cron` used to warn
+  "not running (start gateway)" while the gateway was demonstrably up —
+  they read process-local state. `/gateway/info` now exposes a sanitized
+  `ops` block (computerWatchdogActive / evalCronRegistered /
+  channelWatchdogRunning) and doctor consults the RUNNING gateway when
+  reachable.
+
 ## 3.111.0 — Channel outage alerting + self-healing dedicated browser
 
 Fresh-observation release (post-NEXT-LEVEL): both items came from reading the

@@ -553,6 +553,18 @@ export async function runDoctor(opts = {}) {
   const gh = await httpGet(`http://${gHost === "0.0.0.0" ? "127.0.0.1" : gHost}:${gPort}/health`);
   if (gh.ok) push("gateway.health", "ok", `Gateway :${gPort} up`);
   else push("gateway.health", "warn", `Gateway :${gPort} not reachable (${gh.error || gh.status})`);
+  // In-process ops state from the RUNNING gateway — the doctor's own process
+  // cannot see cron/watchdog registrations, which made those checks warn
+  // "start gateway" while the gateway was demonstrably up.
+  let liveOps = null;
+  if (gh.ok) {
+    try {
+      const info = await httpGet(`http://${gHost === "0.0.0.0" ? "127.0.0.1" : gHost}:${gPort}/gateway/info`);
+      if (info.ok && info.data) {
+        try { liveOps = JSON.parse(info.data)?.ops || null; } catch { /* not json */ }
+      }
+    } catch { /* fall back to in-process view */ }
+  }
 
   const ch = await httpGet(`http://${cHost === "0.0.0.0" ? "127.0.0.1" : cHost}:${cPort}/health`);
   if (ch.ok) push("computer.health", "ok", `Computer :${cPort} up`);
@@ -571,11 +583,14 @@ export async function runDoctor(opts = {}) {
     const { watchdogStatus } = await import("../computer/watchdog.mjs");
     const w = watchdogStatus();
     const enabled = cfg.computer?.watchdog?.enabled !== false;
+    const active = w.active || liveOps?.computerWatchdogActive === true;
     push(
       "computer.watchdog",
-      enabled ? (w.active ? "ok" : "warn") : "ok",
+      enabled ? (active ? "ok" : "warn") : "ok",
       enabled
-        ? (w.active ? `active every ${cfg.computer?.watchdog?.intervalMs ?? 30000}ms` : "enabled but not running (start gateway)")
+        ? (active
+            ? `active every ${cfg.computer?.watchdog?.intervalMs ?? 30000}ms${w.active ? "" : " (in gateway)"}`
+            : "enabled but not running (start gateway)")
         : "disabled"
     );
   } catch (err) {
@@ -613,15 +628,31 @@ export async function runDoctor(opts = {}) {
   try {
     const { evalCronStatus } = await import("../cron/eval-job.mjs");
     const st = evalCronStatus();
+    const registered = st.registered || liveOps?.evalCronRegistered === true;
     push(
       "eval.cron",
-      st.registered ? "ok" : "warn",
-      st.registered
-        ? `registered next=${st.job?.nextRunAt ? new Date(st.job.nextRunAt).toISOString() : "—"}`
+      registered ? "ok" : "warn",
+      registered
+        ? st.registered
+          ? `registered next=${st.job?.nextRunAt ? new Date(st.job.nextRunAt).toISOString() : "—"}`
+          : "registered (in gateway)"
         : "not registered (start gateway)"
     );
   } catch (err) {
     push("eval.cron", "warn", err.message);
+  }
+  try {
+    const { countStaleTmp } = await import("../ops/tmp-sweeper.mjs");
+    const stale = await countStaleTmp(cfg);
+    push(
+      "ops.tmp",
+      stale > 50 ? "warn" : "ok",
+      stale > 50
+        ? `${stale} stale xclaw tmp entries (>24h) — run: xclaw sweep-tmp`
+        : `${stale} stale tmp entries`
+    );
+  } catch (err) {
+    push("ops.tmp", "warn", err.message);
   }
 
 

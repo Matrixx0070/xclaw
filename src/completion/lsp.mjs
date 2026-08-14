@@ -77,6 +77,8 @@ const SUFFIX_CAP = 2000; // chars of buffer head after cursor
 
 export function createLspServer({ complete, loadCfg, write, exit } = {}) {
   const docs = new Map(); // uri → text
+  const cancelled = new Set(); // request ids cancelled via $/cancelRequest
+  const pendingCompletion = new Map(); // uri → in-flight completion request id
   let rootDir = null;
   let cfgPromise = null;
   const getCfg = () => {
@@ -109,6 +111,12 @@ export function createLspServer({ complete, loadCfg, write, exit } = {}) {
         case "initialized":
         case "workspace/didChangeConfiguration":
           return; // notifications — nothing to do
+        case "$/cancelRequest": {
+          // editors cancel aggressively while typing — honor it so a stale
+          // completion neither blocks nor lands after the buffer moved on
+          if (params?.id !== undefined) cancelled.add(params.id);
+          return;
+        }
         case "textDocument/didOpen":
           docs.set(params.textDocument.uri, String(params.textDocument.text ?? ""));
           return;
@@ -136,15 +144,29 @@ export function createLspServer({ complete, loadCfg, write, exit } = {}) {
             respond({ isIncomplete: false, items: [] });
             return;
           }
+          // a newer completion for the same doc supersedes the in-flight one
+          const prior = pendingCompletion.get(uri);
+          if (prior !== undefined && prior !== id) cancelled.add(prior);
+          pendingCompletion.set(uri, id);
           const cfg = await getCfg();
           const completer =
             complete || (await import("./service.mjs")).completeCode;
-          const out = await completer(cfg, {
-            prefix,
-            suffix,
-            file: uriToPath(uri),
-            repoDir: rootDir || undefined,
-          });
+          let out;
+          try {
+            out = await completer(cfg, {
+              prefix,
+              suffix,
+              file: uriToPath(uri),
+              repoDir: rootDir || undefined,
+            });
+          } finally {
+            if (pendingCompletion.get(uri) === id) pendingCompletion.delete(uri);
+          }
+          if (cancelled.has(id)) {
+            cancelled.delete(id);
+            fail(-32800, "request cancelled"); // LSP RequestCancelled
+            return;
+          }
           const insert = String(out.completion || "");
           if (!insert) {
             respond({ isIncomplete: false, items: [] });

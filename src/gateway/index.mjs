@@ -1031,6 +1031,21 @@ export async function startGateway({ root } = {}) {
     console.warn("[xclaw] computer watchdog:", err.message);
   }
   try {
+    // Daily stale-tmp sweep (age-gated, mission-worktree-safe) — a live host
+    // accumulated 10k+ /tmp/xclaw-* entries from suite runs before this
+    // existed. Off via ops.tmpSweep.enabled: false.
+    if (cfg.ops?.tmpSweep?.enabled !== false) {
+      const sweepEveryMs = Math.max(3_600_000, Number(cfg.ops?.tmpSweep?.intervalMs) || 24 * 3600 * 1000);
+      const sweepTimer = setInterval(() => {
+        import("../ops/tmp-sweeper.mjs")
+          .then((m) => m.sweepStaleTmp(cfg))
+          .then((r) => {
+            if (r.removed.length) console.log(`[xclaw:ops] tmp sweep: removed ${r.removed.length} stale entries`);
+          })
+          .catch((e) => console.warn("[xclaw:ops] tmp sweep failed:", e?.message || e));
+      }, sweepEveryMs);
+      if (sweepTimer.unref) sweepTimer.unref();
+    }
     startChannelHealthWatchdog(cfg, channelManager, {
       // outage/recovery events reach live Control surfaces
       onEvent: (e) => {
