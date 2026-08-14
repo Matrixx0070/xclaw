@@ -37,6 +37,9 @@ export function isFastLaneUpdate(u) {
  * @param {(update: object) => Promise<void>} opts.onUpdate
  * @param {object} [opts.conf] channels.telegram
  * @param {(info: object) => void} [opts.onError]
+ * @param {() => void} [opts.onPollOk] — fires after every successful getUpdates
+ *   (empty batches included). This is the channel's true liveness signal:
+ *   messagesHandled is useless for a quiet DM bot.
  * @param {() => void} [opts.onTouchLock]
  * @param {(offset: number) => void} [opts.onOffset]
  * @param {() => number} [opts.getOffset]
@@ -50,6 +53,7 @@ export async function runTelegramPollLoop(opts) {
     onUpdate,
     conf = {},
     onError,
+    onPollOk,
     onTouchLock,
     getOffset,
     setOffset,
@@ -110,6 +114,11 @@ export async function runTelegramPollLoop(opts) {
       });
 
       attempt = 0;
+      try {
+        onPollOk?.();
+      } catch {
+        /* liveness reporting must never break the loop */
+      }
       if (!Array.isArray(updates) || updates.length === 0) {
         consecutiveEmpty += 1;
         continue;

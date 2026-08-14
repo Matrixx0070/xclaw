@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.111.0 — Channel outage alerting + self-healing dedicated browser
+
+Fresh-observation release (post-NEXT-LEVEL): both items came from reading the
+live host — a day of `[telegram] poll error` bursts that alerted nobody, and
+a Control-browser pm2 unit at 425 restarts from stale Chrome Singleton locks.
+
+- **Channel outage alerting**: the Telegram poll loop now reports poll-level
+  liveness (`onPollOk` → `lastPollOkAt` / `lastPollErrorAt` /
+  `consecutivePollFails` in channel status — `messagesHandled` is useless
+  for a quiet DM bot). The channel health watchdog raises a real alert
+  (shared alerter → doctor-cron delivery / PagerDuty) on the outage
+  TRANSITION (consecutive failures ≥ `channels.healthWatchdog.pollFailThreshold`
+  (8) or last successful poll older than `outageAfterMs` (5 min) with newer
+  errors), emits a recovery event to live Control surfaces, and also alerts
+  when the restart circuit opens — which used to give up silently. This is
+  the channel-side twin of the 3.92.1 lesson: loop alive ≠ service reachable.
+- **`xclaw browser`** — dedicated UI browser launcher with singleton-lock
+  self-healing: reads the `SingletonLock -> hostname-pid` symlink, clears
+  locks whose owner pid is dead on this host (never steals live or
+  foreign-host locks), refuses profiles held by a live non-CDP Chrome
+  without `--force`, detects an already-running CDP instance, and runs
+  Chrome in the foreground for supervisors. Live-proven: `kill -9` on the
+  running Chrome → pm2 relaunch through `xclaw browser` → locks healed →
+  CDP back up, no crash-loop.
+
 ## 3.110.0 — LSP server over the completion service
 
 Post-roadmap candidate 5 (final): editor integration without an editor-

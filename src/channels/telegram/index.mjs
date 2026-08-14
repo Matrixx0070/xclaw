@@ -106,6 +106,9 @@ export function createTelegramChannel(cfg) {
   let messagesHandled = 0;
   let callbacksHandled = 0;
   let lastError = null;
+  let lastPollOkAt = null;
+  let lastPollErrorAt = null;
+  let consecutivePollFails = 0;
   let lastOkAt = null;
   let loopAlive = false;
   let writerLock = null;
@@ -865,9 +868,17 @@ export function createTelegramChannel(cfg) {
         }
       },
       onUpdate: handleUpdate,
+      onPollOk: () => {
+        lastPollOkAt = new Date().toISOString();
+        consecutivePollFails = 0;
+      },
       onError: (info) => {
         lastError = info.message || info.code;
         recordTelegramError(info.phase || "poll");
+        if ((info.phase || "poll") === "poll") {
+          lastPollErrorAt = new Date().toISOString();
+          consecutivePollFails += 1;
+        }
         if (info.code === "UNAUTHORIZED") {
           stopped = true;
         }
@@ -979,6 +990,10 @@ export function createTelegramChannel(cfg) {
         stopped,
         lastError,
         lastOkAt,
+        // poll-level liveness (the watchdog's outage signal)
+        lastPollOkAt,
+        lastPollErrorAt,
+        consecutivePollFails,
         stream: telegramStreamOptions(conf).enabled,
         voiceOut: voiceOutOptions(conf).enabled,
         groups: groupPolicyOptions(conf),

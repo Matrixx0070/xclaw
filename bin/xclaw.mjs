@@ -871,6 +871,40 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "browser": {
+      // Dedicated UI browser with singleton-lock self-healing (pm2-friendly:
+      // runs Chrome in the foreground; exits with its code).
+      const { launchDedicatedBrowser } = await import("../src/browser/dedicated.mjs");
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const cfg = await loadConfig();
+      let port = 9224, profileDir = null, url = null, display = null, app = true, checkOnly = false, force = false, binary = null;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === "--port" && args[i + 1]) port = Number(args[++i]);
+        else if (args[i] === "--profile" && args[i + 1]) profileDir = args[++i];
+        else if (args[i] === "--url" && args[i + 1]) url = args[++i];
+        else if (args[i] === "--display" && args[i + 1]) display = args[++i];
+        else if (args[i] === "--bin" && args[i + 1]) binary = args[++i];
+        else if (args[i] === "--no-app") app = false;
+        else if (args[i] === "--check") checkOnly = true;
+        else if (args[i] === "--force") force = true;
+      }
+      if (!url) {
+        const gwPort = cfg.gateway?.port || 18790;
+        url = `http://127.0.0.1:${gwPort}/control/`;
+      }
+      const r = await launchDedicatedBrowser({ port, profileDir, url, display, app, checkOnly, force, binary });
+      if (!r.ok) {
+        console.error(JSON.stringify(r, null, 2));
+        process.exit(1);
+      }
+      if (r.alreadyRunning || checkOnly) {
+        console.log(JSON.stringify(r, null, 2));
+        break;
+      }
+      if (r.healed?.length) console.error(`[xclaw:browser] healed stale locks: ${r.healed.join(", ")}`);
+      console.error(`[xclaw:browser] ${r.binary} pid=${r.pid} cdp=:${r.port} profile=${r.profileDir}`);
+      process.exit((await r.wait()) ?? 0);
+    }
     case "lsp": {
       // Language Server Protocol over stdio — editor-agnostic completions
       // backed by the repo-aware completion service. Point any LSP client at

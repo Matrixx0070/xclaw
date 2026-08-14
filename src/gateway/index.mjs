@@ -1031,7 +1031,16 @@ export async function startGateway({ root } = {}) {
     console.warn("[xclaw] computer watchdog:", err.message);
   }
   try {
-    startChannelHealthWatchdog(cfg, channelManager);
+    startChannelHealthWatchdog(cfg, channelManager, {
+      // outage/recovery events reach live Control surfaces
+      onEvent: (e) => {
+        try {
+          wsBroadcast("security", e);
+        } catch {
+          /* hub optional */
+        }
+      },
+    });
   } catch (err) {
     console.warn("[xclaw] channel health watchdog:", err.message);
   }

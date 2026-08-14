@@ -2,15 +2,26 @@
  * R1 — Channel health watchdog.
  * Periodically inspects channel status(); restarts enabled channels whose
  * background loop has exited unexpectedly.
+ *
+ * R2 (2026-08-14) — outage ALERTING. The 3.92.1 provider outage taught
+ * "resolving ≠ working"; the channel-side twin is "loop alive ≠ reachable":
+ * a polling loop can retry a dead network for hours while the watchdog sees
+ * a healthy process and the operator hears nothing. Channels now report
+ * poll-level liveness (lastPollOkAt / consecutivePollFails) and the watchdog
+ * raises a real alert (shared alerter → doctor-cron delivery / PagerDuty)
+ * when polls have been failing past a threshold, plus when the restart
+ * circuit opens (it used to give up SILENTLY).
  */
 let timer = null;
 let tickRunning = false;
 let managerRef = null;
 let cfgRef = null;
+let alerterRef = null;
+let onEventRef = null;
 let startedAt = null;
 let lastTickAt = null;
 let lastError = null;
-const channelState = new Map(); // name → { restarts, lastError, lastOkAt, consecutiveFail }
+const channelState = new Map(); // name → { restarts, lastError, lastOkAt, consecutiveFail, outageSince }
 
 /**
  * @param {object} cfg
@@ -28,6 +39,8 @@ export function startChannelHealthWatchdog(cfg, manager, opts = {}) {
 
   managerRef = manager;
   cfgRef = cfg;
+  alerterRef = opts.alerter || null; // test seam; defaults to the shared alerter
+  onEventRef = opts.onEvent || null; // gateway wires WS broadcast here
   startedAt = new Date().toISOString();
   lastError = null;
 
@@ -66,9 +79,50 @@ function getState(name) {
       lastOkAt: null,
       consecutiveFail: 0,
       lastRestartAt: null,
+      outageSince: null,
     });
   }
   return channelState.get(name);
+}
+
+async function getAlerter() {
+  if (alerterRef) return alerterRef;
+  try {
+    const { getSharedAlerter } = await import("../alerting/alerts.mjs");
+    return getSharedAlerter(cfgRef || {});
+  } catch {
+    return null;
+  }
+}
+
+async function raiseAlert(key, title, body, meta = {}) {
+  try {
+    const a = await getAlerter();
+    await a?.send({ key, severity: "error", title, body, meta });
+  } catch (e) {
+    console.warn("[channels:watchdog] alert send failed:", e?.message || e);
+  }
+  try {
+    onEventRef?.({ type: "channel", phase: "alert", key, title, meta });
+  } catch {
+    /* */
+  }
+}
+
+/**
+ * Poll-level outage detection. A channel is "in outage" when its loop is
+ * nominally alive but polls keep failing: consecutivePollFails past the
+ * threshold, or the last successful poll is older than outageAfterMs while
+ * a poll error is newer than it.
+ */
+export function detectPollOutage(st, { pollFailThreshold = 8, outageAfterMs = 300_000, now = Date.now() } = {}) {
+  if (!st || st.enabled === false) return false;
+  const fails = Number(st.consecutivePollFails || 0);
+  if (fails >= pollFailThreshold) return true;
+  const okAt = st.lastPollOkAt ? Date.parse(st.lastPollOkAt) : null;
+  const errAt = st.lastPollErrorAt ? Date.parse(st.lastPollErrorAt) : null;
+  if (okAt && errAt && errAt > okAt && now - okAt > outageAfterMs) return true;
+  return false;
 }
 
 async function tick() {
@@ -112,6 +166,28 @@ async function tick() {
         state.lastOkAt = new Date().toISOString();
       }
 
+      // Poll-level outage: alive process, unreachable service. Alert on the
+      // transition in; log recovery on the transition out.
+      const pollFailThreshold = cfgRef?.channels?.healthWatchdog?.pollFailThreshold ?? 8;
+      const outageAfterMs = cfgRef?.channels?.healthWatchdog?.outageAfterMs ?? 300_000;
+      const inOutage = detectPollOutage(st, { pollFailThreshold, outageAfterMs });
+      if (inOutage && !state.outageSince) {
+        state.outageSince = new Date().toISOString();
+        console.warn(`[channels:watchdog] ${name} OUTAGE: polls failing (fails=${st.consecutivePollFails ?? "?"}, lastOk=${st.lastPollOkAt || "never"})`);
+        await raiseAlert(
+          `channel-outage:${name}`,
+          `xclaw channel outage: ${name}`,
+          `${name} polls are failing (consecutive=${st.consecutivePollFails ?? "?"}, last ok ${st.lastPollOkAt || "never"}, last error: ${st.lastError || "?"}). The process is alive but the service is unreachable.`,
+          { channel: name, consecutivePollFails: st.consecutivePollFails ?? null, lastPollOkAt: st.lastPollOkAt || null }
+        );
+      } else if (!inOutage && state.outageSince) {
+        console.log(`[channels:watchdog] ${name} recovered (outage since ${state.outageSince})`);
+        try {
+          onEventRef?.({ type: "channel", phase: "recovered", channel: name, outageSince: state.outageSince });
+        } catch { /* */ }
+        state.outageSince = null;
+      }
+
       if (!dead && alive) {
         state.consecutiveFail = 0;
         if (!state.lastOkAt) state.lastOkAt = new Date().toISOString();
@@ -129,6 +205,13 @@ async function tick() {
         state.lastError = `${name}: circuit open after ${state.consecutiveFail} fails`;
         lastError = state.lastError;
         console.warn(`[channels:watchdog] ${state.lastError}`);
+        // giving up on restarts used to be SILENT — the operator must know
+        await raiseAlert(
+          `channel-circuit-open:${name}`,
+          `xclaw channel dead: ${name}`,
+          `${name} is down and the watchdog stopped retrying after ${state.consecutiveFail} failed restarts (last error: ${state.lastError}). Manual intervention needed.`,
+          { channel: name, restartsAttempted: state.consecutiveFail }
+        );
         continue;
       }
 
@@ -166,6 +249,11 @@ async function tick() {
   } finally {
     tickRunning = false;
   }
+}
+
+/** Test seam: run one watchdog inspection synchronously (no interval wait). */
+export async function runWatchdogTickOnce() {
+  return tick();
 }
 
 export function channelHealthStatus() {
