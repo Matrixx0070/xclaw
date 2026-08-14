@@ -92,3 +92,42 @@ describe("receipt JSON schema validation", () => {
     assert.equal(w.code, "RECEIPT_SCHEMA_INVALID");
   });
 });
+
+import {
+  RECEIPT_STATUS_ENUM,
+  normalizeReceiptStatus,
+} from "../src/agents/swarm-receipt.mjs";
+
+describe("strict status enum", () => {
+  it("RECEIPT_STATUS_ENUM lists terminal and in-flight states", () => {
+    assert.ok(RECEIPT_STATUS_ENUM.includes("done"));
+    assert.ok(RECEIPT_STATUS_ENUM.includes("skipped"));
+    assert.ok(RECEIPT_STATUS_ENUM.includes("running"));
+  });
+
+  it("rejects unknown status by default", () => {
+    const r = validateReceiptShape(
+      validReceipt({ status: "COMPLETE" })
+    );
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /status must be one of/.test(e)));
+  });
+
+  it("normalizeReceiptStatus maps aliases", () => {
+    assert.equal(normalizeReceiptStatus("success", true), "done");
+    assert.equal(normalizeReceiptStatus("FAIL", false), "error");
+    assert.equal(normalizeReceiptStatus("skip", false), "skipped");
+    assert.equal(normalizeReceiptStatus("weird", true), "done");
+    assert.equal(normalizeReceiptStatus("weird", false), "error");
+  });
+
+  it("buildNodeReceipt normalizes alias status", () => {
+    const receipt = buildNodeReceipt({
+      swarmId: "s1",
+      nodeId: "n1",
+      nodeResult: { ok: true, status: "completed", role: "implement" },
+    });
+    assert.equal(receipt.status, "done");
+    assert.equal(validateReceiptShape(receipt).ok, true);
+  });
+});

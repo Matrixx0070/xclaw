@@ -43,6 +43,36 @@ export function resolveCriticalRoles(opts = {}, cfg = {}) {
   return [...new Set(list.map((x) => String(x).toLowerCase()).filter(Boolean))];
 }
 
+/** Allowed receipt.status values (strict enum). */
+export const RECEIPT_STATUS_ENUM = Object.freeze([
+  "done",
+  "error",
+  "skipped",
+  "failed",
+  "aborted",
+  "pending",
+  "running",
+]);
+
+/**
+ * Map arbitrary node status strings into RECEIPT_STATUS_ENUM.
+ */
+export function normalizeReceiptStatus(status, ok) {
+  const raw = String(status || "").toLowerCase().trim();
+  if (RECEIPT_STATUS_ENUM.includes(raw)) return raw;
+  // common aliases
+  if (raw === "success" || raw === "ok" || raw === "complete" || raw === "completed") {
+    return "done";
+  }
+  if (raw === "fail" || raw === "failure" || raw === "err") return "error";
+  if (raw === "skip" || raw === "cancelled" || raw === "canceled") return "skipped";
+  if (raw === "abort" || raw === "aborted") return "aborted";
+  // fall back from ok flag
+  if (ok === true) return "done";
+  if (ok === false) return "error";
+  return "error";
+}
+
 /** JSON-schema-like contract for receipt v1 (no external AJV dependency). */
 export const RECEIPT_SCHEMA_V1 = Object.freeze({
   $id: "xclaw://swarm-receipt/v1",
@@ -74,7 +104,7 @@ export const RECEIPT_SCHEMA_V1 = Object.freeze({
         "aborted",
         "pending",
         "running",
-      ],
+      ], // keep in sync with RECEIPT_STATUS_ENUM
     },
     code: { type: ["string", "null"] },
     error: { type: ["string", "null"] },
@@ -154,8 +184,15 @@ export function validateReceiptShape(receipt, opts = {}) {
       }
     }
     if (rules.enum && !rules.enum.includes(val)) {
-      // allow unknown status strings as warn-only unless strict
-      if (opts.strictStatus === true) {
+      // Status enum is always strict; other enums respect strictStatus opt
+      const enforce =
+        key === "status" || opts.strictStatus === true || opts.strictStatus === undefined;
+      // status: always enforce; for future enums default strict unless strictStatus=false
+      if (key === "status") {
+        errors.push(
+          `status must be one of ${RECEIPT_STATUS_ENUM.join("|")} (got ${JSON.stringify(val)})`
+        );
+      } else if (opts.strictStatus !== false) {
         errors.push(`${key} must be one of ${rules.enum.join("|")}`);
       }
     }
@@ -306,7 +343,10 @@ export function buildNodeReceipt(ctx = {}) {
     goalSnippet: goal ? String(goal).slice(0, 240) : null,
     task: nodeResult.task || null,
     ok: Boolean(nodeResult.ok),
-    status: nodeResult.status || (nodeResult.ok ? "done" : "error"),
+    status: normalizeReceiptStatus(
+      nodeResult.status || (nodeResult.ok ? "done" : "error"),
+      Boolean(nodeResult.ok)
+    ),
     code: nodeResult.code || null,
     error: nodeResult.error ? String(nodeResult.error).slice(0, 500) : null,
     attempts: nodeResult.attempts || 1,
@@ -340,7 +380,7 @@ export async function writeNodeReceipt(cfg, receipt, writeOpts = {}) {
   const skipShape = writeOpts.skipShapeValidation === true;
   if (!skipShape) {
     const shape = validateReceiptShape(receipt, {
-      strictStatus: writeOpts.strictStatus === true,
+      strictStatus: writeOpts.strictStatus !== false, // default on
       strictOutcome: writeOpts.strictOutcome === true,
     });
     if (!shape.ok) {
@@ -598,6 +638,8 @@ export default {
   CRITICAL_ROLES,
   resolveCriticalRoles,
   RECEIPT_SCHEMA_V1,
+  RECEIPT_STATUS_ENUM,
+  normalizeReceiptStatus,
   validateReceiptShape,
   buildNodeReceipt,
   writeNodeReceipt,
