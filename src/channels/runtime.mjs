@@ -406,11 +406,39 @@ export async function routeObjective({ text, inbound, cfg, workingDir, replyWith
       await store.saveObjective(cfg, active);
       return { handled: true, via: "objective", reply: `🛑 Stop requested for \`${active.id}\` — it will halt at the next segment boundary (state preserved).` };
     }
+    if (sub === "list") {
+      const all = await store.listObjectives(cfg);
+      if (!all.length) return { handled: true, via: "objective", reply: "No missions recorded." };
+      return {
+        handled: true,
+        via: "objective",
+        reply: all
+          .slice(0, 10)
+          .map(
+            (o) =>
+              `${o.status === "running" ? "▶️" : o.status === "done" ? "✅" : "⏸"} \`${o.id}\` ${o.status} · seg ${o.totals.segments} · ${o.objective.slice(0, 80)}`
+          )
+          .join("\n") + "\n\nResume any with /objective resume <id>.",
+      };
+    }
     if (sub === "resume") {
-      const target = active;
-      if (!target) return { handled: true, via: "objective", reply: "Nothing to resume." };
+      // explicit id adopts the mission into THIS chat (heals objectives
+      // orphaned by ephemeral webchat sessions; lets telegram adopt a
+      // webchat-started mission)
+      const explicitId = rest.split(/\s+/)[1] || null;
+      const target = explicitId ? await store.loadObjective(cfg, explicitId) : active;
+      if (!target) return { handled: true, via: "objective", reply: explicitId ? `No mission \`${explicitId}\`.` : "Nothing to resume." };
       if (!notify) return { handled: true, via: "objective", reply: "This channel cannot run detached missions (no sender)." };
       if (target.status === "running") return { handled: true, via: "objective", reply: `Mission \`${target.id}\` is already running.` };
+      if (store.isTerminalObjective(target.status) && target.status !== "stopped") {
+        return { handled: true, via: "objective", reply: `Mission \`${target.id}\` is ${target.status} — nothing to resume.` };
+      }
+      if (explicitId) {
+        target.channel = inbound.channel;
+        target.chatId = inbound.chatId;
+        target.sessionKey = inbound.identity || target.sessionKey;
+        await store.saveObjective(cfg, target);
+      }
       startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { resumeId: target.id } });
       return { handled: true, via: "objective", reply: `▶️ Resuming mission \`${target.id}\`.` };
     }

@@ -51,6 +51,15 @@ describe("read-only exec precision (live-derived)", () => {
     }
   });
 
+  it("bare --version probes are read-only regardless of head (live mission stall)", () => {
+    for (const cmd of ["node --version", "python3 --version", "cargo --version"]) {
+      assert.equal(isReadOnlyExecCommand(cmd), true, cmd);
+    }
+    for (const cmd of ["node --version extra", "node -e 'x' --version", "node -v", "--version"]) {
+      assert.equal(isReadOnlyExecCommand(cmd), false, cmd);
+    }
+  });
+
   it("real redirects and bypass shapes still fail closed", () => {
     for (const cmd of [
       "pm2 logs sudo-ai-v5", // unbounded tail

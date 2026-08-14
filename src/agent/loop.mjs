@@ -595,8 +595,13 @@ export async function runAgentLoop(options) {
   }
   // Cap history to avoid unbounded context (configurable)
   const maxHistory = cfg.agent?.maxHistoryMessages ?? 40;
-  // Durable transcript load when caller did not pass history
-  if (!prior.length && transcriptId && cfg.agent?.persistTranscript !== false) {
+  // Durable transcript load when caller did not pass history. An EXPLICIT
+  // empty array means "fresh context, no replay" — objective segments rely
+  // on this: their memory is the durable mission state, and silently
+  // replaying the prior segment's transcript would reintroduce the
+  // context-window dependency the orchestrator exists to remove.
+  const historyExplicit = options.history !== undefined;
+  if (!historyExplicit && !prior.length && transcriptId && cfg.agent?.persistTranscript !== false) {
     try {
       const loaded = loadTranscriptHistory(cfg, transcriptId, maxHistory);
       for (const m of loaded) prior.push(m);

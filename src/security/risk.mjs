@@ -199,6 +199,11 @@ function segmentIsReadOnly(segment) {
   if (head.includes("/") || head.includes("=") || head.includes("'") || head.includes('"')) {
     return false; // path heads / env prefixes / quoted heads: fail closed
   }
+  // `<anything> --version` with no other args prints a version string and
+  // exits — read-only regardless of head (live: `node --version` pended
+  // 120s and stalled a mission segment; node itself stays excluded because
+  // `node -e` executes arbitrary code).
+  if (tokens.length === 2 && tokens[1] === "--version" && !head.startsWith("-")) return true;
   if (head === "cd") return true; // process-local; target already metachar-gated
   if (head === "sed") return sedIsReadOnly(tokens);
   if (head === "awk") return awkIsReadOnly(tokens);

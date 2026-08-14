@@ -147,6 +147,30 @@ describe("objective channel routing", () => {
     await fs.rm(cfg._dir, { recursive: true, force: true });
   });
 
+  it("/objective list + resume <id> adopts an orphaned mission into this chat", async () => {
+    const cfg = await cfgTmp();
+    const store = await import("../src/agent/objective-store.mjs");
+    // orphaned: bound to a dead webchat session
+    const obj = store.newObjective({ objective: "orphaned mission", channel: "webchat", chatId: "dead-session" });
+    obj.status = "interrupted";
+    await saveObjective(cfg, obj);
+    const list = await processInbound(normalizeInbound({ ...inboundBase, text: "/objective list" }), {
+      cfg, replyWithAgent: async () => ({ text: "x" }),
+    });
+    assert.match(list.reply, /orphaned mission/);
+    assert.ok(list.reply.includes(obj.id));
+    const resume = await processInbound(normalizeInbound({ ...inboundBase, text: `/objective resume ${obj.id}` }), {
+      cfg,
+      replyWithAgent: async () => ({ text: block({ status: "done" }), turns: 1, toolTrace: [], stopReason: "natural" }),
+      notify: async () => {},
+    });
+    assert.match(resume.reply, /Resuming/);
+    const settled = await waitStatus(cfg, obj.id, ["done"]);
+    assert.equal(settled.channel, "telegram", "adopted into this chat");
+    assert.equal(String(settled.chatId), "42");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+  });
+
   it("/objective stop + status work; no notify → graceful degradation", async () => {
     const cfg = await cfgTmp();
     const store = await import("../src/agent/objective-store.mjs");

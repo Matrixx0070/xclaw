@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.127.1 — objective fresh-context fix + orphan resume + --version probes
+
+Follow-ups from the v3.127.0 live proof mission:
+
+- **Fresh-context violation fixed**: objective segments pass `history: []`,
+  but the loop treated an empty array as "no history passed" and silently
+  replayed the prior segment's transcript — reintroducing the
+  context-window dependency the orchestrator exists to remove. An explicit
+  empty array now suppresses transcript replay; callers that omit history
+  keep today's behavior.
+- **`/objective list` + `/objective resume <id>`**: resuming by id adopts
+  the mission into the current chat (rebinds channel/chatId) — heals
+  missions orphaned by ephemeral webchat sessions and lets Telegram adopt
+  a mission started elsewhere.
+- **`<cmd> --version` probes are read-only**: the live mission stalled
+  ~13 minutes on `node --version` pending 120s per attempt. A bare
+  `<head> --version` (sole argument) now classifies read-only regardless
+  of head; `node -e`, `-v`, and any extra arguments still fail closed.
+
 ## 3.127.0 — long-running objectives: the mission survives execution boundaries
 
 Fixes the traced architecture failure where a high-level channel objective
