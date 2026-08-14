@@ -2975,6 +2975,91 @@ async function openMission(id, { silent } = {}) {
   }
 }
 
+// ── Remote workers (mission federation)
+async function loadWorkers() {
+  try {
+    const r = await getJSON("/missions/workers");
+    const tbody = $("mwTable").querySelector("tbody");
+    tbody.innerHTML = (r.workers || [])
+      .map((w) => `<tr>
+        <td>${esc(w.name)}</td>
+        <td style="font-size:0.72rem;">${esc(w.url)}</td>
+        <td><span class="pill${w.ping?.ok ? " good" : " bad"}">${w.ping?.ok ? "reachable" : esc(w.ping?.error || "unreachable").slice(0, 30)}</span></td>
+        <td>${esc(w.ping?.version || "—")}</td>
+        <td>
+          <button class="btn ghost mw-show" data-w="${esc(w.name)}">Missions</button>
+          <button class="btn ghost mw-del" data-w="${esc(w.name)}">Remove</button>
+        </td>
+      </tr>`)
+      .join("") || `<tr><td colspan="5" class="muted">no workers configured</td></tr>`;
+    // launch-target selector mirrors the worker list
+    const sel = $("msnTarget");
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = `<option value="local">local</option>` +
+        (r.workers || []).map((w) => `<option value="${esc(w.name)}">${esc(w.name)}</option>`).join("");
+      if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+    }
+    tbody.querySelectorAll(".mw-del").forEach((b) => b.addEventListener("click", async () => {
+      await fetch("/missions/workers/" + encodeURIComponent(b.dataset.w), { method: "DELETE" });
+      await loadWorkers();
+    }));
+    tbody.querySelectorAll(".mw-show").forEach((b) => b.addEventListener("click", () => showWorkerMissions(b.dataset.w)));
+  } catch (e) {
+    $("mwStatus").textContent = String(e.message || e).slice(0, 50);
+  }
+}
+async function showWorkerMissions(name) {
+  try {
+    const r = await getJSON("/missions/remote/" + encodeURIComponent(name));
+    $("mwMissionsWrap").style.display = "block";
+    $("mwMissionsTitle").textContent = `missions on ${name}`;
+    const tbody = $("mwMissionsTable").querySelector("tbody");
+    tbody.innerHTML = (r.missions || [])
+      .map((m) => `<tr>
+        <td><span class="pill${MSN_STATUS_CLS[m.status] ?? ""}">${esc(m.status)}</span></td>
+        <td style="font-size:0.78rem;">${esc((m.goal || "").slice(0, 70))}</td>
+        <td>${m.verified ? "✓" : "—"}</td>
+        <td>
+          ${m.status === "merge_ready" ? `<button class="btn mw-merge" data-w="${esc(name)}" data-id="${esc(m.id)}">Merge</button>` : ""}
+          ${!["done", "rolled_back"].includes(m.status) ? `<button class="btn ghost mw-rb" data-w="${esc(name)}" data-id="${esc(m.id)}">Rollback</button>` : ""}
+        </td>
+      </tr>`)
+      .join("") || `<tr><td colspan="4" class="muted">no missions on ${esc(name)}</td></tr>`;
+    tbody.querySelectorAll(".mw-merge").forEach((b) => b.addEventListener("click", async () => {
+      if (!confirm(`Merge on worker ${b.dataset.w}?`)) return;
+      await postJSON(`/missions/remote/${encodeURIComponent(b.dataset.w)}/${encodeURIComponent(b.dataset.id)}/merge`, {});
+      await showWorkerMissions(b.dataset.w);
+    }));
+    tbody.querySelectorAll(".mw-rb").forEach((b) => b.addEventListener("click", async () => {
+      await postJSON(`/missions/remote/${encodeURIComponent(b.dataset.w)}/${encodeURIComponent(b.dataset.id)}/rollback`, {});
+      await showWorkerMissions(b.dataset.w);
+    }));
+  } catch (e) {
+    $("mwStatus").textContent = String(e.message || e).slice(0, 50);
+  }
+}
+$("btnMwAdd")?.addEventListener("click", async () => {
+  const name = $("mwName").value.trim();
+  const url = $("mwUrl").value.trim();
+  const token = $("mwToken").value;
+  if (!name || !url) {
+    $("mwStatus").textContent = "name + url required";
+    return;
+  }
+  try {
+    const r = await postJSON("/missions/workers", { name, url, token: token || undefined });
+    $("mwStatus").textContent = r.ok ? "added" : r.error;
+    if (r.ok) {
+      $("mwName").value = ""; $("mwUrl").value = ""; $("mwToken").value = "";
+      await loadWorkers();
+    }
+  } catch (e) {
+    $("mwStatus").textContent = String(e.message || e).slice(0, 50);
+  }
+});
+if (document.getElementById("cardMissionWorkers")) loadWorkers();
+
 // ── Point & Prompt: pick an element from the running app, launch a pinned mission
 let ppPicked = null;
 $("btnPpPick")?.addEventListener("click", async () => {
@@ -3044,11 +3129,19 @@ $("btnMsnStart")?.addEventListener("click", async () => {
   $("btnMsnStart").disabled = true;
   try {
     const strategy = $("msnStrategy")?.value === "swarm" ? "swarm" : undefined;
-    const r = await postJSON("/missions", { goal, repoDir, strategy });
-    $("msnGoal").value = "";
-    $("msnLive").textContent = "launched " + r.mission.id.slice(0, 12);
-    await loadMissions();
-    await openMission(r.mission.id);
+    const target = $("msnTarget")?.value || "local";
+    if (target !== "local") {
+      const r = await postJSON("/missions/remote", { worker: target, goal, repoDir, strategy });
+      $("msnGoal").value = "";
+      $("msnLive").textContent = r.ok ? `launched on ${target}: ${(r.mission.id || "").slice(0, 12)}` : r.error;
+      if (r.ok) await showWorkerMissions(target);
+    } else {
+      const r = await postJSON("/missions", { goal, repoDir, strategy });
+      $("msnGoal").value = "";
+      $("msnLive").textContent = "launched " + r.mission.id.slice(0, 12);
+      await loadMissions();
+      await openMission(r.mission.id);
+    }
   } catch (e) {
     $("msnLive").textContent = String(e.message || e).slice(0, 60);
   } finally {

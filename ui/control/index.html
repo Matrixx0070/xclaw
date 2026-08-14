@@ -826,6 +826,9 @@
               <option value="solo">solo</option>
               <option value="swarm">swarm</option>
             </select>
+            <select id="msnTarget" style="flex:0 0 auto;" title="where the mission runs">
+              <option value="local">local</option>
+            </select>
             <button class="btn primary" id="btnMsnStart">Launch mission</button>
             <button class="btn ghost" id="btnMsnRefresh">Refresh</button>
             <span id="msnLive" class="pill" style="font-size:0.7rem;">—</span>
@@ -833,6 +836,34 @@
           <div class="table-wrap" style="margin-top:0.5rem;">
             <table id="msnTable">
               <thead><tr><th>Status</th><th>Goal</th><th>Repo</th><th>Attempts</th><th>Last activity</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span2" id="cardMissionWorkers">
+          <h2>Remote workers</h2>
+          <p class="muted">
+            Dispatch missions to other xclaw gateways. <code>repoDir</code> is a path on
+            the worker; its own evidence gate and merge approval apply there.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="mwName" placeholder="name" style="flex:1;min-width:100px;" />
+            <input id="mwUrl" placeholder="https://worker-host:18790" style="flex:2;min-width:200px;" />
+            <input id="mwToken" placeholder="worker token" type="password" style="flex:2;min-width:160px;" />
+            <button class="btn" id="btnMwAdd">Add worker</button>
+            <span id="mwStatus" class="pill" style="font-size:0.7rem;">—</span>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="mwTable">
+              <thead><tr><th>Worker</th><th>URL</th><th>Status</th><th>Version</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;display:none;" id="mwMissionsWrap">
+            <h3 id="mwMissionsTitle" style="font-size:0.85rem;margin:0 0 0.3rem;"></h3>
+            <table id="mwMissionsTable">
+              <thead><tr><th>Status</th><th>Goal</th><th>Verified</th><th></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
