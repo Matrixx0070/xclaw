@@ -997,7 +997,6 @@ function connectEventsWs() {
         }
         if (ch === "mission" && typeof loadMissions === "function") {
           loadMissions().catch(() => {});
-  loadObjectivesCard().catch(() => {});
         }
         if (ch === "objective" && typeof loadObjectivesCard === "function") {
           loadObjectivesCard().catch(() => {});
@@ -3242,6 +3241,7 @@ $("btnMsnDiff")?.addEventListener("click", async () => {
 });
 if ($("msnTable")) {
   loadMissions().catch(() => {});
+  loadObjectivesCard().catch(() => {});
   // live refresh straight from mission WS events + a slow safety poll
   setInterval(() => {
     if (location.hash.includes("missions")) { loadMissions().catch(() => {}); loadObjectivesCard().catch(() => {}); }
