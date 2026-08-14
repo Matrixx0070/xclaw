@@ -96,7 +96,7 @@ async function restartGateway(cfg) {
   return run(exe, args, cfg.self?.repoDir || process.cwd());
 }
 
-async function healthOk(cfg, { retries = 10, delayMs = 3000 } = {}) {
+async function healthOk(cfg, { retries = 10, delayMs = 3000 } = {}, expectCommit = null) {
   const host = cfg.gateway?.host || "127.0.0.1";
   const port = cfg.gateway?.port || 18790;
   const checks = [];
@@ -107,8 +107,19 @@ async function healthOk(cfg, { retries = 10, delayMs = 3000 } = {}) {
         signal: AbortSignal.timeout(5000),
       });
       const body = await res.json().catch(() => ({}));
-      checks.push({ at: new Date().toISOString(), status: res.status, ready: body.ready === true });
-      if (res.ok && body.ready === true) return { ok: true, checks };
+      // H8: correlate the healthy process to the commit we deployed — a stale
+      // still-bound old process or a different service must NOT read as
+      // "deployed". We compare the running repo's HEAD (best-effort) to the
+      // expected commit; if HEAD can't be read we fall back to ready-only.
+      let commitOk = true;
+      if (expectCommit) {
+        const head = await run("git", ["-C", cfg.self?.repoDir || process.cwd(), "rev-parse", "HEAD"], undefined, 5000);
+        if (head.code === 0 && head.output.trim()) {
+          commitOk = head.output.trim() === expectCommit;
+        }
+      }
+      checks.push({ at: new Date().toISOString(), status: res.status, ready: body.ready === true, commitOk });
+      if (res.ok && body.ready === true && commitOk) return { ok: true, checks };
     } catch (e) {
       checks.push({ at: new Date().toISOString(), error: String(e.message || e).slice(0, 100) });
     }
@@ -148,7 +159,24 @@ async function markMission(cfg, missionId, status, note) {
  */
 export async function runDeployOnce(cfg) {
   const intent = await readIntent(cfg);
-  if (!intent || intent.state !== "pending") return null;
+  if (!intent) return null;
+  // H10: a "restarting" intent means the process (expectedly) died mid-deploy
+  // before health resolution. Resume it — re-run restart→health rather than
+  // stranding the mission forever. Cap attempts so a boot-crash-loop gives up.
+  if (intent.state === "restarting") {
+    const maxAttempts = cfg.self?.maxDeployAttempts ?? 3;
+    if (intent.attempts >= maxAttempts) {
+      intent.state = "failed";
+      intent.resolvedAt = new Date().toISOString();
+      await writeIntent(cfg, intent);
+      ledgerDeploy(cfg, intent.missionId, { phase: "abandoned", attempts: intent.attempts });
+      await alertOwner(cfg, "ROLLBACK FAILED", `mission ${intent.missionId}: deploy crash-looped ${intent.attempts}× — manual intervention required`);
+      return intent;
+    }
+    // fall through and retry (attempts increments below)
+  } else if (intent.state !== "pending") {
+    return null;
+  }
 
   intent.state = "restarting";
   intent.attempts += 1;
@@ -157,7 +185,7 @@ export async function runDeployOnce(cfg) {
   await alertOwner(cfg, "deploying", `mission ${intent.missionId} commit ${String(intent.mergeCommit).slice(0, 10)} — restarting gateway`);
 
   await restartGateway(cfg);
-  const health = await healthOk(cfg, cfg.self?.health || {});
+  const health = await healthOk(cfg, cfg.self?.health || {}, intent.mergeCommit);
   intent.healthChecks = health.checks.slice(-10);
 
   if (health.ok) {
@@ -174,12 +202,18 @@ export async function runDeployOnce(cfg) {
     return intent;
   }
 
-  // rollback to previous known-good (or the commit before the merge)
+  // rollback to previous known-good (or the commit before the merge).
+  // H7: never silently destroy uncommitted operator work — stash first so a
+  // reset is recoverable (git stash list shows the rescue).
   const target = intent.prevKnownGood || `${intent.mergeCommit}~1`;
   ledgerDeploy(cfg, intent.missionId, { phase: "rollback", target });
+  const dirty = await run("git", ["-C", intent.repoDir, "status", "--porcelain"]);
+  if (dirty.output.trim()) {
+    await run("git", ["-C", intent.repoDir, "stash", "push", "-u", "-m", `xclaw-rollback-rescue ${intent.missionId}`]);
+  }
   const reset = await run("git", ["-C", intent.repoDir, "reset", "--hard", target]);
   await restartGateway(cfg);
-  const health2 = await healthOk(cfg, cfg.self?.health || {});
+  const health2 = await healthOk(cfg, cfg.self?.health || {}, target);
   intent.state = health2.ok ? "rolled_back" : "failed";
   intent.resolvedAt = new Date().toISOString();
   await writeIntent(cfg, intent);

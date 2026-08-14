@@ -183,6 +183,10 @@ export function createApprovalGate(cfg = {}) {
     }
     if (autoApproveMaxTier && risk) {
       if (safeAuto.has(n)) return false;
+      // M5: critical actions still honor criticalOverride even when the
+      // configured max tier is "critical" — a max of "critical" must not be a
+      // silent blanket auto-approve for the most dangerous class.
+      if (critical && criticalOverride !== "legacy") return true;
       return tierRank(risk.tier) > tierRank(autoApproveMaxTier);
     }
     if (policy === "never") return false;

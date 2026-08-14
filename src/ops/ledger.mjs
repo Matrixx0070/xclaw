@@ -197,7 +197,8 @@ export async function queryLedger(cfg = {}, filters = {}) {
   const dir = ledgerDir(cfg);
   const limit = Math.max(1, Math.min(5000, Number(filters.limit || 200)));
   const since = sinceToDate(filters.since);
-  const until = filters.until ? new Date(filters.until) : null;
+  let until = filters.until ? new Date(filters.until) : null;
+  if (until && Number.isNaN(until.getTime())) until = null; // guard invalid input
   const idFilters = {};
   for (const k of ["sessionId", "jobId", "missionId", "swarmId", "nodeId", "runId"]) {
     if (filters[k]) idFilters[k] = String(filters[k]);

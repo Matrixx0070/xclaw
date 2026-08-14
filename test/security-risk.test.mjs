@@ -110,6 +110,25 @@ describe("approval gate with risk tiers (A2)", () => {
     assert.equal(l.ok, true, "legacy override preserves pre-A2 behavior");
   });
 
+  it("audit M5: autoApproveMaxTier:critical still asks on critical (not a blanket bypass)", async () => {
+    const gate = createApprovalGate({
+      security: { autoApproveMaxTier: "critical", bindSystemRunPlan: false },
+    });
+    const crit = await gate.authorize(
+      "xclaw_bash",
+      { command: "rm -rf /", cwd: "/tmp" },
+      { timeoutMs: 250 }
+    );
+    assert.equal(crit.ok, false, "critical must still pend even at max tier critical");
+    // a merely-risky action DOES auto-run at this max
+    const risky = await gate.authorize(
+      "xclaw_bash",
+      { command: "echo hi", cwd: "/tmp" },
+      { timeoutMs: 250 }
+    );
+    assert.equal(risky.ok, true);
+  });
+
   it("criticalOverride deny refuses outright", async () => {
     const gate = createApprovalGate({
       security: { criticalOverride: "deny", bindSystemRunPlan: false },

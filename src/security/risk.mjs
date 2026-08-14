@@ -33,22 +33,37 @@ const WRITE_RE = /write|edit|append|create|delete|remove|move|copy|mkdir/i;
 const EXEC_RE = /bash|shell|exec|terminal|run|spawn/i;
 const EGRESS_RE = /web_|fetch|http|browser|navigate|download|upload|api/i;
 
-// Irreversible command facts — each entry is (pattern, reason).
+// Irreversible command facts — each entry is (pattern, reason). Patterns run
+// against a NORMALIZED command (quotes/backslashes stripped, whitespace
+// collapsed) so quoting/spacing tricks don't evade them.
 const IRREVERSIBLE_CMD = [
-  [/\bgit\s+push\s+.*--force/, "git force-push rewrites remote history"],
-  [/\bgit\s+reset\s+--hard/, "hard reset discards work"],
+  // force-push: -f or --force, any order
+  [/\bgit\s+push\b[^|&;]*\s(-f\b|--force\b|--force-with-lease\b)/, "git force-push rewrites remote history"],
+  [/\bgit\s+reset\s+--hard\b/, "hard reset discards work"],
+  [/\bgit\s+clean\s+-\w*[fd]/, "git clean deletes untracked files"],
   [/\b(npm|yarn|pnpm)\s+publish\b/, "package publish is public"],
   [/\bgh\s+release\s+create\b/, "public release"],
-  [/\b(curl|wget)\b[^|]*\|\s*(ba|z|da)?sh\b/, "pipe-to-shell executes remote code"],
-  [/\bdd\s+[^|]*of=\/dev\//, "raw device write"],
+  // pipe-to-shell in any decode form (curl|sh, base64 -d|bash, cat x|sh, …)
+  [/\|\s*(ba|z|da|k|c|tc)?sh\b/, "pipe-to-shell executes arbitrary code"],
+  [/\b(curl|wget|fetch)\b[^|&;]*(-o\s*\S+|>\s*\S+)[^|&;]*(;|&&|\|\|)\s*(ba|z|da)?sh\b/, "download-then-run"],
+  [/\bdd\b[^|]*\bof=\/dev\//, "raw device write"],
   [/\bmkfs\b/, "filesystem format"],
-  [/\b(shutdown|reboot|halt|poweroff)\b/, "host power state"],
-  [/\bpm2\s+(delete|kill)\b/, "removes supervised services"],
-  [/\bdocker\s+(system\s+prune|rmi)\b/, "destroys images/containers"],
+  [/\b(shutdown|reboot|halt|poweroff|init\s+0|init\s+6)\b/, "host power state"],
+  [/\bpm2\s+(delete|kill|stop)\b/, "stops/removes supervised services"],
+  [/\b(systemctl|service)\s+(stop|disable|mask)\b/, "stops system services"],
+  [/\bdocker\s+(system\s+prune|rmi|rm\b)/, "destroys images/containers"],
   [/\bDROP\s+(TABLE|DATABASE)\b/i, "destructive SQL"],
-  // exec-level writes into system paths (redirection/copy/install)
-  [/(?:>>?|\btee\b|\bcp\b.*\s|\bmv\b.*\s|\binstall\b.*\s)\/(?:etc|usr\/(?:bin|sbin|lib)|bin|sbin|boot|lib\/systemd)\//, "writes to system path"],
+  [/\bchmod\s+-R\b|\bchown\s+-R\b/, "recursive permission/ownership change"],
+  // writes into system paths via redirect/tee/cp/mv/install (space-tolerant)
+  [/(?:>>?|\btee\b|\bcp\b|\bmv\b|\binstall\b)\s*\/(?:etc|usr\/(?:bin|sbin|lib)|bin|sbin|boot|lib\/systemd|root\/\.ssh)\b/, "writes to system path"],
 ];
+
+// Recursive-delete detection — flag-form-agnostic (-rf, -fr, -r -f,
+// --recursive --force) and root/system-target aware.
+const RM_RECURSIVE =
+  /\brm\b[^|&;]*?(\s-\w*[rf]\w*|\s--recursive|\s--force)[^|&;]*?(\s-\w*[rf]\w*|\s--recursive|\s--force)?/;
+const ROOTISH_TARGET =
+  /\brm\b[^|&;]*\s(-{0,2}[\w-]+\s+)*(\/(?:\s|$|\*)|\/(?:etc|usr|bin|boot|lib|var|root|home|opt|sys|proc)\b|~\/?(?:\s|$)|\$HOME\b|\$\{HOME\})/;
 
 const CREDENTIAL_PATH_RE = /\.ssh\/|credentials|\.env(\.|$)|secrets?\.|\.pem$|id_rsa|oauth|token/i;
 
@@ -62,6 +77,18 @@ function extractPaths(args = {}) {
 
 function commandText(args = {}) {
   return String(args.command ?? args.cmd ?? args.script ?? args.input ?? "");
+}
+
+/**
+ * Normalize a shell command for pattern matching: drop quotes and backslashes
+ * (so `"/etc"`, `s""rc`, `\/etc` all collapse to their literal form) and
+ * squeeze whitespace. Used ONLY for danger detection — never for execution.
+ */
+function normalizeCommand(cmd) {
+  return String(cmd || "")
+    .replace(/["'`\\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function classifyScope(p, workingDir) {
@@ -110,14 +137,19 @@ export function assessRisk({ tool, args = {}, workingDir, cfg = {}, context = {}
   else if (READ_RE.test(name)) impact = "read";
   else impact = "exec"; // unknown tools: assume the worst reasonable
 
-  const cmd = impact === "exec" ? commandText(args) : "";
+  const cmdRaw = impact === "exec" ? commandText(args) : "";
+  const cmd = normalizeCommand(cmdRaw);
   const paths = extractPaths(args);
 
-  // scope from resolved path operands (+ command path mentions for exec)
+  // scope from resolved path operands (+ command path mentions for exec).
+  // The scanner now also catches quoted/tilde/$HOME forms after normalization.
   const scopes = paths.map((p) => classifyScope(p, workingDir));
   if (cmd) {
-    for (const m of cmd.matchAll(/(?:^|\s)(\/[\w./-]+|~\/[\w./-]+)/g)) {
-      scopes.push(classifyScope(m[1].replace(/^~/, os.homedir()), workingDir));
+    const homeExpanded = cmd
+      .replace(/\$\{?HOME\}?/g, os.homedir())
+      .replace(/(^|\s)~(?=\/|\s|$)/g, `$1${os.homedir()}`);
+    for (const m of homeExpanded.matchAll(/(?:^|\s)(\/[\w./-]*)/g)) {
+      scopes.push(classifyScope(m[1] || "/", workingDir));
     }
   }
   const scope = scopes.length ? worstScope(scopes) : "workspace";
@@ -132,10 +164,14 @@ export function assessRisk({ tool, args = {}, workingDir, cfg = {}, context = {}
         break;
       }
     }
-    // Recursive/forced delete: scope-aware — nuking workspace build dirs is
-    // routine engineering; any out-of-workspace target is unrecoverable.
-    if (reversibility !== "irreversible" && /\brm\s+(-\w*[rf]\w*\s+)+/.test(cmd)) {
-      if (scope !== "workspace") {
+    // Recursive/forced delete, flag-form-agnostic. A root/system/home target
+    // is unconditionally irreversible; otherwise scope decides (workspace
+    // build-dir deletes stay routine).
+    if (reversibility !== "irreversible" && RM_RECURSIVE.test(cmd)) {
+      if (ROOTISH_TARGET.test(cmd)) {
+        reversibility = "irreversible";
+        reasons.push("recursive delete of root/system/home target");
+      } else if (scope !== "workspace") {
         reversibility = "irreversible";
         reasons.push("recursive delete outside workspace");
       } else {

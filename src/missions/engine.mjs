@@ -265,6 +265,13 @@ async function runMissionTournament(cfg, mission, { onEvent, signal, spawnSeam }
     approvalGate: gate,
     parentId: mission.id,
     signal,
+    // CRITICAL: the fan-out must NOT merge — this engine owns winner-selection
+    // and the single winner-merge below. Without this the S3 merge collects
+    // every held competitor and applies them all (union / spurious conflicts).
+    mergeEnabled: false,
+    autoMerge: false,
+    earlyMergeImplement: false,
+    voteEnabled: false,
     onEvent: (e) => {
       try {
         onEvent?.({ missionId: mission.id, phase: "execute", ...e });

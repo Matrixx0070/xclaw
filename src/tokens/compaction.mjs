@@ -116,7 +116,6 @@ export function buildExtractiveSummary(messages, opts = {}) {
   const maxChars = opts.maxChars ?? 3000;
   const lines = [];
   lines.push("## Compacted session state");
-  lines.push(`(generated ${new Date().toISOString()})`);
   lines.push("");
 
   const goals = [];
@@ -124,6 +123,10 @@ export function buildExtractiveSummary(messages, opts = {}) {
   const tools = [];
   const errors = [];
   const decisions = [];
+  // Intel-audit #4: fold-of-folds MUST NOT truncate a prior compaction note to
+  // 200 chars. Carry the most recent prior note verbatim so accumulated state
+  // survives repeated folds.
+  let priorState = null;
 
   for (const m of messages || []) {
     const text =
@@ -135,6 +138,10 @@ export function buildExtractiveSummary(messages, opts = {}) {
             ? JSON.stringify(m.tool_calls)
             : "";
 
+    if (m._compaction || (m.role === "user" && text.startsWith("[xclaw-compaction]"))) {
+      priorState = text.replace(/^\[xclaw-compaction\]\s*/, "");
+      continue; // don't also treat it as a 200-char "goal"
+    }
     if (m.role === "user" && text) {
       const first = text.trim().slice(0, 200);
       if (first) goals.push(first);
@@ -159,6 +166,12 @@ export function buildExtractiveSummary(messages, opts = {}) {
     }
   }
 
+  if (priorState) {
+    lines.push("### Carried state (from earlier compaction — authoritative)");
+    // keep the bulk of it; only clamp pathologically long prior notes
+    lines.push(priorState.length > 2400 ? priorState.slice(0, 2400) + "\n…" : priorState);
+    lines.push("");
+  }
   if (goals.length) {
     lines.push("### User intent (recent)");
     for (const g of goals.slice(-3)) lines.push(`- ${g}`);

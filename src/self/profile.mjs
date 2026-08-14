@@ -81,16 +81,28 @@ export async function detectSelfTarget(cfg, repoDir) {
  * new enforcement layer. Denies write/edit tools and bash targeting denied
  * paths. The sandbox already pins the worktree; this narrows WITHIN it.
  */
+// All arg keys the codebase's tools (and common MCP file tools) use to carry
+// a path operand. Missing one is a guard bypass — keep this exhaustive.
+const PATH_ARG_KEYS = [
+  "path", "file", "filepath", "file_path", "filePath", "filename", "fileName",
+  "target", "dest", "destination", "to", "output", "outputPath", "out",
+];
+// Tool-name substrings that indicate a file MUTATION (beyond write/edit) —
+// covers apply_patch, str_replace, create_or_update_file, push_files, etc.
+const MUTATOR_NAME =
+  /write|edit|append|delete|remove|move|rename|patch|str_replace|create|update|overwrite|fs_|put_file|save/i;
+const EXEC_NAME = /bash|shell|exec|terminal|run_terminal|run_command|spawn|process/i;
+
 export function editSurfaceGuard(denyPaths = SELF_DENY_PATHS, repoDir = "") {
   return function selfEditSurface(ctx) {
     const name = String(ctx.toolName || "");
     const args = ctx.args || {};
-    const isWrite = /write|edit|append|delete|remove|move/i.test(name);
-    const isExec = /bash|shell|exec/i.test(name);
+    const isWrite = MUTATOR_NAME.test(name);
+    const isExec = EXEC_NAME.test(name);
     if (!isWrite && !isExec) return {};
 
     // Path-arg tools: normalize the operand and match on path segments.
-    for (const k of ["path", "file", "filepath", "target", "dest"]) {
+    for (const k of PATH_ARG_KEYS) {
       if (typeof args[k] !== "string") continue;
       const hit = isDeniedPath(normalizeOperand(args[k], repoDir), denyPaths);
       if (hit) {

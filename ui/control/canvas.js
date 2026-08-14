@@ -190,6 +190,11 @@
 
   function onWsEvent(evt) {
     if (!evt) return;
+    // Intel-audit #10: ignore events from OTHER runs BEFORE touching any
+    // per-node state — otherwise rings/subToNode/ticker accumulate across
+    // every run on a long-lived page (unbounded key growth + cross-run cost).
+    if (!currentRun) return;
+    if (evt.swarmId && evt.swarmId !== currentRun.id) return;
     // node↔subagent pairing for tail bucketing
     if (evt.subagentId && evt.nodeId) subToNode.set(evt.subagentId, evt.nodeId);
     pushRing(evt);
@@ -199,7 +204,6 @@
       const ticker = el("swarmCostTicker");
       if (ticker) ticker.textContent = `$${costUsd.toFixed(5)}`;
     }
-    if (!currentRun || (evt.swarmId && evt.swarmId !== currentRun.id)) return;
     if (evt.type !== "swarm") return;
     const { phase, nodeId } = evt;
     if (phase === "child_start" && nodeId) setNodeStatus(nodeId, "running");

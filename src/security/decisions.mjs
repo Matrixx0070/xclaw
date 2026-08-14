@@ -54,7 +54,11 @@ export async function addDecision(cfg, { tool, plan, tier }, opts = {}) {
     return { ok: false, error: "no plan fingerprint to pin (non-exec tool?)" };
   }
   const wide = opts.wide === true;
-  const ttlMs = opts.ttlMs ?? (wide ? WIDE_DEFAULT_TTL_MS : null);
+  // L1: a wide (loose exe+argv0) pin MUST expire — a 0/falsy ttl falls back to
+  // the default rather than becoming permanent.
+  const ttlMs = wide
+    ? (opts.ttlMs && opts.ttlMs > 0 ? opts.ttlMs : WIDE_DEFAULT_TTL_MS)
+    : (opts.ttlMs ?? null);
   const decision = {
     id: `dec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
     tool: String(tool),

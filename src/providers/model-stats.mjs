@@ -89,8 +89,13 @@ export async function getModelStats(cfg = {}, { windowDays = 7 } = {}) {
   }
 
   for (const [ref, s] of Object.entries(out)) {
-    const attempts = s.runs + s.failovers + s.errors;
-    s.successRate = attempts ? Math.round((s.runs / attempts) * 100) / 100 : null;
+    // Intel-audit #5: successRate = completed runs / (runs + hard errors).
+    // Failovers are NOT counted as failures — a run that internally
+    // failed-over but still COMPLETED is a success (it shows up in runs). The
+    // old denominator (runs+failovers+errors) punished reliable-but-retrying
+    // models and wrongly excluded them from autoEconomy.
+    const denom = s.runs + s.errors;
+    s.successRate = denom ? Math.round((s.runs / denom) * 100) / 100 : null;
     s.avgMsPerTurn = s.turns ? Math.round(s.totalMs / s.turns) : null;
     s.observedUsd = Math.round(s.observedUsd * 1e6) / 1e6;
     out[ref] = s;

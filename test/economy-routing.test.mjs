@@ -133,7 +133,28 @@ describe("economic routing (B3)", () => {
     assert.equal(stats["fake/a"].failovers, 1);
     assert.equal(stats["fake/a"].avgMsPerTurn, 200);
     assert.ok(Math.abs(stats["fake/a"].observedUsd - 0.03) < 1e-9);
-    assert.ok(stats["fake/a"].successRate < 1);
+    // audit fix: a failover on an otherwise-completed run is NOT a failure —
+    // 2 runs, 0 hard errors → successRate 1. A hard error DOES lower it.
+    assert.equal(stats["fake/a"].successRate, 1);
+  });
+
+  it("hard errors (not failovers) lower successRate", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-stats2-"));
+    const cfg = { paths: { configDir: dir } };
+    const now = new Date().toISOString();
+    await fs.writeFile(
+      path.join(dir, "cost-ledger.jsonl"),
+      [
+        JSON.stringify({ at: now, modelRef: "fake/b", costUsd: 0.01, turns: [{ elapsedMs: 100 }] }),
+        JSON.stringify({ at: now, modelRef: "fake/b", costUsd: 0.01, turns: [{ elapsedMs: 100 }] }),
+        JSON.stringify({ at: now, modelRef: "fake/b", costUsd: 0.01, turns: [{ elapsedMs: 100 }] }),
+      ].join("\n") + "\n"
+    );
+    appendRouterEvent(cfg, { type: "router", phase: "error", modelRef: "fake/b" });
+    await new Promise((r) => setTimeout(r, 50));
+    const stats = await getModelStats(cfg);
+    assert.equal(stats["fake/b"].successRate, 0.75); // 3 runs / (3 + 1 error)
+    await fs.rm(dir, { recursive: true, force: true });
     await fs.rm(dir, { recursive: true, force: true });
   });
 });
