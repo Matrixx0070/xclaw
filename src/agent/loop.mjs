@@ -397,6 +397,8 @@ export async function runAgentLoop(options) {
     memoryFiles,
     maxSkillChars: cfg.skills?.maxChars ?? 6000,
     maxMemoryChars: cfg.memory?.maxChars ?? 8000,
+    progressive: cfg.skills?.progressive,
+    inlineMaxChars: cfg.skills?.inlineMaxChars,
   });
   // Stable prefix for provider prompt caching (xAI cached_tokens, etc.)
   const systemContent = buildCacheableSystemPrompt({
@@ -608,6 +610,8 @@ export async function runAgentLoop(options) {
   const optimized = optimizePrefix({
     systemMessage: sysBuilt.message,
     tools,
+    maxToolDescriptionChars:
+      cfg.tokens?.maxToolDescriptionChars ?? cfg.tools?.maxDescriptionChars ?? null,
   });
   tools = optimized.tools;
   const prefixHash = optimized.fingerprint.hash;

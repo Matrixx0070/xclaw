@@ -50,6 +50,47 @@ export function normalizeSystemMessage(message) {
 /**
  * Stable JSON for tool schemas: sort tools by function.name, sort key order shallowly.
  */
+/**
+ * Truncate tool/function descriptions so the tools JSON blob does not dominate
+ * the prompt. Schemas (parameters) are left intact.
+ */
+export function compactToolDescriptions(tools, maxChars = 160, { stripParamDescriptions = true } = {}) {
+  if (!Array.isArray(tools) || !(maxChars > 0)) return tools;
+  return tools.map((t) => {
+    if (!t || typeof t !== "object") return t;
+    const out = { ...t };
+    if (out.function && typeof out.function === "object") {
+      const fn = { ...out.function };
+      if (typeof fn.description === "string" && fn.description.length > maxChars) {
+        fn.description = fn.description.slice(0, maxChars - 1).trimEnd() + "…";
+      }
+      if (stripParamDescriptions && fn.parameters && typeof fn.parameters === "object") {
+        fn.parameters = stripJsonSchemaDescriptions(fn.parameters);
+      }
+      out.function = fn;
+    }
+    if (typeof out.description === "string" && out.description.length > maxChars) {
+      out.description = out.description.slice(0, maxChars - 1).trimEnd() + "…";
+    }
+    if (stripParamDescriptions && out.parameters && typeof out.parameters === "object") {
+      out.parameters = stripJsonSchemaDescriptions(out.parameters);
+    }
+    return out;
+  });
+}
+
+/** Deep-clone schema-like objects without description fields (token savings). */
+function stripJsonSchemaDescriptions(schema) {
+  if (Array.isArray(schema)) return schema.map(stripJsonSchemaDescriptions);
+  if (!schema || typeof schema !== "object") return schema;
+  const out = {};
+  for (const [k, v] of Object.entries(schema)) {
+    if (k === "description") continue;
+    out[k] = stripJsonSchemaDescriptions(v);
+  }
+  return out;
+}
+
 export function stabilizeTools(tools) {
   if (!Array.isArray(tools)) return tools;
   const sorted = [...tools].sort((a, b) => {
@@ -119,9 +160,14 @@ export function makeEphemeralNotice(text) {
 /**
  * Apply full prefix optimization pipeline.
  */
-export function optimizePrefix({ systemMessage, tools }) {
+export function optimizePrefix({ systemMessage, tools, maxToolDescriptionChars = null } = {}) {
   const sys = normalizeSystemMessage(systemMessage);
-  const stableTools = stabilizeTools(tools);
+  let list = tools;
+  const maxDesc = Number(maxToolDescriptionChars);
+  if (Number.isFinite(maxDesc) && maxDesc > 0) {
+    list = compactToolDescriptions(list, maxDesc);
+  }
+  const stableTools = stabilizeTools(list);
   const fp = fingerprintPrefix({ systemMessage: sys, tools: stableTools });
   // Freeze shallowly to catch accidental mutation in dev
   try {

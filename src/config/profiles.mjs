@@ -28,8 +28,38 @@ export const PROFILES = {
     jobs: {
       structuredClaimsOnTags: ["campaign", "long"],
     },
+    // Tight prompt budgets: live traffic showed ~9.5k input / ~$0.012 with
+    // only ~2% cache hits — most tokens were static skills/tools, not the ask.
+    skills: {
+      progressive: true,
+      maxChars: 1800,
+      inlineMaxChars: 600,
+    },
+    memory: {
+      maxChars: 1500,
+    },
+    tokens: {
+      restorePrefixEachTurn: true,
+      // Truncate verbose tool descriptions in the model schema payload
+      maxToolDescriptionChars: 160,
+    },
     agent: {
       maxTurns: 20,
+      // Core tools only — full catalog bloats every prompt (~7k+ tool tokens).
+      // Override with agent.allowTools: null or a wider list when needed.
+      allowTools: [
+        "xclaw_bash",
+        "bash",
+        "xclaw_file_read",
+        "file_read",
+        "xclaw_file_write",
+        "file_write",
+        "xclaw_file_list",
+        "list_dir",
+        "web_search",
+        "xclaw_web_search",
+        "xclaw_skill",
+      ],
       // Repo/multi-step goals need headroom above 30 tool calls
       loopGuard: {
         enabled: true,
