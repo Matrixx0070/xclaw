@@ -107,7 +107,27 @@ export async function tryHandleSecurityRoute({
       json(res, 503, { ok: false, error: "approval_gate_unavailable" });
       return true;
     }
-    const out = approvalGate.decide(id, approved, note);
+    // A2: "allow-always" now persists a durable fingerprint pin (wide:true
+    // opts into the looser exe+argv0 pin with a 30d expiry).
+    const allowAlways =
+      body.allowAlways === true || body.decision === "allow-always";
+    const out = approvalGate.decide(id, approved, note, {
+      allowAlways,
+      wide: body.wide === true,
+    });
+    json(res, out.ok ? 200 : 404, out);
+    return true;
+  }
+
+  if (p === "/security/decisions" && method === "GET") {
+    const { loadDecisions } = await import("../../security/decisions.mjs");
+    json(res, 200, { decisions: await loadDecisions(cfg) });
+    return true;
+  }
+
+  if (p.startsWith("/security/decisions/") && method === "DELETE") {
+    const { removeDecision } = await import("../../security/decisions.mjs");
+    const out = await removeDecision(cfg, p.split("/").pop());
     json(res, out.ok ? 200 : 404, out);
     return true;
   }

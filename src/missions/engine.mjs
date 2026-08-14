@@ -159,7 +159,13 @@ export function missionCfg(cfg, worktreePath) {
     ...cfg,
     security: {
       ...(cfg.security || {}),
-      autoApprove: true, // isolated shadow workspace — merge stays gated
+      // A2: risk-bounded worktree autonomy replaces blanket autoApprove —
+      // tiers ≤ risky run free inside the isolated workspace (writes there
+      // are discardable by construction); critical actions (force-push,
+      // publish, credential paths, escapes) still pend. Merge stays gated.
+      autoApprove: false,
+      autoApproveMaxTier: cfg.missions?.autoApproveMaxTier || "risky",
+      riskContext: { worktree: true },
     },
     sandbox: {
       ...(cfg.sandbox || {}),

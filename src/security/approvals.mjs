@@ -14,6 +14,8 @@ import {
 } from "./tool-allowlist-guard.mjs";
 import { commandMatchesExecAllowlist } from "./exec-allowlist-pattern.mjs";
 import { getSharedLedger } from "../ops/ledger.mjs";
+import { assessRisk, tierRank } from "./risk.mjs";
+import { matchDecision, addDecision } from "./decisions.mjs";
 import {
   buildSystemRunPlan,
   revalidatePlan,
@@ -126,6 +128,19 @@ export function createApprovalGate(cfg = {}) {
   const autoApprove = security.autoApprove === true;
   /** always | risky | never — when not full autoApprove */
   const policy = security.approvalPolicy || "risky";
+  /**
+   * A2 risk-bounded autonomy: when set (e.g. "risky"), tiers ≤ maxTier run
+   * without asking and higher tiers pend — replacing blanket autoApprove with
+   * a bounded privilege. safeAuto still wins below; requireApproval lists
+   * apply only to the legacy policy path.
+   */
+  const autoApproveMaxTier = security.autoApproveMaxTier || null;
+  /**
+   * What "critical" does to blanket autoApprove: "ask" (default) escalates,
+   * "deny" refuses, "legacy" preserves pre-A2 behavior.
+   * SCAFFOLD: "legacy" exists for one release as a migration escape hatch.
+   */
+  const criticalOverride = security.criticalOverride || "ask";
 
   /** Bind frozen systemRunPlan for tools that enter the approval path. Default on. */
   const bindSystemRunPlan = security.bindSystemRunPlan !== false;
@@ -154,11 +169,26 @@ export function createApprovalGate(cfg = {}) {
     });
   }
 
-  function needsApproval(name) {
+  /**
+   * name-based decision + A2 risk tier. risk is optional for backwards
+   * compatibility (external callers); without it, behavior is pre-A2.
+   */
+  function needsApproval(name, risk = null) {
     const n = normalizeToolName(name);
-    if (autoApprove) return false;
+    const critical = risk?.tier === "critical";
+    if (autoApprove) {
+      // Blanket autoApprove no longer covers critical actions — the one
+      // deliberate behavior change of A2 (criticalOverride:"legacy" reverts).
+      return critical && criticalOverride !== "legacy";
+    }
+    if (autoApproveMaxTier && risk) {
+      if (safeAuto.has(n)) return false;
+      return tierRank(risk.tier) > tierRank(autoApproveMaxTier);
+    }
     if (policy === "never") return false;
     if (safeAuto.has(n)) return false;
+    // Novel danger the requireApproval list never anticipated still asks.
+    if (critical) return true;
     if (policy === "always") return true;
     // MCP tools (mcp__<server>__<tool>) are third-party code the operator
     // never vetted tool-by-tool — risky by default. Before this rule, the
@@ -207,9 +237,39 @@ export function createApprovalGate(cfg = {}) {
         message: `Command for ${name} is not on the exec allowlist.`,
       };
     }
+    // A2: deterministic risk assessment for every action. Never throws —
+    // assessment failure degrades to null (pre-A2 behavior), not to a block.
+    let risk = null;
+    try {
+      risk = assessRisk({
+        tool: name,
+        args,
+        workingDir: args?.cwd || args?.workingDir || planRoot,
+        cfg,
+        context: security.riskContext || {},
+      });
+    } catch {
+      risk = null;
+    }
+
+    if (risk?.tier === "critical" && criticalOverride === "deny" && !autoApprove) {
+      journalDecision(cfg, {
+        tool: name,
+        decision: "deny",
+        mode: "critical_policy",
+        risk,
+      }, "agent");
+      return {
+        ok: false,
+        reason: "critical_denied",
+        message: `Critical-tier action denied by policy (${(risk.reasons || []).join("; ") || "critical risk"}).`,
+        risk,
+      };
+    }
+
     // forceHuman: a pre_tool_use hook returned decision:"ask" — escalate to a
     // human even when policy would auto-approve.
-    if (!forceHuman && !needsApproval(name)) {
+    if (!forceHuman && !needsApproval(name, risk)) {
       // Auto path: still optionally bind a plan for downstream audit, but do not block.
       let plan = null;
       if (bindSystemRunPlan && isExecTool(name)) {
@@ -223,6 +283,7 @@ export function createApprovalGate(cfg = {}) {
         mode: "auto",
         plan: sanitizePlan(plan),
         planFingerprint: plan?.fingerprint ?? null,
+        risk,
       };
     }
 
@@ -238,6 +299,34 @@ export function createApprovalGate(cfg = {}) {
     }
     const plan = bound.plan;
 
+    // A2 pinned decisions: a durable "allow-always" covering this exact plan
+    // (fingerprint pin) at or below its recorded tier. TOCTOU revalidation
+    // still runs downstream — the pin approves the PLAN, not the tool name.
+    try {
+      const pin = await matchDecision(cfg, { tool: name, plan, tier: risk?.tier });
+      if (pin) {
+        journalDecision(cfg, {
+          tool: name,
+          decision: "approve",
+          mode: "pinned",
+          decisionId: pin.id,
+          planFingerprint: plan?.fingerprint ?? null,
+          risk,
+        }, "operator");
+        return {
+          ok: true,
+          approved: true,
+          mode: "pinned",
+          decisionId: pin.id,
+          plan: sanitizePlan(plan),
+          planFingerprint: plan?.fingerprint ?? null,
+          risk,
+        };
+      }
+    } catch {
+      /* pin lookup must never break the ask path */
+    }
+
     const id = `apr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const slaMs = security.approvalSlaMs ?? timeoutMs;
     const slaAction = security.approvalSlaAction || "deny"; // deny | approve
@@ -251,6 +340,7 @@ export function createApprovalGate(cfg = {}) {
         // why a human is being asked: "policy" (requireApproval list) vs
         // "hook" (a pre_tool_use hook returned decision:"ask")
         origin: forceHuman ? "hook" : "policy",
+        risk,
         at: new Date().toISOString(),
         atMs: Date.now(),
         deadline: Date.now() + slaMs,
@@ -287,6 +377,7 @@ export function createApprovalGate(cfg = {}) {
       args,
       plan: sanitizePlan(plan),
       planFingerprint: plan?.fingerprint ?? null,
+      risk,
     });
     const decision = await wait;
     return { ...decision, pendingId: id };
@@ -325,7 +416,7 @@ export function createApprovalGate(cfg = {}) {
     return { ok: false, pending: true, pendingId: id, wait };
   }
 
-  function decide(pendingId, approved, note = "") {
+  function decide(pendingId, approved, note = "", opts = {}) {
     const item = pending.get(pendingId);
     if (!item) return { ok: false, error: "unknown_pending" };
     pending.delete(pendingId);
@@ -337,7 +428,19 @@ export function createApprovalGate(cfg = {}) {
       note: note || undefined,
       pendingId,
       planFingerprint: item.plan?.fingerprint ?? null,
+      risk: item.risk || undefined,
+      allowAlways: opts.allowAlways === true || undefined,
     });
+    // A2 durable allow-always: persist a pin so this exact plan (or, with
+    // wide:true, this exe+argv0) auto-approves next time — fire-and-forget,
+    // the current decision never waits on disk.
+    if (approved && opts.allowAlways) {
+      addDecision(
+        cfg,
+        { tool: item.tool, plan: item.plan, tier: item.risk?.tier },
+        { wide: opts.wide === true, note: note || null }
+      ).catch(() => {});
+    }
 
     if (approved && item.plan && revalidateOnDecide) {
       const check = revalidatePlan(item.plan);
@@ -389,6 +492,7 @@ export function createApprovalGate(cfg = {}) {
       slaAction: item.slaAction || "deny",
       plan: sanitizePlan(item.plan),
       planFingerprint: item.plan?.fingerprint ?? null,
+      risk: item.risk || null,
     }));
   }
 

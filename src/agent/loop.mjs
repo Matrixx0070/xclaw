@@ -1028,6 +1028,9 @@ export async function runAgentLoop(options) {
               pendingId: info.id,
               name: info.tool,
               args: info.args,
+              riskTier: info.risk?.tier || null,
+              riskFactors: info.risk?.factors || null,
+              riskReasons: info.risk?.reasons || null,
             });
           },
         });

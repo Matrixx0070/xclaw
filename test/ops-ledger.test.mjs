@@ -119,11 +119,13 @@ describe("ops ledger", () => {
     });
     await flush();
     const hits = await whoTouched(cfg, "lib/target.mjs");
-    // read-family artifact hit must NOT count as touching
+    // read-family artifact hit must NOT count as touching; append order is
+    // async so assert set-wise, not positionally
     assert.equal(hits.length, 2);
-    assert.equal(hits[0].ids.missionId, "msn_2");
-    assert.equal(hits[1].via, "merge");
-    assert.equal(hits[1].commit, "abc123");
+    const write = hits.find((h) => h.via === "file_write");
+    const merge = hits.find((h) => h.via === "merge");
+    assert.ok(write && write.ids.missionId === "msn_2");
+    assert.ok(merge && merge.commit === "abc123");
   });
 
   it("survives malformed lines", async () => {
