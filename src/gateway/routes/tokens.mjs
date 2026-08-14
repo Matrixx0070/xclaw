@@ -69,6 +69,13 @@ export async function tryHandleTokensRoute({ p, method, req, res, url, cfg, json
     }));
     return true;
   }
+  if (p === "/usage/efficiency" && method === "GET") {
+    const { providerEfficiency } = await import("../../tokens/usage-analytics.mjs");
+    json(res, 200, await providerEfficiency(cfg, {
+      days: url.searchParams.get("days") || 7,
+    }));
+    return true;
+  }
   if (p === "/usage" && method === "GET") {
     const { usageSummary } = await import("../../tokens/usage-analytics.mjs");
     json(res, 200, await usageSummary(cfg, {

@@ -194,11 +194,13 @@ export async function buildUsageDashboard(cfg, { days = 7 } = {}) {
     governor = { error: e.message };
   }
   const recent = await requestLogs(cfg, { provider: "all", limit: 15 });
+  const efficiency = await providerEfficiency(cfg, { days });
   return {
     ok: true,
     at: new Date().toISOString(),
     usage: summary,
     governor,
+    efficiency,
     recentLogs: recent.rows || [],
   };
 }
@@ -263,4 +265,129 @@ export async function requestLogDetail(cfg, runId) {
   return { ok: false, error: "run not found" };
 }
 
-export default { usageSummary, requestLogs, requestLogDetail, inferProvider, buildUsageDashboard };
+
+/**
+ * Token efficiency per provider: cost intensity, cache leverage, I/O mix.
+ *
+ * Metrics (higher is better unless noted):
+ *   tokensPerUsd     — total tokens per $1 spent
+ *   usdPer1MTokens   — blended $ per 1M tokens (lower better)
+ *   cacheHitRate     — cached_prompt / prompt
+ *   outInRatio       — completion / prompt (workload shape)
+ *   costPerRun       — $ / run
+ *   estimatedShare   — fraction of $ that is estimated (not billed)
+ */
+export async function providerEfficiency(cfg, { days = 7 } = {}) {
+  const nDays = Math.min(90, Math.max(1, Number(days) || 7));
+  const sinceMs = Date.now() - nDays * 86_400_000;
+  const { entries, path } = await loadEntries(cfg, { sinceMs });
+
+  const by = new Map();
+  for (const e of entries) {
+    const prov = inferProvider(e);
+    let s = by.get(prov);
+    if (!s) {
+      s = {
+        provider: prov,
+        runs: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        reasoningTokens: 0,
+        cachedTokens: 0,
+        costUsd: 0,
+        estimatedCostUsd: 0,
+        billedCostUsd: 0,
+        turns: 0,
+        estimatedTurns: 0,
+      };
+      by.set(prov, s);
+    }
+    s.runs += 1;
+    const turns = Array.isArray(e.turns) && e.turns.length ? e.turns : [e];
+    for (const t of turns) {
+      s.turns += 1;
+      s.promptTokens += t.promptTokens || 0;
+      s.completionTokens += t.completionTokens || 0;
+      s.reasoningTokens += t.reasoningTokens || 0;
+      s.cachedTokens += t.cachedTokens || 0;
+      const c = Number(t.costUsd) || 0;
+      s.costUsd += c;
+      if (t.estimated === true || e.hasRealUsage === false || e.costEstimated === true) {
+        s.estimatedCostUsd += c;
+        s.estimatedTurns += 1;
+      } else {
+        s.billedCostUsd += c;
+      }
+    }
+    // entry-level cost if turns lacked costUsd
+    if (!(Array.isArray(e.turns) && e.turns.some((t) => t.costUsd != null)) && typeof e.costUsd === "number") {
+      // already counted via [e] as single turn above when no turns
+    }
+  }
+
+  const providers = [...by.values()].map((s) => {
+    const totalTokens =
+      s.promptTokens + s.completionTokens + s.reasoningTokens;
+    const usd = s.costUsd || 0;
+    const cacheHitRate =
+      s.promptTokens > 0 ? Math.min(1, s.cachedTokens / s.promptTokens) : 0;
+    const outInRatio =
+      s.promptTokens > 0 ? s.completionTokens / s.promptTokens : null;
+    return {
+      provider: s.provider,
+      runs: s.runs,
+      turns: s.turns,
+      promptTokens: s.promptTokens,
+      completionTokens: s.completionTokens,
+      reasoningTokens: s.reasoningTokens,
+      cachedTokens: s.cachedTokens,
+      totalTokens,
+      costUsd: Math.round(usd * 1e6) / 1e6,
+      billedCostUsd: Math.round(s.billedCostUsd * 1e6) / 1e6,
+      estimatedCostUsd: Math.round(s.estimatedCostUsd * 1e6) / 1e6,
+      estimatedShare:
+        usd > 0 ? Math.round((s.estimatedCostUsd / usd) * 1000) / 1000 : 0,
+      tokensPerUsd: usd > 0 ? Math.round(totalTokens / usd) : null,
+      usdPer1MTokens:
+        totalTokens > 0 ? Math.round((usd / totalTokens) * 1e6 * 1e4) / 1e4 : null,
+      cacheHitRate: Math.round(cacheHitRate * 1000) / 1000,
+      cacheHitRatePct: Math.round(cacheHitRate * 1000) / 10,
+      outInRatio: outInRatio != null ? Math.round(outInRatio * 1000) / 1000 : null,
+      costPerRun: s.runs > 0 ? Math.round((usd / s.runs) * 1e6) / 1e6 : null,
+      avgPromptPerTurn:
+        s.turns > 0 ? Math.round(s.promptTokens / s.turns) : null,
+    };
+  });
+
+  providers.sort((a, b) => (b.tokensPerUsd || 0) - (a.tokensPerUsd || 0));
+
+  // Rankings: efficiency champions
+  const withSpend = providers.filter((p) => p.costUsd > 0 && p.totalTokens > 0);
+  const bestTokensPerUsd = withSpend[0] || null;
+  const bestCache = [...withSpend].sort(
+    (a, b) => b.cacheHitRate - a.cacheHitRate
+  )[0] || null;
+  const cheapestBlended = [...withSpend].sort(
+    (a, b) => (a.usdPer1MTokens || 9e9) - (b.usdPer1MTokens || 9e9)
+  )[0] || null;
+
+  return {
+    ok: true,
+    days: nDays,
+    path,
+    providers,
+    rankings: {
+      mostTokensPerUsd: bestTokensPerUsd?.provider || null,
+      bestCacheHitRate: bestCache?.provider || null,
+      lowestUsdPer1M: cheapestBlended?.provider || null,
+    },
+    notes: [
+      "tokensPerUsd = (prompt+completion+reasoning) / $ — higher is more efficient",
+      "usdPer1MTokens is blended realized cost, not list price",
+      "cacheHitRate uses provider-reported cached tokens when present",
+      "estimatedShare high ⇒ prefer billed ticks (cost_in_usd_ticks) for accuracy",
+    ],
+  };
+}
+
+export default { usageSummary, requestLogs, requestLogDetail, inferProvider, buildUsageDashboard, providerEfficiency };
