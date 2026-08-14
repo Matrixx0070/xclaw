@@ -28,8 +28,12 @@ describe("approval gate + systemRunPlan binding", () => {
         approvalSlaMs: 30_000,
       },
     });
-    const p = gate.authorize("bash", { command: "true" }, { timeoutMs: 5_000 });
-    await new Promise((r) => setTimeout(r, 15));
+    const p = gate.authorize("bash", { command: "true" }, { timeoutMs: 60_000 });
+    // poll for registration (deadline, not fixed sleep — load-flake-proof)
+    const deadline = Date.now() + 10_000;
+    while (gate.listPending().length < 1 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
     const list = gate.listPending();
     assert.ok(list.length >= 1);
     assert.ok(list[0].planFingerprint);

@@ -15,11 +15,18 @@ function mockRes() {
 describe("gateway routes/security", () => {
   it("lists pending", async () => {
     const gate = createApprovalGate({
-      security: { autoApprove: false, approvalPolicy: "risky", approvalTimeoutMs: 50 },
+      // generous timeouts: under full-suite load a short SLA can deny the
+      // pending before this test lists it (observed load-dependent flake);
+      // cleanup below decides explicitly, so nothing waits these out.
+      security: { autoApprove: false, approvalPolicy: "risky", approvalTimeoutMs: 60_000 },
     });
-    // create a pending without waiting
-    const pendingPromise = gate.authorize("xclaw_bash", { command: "echo x" }, { timeoutMs: 200 });
-    await new Promise((r) => setTimeout(r, 10));
+    // create a pending without waiting; poll until it registers (deadline,
+    // not a fixed sleep — timer starvation under load broke the fixed wait)
+    const pendingPromise = gate.authorize("xclaw_bash", { command: "echo x" }, { timeoutMs: 60_000 });
+    const deadline = Date.now() + 10_000;
+    while (gate.listPending().length < 1 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
 
     const res = mockRes();
     let payload = null;

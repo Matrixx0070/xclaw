@@ -271,7 +271,25 @@ export function createAlerter(cfg = {}) {
 
 let shared = null;
 export function getSharedAlerter(cfg = {}) {
-  if (!shared) shared = createAlerter(cfg);
+  if (!shared) {
+    shared = createAlerter(cfg);
+    return shared;
+  }
+  // First-caller-wins had the same failure class as the 3.102.1 approval-gate
+  // singleton: a bare `{}` early caller (health-watchdog, scheduler) freezes a
+  // target-less alerter for the whole process, and every later alert skips
+  // "no_targets" even though the caller's loaded config HAS targets (observed
+  // live: enforcement-cron alerts skipped hours after alerting.targets was
+  // wired). Upgrade in place when a caller offers a config that resolves
+  // targets and the frozen instance has none. Never downgrade.
+  try {
+    if (shared.status().targets.length === 0) {
+      const candidate = createAlerter(cfg);
+      if (candidate.status().targets.length > 0) shared = candidate;
+    }
+  } catch {
+    /* keep existing */
+  }
   return shared;
 }
 export function resetSharedAlerter(cfg = {}) {

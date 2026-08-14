@@ -1,5 +1,60 @@
 # Changelog
 
+## 3.122.1 — suite determinism + append-only rotation + alerter singleton fix
+
+Mandate-2 closeout hygiene (all three found by re-reading the shipped arc):
+
+- **Ops maintenance timer** (`src/ops/maintenance.mjs`): closes the audit's
+  accepted finding "unbounded append-only files (rotation deferred)".
+  `compactLedger()` existed but was CLI-only — nothing ever ran it; the
+  gateway's daily ops timer now compacts the ledger (90d retention) and
+  size-rotates the host-global JSONL appenders (router-events, cost-ledger,
+  cron/doctor logs): head archived to `<file>.1`, newest line-aligned tail
+  kept in place so live readers keep their recent window.
+  `ops.maintenance {enabled, intervalMs, maxBytes, keepBytes}`.
+- **Shared alerter no longer freezes target-less**: `getSharedAlerter` was
+  first-caller-wins (the 3.102.1 approval-gate singleton class) — a bare-`{}`
+  early caller silenced every later alert with `no_targets` even after
+  `alerting.targets` was wired (observed live at 08:48). It now upgrades in
+  place when a caller offers a config that resolves targets; never downgrades.
+- **Deflaked the pending-approval tests** (`gateway-routes-security`,
+  `system-run-plan-gate`): short SLA timeouts + fixed sleeps raced the
+  parallel-suite load (observed 1/5 full-suite failure); now generous
+  timeouts + deadline-polling for pending registration. Suite determinism is
+  load-bearing — A4 self-deploy gates on it.
+- Changelog backfilled for the mandate-2 arc (3.112.1–3.122.0 below).
+
+## 3.113.0 → 3.122.0 — Mandate-2: autonomous engineering OS (backfill)
+
+Ten slices + adversarial audit, each live-proven; full detail in
+`docs/NEXT-LEVEL-AUDIT.md` §Mandate-2 arc.
+
+- **3.113.0 (A1)** operational ledger — durable JSONL black box, graph by
+  joins on correlation ids; `xclaw ledger tail|query|who-touched`; `GET /ledger`.
+- **3.114.0 (B1)** persistent repo intelligence — incremental index keyed by
+  git-common-dir (worktrees share it), notes + compounding brief,
+  `xclaw_repo_intel` tool for all runs.
+- **3.115.0 (A2)** zero-trust risk policy — facts→tier safe|low|risky|critical,
+  durable allow-always pins (fingerprinted, TOCTOU-safe), missions
+  `autoApprove` → `autoApproveMaxTier`.
+- **3.116.0 (A3)** time-travel — commit-on-merge with `XClaw-Mission:` trailer,
+  `refs/xclaw/*`, `xclaw timeline list|diff|revert|attribute`.
+- **3.117.0 (B3)** economic routing — model metadata + measured stats +
+  governor normal|economy|halt band; verify never auto-downshifts.
+- **3.118.0 (B5)** Mission Control live canvas — swarm WS producer wired,
+  zero-dep SVG DAG live-patched from events.
+- **3.119.0 (B2)** hierarchical context — dormant `summarizeFn` wired to a
+  cheap model, fold-of-folds, mission phase carryover.
+- **3.120.0 (B4)** swarm blackboard + dynamic roles (narrow-only tool
+  intersection) + `voteNodes` + tournament strategy (winner-only merge).
+- **3.121.0 (A4)** self-modification loop — self profile + edit-surface guard
+  + autonomous merge→deploy→health→auto-rollback via `xclaw self-deploy watch`;
+  live-proven incl. fire-drill rollback.
+- **3.122.0** adversarial audit — 2 BLOCKERs (edit-surface arg-key bypass;
+  tournament merged all competitors) + 10 HIGH/MED closed.
+- **3.112.1** doctor pm2-daemon leak fix — doctor only queries pm2 when a
+  daemon already exists (612 orphaned God Daemons / 13.6GB on a live host).
+
 ## 3.112.0 — tmp sweeper + LSP cancellation + doctor accuracy
 
 Fresh-observation release #2 (all three from reading the live host).
