@@ -27,6 +27,11 @@ export const MISSION_STATUSES = [
   "failed",
   "rolled_back",
   "interrupted",
+  // A4 self-modification profile only — deploy lifecycle owned by the
+  // external self-deploy watcher, not the gateway
+  "deploying",
+  "deployed",
+  "deploy_rolled_back",
 ];
 
 function missionsDir(cfg = {}) {
@@ -109,7 +114,12 @@ export function newMission({ goal, repoDir, maxAttempts = 3, autoMerge = false, 
 }
 
 /** Statuses that are final — a late/aborted handler must never overwrite them. */
-export const TERMINAL_STATUSES = new Set(["done", "rolled_back"]);
+export const TERMINAL_STATUSES = new Set([
+  "done",
+  "rolled_back",
+  "deployed",
+  "deploy_rolled_back",
+]);
 
 export function addEvent(mission, phase, note) {
   mission.events.push({ at: new Date().toISOString(), phase, note: String(note).slice(0, 500) });

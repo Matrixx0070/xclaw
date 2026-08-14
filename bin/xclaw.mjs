@@ -1473,6 +1473,30 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "self-deploy": {
+      const { readIntent, runDeployOnce, runDeployWatch } = await import("../src/self/deploy.mjs");
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "status";
+      if (sub === "status") {
+        const intent = await readIntent(cfg);
+        console.log(JSON.stringify(intent || { state: "none" }, null, 2));
+        break;
+      }
+      if (sub === "run-once") {
+        const out = await runDeployOnce(cfg);
+        console.log(out ? `resolved: ${out.state}` : "nothing pending");
+        break;
+      }
+      if (sub === "watch") {
+        console.log(`[xclaw] self-deploy watcher — intent file: ${(await import("../src/self/deploy.mjs")).deployIntentPath(cfg)}`);
+        await runDeployWatch(cfg, {});
+        break;
+      }
+      console.error("Usage: xclaw self-deploy status | run-once | watch");
+      process.exitCode = 1;
+      break;
+    }
     case "timeline": {
       const tl = await import("../src/git/timeline.mjs");
       const { loadConfig } = await import("../src/config/load.mjs");
@@ -2308,6 +2332,7 @@ Commands:
   transcripts          list | show <sessionId>
   ledger               tail | query | who-touched <path> | stats | compact
   timeline             list | diff <a> <b> | revert <missionId> | known-good | attribute <path>
+  self-deploy          status | run-once | watch (external deploy executor)
   eval                 Eval suite (--tag, --mock, --json)
   job <goal>           Verified job in a temp workspace
   version              Print version

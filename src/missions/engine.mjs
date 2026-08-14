@@ -470,7 +470,19 @@ const CARRY_MAX_CHARS = 2500;
 
 async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provider, providerOverride }) {
   const t0 = Date.now();
-  const mcfg = missionCfg(cfg, mission.worktree.path);
+  let mcfg = missionCfg(cfg, mission.worktree.path);
+  // A4: self missions get the stricter overlay + the edit-surface guard as a
+  // system-tier hook on a dedicated manager (config hooks still load).
+  let hookManager;
+  if (mission.profile === "self") {
+    const { applySelfOverlay, registerEditSurfaceHook } = await import("../self/profile.mjs");
+    const { createHookManager } = await import("../hooks/manager.mjs");
+    mcfg = applySelfOverlay(mcfg, cfg);
+    hookManager = registerEditSurfaceHook(
+      createHookManager({ cfg: mcfg }),
+      mcfg.self?.denyPaths
+    );
+  }
   const carry = mission.context?.carry;
   const userMessage =
     carry && phase !== "plan"
@@ -488,6 +500,7 @@ async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provi
     // get their own gate built from the mission-scoped cfg; hooks still
     // compose (a hook "ask"/"deny" escalates through this gate unchanged).
     approvalGate: createApprovalGate(mcfg),
+    ...(hookManager ? { hookManager } : {}),
     signal,
     provider: providerOverride || provider || (await providerForPhase(cfg, phase)),
     chatSessionId: null,
@@ -668,6 +681,23 @@ export async function startMission(cfg, opts = {}) {
     autoMerge: opts.autoMerge === true,
     verify: opts.verify || null,
   });
+  // A4 self-modification profile: missions targeting xclaw's own repo get a
+  // stricter overlay (edit surface, verify floor) and — per operator
+  // decision 2026-08-14 — an AUTONOMOUS merge+deploy pipeline
+  // (cfg.self.requireMergeApproval re-gates it).
+  try {
+    const { detectSelfTarget, selfVerifyCommands } = await import("../self/profile.mjs");
+    if (await detectSelfTarget(cfg, repo)) {
+      mission.profile = "self";
+      const floor = selfVerifyCommands(cfg);
+      mission.verify.commands = [
+        ...new Set([...(mission.verify.commands || []), ...floor]),
+      ];
+      mission.autoMerge = cfg.self?.requireMergeApproval === true ? false : true;
+    }
+  } catch {
+    /* self detection is best-effort; non-self behavior unchanged */
+  }
   // Execution strategy: "solo" (single agent, default), "swarm" (plan emits
   // a task graph → dependency-aware fan-out in the worktree), or
   // "tournament" (B4: N competing implementations → deterministic verify
@@ -1048,6 +1078,30 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
   mission.status = "done";
   mission.mergedAt = new Date().toISOString();
   mission.mergeCommit = out.commit || null;
+  // A4: a merged SELF mission hands off to the external deploy watcher — the
+  // gateway cannot supervise its own restart. Requires the A3 commit; a
+  // dirty-repo commitless merge parks the mission honestly.
+  if (mission.profile === "self") {
+    if (out.commit) {
+      try {
+        const { requestDeploy } = await import("../self/deploy.mjs");
+        const { latestKnownGood } = await import("../git/timeline.mjs");
+        const kg = await latestKnownGood(mission.repoDir).catch(() => null);
+        await requestDeploy(cfg, {
+          missionId: mission.id,
+          repoDir: mission.repoDir,
+          mergeCommit: out.commit,
+          prevKnownGood: kg && kg.sha !== out.commit ? kg.sha : null,
+        });
+        mission.status = "deploying";
+        addEvent(mission, "deploy", `deploy intent written (commit ${out.commit.slice(0, 10)}) — watcher will restart + health-gate`);
+      } catch (e) {
+        addEvent(mission, "deploy", `deploy request failed: ${e.message} — merged but NOT deployed`);
+      }
+    } else {
+      addEvent(mission, "deploy", "self merge had no commit (dirty repo?) — deploy skipped, restart manually");
+    }
+  }
   addEvent(
     mission,
     "merge",
@@ -1059,7 +1113,9 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
     try {
       const { setMissionRef, markKnownGood } = await import("../git/timeline.mjs");
       await setMissionRef(mission.repoDir, mission.id, out.commit);
-      if (cfg.missions?.markKnownGoodOnMerge !== false) {
+      // Self missions mark known-good only AFTER the deploy health gate
+      // passes (the watcher does it) — a merge is not yet a good state.
+      if (cfg.missions?.markKnownGoodOnMerge !== false && mission.profile !== "self") {
         await markKnownGood(mission.repoDir, { sha: out.commit, note: mission.id });
       }
     } catch {

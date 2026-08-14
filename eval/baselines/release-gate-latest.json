@@ -1,26 +1,27 @@
 {
-  "at": "2026-08-06T16:01:24.903Z",
+  "at": "2026-08-14T10:28:08.597Z",
   "quick": true,
   "strict": false,
+  "live": false,
   "steps": [
     {
       "name": "unit tests",
       "ok": true,
       "required": true,
-      "ms": 25018,
-      "detail": "ℹ tests 158 | ℹ pass 158 | ℹ fail 0",
+      "ms": 29865,
+      "detail": "# tests 1597 | # pass 1592 | # fail 0",
       "code": 0
     },
     {
       "name": "security-audit",
       "ok": true,
       "required": true,
-      "ms": 85,
+      "ms": 42,
       "detail": {
-        "at": "2026-08-06T16:01:24.897Z",
+        "at": "2026-08-14T10:28:08.415Z",
         "ok": true,
         "errors": 0,
-        "warnings": 1,
+        "warnings": 0,
         "findings": [
           {
             "id": "gateway.bind",
@@ -30,14 +31,20 @@
           },
           {
             "id": "gateway.token",
-            "level": "info",
-            "message": "No XCLAW_GATEWAY_TOKEN / gateway.token",
-            "fix": "Export XCLAW_GATEWAY_TOKEN for any non-local or multi-user deploy"
+            "level": "ok",
+            "message": "Gateway token configured",
+            "fix": null
           },
           {
             "id": "security.autoApprove",
             "level": "ok",
             "message": "autoApprove off",
+            "fix": null
+          },
+          {
+            "id": "security.systemRunPlan",
+            "level": "ok",
+            "message": "bindSystemRunPlan on (frozen argv/cwd/exe before approval)",
             "fix": null
           },
           {
@@ -54,12 +61,32 @@
           },
           {
             "id": "apiKey",
-            "level": "warn",
-            "message": "no model API key in env/config",
+            "level": "ok",
+            "message": "model API key present",
             "fix": null
           }
         ]
       },
+      "code": 0
+    },
+    {
+      "name": "a-enforcement",
+      "ok": true,
+      "required": false,
+      "ms": 133,
+      "detail": "  [OK  ] bundle.a5: A5: single Chrome argv |   [OK  ] computer.live: healthy |  | Summary: 0 fail(s), 0 warning(s) — exit 0 | ",
+      "code": 0
+    },
+    {
+      "name": "bundle-markers",
+      "ok": true,
+      "required": false,
+      "ms": 43,
+      "detail": [
+        "A2: driver hooks",
+        "A4: humanized CDP motor",
+        "A5: single Chrome argv"
+      ],
       "code": 0
     }
   ],

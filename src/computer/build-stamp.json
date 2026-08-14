@@ -1,7 +1,7 @@
 {
   "strategy": "C",
   "phase": "C3",
-  "builtAt": "2026-08-14T10:18:54.670Z",
+  "builtAt": "2026-08-14T10:27:44.387Z",
   "fullRebuild": false,
   "generatedEmit": true,
   "generatedPath": "src/computer/generated/computer-server.mjs",
