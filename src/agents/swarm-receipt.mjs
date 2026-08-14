@@ -43,6 +43,147 @@ export function resolveCriticalRoles(opts = {}, cfg = {}) {
   return [...new Set(list.map((x) => String(x).toLowerCase()).filter(Boolean))];
 }
 
+/** JSON-schema-like contract for receipt v1 (no external AJV dependency). */
+export const RECEIPT_SCHEMA_V1 = Object.freeze({
+  $id: "xclaw://swarm-receipt/v1",
+  type: "object",
+  required: [
+    "id",
+    "v",
+    "kind",
+    "swarmId",
+    "nodeId",
+    "ok",
+    "status",
+    "at",
+  ],
+  properties: {
+    id: { type: "string", pattern: "^rcpt_" },
+    v: { type: "number", const: 1 },
+    kind: { type: "string", const: "swarm_node" },
+    swarmId: { type: "string", minLength: 1 },
+    nodeId: { type: "string", minLength: 1 },
+    ok: { type: "boolean" },
+    status: {
+      type: "string",
+      enum: [
+        "done",
+        "error",
+        "skipped",
+        "failed",
+        "aborted",
+        "pending",
+        "running",
+      ],
+    },
+    code: { type: ["string", "null"] },
+    error: { type: ["string", "null"] },
+    role: { type: ["string", "null"] },
+    effects: { type: "array" },
+    tools: { type: ["object", "null"] },
+    artifacts: { type: "array" },
+    at: { type: "string", minLength: 1 },
+  },
+});
+
+function typeOf(v) {
+  if (v === null) return "null";
+  if (Array.isArray(v)) return "array";
+  return typeof v;
+}
+
+function matchesType(v, spec) {
+  const allowed = Array.isArray(spec) ? spec : [spec];
+  const t = typeOf(v);
+  for (const a of allowed) {
+    if (a === "null" && v === null) return true;
+    if (a === t) return true;
+    // JSON schema "number" includes integers
+    if (a === "number" && t === "number" && !Number.isNaN(v)) return true;
+  }
+  return false;
+}
+
+/**
+ * Validate a receipt against RECEIPT_SCHEMA_V1 (hand-rolled).
+ * @returns {{ ok: boolean, errors: string[], schema: string }}
+ */
+export function validateReceiptShape(receipt, opts = {}) {
+  const errors = [];
+  const schema = RECEIPT_SCHEMA_V1;
+  if (receipt == null || typeOf(receipt) !== "object") {
+    return {
+      ok: false,
+      errors: ["receipt must be a non-null object"],
+      schema: schema.$id,
+    };
+  }
+
+  for (const key of schema.required) {
+    if (key === "ok") {
+      if (typeof receipt.ok !== "boolean") {
+        errors.push("missing or invalid required field: ok (boolean)");
+      }
+      continue;
+    }
+    if (receipt[key] === undefined || receipt[key] === null || receipt[key] === "") {
+      errors.push(`missing required field: ${key}`);
+    }
+  }
+
+  const props = schema.properties;
+  for (const [key, rules] of Object.entries(props)) {
+    if (receipt[key] === undefined) continue;
+    const val = receipt[key];
+    if (rules.type && !matchesType(val, rules.type)) {
+      errors.push(
+        `${key} type want ${JSON.stringify(rules.type)} got ${typeOf(val)}`
+      );
+      continue;
+    }
+    if (rules.const !== undefined && val !== rules.const) {
+      errors.push(`${key} must equal ${JSON.stringify(rules.const)}`);
+    }
+    if (rules.pattern && typeof val === "string") {
+      const re = new RegExp(rules.pattern);
+      if (!re.test(val)) errors.push(`${key} must match ${rules.pattern}`);
+    }
+    if (rules.minLength != null && typeof val === "string") {
+      if (val.length < rules.minLength) {
+        errors.push(`${key} minLength ${rules.minLength}`);
+      }
+    }
+    if (rules.enum && !rules.enum.includes(val)) {
+      // allow unknown status strings as warn-only unless strict
+      if (opts.strictStatus === true) {
+        errors.push(`${key} must be one of ${rules.enum.join("|")}`);
+      }
+    }
+  }
+
+  // Cross-field: success should not look like error status when strict
+  if (opts.strictOutcome === true && receipt.ok === true) {
+    const st = String(receipt.status || "");
+    if (["error", "failed", "skipped", "aborted"].includes(st)) {
+      errors.push(`ok=true inconsistent with status=${st}`);
+    }
+  }
+  if (opts.strictOutcome === true && receipt.ok === false) {
+    const st = String(receipt.status || "");
+    if (st === "done") {
+      errors.push("ok=false inconsistent with status=done");
+    }
+  }
+
+  // Deduplicate missing ok messages
+  const uniq = [...new Set(errors)];
+  return {
+    ok: uniq.length === 0,
+    errors: uniq,
+    schema: schema.$id,
+  };
+}
+
 function swarmsRoot(cfg) {
   return path.join(
     cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"),
@@ -192,9 +333,24 @@ export function buildNodeReceipt(ctx = {}) {
 /**
  * Persist receipt under runs/<swarmId>/receipts/<nodeId>.json
  */
-export async function writeNodeReceipt(cfg, receipt) {
+export async function writeNodeReceipt(cfg, receipt, writeOpts = {}) {
   if (!receipt?.swarmId || !receipt?.nodeId) {
     return { ok: false, code: "RECEIPT_IDS_REQUIRED" };
+  }
+  const skipShape = writeOpts.skipShapeValidation === true;
+  if (!skipShape) {
+    const shape = validateReceiptShape(receipt, {
+      strictStatus: writeOpts.strictStatus === true,
+      strictOutcome: writeOpts.strictOutcome === true,
+    });
+    if (!shape.ok) {
+      return {
+        ok: false,
+        code: "RECEIPT_SCHEMA_INVALID",
+        errors: shape.errors,
+        schema: shape.schema,
+      };
+    }
   }
   const dir = receiptsDir(cfg, receipt.swarmId);
   await fs.mkdir(dir, { recursive: true });
@@ -207,11 +363,18 @@ export async function writeNodeReceipt(cfg, receipt) {
   return { ok: true, path: fp, receipt };
 }
 
-export async function readNodeReceipt(cfg, swarmId, nodeId) {
+export async function readNodeReceipt(cfg, swarmId, nodeId, readOpts = {}) {
   try {
     const safeNode = String(nodeId).replace(/[^a-zA-Z0-9._-]/g, "_");
     const fp = path.join(receiptsDir(cfg, swarmId), `${safeNode}.json`);
-    return JSON.parse(await fs.readFile(fp, "utf8"));
+    const data = JSON.parse(await fs.readFile(fp, "utf8"));
+    if (readOpts.validate === true) {
+      const shape = validateReceiptShape(data, readOpts);
+      if (!shape.ok) {
+        return { __invalid: true, errors: shape.errors, data };
+      }
+    }
+    return data;
   } catch {
     return null;
   }
@@ -434,6 +597,8 @@ export default {
   DEFAULT_CRITICAL_ROLES,
   CRITICAL_ROLES,
   resolveCriticalRoles,
+  RECEIPT_SCHEMA_V1,
+  validateReceiptShape,
   buildNodeReceipt,
   writeNodeReceipt,
   readNodeReceipt,
