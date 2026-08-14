@@ -1,9 +1,9 @@
 {
-  "$schema_note": "Strategy C4 — tool capability parity across computer engines. Source of truth for CI gate scripts/check-computer-parity.mjs",
+  "$schema_note": "Strategy C4 \u2014 tool capability parity across computer engines. Source of truth for CI gate scripts/check-computer-parity.mjs",
   "version": 1,
   "strategy": "C",
   "phase": "C4",
-  "updatedAt": "2026-08-12",
+  "updatedAt": "2026-08-15",
   "policy": {
     "defaultEngine": "native",
     "fallbackEngine": "bundle",
@@ -22,7 +22,7 @@
     },
     "bundle": {
       "entry": "src/computer/xclaw-server.mjs",
-      "role": "legacy full CDP runtime — do not hand-edit; explicit fallback only"
+      "role": "legacy full CDP runtime \u2014 do not hand-edit; explicit fallback only"
     }
   },
   "statusEnum": [
@@ -72,20 +72,20 @@
     {
       "name": "xclaw_browser_tab",
       "maintainedModule": "src/computer/modules/browser-tab-tool.mjs",
-      "native": "partial",
-      "generated": "partial",
+      "native": "parity",
+      "generated": "parity",
       "bundle": "parity",
       "defaultPath": true,
-      "notes": "Thin path has CLEAN tab tool; full CDP tab surface still richer in bundle"
+      "notes": "Native-fetch: navigate/list/read + network summary; jsCode/screenshot need CDP bundle"
     },
     {
       "name": "xclaw_browser_network_details",
-      "maintainedModule": null,
-      "native": "missing",
-      "generated": "missing",
+      "maintainedModule": "src/computer/modules/browser-network-details-tool.mjs",
+      "native": "parity",
+      "generated": "parity",
       "bundle": "parity",
-      "defaultPath": false,
-      "notes": "Extracted reference only; promote to CLEAN module before defaultPath"
+      "defaultPath": true,
+      "notes": "CLEAN native primary navigation request; multi-resource CDP still richer in bundle"
     },
     {
       "name": "BrowserService",
@@ -94,7 +94,7 @@
       "generated": "missing",
       "bundle": "parity",
       "defaultPath": false,
-      "notes": "Dead browser-service.mjs extract deleted 3.82.0 (never ran — undefined identifiers); full CDP lives only in the bundle engine"
+      "notes": "Dead browser-service.mjs extract deleted 3.82.0 (never ran \u2014 undefined identifiers); full CDP lives only in the bundle engine"
     },
     {
       "name": "skills-context",

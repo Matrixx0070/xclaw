@@ -12,6 +12,7 @@ import {
   FileWriteTool,
   FileEditTool,
   BrowserTabTool,
+  BrowserNetworkDetailsTool,
 } from "./modules/registry.mjs";
 
 export const NATIVE_TOOLS = MAINTAINED_TOOLS;
@@ -39,7 +40,7 @@ export function nativeToolsAsOpenAI() {
   }));
 }
 
-export { runBash, BashTool, FileReadTool, FileWriteTool, FileEditTool, BrowserTabTool };
+export { runBash, BashTool, FileReadTool, FileWriteTool, FileEditTool, BrowserTabTool, BrowserNetworkDetailsTool };
 
 export default {
   listNativeTools,

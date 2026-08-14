@@ -206,15 +206,35 @@ export async function runBrowserTab(input = {}) {
   const text = htmlToText(res.body);
   const links = extractLinks(res.body, res.finalUrl || input.url);
   const id = input.tabId && tabs.has(input.tabId) ? input.tabId : nextId();
+  const finalUrl = res.finalUrl || input.url;
+  const requestId = `req_${id}`;
+  const networkEntry = {
+    requestId,
+    method: "GET",
+    url: finalUrl,
+    status: res.status,
+    requestHeaders: {
+      "user-agent": "XClawNativeBrowser/3.75",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+    responseHeaders: {
+      "content-type": "text/html; charset=utf-8",
+    },
+    responseBodyPreview: String(res.body || "").slice(0, 8000),
+    responseBodyBytes: Buffer.byteLength(String(res.body || ""), "utf8"),
+    at: new Date().toISOString(),
+  };
+
   const tab = {
     id,
-    url: res.finalUrl || input.url,
+    url: finalUrl,
     title,
     description,
     text,
     links,
     status: res.status,
     at: new Date().toISOString(),
+    network: [networkEntry],
   };
   tabs.set(id, tab);
 
@@ -230,16 +250,32 @@ export async function runBrowserTab(input = {}) {
     links: links.slice(0, 20),
     engine: "native-fetch",
     networkSummaries: input.includeNetwork
-      ? [
-          {
-            requestId: "nav1",
-            method: "GET",
-            url: tab.url,
-            status: tab.status,
-          },
-        ]
+      ? tab.network.map((n) => ({
+          requestId: n.requestId,
+          method: n.method,
+          url: n.url,
+          status: n.status,
+        }))
       : undefined,
   };
+}
+
+/** Shared accessors for network-details + tests */
+export function getTab(tabId) {
+  return tabs.get(tabId) || null;
+}
+
+export function listTabNetwork(tabId) {
+  const tab = tabs.get(tabId);
+  if (!tab) return null;
+  return tab.network || [];
+}
+
+export function getNetworkEntry(tabId, requestId) {
+  const list = listTabNetwork(tabId);
+  if (!list) return null;
+  if (requestId) return list.find((n) => n.requestId === requestId) || null;
+  return list[list.length - 1] || null;
 }
 
 /** Test helper */

@@ -15,6 +15,10 @@ import {
   fileEdit,
 } from "./file-tools.mjs";
 import { BrowserTabTool, runBrowserTab } from "./browser-tab-tool.mjs";
+import {
+  BrowserNetworkDetailsTool,
+  runBrowserNetworkDetails,
+} from "./browser-network-details-tool.mjs";
 
 /** @typedef {{ name: string, description: any, inputSchema?: object, call: Function }} ComputerTool */
 
@@ -25,13 +29,13 @@ export const MAINTAINED_TOOLS = [
   FileWriteTool,
   FileEditTool,
   BrowserTabTool,
+  BrowserNetworkDetailsTool,
 ];
 
 /** Roles still only in bundle / extracted snapshots (not yet CLEAN) */
 export const BUNDLE_ONLY_REGIONS = [
   "http-server-main",
   "skills-context",
-  "browser-network-details-tool",
   "BrowserService",
 ];
 
@@ -72,6 +76,8 @@ export {
   fileEdit,
   BrowserTabTool,
   runBrowserTab,
+  BrowserNetworkDetailsTool,
+  runBrowserNetworkDetails,
 };
 
 export default {
