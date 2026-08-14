@@ -29,6 +29,10 @@ async function saveLedger(cfg, ledger) {
   await fs.writeFile(fp, JSON.stringify(ledger, null, 2));
 }
 
+export function getCostLimits(cfg) {
+  return limits(cfg);
+}
+
 function limits(cfg) {
   const g = cfg?.cost || cfg?.tokens?.cost || {};
   return {
@@ -111,7 +115,16 @@ function bandFor(spent, lim, paused, economyAt) {
 export async function recordJobCost(cfg, { usd = 0, jobId = null, estimated = false } = {}) {
   let ledger = await loadLedger(cfg);
   if (ledger.day !== dayKey()) {
-    ledger = { day: dayKey(), spentUsd: 0, jobs: 0, paused: false, events: [] };
+    ledger = {
+      day: dayKey(),
+      spentUsd: 0,
+      spentBilledUsd: 0,
+      spentEstimatedUsd: 0,
+      jobs: 0,
+      paused: false,
+      events: [],
+      lastBand: "normal",
+    };
   }
   const lim = limits(cfg);
   const economyAt = cfg?.cost?.economyAtUsd ?? lim.dailySoftUsd;
@@ -216,6 +229,14 @@ export async function setCostGovernorPaused(cfg, paused) {
  * rates-table matching (this function used to duplicate the substring
  * match). modelRef overrides cfg.agent.model when the router downshifted.
  */
+/** Prompt tokens threshold for xAI-style long-context 2x band. */
+export const LONG_CONTEXT_PROMPT_TOKENS = 200_000;
+
+/**
+ * Rough USD from token usage. Uses list rates from getModelMeta.
+ * Long-context: when prompt ≥ 200k and rate has longIn/longOut, bill the
+ * whole request at the long band (matches xAI: higher rate for ALL tokens).
+ */
 export function estimateUsdFromUsage(usage, cfg = {}, { modelRef = null } = {}) {
   if (!usage) return 0;
   const ref = modelRef || cfg.agent?.model || "default";
@@ -228,7 +249,30 @@ export function estimateUsdFromUsage(usage, cfg = {}, { modelRef = null } = {}) 
   if (!rate || (!rate.in && !rate.out)) {
     rate = cfg.tokens?.rates?.default || { in: 1e-6, out: 3e-6 };
   }
-  const inn = usage.prompt_tokens || usage.input_tokens || 0;
-  const out = usage.completion_tokens || usage.output_tokens || 0;
-  return Math.round((inn * (rate.in || 0) + out * (rate.out || 0)) * 1e6) / 1e6;
+  const inn = Number(
+    usage.prompt_tokens ?? usage.input_tokens ?? usage.promptTokens ?? 0
+  ) || 0;
+  const out = Number(
+    usage.completion_tokens ?? usage.output_tokens ?? usage.completionTokens ?? 0
+  ) || 0;
+  const cached = Number(
+    usage.cached_tokens ?? usage.cache_read_input_tokens ?? usage.cachedTokens ?? 0
+  ) || 0;
+
+  const long =
+    inn >= LONG_CONTEXT_PROMPT_TOKENS &&
+    (rate.longIn != null || rate.longOut != null);
+  const inRate = long ? (rate.longIn ?? rate.in * 2) : rate.in || 0;
+  const outRate = long ? (rate.longOut ?? rate.out * 2) : rate.out || 0;
+  const cachedRate = long
+    ? (rate.longCachedIn ?? rate.cachedIn ?? inRate)
+    : (rate.cachedIn ?? inRate);
+
+  // Bill non-cached input at full rate; cached portion at cached rate when known
+  const uncachedIn = Math.max(0, inn - cached);
+  const usd =
+    uncachedIn * inRate +
+    cached * cachedRate +
+    out * outRate;
+  return Math.round(usd * 1e6) / 1e6;
 }

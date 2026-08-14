@@ -308,6 +308,16 @@ const DEFAULT_FAMILY_RATES = {
   fable: { in: 15e-6, out: 75e-6 },
   sonnet: { in: 3e-6, out: 15e-6 },
   haiku: { in: 0.8e-6, out: 4e-6 },
+  // xAI list prices ($/token) — short-context band; long-context handled in estimateUsdFromUsage
+  "grok-4.5": { in: 2e-6, out: 6e-6, cachedIn: 0.3e-6, longIn: 4e-6, longOut: 12e-6, longCachedIn: 0.6e-6 },
+  "grok-4.3": { in: 1.25e-6, out: 2.5e-6, cachedIn: 0.2e-6, longIn: 2.5e-6, longOut: 5e-6, longCachedIn: 0.4e-6 },
+  "grok-4.20": { in: 1.25e-6, out: 2.5e-6, cachedIn: 0.2e-6, longIn: 2.5e-6, longOut: 5e-6, longCachedIn: 0.4e-6 },
+  "grok-build": { in: 1e-6, out: 2e-6, cachedIn: 0.2e-6, longIn: 2e-6, longOut: 4e-6, longCachedIn: 0.4e-6 },
+  "grok-code-fast": { in: 0.2e-6, out: 1.5e-6 },
+  "grok-4-fast": { in: 0.2e-6, out: 0.5e-6 },
+  "grok-4.1-fast": { in: 0.2e-6, out: 0.5e-6 },
+  "grok-3-mini": { in: 0.1e-6, out: 0.3e-6 },
+  // legacy flagship (launch-era)
   "grok-4": { in: 3e-6, out: 15e-6 },
 };
 
@@ -337,9 +347,20 @@ export function getModelMeta(cfg = {}, modelRef = "") {
   // day, ledger $0.0000) — leaving the cost governor and the B3 economy
   // band completely blind. Config (tokens.rates / models.meta) still wins.
   if (!cost) {
-    for (const [fam, r] of Object.entries(DEFAULT_FAMILY_RATES)) {
-      if ((model || ref).toLowerCase().includes(fam)) {
-        cost = { in: r.in, out: r.out };
+    const nameL = (model || ref).toLowerCase();
+    const families = Object.entries(DEFAULT_FAMILY_RATES).sort(
+      (a, b) => b[0].length - a[0].length
+    );
+    for (const [fam, r] of families) {
+      if (nameL.includes(fam)) {
+        cost = {
+          in: r.in || 0,
+          out: r.out || 0,
+          cachedIn: r.cachedIn,
+          longIn: r.longIn,
+          longOut: r.longOut,
+          longCachedIn: r.longCachedIn,
+        };
         costSource = `default:${fam}`;
         break;
       }

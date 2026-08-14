@@ -402,6 +402,34 @@ export async function runAgentLoop(options) {
     contextSections,
   });
 
+  // Cost governor pre-check — refuse before computer/session when hard-capped
+  try {
+    const { checkCostBudget } = await import("../tokens/cost-governor.mjs");
+    const budget = await checkCostBudget(cfg);
+    if (!budget.ok) {
+      onEvent({
+        type: "cost",
+        phase: "blocked",
+        spentUsd: budget.spentUsd,
+        message: budget.message,
+      });
+      throw new Error(budget.message || "cost hard cap exceeded");
+    }
+    if (budget.soft) {
+      onEvent({
+        type: "cost",
+        phase: "soft_warning",
+        spentUsd: budget.spentUsd,
+        message: budget.message,
+      });
+    }
+  } catch (e) {
+    if (String(e?.message || e).includes("hard cap") || String(e?.message || "").includes("Hard daily")) {
+      throw e;
+    }
+    /* governor optional if module/fs fails */
+  }
+
   // Computer session
   const ready = await ensureComputer(cfg, { log: cfg.computer?.logEnsure !== false });
   if (!ready.ok) {
