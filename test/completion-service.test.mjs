@@ -109,3 +109,16 @@ describe("buffer-derived imports (new/unsaved files)", () => {
     fs.rmSync(repo, { recursive: true, force: true });
   });
 });
+
+describe("path containment", () => {
+  it("a file escaping repoDir yields empty context (no out-of-repo reads)", async () => {
+    const os3 = await import("node:os");
+    const repo = fs.mkdtempSync(path.join(os3.default.tmpdir(), "xclaw-complete4-"));
+    fs.writeFileSync(path.join(repo, "a.js"), "module.exports = {};\n");
+    const ctx = await buildCompletionContext(repo, "../../etc/passwd", { buffer: "" });
+    assert.deepEqual(ctx, { text: "", files: [] });
+    const ctx2 = await buildCompletionContext(repo, "/etc/passwd", { buffer: "" });
+    assert.deepEqual(ctx2, { text: "", files: [] });
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+});

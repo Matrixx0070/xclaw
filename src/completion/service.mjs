@@ -47,13 +47,20 @@ export async function buildCompletionContext(repoDir, file, { budgetChars = 4000
   } catch {
     return { text: "", files: [] };
   }
-  const rel = path.isAbsolute(file) ? path.relative(repoDir, file) : file;
+  // Containment: the target must resolve INSIDE repoDir — a crafted
+  // file="../../x" must never widen the scan/read beyond the stated repo.
+  const rootAbs = path.resolve(repoDir);
+  const fileAbs = path.resolve(rootAbs, String(file || "untitled"));
+  if (fileAbs !== rootAbs && !fileAbs.startsWith(rootAbs + path.sep)) {
+    return { text: "", files: [] };
+  }
+  const rel = path.relative(rootAbs, fileAbs) || "untitled";
   const base = path.basename(rel).replace(/\.[^.]+$/, "");
   // The editor buffer (prefix) is the truth for imports — the file on disk
   // may be stale or not exist yet (new files are the common completion case).
   let targetImports = extractImports(rel, String(buffer || ""));
   try {
-    const content = await fs.readFile(path.join(repoDir, rel), "utf8");
+    const content = await fs.readFile(fileAbs, "utf8");
     targetImports = [...new Set([...targetImports, ...extractImports(rel, content)])];
   } catch {
     /* unsaved/new file — buffer imports + importers-of-target only */

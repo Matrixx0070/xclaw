@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.106.1 — completion path containment
+
+Commit security review follow-up: `buildCompletionContext` now refuses a
+target file that resolves outside `repoDir` (`../../x` or absolute escapes →
+empty context, no out-of-repo reads). The arbitrary-`repoDir` surface of
+/complete//missions//point is acknowledged by design: those routes are
+operator-token gated, and the operator already holds `xclaw_bash`-level host
+access — same trust class, no widening.
+
 ## 3.106.0 — Repo-aware code completion service
 
 Final NEXT-LEVEL roadmap increment: completion-aware code completion.
