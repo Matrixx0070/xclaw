@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.108.0 — Point-and-prompt in the webchat
+
+Post-roadmap candidate 3: the picker is no longer Control-UI-only.
+
+- The webchat composer gains a 🎯 button: prompts for the app URL (+ optional
+  repository path, both remembered), arms the picker overlay in the app's tab
+  via POST /point/pick, and drops the picked element's descriptor + resolved
+  source locations (/point/resolve) into the composer — the chat agent takes
+  it from there with its normal tools.
+- Live-proven: 🎯 → real click on a running page's element → composer
+  auto-filled with `[pointed element] <p class="tagline">…` + correct
+  `src/index.html:11, src/style.css:3` resolutions.
+
 ## 3.107.0 — Phase-aware mission resume + transactional worktree merge
 
 Post-roadmap candidates 1 & 2.

@@ -40,6 +40,56 @@ let sessionId = localStorage.getItem("xclaw_session") || null;
 let streaming = false;
 let abortCtl = null;
 
+// ——— point-and-prompt: pick an element from the running app, drop its
+// descriptor + resolved source locations into the composer ————————————
+const pointBtn = $("point");
+pointBtn?.addEventListener("click", async () => {
+  const lastUrl = localStorage.getItem("xclaw_point_url") || "http://127.0.0.1:8099/";
+  const url = window.prompt("App URL to point at (opens in the Control browser):", lastUrl);
+  if (!url) return;
+  localStorage.setItem("xclaw_point_url", url);
+  const lastRepo = localStorage.getItem("xclaw_point_repo") || "";
+  const repoDir = window.prompt("Repository path (optional — resolves the element to source files):", lastRepo);
+  if (repoDir != null) localStorage.setItem("xclaw_point_repo", repoDir);
+  pointBtn.disabled = true;
+  pointBtn.textContent = "…";
+  try {
+    const r = await fetch("/point/pick", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+    }).then((x) => x.json());
+    if (r.cancelled) return;
+    if (!r.ok) throw new Error(r.error || "pick failed");
+    const e = r.element;
+    const lines = [
+      `[pointed element] <${e.tag}${e.id ? ` id="${e.id}"` : ""}${e.classes?.length ? ` class="${e.classes.join(" ")}"` : ""}>` +
+        (e.text ? ` — "${e.text.slice(0, 80)}"` : ""),
+      `page: ${e.url || url}${e.selector ? ` · selector: ${e.selector}` : ""}`,
+    ];
+    if (repoDir) {
+      const rr = await fetch("/point/resolve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repoDir, element: e }),
+      }).then((x) => x.json());
+      if (rr.ok && rr.matches?.length) {
+        lines.push(`likely sources (${repoDir}): ` + rr.matches.slice(0, 5).map((m) => `${m.file}:${m.line}`).join(", "));
+      }
+    }
+    const block = lines.join("\n") + "\n\n";
+    input.value = block + input.value;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event("input"));
+  } catch (err) {
+    window.alert("Point failed: " + (err.message || err));
+  } finally {
+    pointBtn.disabled = false;
+    pointBtn.textContent = "🎯";
+  }
+});
+
 // ——— helpers ————————————————————————————————————————————————————————
 
 const nearBottom = () => scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 140;
