@@ -787,6 +787,82 @@ export function createBeforeWriteGuard(opts = {}) {
   };
 }
 
+/**
+ * Write receipt JSON with in-memory snapshot rollback support.
+ */
+export async function writeReceiptWithRollback(fp, nextReceipt, opts = {}) {
+  const previousRaw =
+    opts.previousRaw != null
+      ? opts.previousRaw
+      : await fs.readFile(fp, "utf8").catch(() => null);
+  const payload = JSON.stringify(nextReceipt, null, 2) + "\n";
+  try {
+    await fs.writeFile(fp, payload);
+  } catch (e) {
+    return {
+      ok: false,
+      written: false,
+      rolledBack: false,
+      error: e.message || String(e),
+    };
+  }
+
+  if (opts.verifyReadBack !== false) {
+    try {
+      const onDisk = JSON.parse(await fs.readFile(fp, "utf8"));
+      const shape = validateReceiptShape(onDisk);
+      if (!shape.ok) {
+        if (previousRaw != null && opts.rollback !== false) {
+          await fs.writeFile(fp, previousRaw);
+          return {
+            ok: false,
+            written: false,
+            rolledBack: true,
+            error: `read-back schema invalid: ${shape.errors.join("; ")}`,
+            shapeErrors: shape.errors,
+          };
+        }
+        return {
+          ok: false,
+          written: true,
+          rolledBack: false,
+          error: `read-back schema invalid: ${shape.errors.join("; ")}`,
+          shapeErrors: shape.errors,
+        };
+      }
+    } catch (e) {
+      if (previousRaw != null && opts.rollback !== false) {
+        await fs.writeFile(fp, previousRaw);
+        return {
+          ok: false,
+          written: false,
+          rolledBack: true,
+          error: `read-back failed: ${e.message}`,
+        };
+      }
+      return {
+        ok: false,
+        written: true,
+        rolledBack: false,
+        error: `read-back failed: ${e.message}`,
+      };
+    }
+  }
+
+  return { ok: true, written: true, rolledBack: false, previousRaw };
+}
+
+/**
+ * Restore previousRaw to path (explicit rollback).
+ */
+export async function rollbackReceiptFile(fp, previousRaw) {
+  if (previousRaw == null) {
+    return { ok: false, error: "no_previous_snapshot" };
+  }
+  await fs.writeFile(fp, previousRaw);
+  return { ok: true };
+}
+
 export async function migrateReceiptsInDir(dir, opts = {}) {
   const doWrite = opts.write === true || opts.dryRun === false;
   const hooks = opts.hooks || {};
@@ -931,23 +1007,71 @@ export async function migrateReceiptsInDir(dir, opts = {}) {
           });
         } catch { /* */ }
       } else {
-        await fs.writeFile(fp, JSON.stringify(mig.receipt, null, 2) + "\n");
+        const previousRaw = JSON.stringify(data, null, 2) + "\n";
+        const wr = await writeReceiptWithRollback(fp, mig.receipt, {
+          previousRaw,
+          verifyReadBack: opts.verifyReadBack !== false,
+          rollback: opts.rollback !== false,
+        });
+        if (!wr.ok) {
+          writeDeniedReason = wr.rolledBack ? "rolled_back" : "write_failed";
+          try {
+            await hooks.onSkip?.({
+              file: f,
+              reason: writeDeniedReason,
+              detail: wr.error,
+            });
+          } catch { /* */ }
+          results.push({
+            file: f,
+            ok: false,
+            phase: wr.rolledBack ? "rollback" : "write",
+            changed: mig.changed,
+            from: mig.from,
+            to: mig.to,
+            written: wr.written,
+            rolledBack: wr.rolledBack,
+            error: wr.error,
+            writeDeniedReason,
+            shapeOk: shape.ok,
+            shapeErrors: shape.errors,
+          });
+          continue;
+        }
         written = true;
         try {
           await hooks.afterWrite?.({
             file: f,
             path: fp,
             receipt: mig.receipt,
+            previous: data,
             from: mig.from,
             to: mig.to,
+            rollback: async () => rollbackReceiptFile(fp, previousRaw),
           });
         } catch (e) {
+          let rolledBack = false;
+          if (opts.rollbackOnAfterWriteError !== false) {
+            const rb = await rollbackReceiptFile(fp, previousRaw);
+            rolledBack = rb.ok === true;
+            try {
+              await hooks.onRollback?.({
+                file: f,
+                path: fp,
+                reason: "afterWrite_error",
+                error: e.message,
+              });
+            } catch { /* */ }
+          }
           results.push({
             file: f,
             ok: false,
             phase: "afterWrite",
-            written: true,
+            written: !rolledBack,
+            rolledBack,
             error: `afterWrite: ${e.message}`,
+            from: mig.from,
+            to: mig.to,
           });
           continue;
         }
@@ -992,6 +1116,8 @@ export default {
   migrateReceiptStatusFields,
   preValidateReceiptForMigration,
   createBeforeWriteGuard,
+  writeReceiptWithRollback,
+  rollbackReceiptFile,
   resolveBeforeWriteDecision,
   migrateReceiptsInDir,
   buildNodeReceipt,
