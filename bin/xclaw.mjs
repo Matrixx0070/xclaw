@@ -1733,6 +1733,11 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         await startComputer({ root, foreground: false });
       }
       console.log(`[xclaw] Agent model: ${cfg.agent?.model || "gpt-4o-mini"}`);
+      // Sticky cache: default a session id so multi-invocation CLIs can share
+      // via --session; auto-generate when unset (single-run still warms within loop).
+      if (!sessionId && cfg.tokens?.autoSession !== false) {
+        sessionId = `cli-${Date.now().toString(36)}`;
+      }
       if (sessionId) console.log(`[xclaw] session: ${sessionId}`);
       const result = await runAgentLoop({
         userMessage: message,

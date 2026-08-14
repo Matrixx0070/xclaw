@@ -451,7 +451,9 @@ export async function runAgentLoop(options) {
   // Optional run-scoped tool allowlist (cfg.agent.allowTools): narrows which
   // tools this run advertises AND dispatches. Missions use it to scope agents
   // to code work; approval gate/hooks/sandbox still apply to what remains.
-  const toolFilter = compileToolFilter(cfg.agent?.allowTools);
+  const effectiveAllowTools =
+    cfg.agent?.allowTools ?? resolveRoleToolPack(cfg) ?? undefined;
+  const toolFilter = compileToolFilter(effectiveAllowTools);
 
   let tools;
   try {
@@ -903,6 +905,8 @@ export async function runAgentLoop(options) {
               forceAct: turns > 0,
             })
           : null;
+      const roleForEffort = turnRole || "act";
+      const roleEffort = resolveRoleEffort(roleForEffort, cfg);
       const chatArgs = {
         messages,
         tools,
@@ -911,6 +915,7 @@ export async function runAgentLoop(options) {
         conversationId: transcriptId || sessionKey,
         sessionId: sessionKey,
         ...(turnRole ? { role: turnRole } : {}),
+        ...(roleEffort ? { reasoning_effort: roleEffort, effort: roleEffort } : {}),
       };
       // ── Hook: on_request — observers see turn metadata; system tier also
       // gets the live messages array.

@@ -71,3 +71,52 @@ describe("role router", () => {
     assert.equal(role, "draft");
   });
 });
+
+import {
+  resolveRoleEffort,
+  resolveRoleToolPack,
+  DEFAULT_ROLE_EFFORT,
+  ROLE_TOOL_PACKS,
+} from "../src/providers/role-router.mjs";
+
+describe("role effort and tool packs", () => {
+  it("DEFAULT_ROLE_EFFORT has act low and verify high", () => {
+    assert.equal(DEFAULT_ROLE_EFFORT.act, "low");
+    assert.equal(DEFAULT_ROLE_EFFORT.verify, "high");
+  });
+
+  it("resolveRoleEffort uses role defaults", () => {
+    assert.equal(resolveRoleEffort("act", {}), "low");
+    assert.equal(resolveRoleEffort("verify", {}), "high");
+  });
+
+  it("resolveRoleEffort honors roleEffort map", () => {
+    assert.equal(
+      resolveRoleEffort("act", { router: { roleEffort: { act: "medium" } } }),
+      "medium"
+    );
+  });
+
+  it("resolveRoleToolPack act returns core list", () => {
+    const pack = resolveRoleToolPack({ agent: { toolPack: "act" } });
+    assert.ok(Array.isArray(pack));
+    assert.ok(pack.includes("xclaw_bash"));
+    assert.ok(!pack.includes("web_search"));
+  });
+
+  it("resolveRoleToolPack browse includes search", () => {
+    const pack = resolveRoleToolPack({ agent: { toolPack: "browse" } });
+    assert.ok(pack.includes("web_search"));
+  });
+
+  it("explicit allowTools wins over toolPack", () => {
+    const pack = resolveRoleToolPack({
+      agent: { toolPack: "act", allowTools: ["web_search"] },
+    });
+    assert.deepEqual(pack, ["web_search"]);
+  });
+
+  it("full pack means no filter", () => {
+    assert.equal(resolveRoleToolPack({ agent: { toolPack: "full" } }), null);
+  });
+});

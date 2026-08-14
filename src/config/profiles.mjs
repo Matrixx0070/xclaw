@@ -43,23 +43,14 @@ export const PROFILES = {
       // Truncate verbose tool descriptions in the model schema payload
       maxToolDescriptionChars: 160,
     },
+    router: {
+      roleEffortEnabled: true,
+      roleEffort: { draft: "low", act: "low", verify: "high", strong: "high" },
+    },
     agent: {
       maxTurns: 20,
-      // Core tools only — full catalog bloats every prompt (~7k+ tool tokens).
-      // Override with agent.allowTools: null or a wider list when needed.
-      allowTools: [
-        "xclaw_bash",
-        "bash",
-        "xclaw_file_read",
-        "file_read",
-        "xclaw_file_write",
-        "file_write",
-        "xclaw_file_list",
-        "list_dir",
-        "web_search",
-        "xclaw_web_search",
-        "xclaw_skill",
-      ],
+      // Prefer pack name; allowTools still wins if set explicitly as array
+      toolPack: "act",
       // Repo/multi-step goals need headroom above 30 tool calls
       loopGuard: {
         enabled: true,

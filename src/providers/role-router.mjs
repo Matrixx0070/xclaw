@@ -27,6 +27,81 @@ import { parseModelRef } from "./registry.mjs";
 export const ROLES = Object.freeze(["draft", "act", "verify", "strong"]);
 
 /**
+ * Default reasoning effort by role (xAI / reasoning models).
+ * Override: router.roleEffort: { act: "low", verify: "high", draft: "low" }
+ */
+export const DEFAULT_ROLE_EFFORT = Object.freeze({
+  draft: "low",
+  act: "low",
+  verify: "high",
+  strong: "high",
+});
+
+/**
+ * @param {string} role
+ * @param {object} cfg
+ * @returns {string|null}
+ */
+export function resolveRoleEffort(role, cfg = {}) {
+  const overrides = cfg.router?.roleEffort || cfg.agent?.roleEffort || {};
+  const r = String(role || "act").toLowerCase();
+  if (overrides[r] != null && overrides[r] !== "") return String(overrides[r]);
+  if (overrides.default != null) return String(overrides.default);
+  // Global agent.reasoning.effort wins only when no role-specific default desired?
+  // Prefer role defaults for cost; explicit agent.reasoning.effort is floor override via call.
+  if (cfg.agent?.reasoning?.effort && cfg.router?.roleEffort === undefined && !cfg.agent?.roleEffort) {
+    // If user set a single global effort and no roleEffort map, keep global for all roles
+    // unless roleEffortEnabled explicitly true
+    if (cfg.router?.roleEffortEnabled === true) {
+      return DEFAULT_ROLE_EFFORT[r] || "low";
+    }
+    return String(cfg.agent.reasoning.effort);
+  }
+  if (cfg.router?.roleEffortEnabled === false) {
+    return cfg.agent?.reasoning?.effort ? String(cfg.agent.reasoning.effort) : null;
+  }
+  // Default: role-based efforts (cost-aware)
+  return DEFAULT_ROLE_EFFORT[r] || "low";
+}
+
+/** Core tool packs for role-scoped allowlists (lab-friendly). */
+export const ROLE_TOOL_PACKS = Object.freeze({
+  act: [
+    "xclaw_bash", "bash",
+    "xclaw_file_read", "file_read",
+    "xclaw_file_write", "file_write",
+    "xclaw_file_list", "list_dir",
+    "xclaw_skill",
+  ],
+  browse: [
+    "xclaw_bash", "bash",
+    "xclaw_file_read", "file_read",
+    "xclaw_file_write", "file_write",
+    "xclaw_file_list", "list_dir",
+    "web_search", "xclaw_web_search",
+    "xclaw_browser_tab", "browser_tab",
+    "xclaw_skill",
+  ],
+  full: null, // null = no filter
+});
+
+/**
+ * Resolve allowTools for a role / pack name.
+ * cfg.agent.toolPack: "act" | "browse" | "full" | string[]
+ */
+export function resolveRoleToolPack(cfg = {}, packName = null) {
+  const name = packName || cfg.agent?.toolPack || cfg.router?.toolPack || null;
+  if (Array.isArray(cfg.agent?.allowTools)) return cfg.agent.allowTools;
+  if (name == null) return null;
+  if (Array.isArray(name)) return name;
+  const key = String(name).toLowerCase();
+  if (key === "full" || key === "all" || key === "*") return null;
+  if (ROLE_TOOL_PACKS[key] !== undefined) return ROLE_TOOL_PACKS[key];
+  return null;
+}
+
+
+/**
  * Resolve role → model ref from config/env.
  * @returns {Record<string, string|null>}
  */
