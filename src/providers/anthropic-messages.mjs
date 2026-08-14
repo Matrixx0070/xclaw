@@ -262,6 +262,40 @@ export function toAnthropicTools(openaiTools = []) {
 }
 
 /**
+ * Mark the last tool with cache_control so tool schemas join the cached prefix.
+ * Anthropic counts tool + system cache_control toward the same 4-breakpoint limit;
+ * call after system is capped so we reserve 1 slot for tools when possible.
+ *
+ * @param {object[]} tools Anthropic tool defs
+ * @param {object} [opts]
+ * @param {boolean} [opts.enabled=true]
+ * @param {string} [opts.ttl="ephemeral"]
+ * @param {number} [opts.systemBreakpointCount=0] already used on system blocks
+ * @param {number} [opts.maxBreakpoints=4]
+ */
+export function applyToolCacheBreakpoints(tools, opts = {}) {
+  if (!tools?.length) return tools;
+  if (opts.enabled === false) return tools;
+  const max = Number(opts.maxBreakpoints) > 0 ? Number(opts.maxBreakpoints) : 4;
+  const used = Number(opts.systemBreakpointCount) || 0;
+  if (used >= max) return tools; // no room
+  const ttl = opts.ttl === "ephemeral" || !opts.ttl ? "ephemeral" : opts.ttl;
+  return tools.map((tool, i) => {
+    if (i !== tools.length - 1) return tool;
+    return {
+      ...tool,
+      cache_control: { type: ttl },
+    };
+  });
+}
+
+/** Count cache_control markers on Anthropic system content blocks. */
+export function countCacheBreakpoints(system) {
+  if (!Array.isArray(system)) return system ? 1 : 0;
+  return system.filter((b) => b && b.cache_control).length;
+}
+
+/**
  * Anthropic message → OpenAI assistant message shape
  */
 export function fromAnthropicMessage(msg) {
@@ -422,8 +456,14 @@ export function createAnthropicMessagesProvider(opts = {}) {
 
     applySystem(body, converted);
 
-    const anthTools = toAnthropicTools(tools);
+    let anthTools = toAnthropicTools(tools);
     if (anthTools?.length) {
+      anthTools = applyToolCacheBreakpoints(anthTools, {
+        enabled: cacheEnabled,
+        ttl: bpCfg.ttl || "ephemeral",
+        systemBreakpointCount: countCacheBreakpoints(body.system),
+        maxBreakpoints: Number(bpCfg.maxBreakpoints) || 4,
+      });
       body.tools = anthTools;
     }
 
@@ -462,6 +502,16 @@ export function createAnthropicMessagesProvider(opts = {}) {
             total_tokens:
               (res.json.usage.input_tokens || 0) +
               (res.json.usage.output_tokens || 0),
+            // Anthropic prompt-cache accounting
+            cache_read_input_tokens:
+              res.json.usage.cache_read_input_tokens ??
+              res.json.usage.cache_read_tokens,
+            cache_creation_input_tokens:
+              res.json.usage.cache_creation_input_tokens ??
+              res.json.usage.cache_creation_tokens,
+            cached_tokens:
+              res.json.usage.cache_read_input_tokens ??
+              res.json.usage.cache_read_tokens,
           }
         : undefined,
       raw: res.json,
