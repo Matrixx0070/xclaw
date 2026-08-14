@@ -56,7 +56,9 @@ import { buildSystemMessageWithBreakpoints } from "../tokens/cache-breakpoints.m
 import {
   optimizePrefix,
   assertPrefixStable,
+  ensurePrefixStable,
   makeEphemeralNotice,
+  defaultCacheOptimizePolicy,
 } from "../tokens/prefix-optimize.mjs";
 import { evictMessages, evictionOptsFromConfig } from "../tokens/eviction.mjs";
 import { measureContextPressure, pressureToEvictionTweaks } from "../tokens/pressure.mjs";
@@ -609,6 +611,17 @@ export async function runAgentLoop(options) {
   });
   tools = optimized.tools;
   const prefixHash = optimized.fingerprint.hash;
+  const frozenSystem = optimized.systemMessage;
+  const cachePolicy = defaultCacheOptimizePolicy(cfg);
+  onEvent({
+    type: "cache",
+    phase: "prefix_ready",
+    hash: prefixHash,
+    systemChars: optimized.fingerprint.systemChars,
+    toolsCount: optimized.fingerprint.toolsCount,
+    breakpointMode: sysBuilt.meta?.mode,
+    restorePrefixEachTurn: cachePolicy.restorePrefixEachTurn,
+  });
   // Conversation threading: prior turns then current user message
   const prior = [];
   if (Array.isArray(history)) {
@@ -796,17 +809,38 @@ export async function runAgentLoop(options) {
       }
 
       onEvent({ type: "model", phase: "request", turn: turns + 1 });
-      const stab = assertPrefixStable(messages, prefixHash, tools);
-      if (!stab.ok) {
-        onEvent({
-          type: "cache",
-          phase: "prefix_drift",
-          expected: stab.expected,
-          actual: stab.actual,
-        });
-        console.warn(
-          `[xclaw] prefix cache drift detected ${stab.expected} → ${stab.actual}`
+      // Re-pin system prefix every turn — highest-leverage cache hit optimization
+      // for xAI / OpenAI automatic prefix caching (and Anthropic stable blocks).
+      if (cachePolicy.restorePrefixEachTurn !== false) {
+        const pinned = ensurePrefixStable(
+          messages,
+          frozenSystem,
+          prefixHash,
+          tools
         );
+        messages = pinned.messages;
+        if (pinned.restored || !pinned.ok) {
+          onEvent({
+            type: "cache",
+            phase: "prefix_restored",
+            expected: pinned.expected || prefixHash,
+            actual: pinned.actual,
+            strippedSystem: pinned.strippedSystem,
+          });
+        }
+      } else {
+        const stab = assertPrefixStable(messages, prefixHash, tools);
+        if (!stab.ok) {
+          onEvent({
+            type: "cache",
+            phase: "prefix_drift",
+            expected: stab.expected,
+            actual: stab.actual,
+          });
+          console.warn(
+            `[xclaw] prefix cache drift detected ${stab.expected} → ${stab.actual}`
+          );
+        }
       }
       // Context / KV eviction: protect system prefix, shed old tool tails
       // Dual-EMA + frozen rank sizes persist across turns via dualState / xclaw_rank_size
@@ -933,6 +967,21 @@ export async function runAgentLoop(options) {
             phase: entry.estimated ? "estimate" : "usage",
             ...entry,
           });
+          if (!entry.estimated && entry.promptTokens > 0) {
+            const hit =
+              entry.cacheHitRate != null
+                ? entry.cacheHitRate
+                : (entry.cachedTokens || 0) / entry.promptTokens;
+            onEvent({
+              type: "cache",
+              phase: "turn_hit_rate",
+              turn: turns + 1,
+              cacheHitRate: Math.round(hit * 1000) / 1000,
+              cacheHitRatePct: Math.round(hit * 1000) / 10,
+              cachedTokens: entry.cachedTokens || 0,
+              promptTokens: entry.promptTokens,
+            });
+          }
         }
       }
 

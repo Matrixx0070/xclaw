@@ -132,3 +132,79 @@ export function optimizePrefix({ systemMessage, tools }) {
   }
   return { systemMessage: sys, tools: stableTools, fingerprint: fp };
 }
+
+/**
+ * Clone a frozen system message for re-injection (Object.freeze makes it read-only).
+ */
+export function cloneSystemMessage(systemMessage) {
+  if (!systemMessage) return { role: "system", content: "" };
+  if (typeof systemMessage.content === "string") {
+    return { role: "system", content: systemMessage.content };
+  }
+  if (Array.isArray(systemMessage.content)) {
+    return {
+      role: "system",
+      content: systemMessage.content.map((p) =>
+        p && typeof p === "object" ? { ...p } : p
+      ),
+    };
+  }
+  return { role: "system", content: String(systemMessage.content ?? "") };
+}
+
+/**
+ * Force messages[0] to the frozen system prefix and drop any extra system
+ * messages that would sit after the prefix (they bust automatic caches).
+ * Returns { messages, restored, strippedSystem }.
+ */
+export function ensurePrefixStable(messages, frozenSystem, expectedHash, tools) {
+  if (!Array.isArray(messages) || !messages.length || !frozenSystem) {
+    return { messages, restored: false, strippedSystem: 0, ok: true };
+  }
+  let strippedSystem = 0;
+  const next = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (i === 0) continue;
+    if (m?.role === "system") {
+      strippedSystem += 1;
+      continue;
+    }
+    next.push(m);
+  }
+  const head = cloneSystemMessage(frozenSystem);
+  const out = [head, ...next];
+  const stab = assertPrefixStable(out, expectedHash, tools);
+  const restored =
+    strippedSystem > 0 ||
+    !stab.ok ||
+    messages[0]?.content !== head.content;
+  return {
+    messages: out,
+    restored: Boolean(restored || !stab.ok),
+    strippedSystem,
+    ok: stab.ok,
+    expected: stab.expected,
+    actual: stab.actual,
+  };
+}
+
+/**
+ * Default cache-optimize policy (merge under cfg.tokens).
+ */
+export function defaultCacheOptimizePolicy(cfg = {}) {
+  const t = cfg.tokens || {};
+  return {
+    restorePrefixEachTurn: t.restorePrefixEachTurn !== false,
+    stripExtraSystem: t.stripExtraSystem !== false,
+    // Keep system byte-stable for the whole run (best for xAI/OpenAI auto-cache).
+    // Skill-detail slimming after turn 1 *changes* the prefix and hurts hit rate.
+    slimSkillsAfterTurn: t.cacheSkillsAfterTurn ?? null,
+    cacheBreakpoints: {
+      enabled: t.cacheBreakpoints?.enabled !== false,
+      mode: t.cacheBreakpoints?.mode || "auto",
+      ...(t.cacheBreakpoints || {}),
+    },
+  };
+}
+
