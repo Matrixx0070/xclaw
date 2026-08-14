@@ -57,7 +57,7 @@ export function createUsageTracker({ enabled = true, model = null, ledgerPath = 
     if (est.fallback) noteFallback(est.fallback);
   }
 
-  function recordTurn({ turn, usage, estimate }) {
+  function recordTurn({ turn, usage, estimate, elapsedMs = null, modelRef = null }) {
     if (!enabled) return null;
 
     const norm = normalizeUsage(usage);
@@ -99,6 +99,9 @@ export function createUsageTracker({ enabled = true, model = null, ledgerPath = 
         costUsd: norm.costUsd ?? null,
         estimated: false,
         mode: "usage",
+        // B3 economics: measured latency + which model actually served
+        elapsedMs: elapsedMs ?? null,
+        modelRef: modelRef || null,
       };
       state.turns.push(entry);
       return entry;

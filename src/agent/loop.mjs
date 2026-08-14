@@ -819,6 +819,7 @@ export async function runAgentLoop(options) {
         messages,
         cfg,
       });
+      const chatT0 = Date.now();
       const completion =
         preferStream && typeof provider.chatStream === "function"
           ? await provider.chatStream({
@@ -869,6 +870,8 @@ export async function runAgentLoop(options) {
           turn: turns + 1,
           usage: completion.usage,
           estimate: est,
+          elapsedMs: Date.now() - chatT0,
+          modelRef: provider.modelRef || provider.model || null,
         });
         if (entry) {
           onEvent({

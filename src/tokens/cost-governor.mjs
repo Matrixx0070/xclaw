@@ -4,6 +4,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { getModelMeta } from "../providers/registry.mjs";
 
 function dayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
@@ -81,6 +82,25 @@ export async function checkCostBudget(cfg, { estimateUsd = 0 } = {}) {
   };
 }
 
+/**
+ * B3: the governor's three bands. normal → economy (between economyAtUsd —
+ * default the soft cap — and the hard cap) → halt. Economy REROUTES to
+ * cheaper models (role-router overlay) instead of only pausing; halt keeps
+ * the existing pause semantics.
+ */
+export async function governorMode(cfg) {
+  const check = await checkCostBudget(cfg);
+  const lim = check.limits || limits(cfg);
+  const economyAt = cfg?.cost?.economyAtUsd ?? lim.dailySoftUsd;
+  if (check.hard || check.paused) {
+    return { mode: "halt", spentUsd: check.spentUsd, limits: lim };
+  }
+  if ((check.spentUsd || 0) >= economyAt) {
+    return { mode: "economy", spentUsd: check.spentUsd, limits: lim, economyAt };
+  }
+  return { mode: "normal", spentUsd: check.spentUsd, limits: lim, economyAt };
+}
+
 export async function recordJobCost(cfg, { usd = 0, jobId = null } = {}) {
   let ledger = await loadLedger(cfg);
   if (ledger.day !== dayKey()) {
@@ -113,20 +133,22 @@ export async function setCostGovernorPaused(cfg, paused) {
   return ledger;
 }
 
-/** Rough USD from token usage using cfg rates */
-export function estimateUsdFromUsage(usage, cfg = {}) {
+/**
+ * Rough USD from token usage. B3: one lookup path — getModelMeta owns the
+ * rates-table matching (this function used to duplicate the substring
+ * match). modelRef overrides cfg.agent.model when the router downshifted.
+ */
+export function estimateUsdFromUsage(usage, cfg = {}, { modelRef = null } = {}) {
   if (!usage) return 0;
-  const rates = cfg.tokens?.rates || {
-    "grok-4": { in: 3e-6, out: 15e-6 },
-    default: { in: 1e-6, out: 3e-6 },
-  };
-  const model = cfg.agent?.model || "default";
-  let rate = rates.default;
-  for (const k of Object.keys(rates).sort((a, b) => b.length - a.length)) {
-    if (k !== "default" && model.includes(k)) {
-      rate = rates[k];
-      break;
-    }
+  const ref = modelRef || cfg.agent?.model || "default";
+  let rate;
+  try {
+    rate = getModelMeta(cfg, ref).cost;
+  } catch {
+    rate = cfg.tokens?.rates?.default || { in: 1e-6, out: 3e-6 };
+  }
+  if (!rate || (!rate.in && !rate.out)) {
+    rate = cfg.tokens?.rates?.default || { in: 1e-6, out: 3e-6 };
   }
   const inn = usage.prompt_tokens || usage.input_tokens || 0;
   const out = usage.completion_tokens || usage.output_tokens || 0;

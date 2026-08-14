@@ -145,7 +145,19 @@ export async function createProviderForRef(cfg, modelRef, opts = {}) {
  */
 export async function createFailoverProvider(cfg = {}, opts = {}) {
   const chain = buildModelChain(cfg, opts);
-  const onEvent = opts.onEvent || (() => {});
+  // B3: tee router events into router-events.jsonl so model-stats can learn
+  // measured reliability. Best-effort; caller's onEvent is unchanged.
+  const onEventCb = opts.onEvent || (() => {});
+  const onEvent = (e) => {
+    try {
+      if (e?.type === "router") {
+        import("./model-stats.mjs")
+          .then((m) => m.appendRouterEvent(cfg, e))
+          .catch(() => {});
+      }
+    } catch {}
+    onEventCb(e);
+  };
   const policy = {
     failoverOnAuth: cfg.router?.failoverOnAuth !== false,
     failoverOnAll: cfg.router?.failoverOnAll === true,

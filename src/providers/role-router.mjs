@@ -198,6 +198,63 @@ export async function createRoleProviders(cfg = {}, opts = {}) {
     );
   }
 
+  // B3 economy entries — resolved up front so the per-turn pick stays sync.
+  // Explicit cfg.router.economyRoles wins; router.autoEconomy derives the
+  // cheapest capable candidate from declared metadata + measured stats.
+  // verify NEVER auto-downshifts (correctness gates are not where you save
+  // pennies) — only an explicit economyRoles.verify touches it.
+  try {
+    const economyRefs = { ...(cfg.router?.economyRoles || {}) };
+    if (cfg.router?.autoEconomy === true) {
+      const { getModelMeta } = await import("./registry.mjs");
+      const { getModelStats } = await import("./model-stats.mjs");
+      const stats = await getModelStats(cfg).catch(() => ({}));
+      const candidates = [
+        ...new Set(
+          [
+            ...Object.values(map).filter(Boolean),
+            ...(cfg.agent?.fallbackModels || []),
+          ].filter(Boolean)
+        ),
+      ];
+      const minTier = cfg.router?.economyMinTier ?? 2;
+      const scored = candidates
+        .map((ref) => ({ ref, meta: getModelMeta(cfg, ref), s: stats[ref] }))
+        .filter((c) => c.meta.tier >= minTier)
+        .filter((c) => !c.s || c.s.runs < 5 || (c.s.successRate ?? 1) >= 0.8)
+        .sort(
+          (a, b) =>
+            (a.meta.cost.in + a.meta.cost.out) - (b.meta.cost.in + b.meta.cost.out)
+        );
+      if (scored.length) {
+        for (const role of ["act", "draft"]) {
+          if (!economyRefs[role] && byRole[role]) economyRefs[role] = scored[0].ref;
+        }
+      }
+    }
+    for (const [role, ref] of Object.entries(economyRefs)) {
+      if (!ref || !byRole[role] || byRole[role].modelRef === ref) continue;
+      try {
+        const c = await createProviderForRef(cfg, ref, opts);
+        byRole[role].economy = {
+          provider: c.provider,
+          route: c.route,
+          modelRef: c.route.modelRef,
+        };
+      } catch (err) {
+        onEvent({
+          type: "router",
+          phase: "economy_skip",
+          role,
+          modelRef: ref,
+          reason: String(err.message || err),
+        });
+      }
+    }
+  } catch {
+    /* economy overlay is optional — routing must never break on it */
+  }
+
   return { byRole, map, policy: resolveRolePolicy(cfg) };
 }
 
@@ -209,6 +266,26 @@ export function createRoleAwareProvider(roleBundle, cfg = {}, opts = {}) {
   const onEvent = opts.onEvent || (() => {});
   let turnCounter = 0;
   let lastRole = "act";
+
+  // B3 governor mode cache — pick() is sync, the governor file is not. The
+  // cache refreshes in the background at most every 60s (test seam:
+  // opts._governorMode forces a mode). Missing/erroring governor = "normal".
+  const hasEconomy = Object.values(byRole).some((e) => e?.economy);
+  let cachedMode = opts._governorMode || opts._initialMode || "normal";
+  let lastModeCheck = 0;
+  let inEconomy = false;
+  function refreshMode() {
+    if (opts._governorMode) return;
+    const now = Date.now();
+    if (now - lastModeCheck < (cfg.router?.economyRefreshMs ?? 60_000)) return;
+    lastModeCheck = now;
+    import("../tokens/cost-governor.mjs")
+      .then((m) => m.governorMode(cfg))
+      .then((g) => {
+        cachedMode = g.mode;
+      })
+      .catch(() => {});
+  }
 
   function pick(roleHint) {
     let role =
@@ -229,22 +306,54 @@ export function createRoleAwareProvider(roleBundle, cfg = {}, opts = {}) {
     if (!entry?.provider) {
       throw new Error(`role-router: no provider for role=${role}`);
     }
+    // economy overlay: swap to the cheaper entry while the governor says so;
+    // recovery is symmetric the moment the mode drops back to normal.
+    if (hasEconomy) {
+      refreshMode();
+      const wantEconomy = cachedMode === "economy" && Boolean(entry.economy);
+      if (wantEconomy) {
+        if (!inEconomy) {
+          inEconomy = true;
+          onEvent({
+            type: "router",
+            phase: "economy_downshift",
+            role,
+            from: entry.modelRef,
+            to: entry.economy.modelRef,
+          });
+        }
+        lastRole = role;
+        lastEntry = entry.economy;
+        return { role, entry: entry.economy };
+      }
+      if (inEconomy && cachedMode !== "economy") {
+        inEconomy = false;
+        onEvent({
+          type: "router",
+          phase: "economy_recover",
+          role,
+          to: entry.modelRef,
+        });
+      }
+    }
     lastRole = role;
+    lastEntry = entry;
     return { role, entry };
   }
 
+  let lastEntry = byRole.act;
   const facade = {
     get model() {
-      return (byRole[lastRole] || byRole.act).provider.model;
+      return (lastEntry || byRole.act).provider.model;
     },
     get baseUrl() {
-      return (byRole[lastRole] || byRole.act).provider.baseUrl;
+      return (lastEntry || byRole.act).provider.baseUrl;
     },
     get providerName() {
-      return (byRole[lastRole] || byRole.act).route?.provider;
+      return (lastEntry || byRole.act).route?.provider;
     },
     get modelRef() {
-      return (byRole[lastRole] || byRole.act).modelRef;
+      return (lastEntry || byRole.act).modelRef;
     },
     get roles() {
       return Object.fromEntries(
@@ -326,10 +435,16 @@ export function createRoleAwareProvider(roleBundle, cfg = {}, opts = {}) {
  */
 export async function createRoleRouter(cfg = {}, opts = {}) {
   try {
+    // B3: an economy configuration alone also engages the role router — the
+    // downshift overlay lives here, and act-only setups are the common case.
+    const economyConfigured =
+      Boolean(Object.keys(cfg.router?.economyRoles || {}).length) ||
+      cfg.router?.autoEconomy === true;
     const rolesEnabled =
       cfg.router?.rolesEnabled === true ||
       Boolean(cfg.router?.roles?.draft || cfg.router?.roles?.verify) ||
-      Boolean(process.env.XCLAW_ROLE_DRAFT || process.env.XCLAW_ROLE_VERIFY);
+      Boolean(process.env.XCLAW_ROLE_DRAFT || process.env.XCLAW_ROLE_VERIFY) ||
+      economyConfigured;
 
     if (!rolesEnabled && cfg.router?.rolesEnabled !== true) {
       const map = resolveRoleMap(cfg);
@@ -339,7 +454,19 @@ export async function createRoleRouter(cfg = {}, opts = {}) {
     }
 
     const roleBundle = await createRoleProviders(cfg, opts);
-    const provider = createRoleAwareProvider(roleBundle, cfg, opts);
+    // Seed the governor mode NOW — pick() is sync and short runs would
+    // otherwise finish before the background refresh ever lands.
+    let initialMode = "normal";
+    if (Object.values(roleBundle.byRole).some((e) => e?.economy)) {
+      try {
+        const { governorMode } = await import("../tokens/cost-governor.mjs");
+        initialMode = (await governorMode(cfg)).mode;
+      } catch {}
+    }
+    const provider = createRoleAwareProvider(roleBundle, cfg, {
+      ...opts,
+      _initialMode: initialMode,
+    });
     opts.onEvent?.({
       type: "router",
       phase: "roles_ready",

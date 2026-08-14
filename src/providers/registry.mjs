@@ -292,6 +292,56 @@ export function parseModelRef(ref) {
   return { provider: null, model: s };
 }
 
+/**
+ * B3 economic routing: declared metadata for a model ref.
+ * Precedence: cfg.models.meta[ref] → cfg.tokens.rates (cost) → derived
+ * defaults from the registry entry (tags/name heuristics). Prices live in
+ * CONFIG, not code — new models mean editing a table, not a release.
+ * Returns { cost: {in, out} ($/token), latency: fast|standard|slow,
+ *           tier: 1..4, context, source }.
+ */
+export function getModelMeta(cfg = {}, modelRef = "") {
+  const ref = String(modelRef || "");
+  const { provider, model } = parseModelRef(ref);
+  const explicit = cfg.models?.meta?.[ref] || cfg.models?.meta?.[model] || null;
+
+  // cost from the existing rates table (longest-key substring match)
+  const rates = cfg.tokens?.rates || {};
+  let cost = null;
+  let costSource = null;
+  for (const k of Object.keys(rates).sort((a, b) => b.length - a.length)) {
+    if (k !== "default" && (model || ref).includes(k)) {
+      cost = { in: rates[k].in || 0, out: rates[k].out || 0 };
+      costSource = `rates:${k}`;
+      break;
+    }
+  }
+  if (!cost && rates.default) {
+    cost = { in: rates.default.in || 0, out: rates.default.out || 0 };
+    costSource = "rates:default";
+  }
+
+  // registry entry for context + tags
+  let entry = null;
+  if (provider && BUILTIN_PROVIDERS[provider]) {
+    entry = (BUILTIN_PROVIDERS[provider].models || []).find((m) => m.id === model) || null;
+  }
+  const tags = entry?.tags || [];
+  const name = model || ref;
+
+  const fastish = tags.includes("fast") || /mini|nano|flash|fast|lite|haiku/i.test(name);
+  const strongish = /pro|opus|fable|reasoning|4\.5|5\.5|5\.6/i.test(name) || tags.includes("reasoning");
+
+  const meta = {
+    cost: explicit?.cost || cost || { in: 0, out: 0 },
+    latency: explicit?.latency || (fastish ? "fast" : "standard"),
+    tier: explicit?.tier ?? (strongish ? 4 : fastish ? 1 : 2),
+    context: explicit?.context ?? entry?.context ?? null,
+    source: explicit ? "config" : costSource || "derived",
+  };
+  return meta;
+}
+
 export function inferProviderFromModel(model, cfg = {}) {
   if (!model) return process.env.XCLAW_PROVIDER || cfg.agent?.provider || "xai";
   const parsed = parseModelRef(model);
