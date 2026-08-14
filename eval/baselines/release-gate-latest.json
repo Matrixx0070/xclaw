@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-14T10:28:08.597Z",
+  "at": "2026-08-14T10:30:09.527Z",
   "quick": true,
   "strict": false,
   "live": false,
@@ -8,7 +8,7 @@
       "name": "unit tests",
       "ok": true,
       "required": true,
-      "ms": 29865,
+      "ms": 31361,
       "detail": "# tests 1597 | # pass 1592 | # fail 0",
       "code": 0
     },
@@ -16,9 +16,9 @@
       "name": "security-audit",
       "ok": true,
       "required": true,
-      "ms": 42,
+      "ms": 51,
       "detail": {
-        "at": "2026-08-14T10:28:08.415Z",
+        "at": "2026-08-14T10:30:09.464Z",
         "ok": true,
         "errors": 0,
         "warnings": 0,
@@ -71,23 +71,19 @@
     },
     {
       "name": "a-enforcement",
-      "ok": true,
+      "ok": false,
       "required": false,
-      "ms": 133,
-      "detail": "  [OK  ] bundle.a5: A5: single Chrome argv |   [OK  ] computer.live: healthy |  | Summary: 0 fail(s), 0 warning(s) — exit 0 | ",
-      "code": 0
+      "ms": 53,
+      "detail": "  code: 'ENOENT', |   syscall: 'open', |   path: '/tmp/xclaw-wt-b46edb58/src/computer/xclaw-server.mjs' | } | ",
+      "code": 2
     },
     {
       "name": "bundle-markers",
-      "ok": true,
+      "ok": false,
       "required": false,
-      "ms": 43,
-      "detail": [
-        "A2: driver hooks",
-        "A4: humanized CDP motor",
-        "A5: single Chrome argv"
-      ],
-      "code": 0
+      "ms": 2,
+      "detail": "ENOENT: no such file or directory, open '/tmp/xclaw-wt-b46edb58/src/computer/xclaw-server.mjs'",
+      "code": 1
     }
   ],
   "ok": true,
