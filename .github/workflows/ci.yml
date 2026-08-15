@@ -22,7 +22,13 @@ jobs:
         run: |
           if [ -f package-lock.json ]; then npm ci; else npm install --ignore-scripts; fi
 
-      - name: CI gate (unit + skills + p2)
+      - name: C4 computer parity
+        run: node scripts/check-computer-parity.mjs
+
+      - name: C3 computer build
+        run: node scripts/build-computer-bundle.mjs
+
+      - name: CI gate (unit + skills + p2 + C4)
         run: node scripts/ci-gate.mjs
 
       - name: Live multistep eval

@@ -1,16 +1,19 @@
 /**
- * Computer engine selection — Strategy C.
+ * Computer engine selection — Bundle-default (D1).
  *
- * - native / thin: thin-server.mjs (lab modules)
+ * - bundle: xclaw-server.mjs (~16MB CDP runtime; do not hand-edit) — DEFAULT
+ * - native / thin: thin-server.mjs (lightweight escape hatch)
  * - generated: generated/computer-server.mjs (esbuild from modules) — C3
- * - bundle: xclaw-server.mjs (~16MB CDP runtime; do not hand-edit)
  *
- * Transitional default: native.
- * Build: npm run build:computer
- * Parity gate: npm run check:computer-parity
+ * Override: XCLAW_COMPUTER_ENGINE=native|generated|bundle
+ * Build modules: npm run build:computer
+ * Parity gate: npm run check:computer-parity (escape-hatch native still tracked)
  */
 import path from "node:path";
 import fs from "node:fs";
+
+/** Product default when no env/cfg override is set. */
+export const DEFAULT_COMPUTER_ENGINE = "bundle";
 
 /**
  * @param {object} [cfg]
@@ -18,19 +21,21 @@ import fs from "node:fs";
  */
 export function resolveComputerEngine(cfg = {}) {
   const env = process.env.XCLAW_COMPUTER_ENGINE || process.env.XCLAW_COMPUTER_NATIVE;
-  if (env === "0" || env === "false" || env === "bundle") return "bundle";
-  if (env === "generated" || env === "gen" || env === "c3") return "generated";
+  // Explicit native/thin request (env "1"/true historically meant native server on)
   if (env === "1" || env === "true" || env === "native" || env === "thin") return "native";
+  if (env === "generated" || env === "gen" || env === "c3") return "generated";
+  if (env === "0" || env === "false" || env === "bundle" || env === "full") return "bundle";
 
   const eng = cfg.computer?.engine;
-  if (eng === "bundle" || eng === "full" || eng === "xclaw-server") return "bundle";
-  if (eng === "generated" || eng === "gen") return "generated";
   if (eng === "native" || eng === "thin") return "native";
+  if (eng === "generated" || eng === "gen") return "generated";
+  if (eng === "bundle" || eng === "full" || eng === "xclaw-server") return "bundle";
 
-  if (cfg.computer?.nativeServer === false) return "bundle";
+  // Legacy: nativeServer true forces thin escape hatch
   if (cfg.computer?.nativeServer === true) return "native";
+  if (cfg.computer?.nativeServer === false) return "bundle";
 
-  return "native";
+  return DEFAULT_COMPUTER_ENGINE;
 }
 
 export function isNativeComputer(cfg = {}) {
@@ -84,11 +89,14 @@ export function describeComputerEngine(cfg = {}, root = process.cwd()) {
     entry,
     entryExists,
     entryBytes,
-    isFallbackBundle: engine === "bundle",
-    strategyPhase: "C4",
+    /** @deprecated bundle is default; true only if somehow treated as non-default */
+    isFallbackBundle: engine === "bundle" && DEFAULT_COMPUTER_ENGINE !== "bundle",
+    isDefaultBundle: engine === "bundle",
+    strategyPhase: "C4-bundle-default",
     policy: {
-      defaultEngine: "native",
+      defaultEngine: DEFAULT_COMPUTER_ENGINE,
       handEditBundle: false,
+      lightweightEscape: "native|generated",
     },
   };
 }

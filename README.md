@@ -39,7 +39,7 @@ node bin/xclaw.mjs gateway
 |-------|--------|
 | `doctor` | Config loads; lab profile OK; warns if no API key |
 | `agent "…"` | Tool runs (lab auto-approves) or clear error |
-| Computer | Thin native server on `:4243` (auto-start) |
+| Computer | **Bundle default** (16MB CDP on `:4243`); run `npm run fetch:bundle` + `verify:bundle` — thin: `XCLAW_COMPUTER_ENGINE=native` |
 
 **Requirements:** Node.js **≥ 22**, network for model APIs.
 

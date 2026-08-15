@@ -54,6 +54,16 @@ results.push(
   await run("unit tests", process.execPath, ["--test", ...testFiles])
 );
 results.push(
+  await run("C4 computer parity", process.execPath, [
+    "scripts/check-computer-parity.mjs",
+  ])
+);
+results.push(
+  await run("C3 computer build", process.execPath, [
+    "scripts/build-computer-bundle.mjs",
+  ])
+);
+results.push(
   await run("skills smoke", process.execPath, ["scripts/p2-skills-smoke.mjs"])
 );
 results.push(

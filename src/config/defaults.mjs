@@ -40,11 +40,12 @@ export const DEFAULT_CONFIG = {
   },
   computer: {
     /**
-     * Engine: "native" (default thin server) | "bundle" (16MB xclaw-server.mjs)
-     * Env: XCLAW_COMPUTER_ENGINE=native|bundle  or  XCLAW_COMPUTER_NATIVE=0 for bundle
+     * Engine: "bundle" (DEFAULT — 16MB CDP xclaw-server.mjs)
+     *         "native" | "generated" (lightweight escape hatch)
+     * Env: XCLAW_COMPUTER_ENGINE=bundle|native|generated
      */
-    engine: "native",
-    nativeServer: true,
+    engine: "bundle",
+    nativeServer: false,
     /** Optional remote computer base URL (sidecar) */
     remoteUrl: null,
     authToken: null,

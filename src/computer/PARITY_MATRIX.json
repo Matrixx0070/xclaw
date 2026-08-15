@@ -1,15 +1,16 @@
 {
-  "$schema_note": "Strategy C4 \u2014 tool capability parity across computer engines. Source of truth for CI gate scripts/check-computer-parity.mjs",
+  "$schema_note": "Strategy C4 — tool capability parity across computer engines. Source of truth for CI gate scripts/check-computer-parity.mjs",
   "version": 1,
   "strategy": "C",
   "phase": "C4",
   "updatedAt": "2026-08-15",
   "policy": {
-    "defaultEngine": "native",
-    "fallbackEngine": "bundle",
+    "defaultEngine": "bundle",
+    "fallbackEngine": "native",
     "generatedIsBuildArtifact": true,
     "handEditBundle": false,
-    "deleteBundleOnlyAfter": "all default_path tools are parity on native|generated and soak passes"
+    "deleteBundleOnlyAfter": "all default_path tools are parity on native|generated and soak passes",
+    "lightweightEscape": "native|generated"
   },
   "engines": {
     "native": {
@@ -22,7 +23,7 @@
     },
     "bundle": {
       "entry": "src/computer/xclaw-server.mjs",
-      "role": "legacy full CDP runtime \u2014 do not hand-edit; explicit fallback only"
+      "role": "legacy full CDP runtime — do not hand-edit; explicit fallback only"
     }
   },
   "statusEnum": [
@@ -94,7 +95,7 @@
       "generated": "missing",
       "bundle": "parity",
       "defaultPath": false,
-      "notes": "Dead browser-service.mjs extract deleted 3.82.0 (never ran \u2014 undefined identifiers); full CDP lives only in the bundle engine"
+      "notes": "Dead browser-service.mjs extract deleted 3.82.0 (never ran — undefined identifiers); full CDP lives only in the bundle engine"
     },
     {
       "name": "skills-context",
@@ -120,5 +121,16 @@
     "requireMaintainedModulesExist": true,
     "requireRegistryNamesMatchParity": true,
     "forbidHandEditMarkersOnBundle": false
-  }
+  },
+  "c4": {
+    "gate": "passed",
+    "ciWired": true,
+    "defaultPathUsable": "7/7",
+    "bundlePresent": true,
+    "bundleBytes": 16839070,
+    "soak": "passed",
+    "browserService": "bundle_only",
+    "note": "optional fetch+soak done; do not delete bundle until longer live soak"
+  },
+  "strategyNote": "Bundle-default (D1-D4): full CDP is product default; thin is escape hatch"
 }

@@ -1179,19 +1179,25 @@ export async function runDoctor(opts = {}) {
           else push(id, "error", `bundle missing patch marker: ${needle}`);
         }
       } else {
-        // The bundle is an opt-in release artifact (default engine is native/
-        // generated). Absent is expected, not an error — only flag if the
-        // configured engine actually needs it.
-        const needsBundle =
-          (cfg.computer?.engine === "bundle" ||
-            cfg.computer?.nativeServer === false ||
-            process.env.XCLAW_COMPUTER_ENGINE === "bundle");
+        // D3: bundle is the product default — missing blob is an error unless
+        // the operator explicitly selected native/generated escape hatch.
+        let engine = cfg.computer?.engine;
+        try {
+          const { resolveComputerEngine } = await import("../computer/engine.mjs");
+          engine = resolveComputerEngine(cfg);
+        } catch {
+          engine =
+            process.env.XCLAW_COMPUTER_ENGINE ||
+            cfg.computer?.engine ||
+            "bundle";
+        }
+        const needsBundle = engine === "bundle" || engine === "full";
         push(
           "a.bundle",
           needsBundle ? "error" : "ok",
           needsBundle
-            ? "engine=bundle but xclaw-server.mjs not installed — run: npm run fetch:bundle"
-            : "opt-in CDP bundle not installed (native/generated default) — npm run fetch:bundle if needed"
+            ? "default engine=bundle but xclaw-server.mjs missing — run: npm run fetch:bundle && npm run verify:bundle"
+            : `lightweight engine=${engine}; CDP bundle not required (escape hatch)`
         );
       }
     } catch (e) {

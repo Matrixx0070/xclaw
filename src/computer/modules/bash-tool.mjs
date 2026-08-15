@@ -15,7 +15,27 @@ import {
 import { wrapSpawnWithOsSandbox } from "../../security/os-sandbox.mjs";
 import { buildToolEnv } from "../../security/env-policy.mjs";
 
+
 const DEFAULT_TIMEOUT_SECONDS = 30;
+const MAX_TIMEOUT_SECONDS = 120;
+
+/**
+ * Normalize model/client timeout to seconds in [0, MAX_TIMEOUT_SECONDS].
+ * Models often pass milliseconds (e.g. 30000, 120000); values > 1000 are
+ * treated as ms. Avoids Zod/schema max-120 failures on the bundle path.
+ * @param {unknown} raw
+ * @returns {number} seconds
+ */
+export function normalizeBashTimeoutSeconds(raw) {
+  if (raw == null || raw === "") return DEFAULT_TIMEOUT_SECONDS;
+  let n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_TIMEOUT_SECONDS;
+  // Heuristic: values above 1000 are almost certainly milliseconds
+  if (n > 1000) n = n / 1000;
+  if (n > MAX_TIMEOUT_SECONDS) n = MAX_TIMEOUT_SECONDS;
+  return n;
+}
+
 
 /**
  * @param {object} input
@@ -56,8 +76,8 @@ export async function executeBash(input = {}, ctx = {}) {
   }
   command = check.command || command;
 
-  const timeoutSec = Number(input.timeout ?? DEFAULT_TIMEOUT_SECONDS);
-  const timeoutMs = Math.min(120_000, Math.max(0, timeoutSec * 1000));
+  const timeoutSec = normalizeBashTimeoutSeconds(input.timeout);
+  const timeoutMs = Math.min(MAX_TIMEOUT_SECONDS * 1000, Math.max(0, Math.round(timeoutSec * 1000)));
   const cwd = check.cwd || ctx.cwd || process.cwd();
   const background = Boolean(input.background);
 
@@ -196,7 +216,13 @@ export const BashTool = {
     type: "object",
     properties: {
       command: { type: "string", description: "Bash command to run" },
-      timeout: { type: "number", description: "Timeout seconds" },
+      timeout: {
+        type: "number",
+        description:
+          "Timeout in seconds (max 120). Do not pass milliseconds.",
+        minimum: 0,
+        maximum: 120,
+      },
       background: { type: "boolean" },
       systemRunPlan: {
         type: "object",

@@ -10,7 +10,12 @@ import {
 import { ensureComputer } from "../computer/ensure.mjs";
 import { createProvider } from "./provider.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
-import { createRoleRouter, selectRole } from "../providers/role-router.mjs";
+import {
+  createRoleRouter,
+  selectRole,
+  resolveRoleToolPack,
+  resolveRoleEffort,
+} from "../providers/role-router.mjs";
 import { runVerifyPass } from "../providers/verify-pass.mjs";
 import { buildTurnSuggestions } from "./suggestions.mjs";
 import {

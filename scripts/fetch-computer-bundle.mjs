@@ -109,6 +109,34 @@ if (!ok) {
     die(`download failed: ${err.message}`);
   }
 }
+// 3) Local sibling copies (dev / chat artifacts) matching sha256
+function tryLocal() {
+  const candidates = [
+    path.join(root, "..", "xclaw", "src", "computer", "xclaw-server.mjs"),
+    path.join(root, "..", "xclaw-server.mjs"),
+    path.join(root, "artifacts", "xclaw-server.mjs"),
+  ];
+  for (const c of candidates) {
+    try {
+      if (!fs.existsSync(c)) continue;
+      const h = sha256(c);
+      if (h !== manifest.sha256) {
+        log(`local candidate skip (checksum): ${c}`);
+        continue;
+      }
+      fs.copyFileSync(c, tmp);
+      log(`copied from local verified path: ${c}`);
+      return true;
+    } catch {
+      /* try next */
+    }
+  }
+  return false;
+}
+
+if (!ok) {
+  ok = tryLocal();
+}
 if (!ok) {
   die(
     `could not download the bundle. Install GitHub CLI (gh) and authenticate, or fetch manually:\n` +

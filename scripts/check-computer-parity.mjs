@@ -44,9 +44,10 @@ if (matrix.policy?.handEditBundle === true) {
   fail("policy.handEditBundle must remain false");
 }
 
-const defaultEngine = matrix.policy?.defaultEngine || "native";
-if (defaultEngine === "bundle") {
-  fail("policy.defaultEngine must not be bundle during C4 (use native|generated)");
+// D1: product default is bundle; native remains tracked as escape hatch.
+const defaultEngine = matrix.policy?.defaultEngine || "bundle";
+if (!["bundle", "native", "generated"].includes(String(defaultEngine))) {
+  fail(`policy.defaultEngine invalid: ${defaultEngine}`);
 }
 
 let errors = 0;

@@ -79,6 +79,28 @@ function requestOnce(baseUrl, method, path, body, authHeaders = {}) {
  * @param {object} [cfg.computer]
  * @param {object} [cfg.retry]
  */
+
+/**
+ * Clamp model-supplied tool args so strict computer schemas (bundle Zod max
+ * timeout 120 seconds) do not reject millisecond values.
+ * @param {string} name
+ * @param {object} args
+ */
+export function sanitizeToolArgs(name, args = {}) {
+  if (!args || typeof args !== "object") return args || {};
+  const n = String(name || "");
+  if (n === "xclaw_bash" || n === "bash" || n.endsWith("_bash")) {
+    if ("timeout" in args && args.timeout != null && args.timeout !== "") {
+      let sec = Number(args.timeout);
+      if (!Number.isFinite(sec) || sec < 0) sec = 30;
+      if (sec > 1000) sec = sec / 1000; // ms → s
+      if (sec > 120) sec = 120;
+      args = { ...args, timeout: sec };
+    }
+  }
+  return args;
+}
+
 export function createComputerClient(cfg) {
   const baseUrl =
     cfg.computer?.remoteUrl ||
@@ -134,7 +156,7 @@ export function createComputerClient(cfg) {
       // Only transport-level failures are retried by withBackoff.
       return request("POST", `/xclaw/sessions/${sessionId}/tools/call`, {
         method: "tools/call",
-        params: { name, arguments: args || {} },
+        params: { name, arguments: sanitizeToolArgs(name, args || {}) },
       });
     },
   };

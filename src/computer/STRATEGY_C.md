@@ -1,6 +1,15 @@
-# Computer Strategy C — Bundle is runtime, modules are source
+# Computer Strategy C — Bundle-default + modules as source
 
-**Status:** C1–C3 done · **C4 in progress** (parity matrix + CI gate) — 2026-08-12
+**Status:** D1–D4 **bundle is the product default** (2026-08-15)
+
+| Runtime | Role |
+|---------|------|
+| **bundle** (`xclaw-server.mjs` ~16.8MB) | **DEFAULT** — full CDP computer |
+| **native / generated** | Lightweight **escape hatch** only |
+| **modules/** | Where new features are developed (never hand-edit the blob) |
+
+**Do not hand-edit** the 16MB file. Ship power via module sidecars or a **new published blob** (sha256 + `fetch:bundle`).
+
 
 ## Rule
 
