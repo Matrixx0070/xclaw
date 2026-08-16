@@ -352,8 +352,39 @@ export async function runObjective(cfg, opts = {}) {
       mergeStateUpdate(obj, update);
       missingStateRetries = 0;
     } else {
-      // No parseable state: one reminder segment, then fail toward the user
-      // with whatever the model said (never loop blind).
+      // No parseable state block. Distinguish the model CHOOSING to end its
+      // turn (stopReason "natural"/"hook") from the runtime CUTTING IT OFF
+      // ("maxTurns"/"budget"/"guard"). A natural stop with a substantive
+      // answer and no open criteria is the model signaling completion —
+      // surface its answer as the result instead of a scary "runtime lost
+      // state" error. (Omitting the fenced block once the work is clearly
+      // finished is a formatting miss, not a failure — and models vary in
+      // how reliably they emit it when they consider themselves done.)
+      const prose = stripStateBlocks(text).trim();
+      const modelEndedTurn = seg?.stopReason === "natural" || seg?.stopReason === "hook";
+      const openCriteria = obj.criteria.filter((c) => !c.done);
+      if (modelEndedTurn && prose.length >= 40 && !openCriteria.length) {
+        obj.status = "done";
+        obj.finalAnswer = prose.slice(0, 12000);
+        if (Array.isArray(obj.progress)) {
+          obj.progress.push("Segment ended naturally with a final answer (no state block emitted — accepted as complete).");
+        }
+        await saveObjective(cfg, obj);
+        ledgerEvent(cfg, obj, "objective_done", {
+          segments: obj.totals.segments,
+          toolCalls: obj.totals.toolCalls,
+          viaNaturalStop: true,
+        });
+        onEvent({ type: "objective", phase: "done", id: obj.id, viaNaturalStop: true });
+        await notify(
+          `✅ Mission complete (${obj.totals.segments} segments, ${obj.totals.toolCalls} tool calls).\n\n${obj.finalAnswer}`,
+          { kind: "done" }
+        );
+        return { status: obj.status, id: obj.id, objective: obj };
+      }
+
+      // Otherwise: one reminder segment, then hand the model's answer to the
+      // user (never loop blind, never bury it behind a runtime error).
       if (missingStateRetries < MISSING_STATE_RETRY_CAP && seg?.stopReason !== "aborted") {
         missingStateRetries += 1;
         directive =
@@ -363,11 +394,18 @@ export async function runObjective(cfg, opts = {}) {
         ledgerEvent(cfg, obj, "segment_missing_state", { segment: n });
         continue;
       }
+      // Retry exhausted. Deliver the model's actual answer prominently (not
+      // just a "lost state" error) and pause resumable.
       obj.status = "awaiting_human";
-      obj.humanQuestion = "The mission runtime lost the model's structured state twice. Review and /objective resume.";
+      if (prose) obj.finalAnswer = prose.slice(0, 12000);
+      obj.humanQuestion =
+        "The model stopped without a machine-readable state block — its answer is above. Reply to continue, or /objective stop.";
       await saveObjective(cfg, obj);
+      ledgerEvent(cfg, obj, "segment_missing_state_final", { segment: n, stopReason: seg?.stopReason || null });
       await notify(
-        `⚠️ Mission ${obj.id}: could not parse mission state from the model. Last output:\n\n${stripStateBlocks(text).slice(0, 1500)}\n\n/objective resume to continue.`,
+        prose
+          ? `⚠️ Mission ${obj.id} paused (no structured state). The model's answer:\n\n${prose.slice(0, 1500)}\n\n/objective resume to continue.`
+          : `⚠️ Mission ${obj.id}: no output and no state from the model. /objective resume to retry.`,
         { kind: "escalated" }
       );
       return { status: obj.status, id: obj.id, objective: obj };

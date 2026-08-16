@@ -475,6 +475,28 @@ export async function routeObjective({ text, inbound, cfg, workingDir, replyWith
 }
 
 /** Convert a turn-cap-truncated normal turn into a seeded mission. */
+/**
+ * A bare affirmation ("yes", "ok", "go ahead") is a CONTINUATION, not a
+ * mission title. Promoting it verbatim produced missions literally named
+ * "Yes" that lost the actual task. When the inbound is such an affirmation,
+ * anchor the objective in the model's own partial-work summary so the mission
+ * has a real objective and the model doesn't restart blind.
+ */
+const AFFIRMATION_RE =
+  /^(y|yes|yep|yeah|yup|ok|okay|k|sure|go|go ahead|do it|continue|proceed|please do|sounds good|👍)\b[.! ]*$/i;
+
+export function deriveObjectiveText(text, turnResult = {}) {
+  const t = String(text || "").trim();
+  if (!AFFIRMATION_RE.test(t)) return t;
+  const summary = String(turnResult.text || "").trim();
+  const firstLine = summary
+    .split("\n")
+    .map((l) => l.replace(/^[#>*\-\s]+/, "").trim())
+    .find((l) => l.length >= 12);
+  if (!firstLine) return t;
+  return `Continue the in-progress task (user approved with "${t}"): ${firstLine.slice(0, 400)}`;
+}
+
 async function promoteTurnToObjective({ text, inbound, cfg, workingDir, replyWithAgent, onEvent, notify, turnResult }) {
   const store = await import("../agent/objective-store.mjs");
   const existing = await store.findActiveObjective(cfg, {
@@ -490,7 +512,7 @@ async function promoteTurnToObjective({ text, inbound, cfg, workingDir, replyWit
     }
   }
   const obj = store.newObjective({
-    objective: text,
+    objective: deriveObjectiveText(text, turnResult),
     sessionKey: inbound.identity,
     channel: inbound.channel,
     chatId: inbound.chatId,

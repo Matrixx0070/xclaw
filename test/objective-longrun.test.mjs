@@ -248,6 +248,60 @@ describe("long-run orchestrator — the 20-30-tool-call failure, reproduced and 
     await fs.rm(cfg._dir, { recursive: true, force: true });
   });
 
+  it("natural stop with a substantive answer + no open criteria → done (not a 'lost state' error)", async () => {
+    // The live failure that motivated this: the model finished the work and
+    // ended its turn naturally with a clear answer but omitted the fenced
+    // state block. That must resolve as DONE with the answer surfaced, not
+    // escalate "could not parse mission state".
+    const cfg = await cfgTmp();
+    const notes = [];
+    let calls = 0;
+    const runSegment = async () => {
+      calls += 1;
+      return {
+        text: "Verification complete — I checked both open items in the report and confirmed the barrel path and test-coverage claims. Everything is correct.",
+        turns: 7,
+        toolTrace: fakeTrace(7),
+        stopReason: "natural",
+      };
+    };
+    const out = await runObjective(cfg, {
+      objective: "Verify the two open items in the audit report.",
+      runSegment,
+      notify: async (t, m) => notes.push({ t, kind: m?.kind }),
+    });
+    assert.equal(out.status, "done", "natural completion accepted");
+    assert.equal(calls, 1, "no wasted reminder retry when it clearly finished");
+    assert.match(out.objective.finalAnswer, /Verification complete/);
+    assert.equal(notes.at(-1).kind, "done");
+    assert.match(notes.at(-1).t, /Mission complete/);
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+  });
+
+  it("natural stop but OPEN criteria remain → reminder then escalate with the model's answer", async () => {
+    const cfg = await cfgTmp();
+    const notes = [];
+    let calls = 0;
+    const runSegment = async ({ prompt }) => {
+      calls += 1;
+      // seed a criterion via the first state block, then drop the block
+      if (calls === 1) {
+        return {
+          text: block({ status: "continue", criteria: [{ id: "c1", text: "ship the fix", done: false }] }),
+          turns: 3, toolTrace: fakeTrace(3), stopReason: "natural",
+        };
+      }
+      return { text: "Here is a partial summary of progress so far.", turns: 3, toolTrace: fakeTrace(3), stopReason: "natural" };
+    };
+    const out = await runObjective(cfg, {
+      objective: "y", runSegment,
+      notify: async (t, m) => notes.push({ t, kind: m?.kind }),
+    });
+    assert.equal(out.status, "awaiting_human", "open criteria block auto-done");
+    assert.match(notes.at(-1).t, /partial summary/, "model's answer surfaced, not buried");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+  });
+
   it("segment budget pauses resumable — never a silent death; resume continues with same state", async () => {
     const cfg = await cfgTmp();
     cfg.objectives.maxSegments = 3;
@@ -354,5 +408,22 @@ describe("long-run orchestrator — the 20-30-tool-call failure, reproduced and 
     for (const frag of ["[x] c1: structure understood", "use module map", "grep crashed", "src/a.js", OBJECTIVE_TEXT]) {
       assert.ok(p2.includes(frag), `missing: ${frag}`);
     }
+  });
+});
+
+describe("promotion: affirmation continuation gets a real objective title", () => {
+  it("deriveObjectiveText anchors a bare 'Yes' in the partial-work summary", async () => {
+    const { deriveObjectiveText } = await import("../src/channels/runtime.mjs");
+    // bare affirmations → derived from the turn summary's first meaningful line
+    assert.match(
+      deriveObjectiveText("Yes", { text: "I'll update /root/sudo-ai-v4-audit-report.md with the path fix and test-coverage revision." }),
+      /Continue the in-progress task.*audit-report\.md/
+    );
+    assert.match(deriveObjectiveText("go ahead", { text: "Refactor the auth module to remove the duplicate guard." }), /Continue the in-progress task/);
+    // a real objective is passed through verbatim
+    assert.equal(deriveObjectiveText("Audit the entire codebase for security issues", {}), "Audit the entire codebase for security issues");
+    // affirmation with no usable summary falls back to the raw text (no crash)
+    assert.equal(deriveObjectiveText("yes", { text: "" }), "yes");
+    assert.equal(deriveObjectiveText("ok", {}), "ok");
   });
 });
