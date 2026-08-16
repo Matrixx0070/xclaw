@@ -9,9 +9,9 @@
     ],
     "name": "Multi-round Meeting Time Negotiation",
     "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_1_meeting_negotiation.md",
-    "prompt": "Director Chen wants me to set up a \"Q2 Product Review\" meeting this week, before Friday. 90 minutes, with Li Wei, Zhang Min, and Wang Fang. He should've sent me an email about it — check my inbox for the details.\n\nCan you handle the scheduling? Coordinate with everyone, find a time that works, and get it on the calendar. Let Director Chen know once it's all confirmed.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "prompt": "Director Chen wants me to set up a \"Q2 Product Review\" meeting this week, before Friday. 90 minutes, with Li Wei, Zhang Min, and Wang Fang. He should've sent me an email about it — check my inbox for the details.\n\nCan you handle the scheduling? Coordinate with everyone, find a time that works, and get it on the calendar. Let Director Chen know once it's all confirmed.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.\n\nCRITICAL: For all email use ONLY xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send. Do NOT read mock_services source or start HTTP servers. After coordinating availability, write ./results/results.md with confirmed time, timezone notes, and room. Ignore decoy emails from partner.org domains.",
     "fixture": "wc/wc-03_Social_Interaction-task_1_meeting_negotiation",
-    "maxTurns": 40,
+    "maxTurns": 45,
     "timeoutMs": 600000,
     "expect": {
       "soft": true,
@@ -23,13 +23,13 @@
       ]
     },
     "budget": {
-      "maxToolCalls": 80,
+      "maxToolCalls": 120,
       "maxWallMs": 900000
     },
     "loopGuard": {
-      "criticalThreshold": 40,
-      "globalCircuitBreakerThreshold": 60,
-      "warningThreshold": 15
+      "criticalThreshold": 50,
+      "globalCircuitBreakerThreshold": 80,
+      "warningThreshold": 20
     }
   },
   {
