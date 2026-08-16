@@ -46,3 +46,13 @@ python3 scripts/wave-b-install-fixtures.py
 - Large trees (>80 files, e.g. some safety) skipped by default (`WILDCLAW_MAX_FIXTURE_FILES`)
 - Cases with fixtures: `eval/cases/wildclaw-wave-b.json`
 - Attribution: InternLM/WildClawBench (MIT / dataset terms)
+
+## Wave C (social + creative text)
+
+- **Mock tools:** `xclaw_mail_inbox` / `xclaw_mail_read` / `xclaw_mail_send` (reactive replies), `xclaw_chat_list`
+- **Cases:** `eval/cases/wildclaw-wave-c.json` (12: 6 social + 6 creative text)
+- **Fixtures:** install from HF `workspace/03_Social_Interaction` into `eval/fixtures/wc/wc-03_*`
+- **Skipped video-heavy creative** tasks (dub, highlights, launch video, outfit) until media pipeline + assets
+- Live smoke: `chat_action_extraction` on grok-4.6 wrote `results/results.md`
+
+Not full OpenClaw FastAPI mock servers — file-based fixtures + reactive mail for negotiation loops.

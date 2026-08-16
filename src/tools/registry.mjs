@@ -11,6 +11,8 @@ import { createConnectedTools } from "./connected-tools.mjs";
 import { createBrowserTools } from "./browser-tools.mjs";
 import { createVideoTools } from "./video-tools.mjs";
 import { createSkillTools } from "./skill-tools.mjs";
+import { createMockMailTools } from "./mock-mail.mjs";
+import { createMockChatTools } from "./mock-chat.mjs";
 
 export function createAllLocalTools(ctx = {}) {
   const workingDir = ctx.workingDir || process.cwd();
@@ -26,6 +28,8 @@ export function createAllLocalTools(ctx = {}) {
     ...createBrowserTools({ workingDir, cfg, computer: ctx.computer, sessionId: ctx.sessionId }),
     ...createVideoTools({ workingDir }),
     ...createSkillTools({ workingDir, cfg }),
+    ...createMockMailTools(workingDir),
+    ...createMockChatTools(workingDir),
   ];
   return tools;
 }

@@ -23,7 +23,13 @@ export const OPENCLAW_TO_XCLAW = {
   web_fetch: "xclaw_web_fetch",
   fetch: "xclaw_web_fetch",
   http_get: "xclaw_web_fetch",
+  inbox: "xclaw_mail_inbox",
+  gmail_inbox: "xclaw_mail_inbox",
+  send_email: "xclaw_mail_send",
+  read_email: "xclaw_mail_read",
+  slack_list: "xclaw_chat_list",
 };
+
 
 /**
  * Rewrite prompt text for XClaw workspace + tools.
@@ -40,7 +46,7 @@ export function adaptWildClawPrompt(prompt) {
   p +=
     "\n\n---\nXClaw harness notes:\n" +
     "- Workspace is the current working directory. Prefer relative paths under results/.\n" +
-    "- Tools: xclaw_bash, xclaw_file_read, xclaw_file_write, xclaw_file_edit, xclaw_web_search, xclaw_web_fetch, xclaw_browser_tab.\n" +
+    "- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n" +
     "- Do not ask the user to perform steps you can do with tools.\n" +
     "- When finished, ensure required output files exist under results/ when the task asks for saved files.\n";
   return p;

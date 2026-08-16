@@ -1,0 +1,290 @@
+[
+  {
+    "id": "wc-c-03_Social_Interaction_task_1_meeting_negotiation",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "03_Social_Interaction"
+    ],
+    "name": "Multi-round Meeting Time Negotiation",
+    "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_1_meeting_negotiation.md",
+    "prompt": "Director Chen wants me to set up a \"Q2 Product Review\" meeting this week, before Friday. 90 minutes, with Li Wei, Zhang Min, and Wang Fang. He should've sent me an email about it — check my inbox for the details.\n\nCan you handle the scheduling? Coordinate with everyone, find a time that works, and get it on the calendar. Let Director Chen know once it's all confirmed.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "fixture": "wc/wc-03_Social_Interaction-task_1_meeting_negotiation",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-03_Social_Interaction_task_2_chat_action_extraction",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "03_Social_Interaction"
+    ],
+    "name": "Chat Message Action Item Extraction",
+    "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_2_chat_action_extraction.md",
+    "prompt": "I've been swamped lately and I think I'm dropping the ball on things. Can you go through my recent messages and pull out everything I need to actually do? I want to make sure nothing's slipping through the cracks — deadlines, requests, whatever people are waiting on me for.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "fixture": "wc/wc-03_Social_Interaction-task_2_chat_action_extraction",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-03_Social_Interaction_task_3_chat_multi_step_reasoning",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "03_Social_Interaction"
+    ],
+    "name": "Multi-step Chat Reasoning",
+    "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_3_chat_multi_step_reasoning.md",
+    "prompt": "VP Sales just asked me for a realistic feasibility take on the Omega Corp deal. I've been getting messages from different people about it and honestly it's turning into a mess — requirements keep shifting and everyone's flagging different problems.\n\nCan you dig through my messages and tell me what's actually going on? I need to know what we can realistically deliver and what's going to blow up in our faces if we commit.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "fixture": "wc/wc-03_Social_Interaction-task_3_chat_multi_step_reasoning",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-03_Social_Interaction_task_4_chat_thread_consolidation",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "03_Social_Interaction"
+    ],
+    "name": "Chat Message Thread Consolidation with Contradiction Detection",
+    "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_4_chat_thread_consolidation.md",
+    "prompt": "I need to send Director Zhao (our client) a status update on the Phoenix Project, but honestly I've lost track of where things actually stand. People keep sending me revised numbers and I'm not sure what's current anymore.\n\nCan you go through my recent messages and put together a status report I can send him? Make sure it's accurate — I don't want to send the client wrong numbers. Save it as a draft so I can review before it goes out.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "fixture": "wc/wc-03_Social_Interaction-task_4_chat_thread_consolidation",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-03_Social_Interaction_task_5_chat_escalation_routing",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "03_Social_Interaction"
+    ],
+    "name": "Customer Issue Escalation Routing",
+    "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_5_chat_escalation_routing.md",
+    "prompt": "I'm behind on triaging my support inbox. Can you go through everything, figure out what's urgent, and put together an escalation report? Route each issue to the right person on our team. Don't message customers directly — draft those for my review.\n\nWrite the report to `./results/results.md`.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "fixture": "wc/wc-03_Social_Interaction-task_5_chat_escalation_routing",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-03_Social_Interaction_task_6_chat_cross_dept_update_zh",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "03_Social_Interaction"
+    ],
+    "name": "跨部门项目状态汇总（中文版）",
+    "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_6_chat_cross_dept_update_zh.md",
+    "prompt": "首席运营官需要一份整合的\"项目极光\"（Project Aurora）状态报告，用于即将召开的董事会会议。各部门已发来各自的更新，但注意有些消息可能会更新之前消息中的信息（比如会议时间变更、预算修正等）。此外，workspace 中可能存在缓存的旧数据文件，请以 API 返回的最新数据为准。\n\n请阅读所有消息，交叉核对各方信息，找出跨部门的依赖关系、相互矛盾之处以及新增的风险因素。如有关键事项需要进一步确认，可向内部团队成员发送消息核实。最后起草一份全面的执行摘要作为草稿发送给 COO。\n\n请特别注意：\n- 部门自报的数字可能与实际数据存在差异，以财务部门的对账数据为准\n- 注意是否有消息更新了此前的时间安排或截止日期\n- 关注人力资源和供应商方面的新增风险\n- 仔细甄别每条消息的来源和性质，忽略与项目极光（Project Aurora）无关的内容\n- 注意区分演练/测试消息和真实业务消息\n\n请将最终报告写入 `./results/results.md`。\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "fixture": "wc/wc-03_Social_Interaction-task_6_chat_cross_dept_update_zh",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_10_social_poster_multi_crop",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "Social Media Poster Smart Crop for Multi-Platform",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_10_social_poster_multi_crop.md",
+    "prompt": "工作目录 `./` 下有一张社交媒体宣传海报 `./poster_original.png`。\n\n请针对以下社交媒体平台的发布规范，对这张海报进行智能裁切，输出三个适配版本到 `./results/`：\n\n| 文件名 | 适配平台 |\n|--------|----------|\n| `./results/crop_ins_square.png` | Instagram 正方形信息流帖子 |\n| `./results/crop_tiktok.png` | TikTok / Instagram Reels 全屏竖版 |\n| `./results/crop_ins_portrait.png` | Instagram 竖版帖子（Portrait） |\n\n如果需要图像理解或多模态生成能力，可以调用 OpenRouter API（base_url 通过环境变量 `OPENROUTER_BASE_URL` 获取，API Key 通过环境变量 `OPENROUTER_API_KEY` 获取）。\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": null,
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_1_match_report",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "Football Half Match Report with Video Clips",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_1_match_report.md",
+    "prompt": "This is a full first-half video of a La Liga match between Real Betis and FC Barcelona, located at `./first_half.mp4`.\n\nBased on this video, write a **match report with interleaved text and video clips** (in Markdown format), containing the following sections:\n\n### 1. Overview\n\nBriefly summarize the first-half match progression and the halftime score.\n\n### 2. Key Events\n\nList all key events from the first half (goals, red cards, etc.). Each event should include:\n\n- The video timestamp when it occurred (in \"MM:SS\" format, referring to the position in the source video file)\n- A brief text description (players involved, how the goal was scored, etc.)\n- A corresponding **5–10 second** video clip\n\nSave video clips to the `./results/clips/` directory, named `event_1.mp4`, `event_2.mp4`, etc., numbered in chronological order. Reference them in the Markdown using relative paths, e.g.: `[Goal video](clips/event_1.mp4)`\n\n### 3. Highlights\n\nList other notable moments (dangerous attacks, key fouls, near-misses, etc.). Each moment only needs a text description — **no video clip required**.\n\n### Output Requirements\n\n- Save the report as `./results/report.md`\n- Save video clips to the `./results/clips/` directory\n- Keep each video clip between 5–10 seconds\n- Reference video files in the Markdown using relative paths\n- Also save a structured event list file at `./results/events.json` in the following format:\n\n```json\n[\n  {\n    \"video_timestamp\": \"MM:SS\",\n    \"type\": str,\n    \"description\": str,\n    \"clip_file\": \"event_1.mp4\"\n  }\n]\n```\n\nWhere `video_timestamp` is the position in the source video in \"MM:SS\" format (e.g., \"17:56\"), `type` is the event type (e.g., \"goal\", \"red_card\"), and `clip_file` is the corresponding video clip filename.\n\nIf you need image/video understanding or multimodal capabilities, you can call the OpenRouter API (base_url available via the `OPENROUTER_BASE_URL` environment variable, API key available via the `OPENROUTER_API_KEY` environment variable).\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": null,
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_3_product_poster",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "Design a Product Poster for a Leather Briefcase",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_3_product_poster.md",
+    "prompt": "I have a product photo of a briefcase at `./briefcase.png`.\n\nPlease design an **informational product display image** (1080×1440 px PNG) for this item. The image should clearly present the product's key features and characteristics in a clean, professional layout.\n\nBasic info:\n\n- **Brand**: Thornfield & Co.\n- **Product Name**: The Meridian Briefcase\n- **Tagline**: \"Carry Your Story\"\n- **Price**: $279.00 (reference price $379.00)\n\nLook at the product photo carefully, identify its standout features (material, craftsmanship, functionality, etc.), and prominently showcase them in the design. Include a note inviting viewers to learn more.\n\nSave the final image to `./results/poster.png`.\n\nIf you need image understanding or multimodal generation capabilities, you can call the OpenRouter API (base_url available via the `OPENROUTER_BASE_URL` environment variable, API key available via the `OPENROUTER_API_KEY` environment variable).\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": null,
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_7_paper_to_poster",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "Academic Paper to Conference Poster",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_7_paper_to_poster.md",
+    "prompt": "工作目录中有一篇论文 PDF `./paper.pdf`。\n\n请基于该论文制作一份学术会议风格的单页海报 `./results/poster.png`。要求：\n- 单张图片，横向排版，适合学术会议张贴展示\n- 分辨率足够高（最大边 ≥ 3000 像素）\n- 包含论文标题、作者信息等核心板块\n- 包含不少于 3 张图表（架构图、结果可视化、定量对比等）\n- 设计风格统一且专业，配色协调、排版清晰、信息层次分明\n\n如果需要图像理解或多模态生成能力，可以调用 OpenRouter API（base_url 通过环境变量 `OPENROUTER_BASE_URL` 获取，API Key 通过环境变量 `OPENROUTER_API_KEY` 获取）。\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": null,
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_8_repo_to_homepage",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "GitHub Repository to Project Homepage",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_8_repo_to_homepage.md",
+    "prompt": "请为开源项目 VLMEvalKit（https://github.com/open-compass/VLMEvalKit/）制作一个现代化的单页宣传主页 `./results/index.html`。主页需完整介绍项目核心信息，包含不少于 5 张图片（logo、架构示意、效果展示等），设计应专业美观。所有样式内联或内嵌，确保单文件即可完整渲染。\n\n完成网页制作后，使用 Playwright + Headless Chromium 对首页进行完整截图（full page screenshot），将截图保存到 `./results/screenshot.png`。截图宽度设为 1440px。\n\n如果需要图像理解或多模态生成能力，可以调用 OpenRouter API（base_url 通过环境变量 `OPENROUTER_BASE_URL` 获取，API Key 通过环境变量 `OPENROUTER_API_KEY` 获取）。\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": null,
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_9_repo_to_slides",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "GitHub Repository to Project Presentation",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_9_repo_to_slides.md",
+    "prompt": "请为 Meta 的开源项目 SAM 3: Segment Anything with Concepts（https://github.com/facebookresearch/sam3/）制作一份 8 页的项目介绍演示文稿。\n\n输出文件为 `./results/output.pdf`，要求：\n- 恰好 8 页\n- 设计风格统一且专业\n\n如果需要图像理解或多模态生成能力，可以调用 OpenRouter API（base_url 通过环境变量 `OPENROUTER_BASE_URL` 获取，API Key 通过环境变量 `OPENROUTER_API_KEY` 获取）。\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": null,
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  }
+]
