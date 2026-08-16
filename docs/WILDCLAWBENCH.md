@@ -68,3 +68,15 @@ Agent tools: `xclaw_gmail_list`, `xclaw_gmail_get`, `xclaw_gmail_send`, `xclaw_c
 ### Video creative cases
 
 `eval/cases/wildclaw-wave-c2-video.json` — many tasks lack full MP4s in the public HF workspace (binaries live in Docker images). Soft eval + local image/pdf fixtures where present.
+
+## Video policy (option 2 — active)
+
+**Docker video images are skipped** in the default XClaw eval path.
+
+- Cases: `eval/cases/wildclaw-wave-c2-video.json` (soft-only)
+- Allowed: local HF workspace fixtures (png/jpg/pdf/gt JSON) under `eval/fixtures/wc/wc-05_*`
+- Not required: `wildclawbench-*.tar` Docker loads or MP4 extraction
+- Grading: soft (`results/` exists + agent completes); no official video checkpoint graders unless fixtures provide text GT
+
+To enable official video later: pull images on a host with Docker + ≥16GB disk, then mount assets into fixtures.
+
