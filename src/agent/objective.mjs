@@ -394,17 +394,45 @@ export async function runObjective(cfg, opts = {}) {
         ledgerEvent(cfg, obj, "segment_missing_state", { segment: n });
         continue;
       }
-      // Retry exhausted. Deliver the model's actual answer prominently (not
-      // just a "lost state" error) and pause resumable.
+      // Retry exhausted. A model that STILL ends its turn NATURALLY with a
+      // substantive answer — after we explicitly asked it to re-emit the
+      // state block — is insisting it is done. Trust that: a natural stop is
+      // the model's completion signal, and we already gave it the checkpoint
+      // chance. (Common shape: the model recorded criterion EVIDENCE but
+      // never flipped the done flag, so a strict open-criteria gate would
+      // pause a genuinely finished mission — the exact friction seen live.)
+      if (modelEndedTurn && prose.length >= 40) {
+        obj.status = "done";
+        obj.finalAnswer = prose.slice(0, 12000);
+        if (Array.isArray(obj.progress)) {
+          obj.progress.push("Completed on a natural final answer after a state-block reminder (criteria flags not machine-set this segment).");
+        }
+        await saveObjective(cfg, obj);
+        ledgerEvent(cfg, obj, "objective_done", {
+          segments: obj.totals.segments,
+          toolCalls: obj.totals.toolCalls,
+          viaNaturalStop: true,
+          afterReminder: true,
+        });
+        onEvent({ type: "objective", phase: "done", id: obj.id, viaNaturalStop: true });
+        await notify(
+          `✅ Mission complete (${obj.totals.segments} segments, ${obj.totals.toolCalls} tool calls).\n\n${obj.finalAnswer}`,
+          { kind: "done" }
+        );
+        return { status: obj.status, id: obj.id, objective: obj };
+      }
+      // Genuine cutoff (maxTurns/budget/guard) or empty output → pause
+      // resumable, with the model's actual answer surfaced (never a bare
+      // "lost state" error).
       obj.status = "awaiting_human";
       if (prose) obj.finalAnswer = prose.slice(0, 12000);
       obj.humanQuestion =
-        "The model stopped without a machine-readable state block — its answer is above. Reply to continue, or /objective stop.";
+        "The mission was cut off without a machine-readable state block — its partial answer is above. Reply to continue, or /objective stop.";
       await saveObjective(cfg, obj);
       ledgerEvent(cfg, obj, "segment_missing_state_final", { segment: n, stopReason: seg?.stopReason || null });
       await notify(
         prose
-          ? `⚠️ Mission ${obj.id} paused (no structured state). The model's answer:\n\n${prose.slice(0, 1500)}\n\n/objective resume to continue.`
+          ? `⚠️ Mission ${obj.id} paused (cut off, no structured state). The model's partial answer:\n\n${prose.slice(0, 1500)}\n\n/objective resume to continue.`
           : `⚠️ Mission ${obj.id}: no output and no state from the model. /objective resume to retry.`,
         { kind: "escalated" }
       );

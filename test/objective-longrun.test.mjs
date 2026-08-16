@@ -278,27 +278,58 @@ describe("long-run orchestrator — the 20-30-tool-call failure, reproduced and 
     await fs.rm(cfg._dir, { recursive: true, force: true });
   });
 
-  it("natural stop but OPEN criteria remain → reminder then escalate with the model's answer", async () => {
+  it("open criteria: reminder first, then a natural completion answer IS accepted (model recorded evidence, didn't flip the flag)", async () => {
+    // The live shape: criteria seeded, the model does the work and records
+    // evidence but never emits a state block flipping the last flag, then
+    // ends naturally with a full "all criteria satisfied" answer. After the
+    // one reminder it must COMPLETE (not pause) — a natural stop is the
+    // model's completion signal.
     const cfg = await cfgTmp();
     const notes = [];
     let calls = 0;
-    const runSegment = async ({ prompt }) => {
+    const runSegment = async () => {
       calls += 1;
-      // seed a criterion via the first state block, then drop the block
       if (calls === 1) {
         return {
           text: block({ status: "continue", criteria: [{ id: "c1", text: "ship the fix", done: false }] }),
           turns: 3, toolTrace: fakeTrace(3), stopReason: "natural",
         };
       }
-      return { text: "Here is a partial summary of progress so far.", turns: 3, toolTrace: fakeTrace(3), stopReason: "natural" };
+      // reminder response: full completion answer, no state block, natural stop
+      return { text: "All checks pass and every completion criterion is now satisfied with evidence.", turns: 3, toolTrace: fakeTrace(3), stopReason: "natural" };
     };
     const out = await runObjective(cfg, {
       objective: "y", runSegment,
       notify: async (t, m) => notes.push({ t, kind: m?.kind }),
     });
-    assert.equal(out.status, "awaiting_human", "open criteria block auto-done");
-    assert.match(notes.at(-1).t, /partial summary/, "model's answer surfaced, not buried");
+    // seg1 seeds criteria (valid block), seg2 misses state (reminder), seg3
+    // misses again but ends naturally with a completion answer → done
+    assert.equal(calls, 3, "one seed segment, one reminder, one completion");
+    assert.equal(out.status, "done", "post-reminder natural completion accepted");
+    assert.equal(notes.at(-1).kind, "done");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+  });
+
+  it("genuine cutoff (maxTurns) with open criteria → paused resumable, partial answer surfaced", async () => {
+    const cfg = await cfgTmp();
+    const notes = [];
+    let calls = 0;
+    const runSegment = async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          text: block({ status: "continue", criteria: [{ id: "c1", text: "ship the fix", done: false }] }),
+          turns: 12, toolTrace: fakeTrace(12), stopReason: "maxTurns",
+        };
+      }
+      return { text: "Partial progress so far, still working.", turns: 12, toolTrace: fakeTrace(12), stopReason: "maxTurns" };
+    };
+    const out = await runObjective(cfg, {
+      objective: "y", runSegment,
+      notify: async (t, m) => notes.push({ t, kind: m?.kind }),
+    });
+    assert.equal(out.status, "awaiting_human", "a genuine cutoff pauses, never auto-completes");
+    assert.match(notes.at(-1).t, /Partial progress/, "partial answer surfaced");
     await fs.rm(cfg._dir, { recursive: true, force: true });
   });
 
