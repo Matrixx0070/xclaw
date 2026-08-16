@@ -71,7 +71,8 @@
     "computer:parity": "node scripts/check-computer-parity.mjs",
     "c4:soak": "node scripts/c4-engine-soak.mjs",
     "verify:bundle": "node scripts/verify-computer-bundle.mjs",
-    "verify:bundle:strict": "node scripts/verify-computer-bundle.mjs --require-sigstore"
+    "verify:bundle:strict": "node scripts/verify-computer-bundle.mjs --require-sigstore",
+    "autonomy:eval": "node --input-type=module -e \"import { loadConfig } from './src/config/load.mjs'; import { runAutonomyEval } from './src/eval/autonomy-runner.mjs'; const cfg=await loadConfig(); const r=await runAutonomyEval({cfg,tag:'autonomy',trials:Number(process.env.A4_TRIALS||1)}); console.log(JSON.stringify(r.aggregate,null,2));\""
   },
   "files": [
     "bin/",
