@@ -171,22 +171,10 @@ export async function runAgentLoop(options) {
   const autonomyAppendix = buildAutonomyAppendix(autonomyPolicy);
   const goalPlan = buildGoalPlan(userMessage);
   const goalPlanAppendix = formatGoalPlanForPrompt(goalPlan);
-  // A3 reach — probe computer when possible (non-blocking timeout)
-  let computerOk = null;
-  const reachPreview = resolveReach(cfg, { workingDir });
-  try {
-    computerOk = await probeComputerHttp(reachPreview.computerUrl);
-  } catch {
-    computerOk = null;
-  }
-  const reach = resolveReach(cfg, {
-    workingDir,
-    computerOk: computerOk === null ? true : computerOk,
-    computerUrl: reachPreview.computerUrl,
-  });
-  const capabilityBanner = formatCapabilityBanner(reach);
-  onEvent({ type: "reach", phase: "banner", reach });
-  const effectiveBasePrompt = [
+  // A3 reach — probe deferred until onEvent exists (TDZ-safe)
+  let reach = resolveReach(cfg, { workingDir });
+  let capabilityBanner = formatCapabilityBanner(reach);
+  let effectiveBasePrompt = [
     BASE_SYSTEM_PROMPT,
     autonomyAppendix,
     goalPlanAppendix,
@@ -231,6 +219,28 @@ export async function runAgentLoop(options) {
     eventLog.push(e);
     onEventCb(e);
   };
+
+  // A3: live computer probe + reach event (after onEvent exists)
+  try {
+    const computerOk = await probeComputerHttp(reach.computerUrl);
+    reach = resolveReach(cfg, {
+      workingDir,
+      computerOk,
+      computerUrl: reach.computerUrl,
+    });
+    capabilityBanner = formatCapabilityBanner(reach);
+    effectiveBasePrompt = [
+      BASE_SYSTEM_PROMPT,
+      autonomyAppendix,
+      goalPlanAppendix,
+      capabilityBanner,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  } catch {
+    /* keep optimistic reach */
+  }
+  onEvent({ type: "reach", phase: "banner", reach });
 
   // Lifecycle hook manager (cfg.hooks / docs/HOOKS.md). Injectable for tests;
   // every executeAll below is failure-isolated — a broken hook never crashes
