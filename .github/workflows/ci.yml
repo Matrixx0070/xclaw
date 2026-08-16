@@ -13,14 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Do not use cache: npm — repo has no package-lock.json (zero npm deps).
+      # Other workflows (eval-regression, install-e2e) use the same pattern.
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
 
-      - name: Install
+      - name: Install (optional — pure Node, no required deps)
         run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install --ignore-scripts; fi
+          if [ -f package-lock.json ]; then
+            npm ci
+          elif [ -f package.json ] && node -e 'const j=require("./package.json"); process.exit((j.dependencies||j.devDependencies)?0:1)'; then
+            npm install --ignore-scripts
+          else
+            echo "No npm dependencies — skip install"
+          fi
 
       - name: C4 computer parity
         run: node scripts/check-computer-parity.mjs
@@ -37,5 +44,6 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           XCLAW_CI_LIVE: "1"
           XCLAW_PROFILE: lab
+          XCLAW_COMPUTER_ENGINE: native
         run: node scripts/ci-gate.mjs --live
         continue-on-error: true
