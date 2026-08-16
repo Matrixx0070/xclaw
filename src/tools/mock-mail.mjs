@@ -29,6 +29,26 @@ function findInbox(cwd) {
   return null;
 }
 
+
+/** Normalize emails for fixture key match: li.wei@x → liwei@x */
+function normalizeEmailKey(addr) {
+  const s = String(addr || "").trim().toLowerCase();
+  const at = s.indexOf("@");
+  if (at < 0) return s.replace(/\./g, "");
+  const local = s.slice(0, at).replace(/\./g, "");
+  return local + s.slice(at);
+}
+
+function findReactiveKey(reactive, to) {
+  const want = normalizeEmailKey(to);
+  const raw = String(to || "").toLowerCase();
+  for (const k of Object.keys(reactive || {})) {
+    if (k.toLowerCase() === raw) return k;
+    if (normalizeEmailKey(k) === want) return k;
+  }
+  return null;
+}
+
 function statePath(cwd) {
   return path.join(cwd, ".xclaw_mail_state.json");
 }
@@ -146,9 +166,7 @@ export function createMockMailTools(cwd = process.cwd()) {
         state.sent.push(sent);
 
         // inject reactive reply if any
-        const key = Object.keys(state.reactive_replies || {}).find(
-          (k) => k.toLowerCase() === to
-        );
+        const key = findReactiveKey(state.reactive_replies, args.to);
         let injected = null;
         if (key) {
           const queue = state.reactive_replies[key];
@@ -157,7 +175,9 @@ export function createMockMailTools(cwd = process.cwd()) {
             const reply = { ...queue[idx] };
             if (!reply.message_id) reply.message_id = `react_${key}_${idx}`;
             state.emails.push(reply);
-            state.replyIndex[key.toLowerCase()] = idx + 1;
+            const rk = key.toLowerCase();
+            state.replyIndex[rk] = idx + 1;
+            state.replyIndex[normalizeEmailKey(key)] = state.replyIndex[rk];
             injected = reply.message_id;
           }
         }
