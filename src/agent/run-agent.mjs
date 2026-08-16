@@ -133,6 +133,7 @@ export async function runAgent(req = {}) {
       turnState: raw?.turnState || null,
       stopReason: raw?.stopReason || null,
       usage: raw?.usage,
+      goalReceipt: raw?.goalReceipt || null,
       raw,
       channel: opts.channel,
       sessionId: opts.chatSessionId,

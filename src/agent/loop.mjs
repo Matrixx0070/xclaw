@@ -35,6 +35,12 @@ import {
   shouldForceToolRetry,
   HANDOFF_RETRY_USER_PROMPT,
 } from "./autonomy-policy.mjs";
+import {
+  buildGoalPlan,
+  formatGoalPlanForPrompt,
+  buildAlternateStrategyNudge,
+  buildGoalReceipt,
+} from "./goal-loop.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
@@ -158,9 +164,13 @@ export async function runAgentLoop(options) {
 
   const autonomyPolicy = resolveAutonomyPolicy(cfg);
   const autonomyAppendix = buildAutonomyAppendix(autonomyPolicy);
-  const effectiveBasePrompt = autonomyAppendix
-    ? `${BASE_SYSTEM_PROMPT}\n${autonomyAppendix}`
-    : BASE_SYSTEM_PROMPT;
+  const goalPlan = buildGoalPlan(userMessage);
+  const goalPlanAppendix = formatGoalPlanForPrompt(goalPlan);
+  const effectiveBasePrompt = [BASE_SYSTEM_PROMPT, autonomyAppendix, goalPlanAppendix]
+    .filter(Boolean)
+    .join("\n");
+  let alternateStrategyUsed = false;
+  let handoffRetryUsed = false;
 
   // Kill-switch: every loop is registered so `xclaw stop-all` / killSession aborts it
   const sessionKey =
@@ -1616,6 +1626,21 @@ export async function runAgentLoop(options) {
         onEvent,
       });
       void stopTools;
+
+      // A2: after tool failures, one alternate-strategy nudge (cache-safe user notice)
+      if (!alternateStrategyUsed) {
+        const nudge = buildAlternateStrategyNudge(toolTrace);
+        if (nudge) {
+          alternateStrategyUsed = true;
+          messages.push(
+            typeof makeEphemeralNotice === "function"
+              ? makeEphemeralNotice(nudge)
+              : { role: "user", content: nudge }
+          );
+          onEvent({ type: "autonomy", phase: "alternate_strategy", message: nudge.slice(0, 160) });
+        }
+      }
+
       // Pairing invariant: EVERY tool_call id in this assistant turn must get
       // a tool message — a mid-batch stop (pending approval, guard critical)
       // skips the remaining calls, and an orphaned tool_use makes the next
@@ -1733,6 +1758,7 @@ export async function runAgentLoop(options) {
         finalText,
       })
     ) {
+      handoffRetryUsed = true;
       onEvent({ type: "autonomy", phase: "handoff_retry", reason: "zero_tools_handoff" });
       try {
         messages.push({ role: "assistant", content: finalText });
@@ -1992,6 +2018,28 @@ export async function runAgentLoop(options) {
     /* metrics optional */
   }
 
+  const goalReceipt = buildGoalReceipt({
+    goal: userMessage,
+    plan: goalPlan,
+    toolTrace,
+    finalText,
+    stopReason: signal?.aborted || aborted
+      ? "aborted"
+      : hookAbort
+        ? "hook"
+        : loopGuardStop
+          ? "guard"
+          : budgetStop
+            ? "budget"
+            : maxTurnsStop
+              ? "maxTurns"
+              : "natural",
+    turns,
+    alternateStrategyUsed,
+    handoffRetryUsed,
+  });
+  onEvent({ type: "goal_loop", phase: "receipt", receipt: goalReceipt });
+
   return {
     text: stripClaimsBlock(finalText) || "(no response)",
     turns,
@@ -2000,6 +2048,7 @@ export async function runAgentLoop(options) {
     sessionId,
     suggestions,
     turnState,
+    goalReceipt,
     // Why the run ended — orchestrators must distinguish "the model finished"
     // from "the runtime cut it off" (a turn cap is an execution constraint,
     // never evidence the user's objective is complete).
