@@ -22,3 +22,4 @@ coverage/
 src/computer/xclaw-server.mjs
 eval/fixtures/wc/**
 !eval/fixtures/wc/README.md
+eval/fixtures/wc/wc-05_*/**

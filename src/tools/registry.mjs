@@ -13,6 +13,7 @@ import { createVideoTools } from "./video-tools.mjs";
 import { createSkillTools } from "./skill-tools.mjs";
 import { createMockMailTools } from "./mock-mail.mjs";
 import { createMockChatTools } from "./mock-chat.mjs";
+import { createFastApiMockTools } from "./mock-fastapi-client.mjs";
 
 export function createAllLocalTools(ctx = {}) {
   const workingDir = ctx.workingDir || process.cwd();
@@ -30,6 +31,7 @@ export function createAllLocalTools(ctx = {}) {
     ...createSkillTools({ workingDir, cfg }),
     ...createMockMailTools(workingDir),
     ...createMockChatTools(workingDir),
+    ...createFastApiMockTools(),
   ];
   return tools;
 }

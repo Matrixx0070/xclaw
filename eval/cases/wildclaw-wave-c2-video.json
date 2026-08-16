@@ -1,0 +1,122 @@
+[
+  {
+    "id": "wc-c2-05_Creative_Synthesis_task_2_goal_highlights",
+    "tags": [
+      "wildclaw",
+      "wave-c2",
+      "video",
+      "creative"
+    ],
+    "name": "task_2_goal_highlights",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_2_goal_highlights.md",
+    "prompt": "This is a full first-half video of a La Liga match between Real Betis and FC Barcelona, located at `./first_half.mp4`.\n\nBased on this video, compile a **goal highlights reel for Barcelona's #7 Ferran Torres from the first half**.\n\n### Requirements\n\n1. Total highlights duration must be **30 seconds or less**\n2. Must include **all** of Ferran Torres's goals from the first half\n3. Each goal clip should cover the complete sequence from the start of the attacking play to the ball hitting the net\n4. **Do not include post-goal celebrations**\n5. Goal clips can be directly concatenated — no transition effects needed\n6. Maintain original video quality; do not add text, watermarks, or visual effects\n\n### Output Requirements\n\n- Save the highlights video as `./results/highlights.mp4`\n- Format: MP4 (H.264 encoding)\n- Also save a cut sheet file at `./results/cut_sheet.json` documenting each goal clip, in the following format:\n\n```json\n[\n  {\n    \"goal_number\": 1,\n    \"source_start\": \"MM:SS\",\n    \"source_end\": \"MM:SS\",\n    \"description\": \"Brief description\"\n  }\n]\n```\n\nWhere `source_start` and `source_end` are positions in the source video file in \"MM:SS\" format (e.g., \"17:50\" to \"18:02\").\n\nIf you need image/video understanding or multimodal capabilities, you can call the OpenRouter API (base_url available via the `OPENROUTER_BASE_URL` environment variable, API key available via the `OPENROUTER_API_KEY` environment variable).\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C2 video notes: If local video file is missing, state that and use any available fixture text/gt JSON. Write output under ./results/.",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_2_goal_highlights",
+    "maxTurns": 20,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c2-05_Creative_Synthesis_task_4_video_notes",
+    "tags": [
+      "wildclaw",
+      "wave-c2",
+      "video",
+      "creative"
+    ],
+    "name": "task_4_video_notes",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_4_video_notes.md",
+    "prompt": "There's an LLM lecture video at `./video.mp4`. Can you watch it and put together study notes for me? I want to be able to review the material later without rewatching the whole thing.\n\nPlease watch this video carefully and produce a **comprehensive set of study notes** summarizing its content.\n\n### Output Requirements\n\n- Save the notes as `./results/notes.md`\n- Format: Markdown\n- Length: at least 800 words, no more than 3000 words\n\nIf you need video understanding or multimodal capabilities, you can call the OpenRouter API (base_url available via the `OPENROUTER_BASE_URL` environment variable, API key available via the `OPENROUTER_API_KEY` environment variable).\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C2 video notes: If local video file is missing, state that and use any available fixture text/gt JSON. Write output under ./results/.",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_4_video_notes",
+    "maxTurns": 20,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c2-05_Creative_Synthesis_task_5_product_launch_video_to_json",
+    "tags": [
+      "wildclaw",
+      "wave-c2",
+      "video",
+      "creative"
+    ],
+    "name": "task_5_product_launch_video_to_json",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_5_product_launch_video_to_json.md",
+    "prompt": "You have a product launch event video at `./recording.mp4`.\n\n**No internet access — all information must come solely from the video.**\n\nWatch the video, identify all hardware products announced, and save structured data to `./results/products.json`. The file should contain a `products` array where each entry has: `product_name` (string), `category` (\"smartphone\" | \"smartwatch\" | \"earbuds\"), `chip` (string | null), `colors` (string array | null), `battery_life_hours` (int or int array | null), `starting_price_usd` (int | null). Use `null` for any value not explicitly shown in the video. Use exact English color names as shown.\n\nAlso create a visually polished 5-page A4 promotional PDF at `./results/promotional_post.pdf`, featuring product images extracted from the video and key highlights.\n\nOnly include hardware products (no software/service announcements).\n\nIf you need video understanding or multimodal capabilities, you can call the OpenRouter API (base_url available via the `OPENROUTER_BASE_URL` environment variable, API key available via the `OPENROUTER_API_KEY` environment variable).\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C2 video notes: If local video file is missing, state that and use any available fixture text/gt JSON. Write output under ./results/.",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_5_product_launch_video_to_json",
+    "maxTurns": 20,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c2-05_Creative_Synthesis_task_11_video_en_to_zh_dub",
+    "tags": [
+      "wildclaw",
+      "wave-c2",
+      "video",
+      "creative"
+    ],
+    "name": "task_11_video_en_to_zh_dub",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_11_video_en_to_zh_dub.md",
+    "prompt": "工作目录 `./` 中有一段英语演讲视频 `./recording.mp4`。\n\n请将该视频前两分钟的英语内容翻译并配音为中文。将英文转录、中文翻译、配音视频分别输出为 `./results/transcript_en.txt`、`./results/transcript_zh.txt`、`./results/output.mp4 (仅两分钟)`。\n\n配音视频保持原始画面，仅替换音轨。\n\n如果需要图像理解或多模态生成能力，可以调用 OpenRouter API（base_url 通过环境变量 `OPENROUTER_BASE_URL` 获取，API Key 通过环境变量 `OPENROUTER_API_KEY` 获取）。\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C2 video notes: If local video file is missing, state that and use any available fixture text/gt JSON. Write output under ./results/.",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_11_video_en_to_zh_dub",
+    "maxTurns": 20,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c2-05_Creative_Synthesis_task_6_clothing_outfit_to_model_image",
+    "tags": [
+      "wildclaw",
+      "wave-c2",
+      "video",
+      "creative"
+    ],
+    "name": "task_6_clothing_outfit_to_model_image",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_6_clothing_outfit_to_model_image.md",
+    "prompt": "`./clothing_photos/` 目录中有 12 张服饰单品平铺图（`item_01.jpg` 至 `item_12.jpg`），包含上衣、下装和鞋子。\n\n请完成以下工作：\n\n1. 判断每件单品的类别与特征。\n2. 将 12 件单品分成 4 套完整穿搭，每套包含 1 件上衣、1 件下装、1 双鞋，不遗漏不重复。\n3. 将分类与搭配结果保存到 `./results/outfits.json`（每套含 `outfit_id`、`style`、`gender`（female/male）、`top`/`bottom`/`shoes` 各含 `original_file`、`category`、`description`（中文））。`category` 必须使用以下标准分类名称之一：`上衣`、`裤子`、`裙子`、`鞋子`。\n4. 为每套搭配生成全身模特展示图，保存为 `./results/model_outfit_1.png` 至 `./results/model_outfit_4.png`。\n\n如果需要图像理解或多模态生成能力，可以调用 OpenRouter API（base_url 通过环境变量 `OPENROUTER_BASE_URL` 获取，API Key 通过环境变量 `OPENROUTER_API_KEY` 获取）。\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C2 video notes: If local video file is missing, state that and use any available fixture text/gt JSON. Write output under ./results/.",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_6_clothing_outfit_to_model_image",
+    "maxTurns": 20,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  }
+]

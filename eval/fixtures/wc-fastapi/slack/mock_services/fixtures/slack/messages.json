@@ -1,0 +1,155 @@
+[
+  {
+    "message_id": "msg_201",
+    "sender": "@boss",
+    "channel": "DM",
+    "content": "Project Phoenix - kickoff update\n\nHi,\n\nQuick clarification from the kickoff — we're not doing a full microservices migration anymore. The plan is now to keep the monolith and gradually add a few service layers on top where needed.\n\nTimeline is flexible — sometime in Q3 or later is fine.\n\nAlso, no need for a detailed feasibility report right now. A short summary next week (around March 26) is enough.\n\nThanks,\nBoss",
+    "timestamp": "2026-03-17T10:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_202",
+    "sender": "@kevin",
+    "channel": "DM",
+    "content": "Re: pipeline setup\n\nHey,\n\nGiven the updated direction, we probably don't need separate pipelines per service. We can just reuse the existing monolith pipeline and extend it slightly.\n\nNo rush on sending the service list — I can proceed without it.\n\nKevin",
+    "timestamp": "2026-03-17T14:30:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_203",
+    "sender": "@frontend-lead",
+    "channel": "#team",
+    "content": "API contracts update\n\nTeam,\n\nGiven we're not fully decomposing the backend anymore, there's no immediate need to define strict API contracts.\n\nFeel free to document endpoints later once things stabilize — no deadlines for now.\n\nAmy",
+    "timestamp": "2026-03-17T11:15:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_204",
+    "sender": "@hr",
+    "channel": "#all-managers",
+    "content": "Q1 performance reviews\n\nHi all,\n\nDue to system updates, performance review deadlines are now flexible. You can submit anytime before end of month without issues.\n\nNo strict scheduling required for 1:1s either.\n\nHR",
+    "timestamp": "2026-03-16T09:00:00Z",
+    "is_read": true,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_205",
+    "sender": "@boss",
+    "channel": "DM",
+    "content": "Re: additional note\n\nActually, you can skip the data migration section entirely — data team confirmed there are no major dependencies.\n\nAlso, expense reports are not urgent anymore. Finance extended the deadline to next week.",
+    "timestamp": "2026-03-17T16:45:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_207",
+    "sender": "@kevin",
+    "channel": "DM",
+    "content": "Re: registry\n\nWe can just stick with the current internal registry — no need to explore AWS ECR.\n\nIt's stable enough for now.",
+    "timestamp": "2026-03-18T09:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_208",
+    "sender": "@amy-frontend",
+    "channel": "DM",
+    "content": "API docs timing\n\nHey,\n\nNo need to worry about deadlines anymore — let's just update docs whenever convenient.\n\nAlso, the analytics report isn't that critical right now.",
+    "timestamp": "2026-03-19T09:30:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_209",
+    "sender": "@david-infra",
+    "channel": "DM",
+    "content": "Monitoring\n\nHey,\n\nThe observability sync is optional — we'll circulate notes afterward.\n\nNo need for backend sign-off before rollout.",
+    "timestamp": "2026-03-19T14:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_210",
+    "sender": "@rachel-data",
+    "channel": "DM",
+    "content": "Data dependencies\n\nHi,\n\nQuick update — there are no significant data risks.\n\nAll ETL jobs are already loosely coupled, and the batch job (px-batch-07) is effectively unused.\n\nMigration can happen anytime — no timing constraints.\n\nRachel",
+    "timestamp": "2026-03-20T10:15:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_212",
+    "sender": "@kevin",
+    "channel": "DM",
+    "content": "Pipeline scope\n\nNo need to check with data team before scoping — we can finalize pipelines independently.\n\nShouldn't be any blockers there.",
+    "timestamp": "2026-03-20T16:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_213",
+    "sender": "@boss",
+    "channel": "DM",
+    "content": "Timeline update\n\nHey,\n\nNo strict milestones anymore — leadership is okay with incremental progress.\n\nThe April demo is optional and can be pushed if needed.\n\nAlso, for the all-hands, feel free to go deep technically — audience will mostly be engineers.\n\nDraft can be shared anytime Friday morning.",
+    "timestamp": "2026-03-20T17:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_214",
+    "sender": "@security-lead",
+    "channel": "DM",
+    "content": "Registry approval\n\nHi,\n\nNo special requirements for container registry — just follow standard practices.\n\nNo need for IAM review at this stage.",
+    "timestamp": "2026-03-20T14:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_215",
+    "sender": "@amy-frontend",
+    "channel": "#team",
+    "content": "API priorities\n\nTeam,\n\nNo need to prioritize specific endpoints — traffic is evenly distributed.\n\nFocus on whatever is easiest to migrate first.",
+    "timestamp": "2026-03-21T10:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_216",
+    "sender": "@hr",
+    "channel": "DM",
+    "content": "Performance reviews\n\nHi,\n\nNo strict deadline anymore — just complete reviews when possible.\n\nNo urgency on scheduling 1:1s either.",
+    "timestamp": "2026-03-21T09:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_217",
+    "sender": "@kevin",
+    "channel": "#backend-infra",
+    "content": "Staging\n\nI'll delay staging setup until we have a clearer picture — no fixed timeline for now.\n\nNo action needed this week.",
+    "timestamp": "2026-03-21T11:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_218",
+    "sender": "@cto",
+    "channel": "DM",
+    "content": "Architecture doc\n\nHi,\n\nNo need to rush the one-pager — this can wait until later next month.\n\nJust share something informal when ready.",
+    "timestamp": "2026-03-21T15:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  },
+  {
+    "message_id": "msg_220",
+    "sender": "@boss",
+    "channel": "DM",
+    "content": "All-hands deck\n\nYou can build slides however you like — no need to use a template.\n\nNo strict deadline either, just bring something to the meeting.",
+    "timestamp": "2026-03-21T18:00:00Z",
+    "is_read": false,
+    "tags": ["inbox"]
+  }
+]

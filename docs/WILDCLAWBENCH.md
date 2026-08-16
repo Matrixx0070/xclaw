@@ -47,12 +47,24 @@ python3 scripts/wave-b-install-fixtures.py
 - Cases with fixtures: `eval/cases/wildclaw-wave-b.json`
 - Attribution: InternLM/WildClawBench (MIT / dataset terms)
 
-## Wave C (social + creative text)
+## Wave C2 — FastAPI mocks + video creative cases
 
-- **Mock tools:** `xclaw_mail_inbox` / `xclaw_mail_read` / `xclaw_mail_send` (reactive replies), `xclaw_chat_list`
-- **Cases:** `eval/cases/wildclaw-wave-c.json` (12: 6 social + 6 creative text)
-- **Fixtures:** install from HF `workspace/03_Social_Interaction` into `eval/fixtures/wc/wc-03_*`
-- **Skipped video-heavy creative** tasks (dub, highlights, launch video, outfit) until media pipeline + assets
-- Live smoke: `chat_action_extraction` on grok-4.6 wrote `results/results.md`
+### FastAPI gmail / calendar / slack
 
-Not full OpenClaw FastAPI mock servers — file-based fixtures + reactive mail for negotiation loops.
+```bash
+# terminals (or scripts/start-wc-fastapi-mocks.py after fixtures installed)
+cd eval/fixtures/wc-fastapi/meeting/mock_services/gmail
+PYTHONPATH=.. GMAIL_FIXTURES=../../fixtures/gmail/inbox.json python3 -m uvicorn server:app --port 9100
+
+cd ../calendar
+PYTHONPATH=.. CALENDAR_FIXTURES=../../fixtures/calendar/events.json python3 -m uvicorn server:app --port 9101
+
+cd ../../../../wc-fastapi/slack/mock_services/slack
+PYTHONPATH=.. python3 -m uvicorn server:app --port 9102
+```
+
+Agent tools: `xclaw_gmail_list`, `xclaw_gmail_get`, `xclaw_gmail_send`, `xclaw_calendar_list`, `xclaw_calendar_create`, `xclaw_slack_list`.
+
+### Video creative cases
+
+`eval/cases/wildclaw-wave-c2-video.json` — many tasks lack full MP4s in the public HF workspace (binaries live in Docker images). Soft eval + local image/pdf fixtures where present.

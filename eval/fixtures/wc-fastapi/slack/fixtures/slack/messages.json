@@ -1,0 +1,81 @@
+[
+  {
+    "message_id": "msg_201",
+    "sender": "@boss",
+    "channel": "DM",
+    "content": "Project Phoenix - kickoff tasks\n\nHi,\n\nWe had the Project Phoenix kickoff meeting today. Here's what we discussed:\n\n1. The project aims to migrate our monolith to microservices architecture\n2. Timeline: Q2 2026 completion target\n3. You'll be leading the backend decomposition workstream\n\nPlease prepare a technical feasibility report by next Monday (March 23). Include risk assessment and resource estimates.\n\nAlso, coordinate with the DevOps team to set up the new CI/CD pipeline for microservices. Talk to Kevin about this.\n\nThanks,\nBoss",
+    "timestamp": "2026-03-17T10:00:00Z",
+    "is_read": false,
+    "tags": [
+      "inbox",
+      "important"
+    ]
+  },
+  {
+    "message_id": "msg_202",
+    "sender": "@kevin",
+    "channel": "DM",
+    "content": "Re: CI/CD pipeline setup\n\nHey,\n\nBoss mentioned you'd be reaching out about the new pipeline. I've already started researching options.\n\nCan you send me the list of services that will need their own pipelines? I need this before I can provision the infrastructure.\n\nAlso, we should probably schedule a 1-hour working session this week to hash out the deployment strategy. What times work for you?\n\nKevin",
+    "timestamp": "2026-03-17T14:30:00Z",
+    "is_read": false,
+    "tags": [
+      "inbox"
+    ]
+  },
+  {
+    "message_id": "msg_203",
+    "sender": "@frontend-lead",
+    "channel": "#team",
+    "content": "Frontend-Backend API contract discussion\n\nTeam,\n\nAs we start the microservices migration, we need to define the API contracts between frontend and the new backend services.\n\nI'd like each backend owner to document their service's API endpoints in the shared Confluence space by Friday March 21.\n\nUser — since you're leading backend decomposition, could you also review the existing API usage analytics report? It's on the shared drive at /reports/api-usage-2026-q1.xlsx. This will help us identify which endpoints are most critical to migrate first.\n\nLet me know if you have questions.\n\nFrontend Lead Amy",
+    "timestamp": "2026-03-17T11:15:00Z",
+    "is_read": false,
+    "tags": [
+      "inbox"
+    ]
+  },
+  {
+    "message_id": "msg_204",
+    "sender": "@hr",
+    "channel": "#all-managers",
+    "content": "Q1 performance review submissions due March 25\n\nDear Managers,\n\nThis is a reminder that Q1 performance reviews for your direct reports are due by March 25.\n\nPlease complete the following steps:\n1. Fill out the review form in the HR portal\n2. Schedule a 30-minute 1:1 with each direct report to discuss\n3. Submit the final ratings by the deadline\n\nForm link: https://hr.company.com/reviews/q1-2026\n\nHR Department",
+    "timestamp": "2026-03-16T09:00:00Z",
+    "is_read": true,
+    "tags": [
+      "inbox"
+    ]
+  },
+  {
+    "message_id": "msg_205",
+    "sender": "@boss",
+    "channel": "DM",
+    "content": "Re: Project Phoenix - additional note\n\nOne more thing I forgot to mention — \n\nPlease add a section in your feasibility report about data migration strategy. The data team flagged this as a major risk area. Talk to Data Lead Rachel about the current data dependencies.\n\nAlso, I noticed you haven't submitted your expense report from the conference last week. Finance is closing the books — please submit it by Wednesday.\n\nThanks",
+    "timestamp": "2026-03-17T16:45:00Z",
+    "is_read": false,
+    "tags": [
+      "inbox"
+    ]
+  },
+  {
+    "message_id": "msg_206",
+    "sender": "@newsletter",
+    "channel": "DM",
+    "content": "Cloud Weekly: Kubernetes 1.32 released\n\nThis week:\n\n- Kubernetes 1.32 adds native sidecar containers\n- AWS announces new region in Southeast Asia\n- Google Cloud introduces Gemini-powered debugging\n- Azure DevOps gets AI code review\n\nRead more: https://cloudweekly.io/2026-11",
+    "timestamp": "2026-03-16T08:00:00Z",
+    "is_read": true,
+    "tags": [
+      "inbox",
+      "category-updates"
+    ]
+  },
+  {
+    "message_id": "msg_207",
+    "sender": "@kevin",
+    "channel": "DM",
+    "content": "Re: Re: CI/CD pipeline setup\n\nHey, following up — I just realized we also need to decide on the container registry. We're currently using our self-hosted one but it's been unreliable.\n\nCan you check with the security team whether we're approved to use AWS ECR or if we need to stick with the internal registry? This is blocking my infrastructure planning.\n\nThanks,\nKevin",
+    "timestamp": "2026-03-18T09:00:00Z",
+    "is_read": false,
+    "tags": [
+      "inbox"
+    ]
+  }
+]
