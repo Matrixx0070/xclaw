@@ -29,6 +29,12 @@ import {
   formatBlockedReply,
 } from "./turn-state.mjs";
 import { createLoopGuard } from "./loop-guards.mjs";
+import {
+  resolveAutonomyPolicy,
+  buildAutonomyAppendix,
+  shouldForceToolRetry,
+  HANDOFF_RETRY_USER_PROMPT,
+} from "./autonomy-policy.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
@@ -149,6 +155,12 @@ export async function runAgentLoop(options) {
   } = options;
   const transcriptId =
     chatSessionId || options.conversationId || chatId || null;
+
+  const autonomyPolicy = resolveAutonomyPolicy(cfg);
+  const autonomyAppendix = buildAutonomyAppendix(autonomyPolicy);
+  const effectiveBasePrompt = autonomyAppendix
+    ? `${BASE_SYSTEM_PROMPT}\n${autonomyAppendix}`
+    : BASE_SYSTEM_PROMPT;
 
   // Kill-switch: every loop is registered so `xclaw stop-all` / killSession aborts it
   const sessionKey =
@@ -413,7 +425,7 @@ export async function runAgentLoop(options) {
   });
   // Stable prefix for provider prompt caching (xAI cached_tokens, etc.)
   const systemContent = buildCacheableSystemPrompt({
-    basePrompt: BASE_SYSTEM_PROMPT,
+    basePrompt: effectiveBasePrompt,
     contextSections,
   });
 
@@ -613,7 +625,7 @@ export async function runAgentLoop(options) {
 
 
   const sysBuilt = buildSystemMessageWithBreakpoints({
-    basePrompt: BASE_SYSTEM_PROMPT,
+    basePrompt: effectiveBasePrompt,
     contextSections,
     cfg,
     model: provider.model,
@@ -1710,6 +1722,40 @@ export async function runAgentLoop(options) {
         }
       }
       if (!finalText) finalText = `Stopped after ${maxTurns} turns (maxTurns).`;
+    }
+
+        // A1: zero-tool handoff → one forced continuation
+    if (
+      finalText &&
+      shouldForceToolRetry({
+        policy: autonomyPolicy,
+        toolTrace,
+        finalText,
+      })
+    ) {
+      onEvent({ type: "autonomy", phase: "handoff_retry", reason: "zero_tools_handoff" });
+      try {
+        messages.push({ role: "assistant", content: finalText });
+        messages.push({ role: "user", content: HANDOFF_RETRY_USER_PROMPT });
+        const retryRes = await provider.chat({
+          messages,
+          tools: tools?.length ? tools : undefined,
+        });
+        const rMsg = retryRes?.message;
+        const rText = typeof rMsg?.content === "string" ? rMsg.content.trim() : "";
+        if (rText) finalText = rText;
+        onEvent({
+          type: "autonomy",
+          phase: "handoff_retry_done",
+          hadToolCalls: Array.isArray(rMsg?.tool_calls) && rMsg.tool_calls.length > 0,
+        });
+      } catch (re) {
+        onEvent({
+          type: "autonomy",
+          phase: "handoff_retry_error",
+          error: String(re?.message || re),
+        });
+      }
     }
 
     // ── Hook: post_process — system/trusted hooks may transform the final

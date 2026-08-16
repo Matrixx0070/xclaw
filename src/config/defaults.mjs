@@ -376,6 +376,14 @@ export const DEFAULT_CONFIG = {
   },
   /** R4 proactive autonomy */
   autonomy: {
+    /** A1 — in-loop agent behavior (all channels) */
+    agent: {
+      toolFirst: true,
+      maxHandoffs: 1,
+      requireVerifyHint: true,
+      /** One forced continuation if model handoffs with zero tools */
+      handoffRetry: true,
+    },
     heartbeat: {
       enabled: false,
       everyMs: 1_800_000, // 30m
