@@ -2,7 +2,7 @@
  * WebChat channel — browser chat UI ↔ agent loop
  */
 import { randomUUID } from "node:crypto";
-import { runAgentLoop } from "../../agent/loop.mjs";
+import { runAgent } from "../../agent/run-agent.mjs";
 import { runJob } from "../../jobs/job.mjs";
 import { handleChannelCommand } from "../commands.mjs";
 
@@ -186,9 +186,11 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
         usage: job.usage,
       };
     } else {
-      result = await runAgentLoop({
-        userMessage: message.trim(),
+      result = await runAgent({
+        goal: message.trim(),
         cfg,
+        channel: "webchat",
+        chatSessionId: session.id,
         workingDir: session.workingDir || process.cwd(),
         signal,
         onEvent: (e) => {

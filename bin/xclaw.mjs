@@ -1726,7 +1726,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       }
       const { loadConfig } = await import("../src/config/load.mjs");
       const { isComputerRunning, startComputer } = await import("../src/computer/manager.mjs");
-      const { runAgentLoop } = await import("../src/agent/loop.mjs");
+      const { runAgent } = await import("../src/agent/run-agent.mjs");
       const cfg = await loadConfig();
       if (!(await isComputerRunning(cfg))) {
         console.log("[xclaw] Starting Computer…");
@@ -1739,9 +1739,10 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         sessionId = `cli-${Date.now().toString(36)}`;
       }
       if (sessionId) console.log(`[xclaw] session: ${sessionId}`);
-      const result = await runAgentLoop({
-        userMessage: message,
+      const result = await runAgent({
+        goal: message,
         cfg,
+        channel: "cli",
         chatSessionId: sessionId || null,
         onEvent: (e) => {
           if (e.type === "tool" && e.phase === "start") {

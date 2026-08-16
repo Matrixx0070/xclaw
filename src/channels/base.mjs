@@ -1,7 +1,7 @@
 /**
  * Shared helpers for messaging channels → agent loop.
  */
-import { runAgentLoop } from "../agent/loop.mjs";
+import { runAgent } from "../agent/run-agent.mjs";
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif)$/i;
 /** Pull image file paths the agent produced (generate_image / edit_image …)
@@ -49,8 +49,9 @@ export async function replyWithAgent({
     vaultUserId = identity;
   }
   const run = async () => {
-    const result = await runAgentLoop({
-      userMessage: message,
+    // A0: all channels share runAgent — channel is metadata only.
+    const result = await runAgent({
+      goal: message,
       cfg,
       workingDir: workingDir || process.cwd(),
       signal,
@@ -74,6 +75,8 @@ export async function replyWithAgent({
       stopReason: result.stopReason || null,
       identity,
       vaultUserId,
+      ok: result.ok,
+      error: result.error || null,
     };
   };
   if (userId || channel || chatId) {

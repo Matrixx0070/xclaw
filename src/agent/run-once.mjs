@@ -1,24 +1,21 @@
 /**
- * Minimal one-shot agent entry for automations / CLI.
+ * Minimal one-shot agent entry for automations / CLI helpers.
+ * A0: delegates to channel-invariant runAgent.
  */
-export async function runAgentOnce({ cfg, message, goal } = {}) {
+import { runAgent } from "./run-agent.mjs";
+
+export async function runAgentOnce({ cfg, message, goal, channel = "automation" } = {}) {
   const text = String(message || goal || "").trim();
   if (!text) return { ok: false, error: "empty_message" };
-  try {
-    const { runAgentLoop } = await import("./loop.mjs");
-    // runAgentLoop takes `userMessage` (string) — passing a `messages` array
-    // here silently produced content:undefined requests (Provider HTTP 400).
-    const out = await runAgentLoop({
-      cfg: cfg || {},
-      userMessage: text,
-    });
-    return {
-      ok: true,
-      text: out?.finalText || out?.text || out?.reply || JSON.stringify(out).slice(0, 1500),
-      raw: out,
-    };
-  } catch (e) {
-    // loop signature may differ — soft fail for automation results store
-    return { ok: false, error: e.message || String(e) };
-  }
+  const out = await runAgent({
+    goal: text,
+    cfg: cfg || {},
+    channel,
+  });
+  return {
+    ok: out.ok,
+    text: out.text || "",
+    error: out.error,
+    raw: out.raw,
+  };
 }
