@@ -46,6 +46,7 @@ import {
   formatCapabilityBanner,
   probeComputerHttp,
 } from "./capability-reach.mjs";
+import { sanitizeToolArgs } from "./computer-client.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
@@ -1121,6 +1122,7 @@ export async function runAgentLoop(options) {
         } catch {
           args = {};
         }
+        args = sanitizeToolArgs(name, args);
 
         // Run-scoped allowlist: excluded tools are never advertised, but a
         // hallucinated name must not reach the router either (defense in depth).

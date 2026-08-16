@@ -30,3 +30,13 @@ Still requires Harbor/Docker workspaces from InternLM. Path:
 3. Nightly Docker runner
 
 Do not equate A4/W scores with official WildClawBench leaderboard numbers.
+
+## Wave A (shipped)
+
+- Converter: `node scripts/wave-a-convert-wildclaw.mjs` (requires `WILDCLAW_ROOT` or `/tmp/WildClawBench`)
+- Cases: `eval/cases/wildclaw-wave-a.json` (~38 adapted prompts)
+- Aliases: `src/tools/aliases/openclaw-map.mjs`
+- Soft scoring for long-horizon tasks without full Docker graders
+- Skipped: social multi-party, heavy video/vision puzzle tasks (Wave B/C)
+
+Attribution: task text derived from InternLM/WildClawBench (MIT).
