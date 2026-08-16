@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { runVerifyChecks } from "../jobs/verify.mjs";
 import { scoreCausal, loadTimeline } from "../browser/timetravel.mjs";
+import { runHardGrader } from "./hard-graders.mjs";
 
 /** Whitespace-insensitive form for code-ish comparisons ("a + b" ≡ "a+b"). */
 function normalizeLoose(s) {
@@ -131,6 +132,18 @@ export async function scoreCase(caseDef, jobResult) {
     } catch (e) {
       failures.push(`causal:error:${e?.message || e}`);
       causal = { pass: false, failures: [String(e?.message || e)] };
+    }
+  }
+
+    // Hard graders (social/search facts)
+  let hardGrade = null;
+  if (caseDef.expect?.hard || caseDef.hard || /meeting_negotiation|conflicting_handling/i.test(caseDef.id || "")) {
+    hardGrade = await runHardGrader(caseDef, {
+      text: jobResult.text || "",
+      workspace,
+    });
+    if (!hardGrade.ok) {
+      for (const f of hardGrade.failures) failures.push(f);
     }
   }
 

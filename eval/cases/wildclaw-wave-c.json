@@ -14,13 +14,16 @@
     "maxTurns": 45,
     "timeoutMs": 600000,
     "expect": {
-      "soft": true,
+      "soft": false,
       "success": [
         {
           "type": "file_exists",
           "path": "results"
         }
-      ]
+      ],
+      "hard": {
+        "grader": "meeting_negotiation"
+      }
     },
     "budget": {
       "maxToolCalls": 120,
