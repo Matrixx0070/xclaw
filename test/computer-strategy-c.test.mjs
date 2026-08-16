@@ -71,8 +71,19 @@ describe("Strategy C computer policy", () => {
     assert.equal(stamp.fullRebuild, false);
   });
 
-  it("transitional default engine is still native", () => {
-    assert.equal(resolveComputerEngine({}), "native");
+  it("product default engine is bundle", () => {
+    const prev = process.env.XCLAW_COMPUTER_ENGINE;
+    const prevN = process.env.XCLAW_COMPUTER_NATIVE;
+    delete process.env.XCLAW_COMPUTER_ENGINE;
+    delete process.env.XCLAW_COMPUTER_NATIVE;
+    try {
+      assert.equal(resolveComputerEngine({}), "bundle");
+    } finally {
+      if (prev !== undefined) process.env.XCLAW_COMPUTER_ENGINE = prev;
+      else delete process.env.XCLAW_COMPUTER_ENGINE;
+      if (prevN !== undefined) process.env.XCLAW_COMPUTER_NATIVE = prevN;
+      else delete process.env.XCLAW_COMPUTER_NATIVE;
+    }
   });
 
   it("bundle engine selectable", () => {

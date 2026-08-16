@@ -1,8 +1,8 @@
 /**
- * Gateway control-plane policy for computer engine selection (Strategy C4).
+ * Gateway control-plane policy for computer engine selection.
  *
- * Owns the *decision surface* the gateway uses; implementation remains in
- * src/computer/engine.mjs. Do not resolve engines ad-hoc in routes.
+ * Product default: full CDP bundle. native/generated remain lightweight escape hatches.
+ * Implementation lives in src/computer/engine.mjs.
  */
 
 import {
@@ -11,64 +11,63 @@ import {
   describeComputerEngine,
   isNativeComputer,
   isGeneratedComputer,
+  DEFAULT_COMPUTER_ENGINE,
 } from "../../computer/engine.mjs";
 
-/** Engines allowed as long-term defaults under C4. */
-export const ALLOWED_DEFAULT_ENGINES = Object.freeze(["native", "generated"]);
+/** Engines allowed as long-term defaults (product + escape hatches). */
+export const ALLOWED_DEFAULT_ENGINES = Object.freeze([
+  "bundle",
+  "native",
+  "generated",
+]);
 
 /**
  * @param {object} [cfg]
- * @returns {{"native"|"generated"|"bundle"}}
+ * @returns {"native"|"generated"|"bundle"}
  */
 export function policyResolveComputerEngine(cfg = {}) {
   return resolveComputerEngine(cfg);
 }
 
 /**
- * Whether the resolved engine is an explicit fallback (legacy blob).
+ * True when operator explicitly forced the legacy "bundle as fallback only" path.
+ * With product default = bundle, this is false for ordinary default resolution.
  * @param {object} [cfg]
  */
 export function isBundleFallback(cfg = {}) {
-  return resolveComputerEngine(cfg) === "bundle";
+  return (
+    resolveComputerEngine(cfg) === "bundle" &&
+    DEFAULT_COMPUTER_ENGINE !== "bundle"
+  );
 }
 
 /**
- * Fail closed if config tries to set an invalid default for production policy.
- * Bundle is allowed only as explicit override (env or cfg.computer.engine).
- *
  * @param {object} [cfg]
- * @returns {{ ok: boolean, engine: string, reason?: string }}
+ * @returns {{ ok: boolean, engine: string, reason?: string, warning?: boolean }}
  */
 export function validateComputerEnginePolicy(cfg = {}) {
   const engine = resolveComputerEngine(cfg);
-  const explicit =
-    Boolean(process.env.XCLAW_COMPUTER_ENGINE) ||
-    Boolean(process.env.XCLAW_COMPUTER_NATIVE) ||
-    cfg.computer?.engine != null ||
-    cfg.computer?.nativeServer != null;
-
-  if (engine === "bundle" && !explicit) {
-    return {
-      ok: false,
-      engine,
-      reason: "bundle selected without explicit override (C4 forbids implicit default)",
-    };
-  }
-
-  if (engine === "bundle") {
-    return {
-      ok: true,
-      engine,
-      reason: "explicit bundle fallback",
-      warning: true,
-    };
-  }
 
   if (!ALLOWED_DEFAULT_ENGINES.includes(engine)) {
     return { ok: false, engine, reason: `unknown engine: ${engine}` };
   }
 
-  return { ok: true, engine };
+  if (engine === "native" || engine === "generated") {
+    return {
+      ok: true,
+      engine,
+      reason: "lightweight escape hatch",
+      warning: false,
+    };
+  }
+
+  // bundle is the product default
+  return {
+    ok: true,
+    engine,
+    reason: "product default full CDP bundle",
+    warning: false,
+  };
 }
 
 /**
@@ -93,6 +92,7 @@ export {
   describeComputerEngine,
   isNativeComputer,
   isGeneratedComputer,
+  DEFAULT_COMPUTER_ENGINE,
 };
 
 export default {
@@ -106,4 +106,5 @@ export default {
   describeComputerEngine,
   isNativeComputer,
   isGeneratedComputer,
+  DEFAULT_COMPUTER_ENGINE,
 };

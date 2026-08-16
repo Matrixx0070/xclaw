@@ -19,7 +19,7 @@ describe("Strategy C4 parity matrix", () => {
     const matrix = JSON.parse(fs.readFileSync(matrixPath, "utf8"));
     assert.equal(matrix.phase, "C4");
     assert.equal(matrix.policy?.handEditBundle, false);
-    assert.notEqual(matrix.policy?.defaultEngine, "bundle");
+    assert.equal(matrix.policy?.defaultEngine, "bundle");
     const names = new Set(matrix.tools.map((t) => t.name));
     for (const t of MAINTAINED_TOOLS) {
       assert.ok(names.has(t.name), `matrix missing registry tool ${t.name}`);
@@ -39,12 +39,24 @@ describe("Strategy C4 parity matrix", () => {
     }
   });
 
-  it("default engine remains native; describeComputerEngine works", () => {
-    assert.equal(resolveComputerEngine({}), "native");
-    const d = describeComputerEngine({});
-    assert.equal(d.engine, "native");
-    assert.equal(d.isFallbackBundle, false);
-    assert.equal(d.strategyPhase, "C4");
+  it("default engine is bundle; describeComputerEngine works", () => {
+    const prev = process.env.XCLAW_COMPUTER_ENGINE;
+    const prevN = process.env.XCLAW_COMPUTER_NATIVE;
+    delete process.env.XCLAW_COMPUTER_ENGINE;
+    delete process.env.XCLAW_COMPUTER_NATIVE;
+    try {
+      assert.equal(resolveComputerEngine({}), "bundle");
+      const d = describeComputerEngine({});
+      assert.equal(d.engine, "bundle");
+      assert.equal(d.isDefaultBundle, true);
+      assert.equal(d.policy?.defaultEngine, "bundle");
+      assert.match(String(d.strategyPhase || ""), /C4/);
+    } finally {
+      if (prev !== undefined) process.env.XCLAW_COMPUTER_ENGINE = prev;
+      else delete process.env.XCLAW_COMPUTER_ENGINE;
+      if (prevN !== undefined) process.env.XCLAW_COMPUTER_NATIVE = prevN;
+      else delete process.env.XCLAW_COMPUTER_NATIVE;
+    }
   });
 
   it("check-computer-parity script exits 0", () => {
