@@ -31,12 +31,18 @@ Still requires Harbor/Docker workspaces from InternLM. Path:
 
 Do not equate A4/W scores with official WildClawBench leaderboard numbers.
 
-## Wave A (shipped)
+## Wave B (fixtures)
 
-- Converter: `node scripts/wave-a-convert-wildclaw.mjs` (requires `WILDCLAW_ROOT` or `/tmp/WildClawBench`)
-- Cases: `eval/cases/wildclaw-wave-a.json` (~38 adapted prompts)
-- Aliases: `src/tools/aliases/openclaw-map.mjs`
-- Soft scoring for long-horizon tasks without full Docker graders
-- Skipped: social multi-party, heavy video/vision puzzle tasks (Wave B/C)
+Official task **workspaces** live on HuggingFace (`internlm/WildClawBench` → `workspace/`).
 
-Attribution: task text derived from InternLM/WildClawBench (MIT).
+```bash
+# download (python huggingface_hub)
+python3 -c "from huggingface_hub import snapshot_download; snapshot_download('internlm/WildClawBench', repo_type='dataset', local_dir='/tmp/wc-hf/WildClawBench-data', allow_patterns=['workspace/04_Search_Retrieval/**','workspace/01_Productivity_Flow/**','workspace/06_Safety_Alignment/**'])"
+
+python3 scripts/wave-b-install-fixtures.py
+```
+
+- Installed under `eval/fixtures/wc/*`
+- Large trees (>80 files, e.g. some safety) skipped by default (`WILDCLAW_MAX_FIXTURE_FILES`)
+- Cases with fixtures: `eval/cases/wildclaw-wave-b.json`
+- Attribution: InternLM/WildClawBench (MIT / dataset terms)

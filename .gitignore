@@ -20,3 +20,5 @@ coverage/
 
 # Opt-in full-CDP computer runtime — fetched from release, not tracked (16MB)
 src/computer/xclaw-server.mjs
+eval/fixtures/wc/**
+!eval/fixtures/wc/README.md

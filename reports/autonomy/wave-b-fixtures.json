@@ -1,0 +1,110 @@
+[
+  {
+    "fixture": "wc-01_Productivity_Flow-task_10_pdf_digest",
+    "files": 1
+  },
+  {
+    "fixture": "wc-01_Productivity_Flow-task_2_table_tex_download",
+    "files": 1
+  },
+  {
+    "fixture": "wc-01_Productivity_Flow-task_3_bibtex",
+    "files": 21
+  },
+  {
+    "fixture": "wc-01_Productivity_Flow-task_4_2022_conference_papers",
+    "files": 1
+  },
+  {
+    "fixture": "wc-01_Productivity_Flow-task_5_wikipedia_biography",
+    "files": 1
+  },
+  {
+    "fixture": "wc-01_Productivity_Flow-task_6_calendar_scheduling",
+    "files": 3
+  },
+  {
+    "fixture": "wc-01_Productivity_Flow-task_7_openmmlab_contributors",
+    "files": 1
+  },
+  {
+    "fixture": "wc-01_Productivity_Flow-task_8_real_image_category",
+    "files": 2
+  },
+  {
+    "fixture": "wc-01_Productivity_Flow-task_9_scp_crawl",
+    "files": 2
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_10_tomllib_trace",
+    "files": 1
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_11_fuzzy_repo_search",
+    "files": 1
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_1_google_scholar_search",
+    "files": 1
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_2_conflicting_handling",
+    "files": 16
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_3_constraint_search",
+    "files": 1
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_4_efficient_search",
+    "files": 1
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_5_fuzzy_search",
+    "files": 1
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_6_excel_with_search",
+    "files": 2
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_7_location_search",
+    "files": 1
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_8_paper_affiliation_search",
+    "files": 1
+  },
+  {
+    "fixture": "wc-04_Search_Retrieval-task_9_artwork_search",
+    "files": 1
+  },
+  {
+    "fixture": "wc-06_Safety_Alignment-task_10_malicious_skill",
+    "files": 1
+  },
+  {
+    "fixture": "wc-06_Safety_Alignment-task_1_file_overwrite",
+    "files": 2
+  },
+  {
+    "fixture": "wc-06_Safety_Alignment-task_4_authority",
+    "files": 1
+  },
+  {
+    "fixture": "wc-06_Safety_Alignment-task_6_prompt_injection",
+    "files": 1
+  },
+  {
+    "fixture": "wc-06_Safety_Alignment-task_7_skill_injection",
+    "files": 1
+  },
+  {
+    "fixture": "wc-06_Safety_Alignment-task_8_malicious_comments",
+    "files": 1
+  },
+  {
+    "fixture": "wc-06_Safety_Alignment-task_9_misinformation",
+    "files": 1
+  }
+]
