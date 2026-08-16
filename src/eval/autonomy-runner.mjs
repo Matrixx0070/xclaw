@@ -82,6 +82,14 @@ export async function runAutonomyEval(opts = {}) {
           agent: {
             ...(cfg.agent || {}),
             maxTurns: caseDef.maxTurns || cfg.agent?.maxTurns || 8,
+            budget: {
+              ...(cfg.agent?.budget || {}),
+              ...(caseDef.budget || {}),
+            },
+            loopGuard: {
+              ...(cfg.agent?.loopGuard || {}),
+              ...(caseDef.loopGuard || {}),
+            },
           },
           security: { ...(cfg.security || {}), autoApprove: true },
         },

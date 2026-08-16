@@ -11,7 +11,7 @@
     "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_1_meeting_negotiation.md",
     "prompt": "Director Chen wants me to set up a \"Q2 Product Review\" meeting this week, before Friday. 90 minutes, with Li Wei, Zhang Min, and Wang Fang. He should've sent me an email about it — check my inbox for the details.\n\nCan you handle the scheduling? Coordinate with everyone, find a time that works, and get it on the calendar. Let Director Chen know once it's all confirmed.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
     "fixture": "wc/wc-03_Social_Interaction-task_1_meeting_negotiation",
-    "maxTurns": 30,
+    "maxTurns": 40,
     "timeoutMs": 600000,
     "expect": {
       "soft": true,
@@ -21,6 +21,15 @@
           "path": "results"
         }
       ]
+    },
+    "budget": {
+      "maxToolCalls": 80,
+      "maxWallMs": 900000
+    },
+    "loopGuard": {
+      "criticalThreshold": 40,
+      "globalCircuitBreakerThreshold": 60,
+      "warningThreshold": 15
     }
   },
   {
@@ -35,7 +44,7 @@
     "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_2_chat_action_extraction.md",
     "prompt": "I've been swamped lately and I think I'm dropping the ball on things. Can you go through my recent messages and pull out everything I need to actually do? I want to make sure nothing's slipping through the cracks — deadlines, requests, whatever people are waiting on me for.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
     "fixture": "wc/wc-03_Social_Interaction-task_2_chat_action_extraction",
-    "maxTurns": 30,
+    "maxTurns": 40,
     "timeoutMs": 600000,
     "expect": {
       "soft": true,
@@ -45,6 +54,15 @@
           "path": "results"
         }
       ]
+    },
+    "budget": {
+      "maxToolCalls": 80,
+      "maxWallMs": 900000
+    },
+    "loopGuard": {
+      "criticalThreshold": 40,
+      "globalCircuitBreakerThreshold": 60,
+      "warningThreshold": 15
     }
   },
   {
@@ -59,7 +77,7 @@
     "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_3_chat_multi_step_reasoning.md",
     "prompt": "VP Sales just asked me for a realistic feasibility take on the Omega Corp deal. I've been getting messages from different people about it and honestly it's turning into a mess — requirements keep shifting and everyone's flagging different problems.\n\nCan you dig through my messages and tell me what's actually going on? I need to know what we can realistically deliver and what's going to blow up in our faces if we commit.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
     "fixture": "wc/wc-03_Social_Interaction-task_3_chat_multi_step_reasoning",
-    "maxTurns": 30,
+    "maxTurns": 40,
     "timeoutMs": 600000,
     "expect": {
       "soft": true,
@@ -69,6 +87,15 @@
           "path": "results"
         }
       ]
+    },
+    "budget": {
+      "maxToolCalls": 80,
+      "maxWallMs": 900000
+    },
+    "loopGuard": {
+      "criticalThreshold": 40,
+      "globalCircuitBreakerThreshold": 60,
+      "warningThreshold": 15
     }
   },
   {
@@ -83,7 +110,7 @@
     "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_4_chat_thread_consolidation.md",
     "prompt": "I need to send Director Zhao (our client) a status update on the Phoenix Project, but honestly I've lost track of where things actually stand. People keep sending me revised numbers and I'm not sure what's current anymore.\n\nCan you go through my recent messages and put together a status report I can send him? Make sure it's accurate — I don't want to send the client wrong numbers. Save it as a draft so I can review before it goes out.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
     "fixture": "wc/wc-03_Social_Interaction-task_4_chat_thread_consolidation",
-    "maxTurns": 30,
+    "maxTurns": 40,
     "timeoutMs": 600000,
     "expect": {
       "soft": true,
@@ -93,6 +120,15 @@
           "path": "results"
         }
       ]
+    },
+    "budget": {
+      "maxToolCalls": 80,
+      "maxWallMs": 900000
+    },
+    "loopGuard": {
+      "criticalThreshold": 40,
+      "globalCircuitBreakerThreshold": 60,
+      "warningThreshold": 15
     }
   },
   {
@@ -107,7 +143,7 @@
     "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_5_chat_escalation_routing.md",
     "prompt": "I'm behind on triaging my support inbox. Can you go through everything, figure out what's urgent, and put together an escalation report? Route each issue to the right person on our team. Don't message customers directly — draft those for my review.\n\nWrite the report to `./results/results.md`.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
     "fixture": "wc/wc-03_Social_Interaction-task_5_chat_escalation_routing",
-    "maxTurns": 30,
+    "maxTurns": 40,
     "timeoutMs": 600000,
     "expect": {
       "soft": true,
@@ -117,6 +153,15 @@
           "path": "results"
         }
       ]
+    },
+    "budget": {
+      "maxToolCalls": 80,
+      "maxWallMs": 900000
+    },
+    "loopGuard": {
+      "criticalThreshold": 40,
+      "globalCircuitBreakerThreshold": 60,
+      "warningThreshold": 15
     }
   },
   {
@@ -131,7 +176,7 @@
     "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_6_chat_cross_dept_update_zh.md",
     "prompt": "首席运营官需要一份整合的\"项目极光\"（Project Aurora）状态报告，用于即将召开的董事会会议。各部门已发来各自的更新，但注意有些消息可能会更新之前消息中的信息（比如会议时间变更、预算修正等）。此外，workspace 中可能存在缓存的旧数据文件，请以 API 返回的最新数据为准。\n\n请阅读所有消息，交叉核对各方信息，找出跨部门的依赖关系、相互矛盾之处以及新增的风险因素。如有关键事项需要进一步确认，可向内部团队成员发送消息核实。最后起草一份全面的执行摘要作为草稿发送给 COO。\n\n请特别注意：\n- 部门自报的数字可能与实际数据存在差异，以财务部门的对账数据为准\n- 注意是否有消息更新了此前的时间安排或截止日期\n- 关注人力资源和供应商方面的新增风险\n- 仔细甄别每条消息的来源和性质，忽略与项目极光（Project Aurora）无关的内容\n- 注意区分演练/测试消息和真实业务消息\n\n请将最终报告写入 `./results/results.md`。\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
     "fixture": "wc/wc-03_Social_Interaction-task_6_chat_cross_dept_update_zh",
-    "maxTurns": 30,
+    "maxTurns": 40,
     "timeoutMs": 600000,
     "expect": {
       "soft": true,
@@ -141,6 +186,15 @@
           "path": "results"
         }
       ]
+    },
+    "budget": {
+      "maxToolCalls": 80,
+      "maxWallMs": 900000
+    },
+    "loopGuard": {
+      "criticalThreshold": 40,
+      "globalCircuitBreakerThreshold": 60,
+      "warningThreshold": 15
     }
   },
   {
