@@ -10,11 +10,12 @@ export const BUILTIN_PROVIDERS = {
     name: "xAI",
     baseUrl: "https://api.x.ai/v1",
     api: "openai-completions",
-    defaultModel: "grok-4.5",
+    defaultModel: "grok-4.6",
     envKey: "XAI_API_KEY",
     models: [
       // Current flagship / coding (2026)
-      { id: "grok-4.5", name: "Grok 4.5 (flagship)", context: 500000, tags: ["chat", "code", "agent"] },
+      { id: "grok-4.6", name: "Grok 4.6 (flagship)", context: 500000, tags: ["chat", "code", "agent", "reasoning"] },
+      { id: "grok-4.5", name: "Grok 4.5", context: 500000, tags: ["chat", "code", "agent"] },
       { id: "grok-4.3", name: "Grok 4.3", context: 1000000, tags: ["chat", "code"] },
       { id: "grok-build-0.1", name: "Grok Build 0.1 (agentic coding)", context: 256000, tags: ["code", "agent", "build"] },
       { id: "grok-code-fast-1", name: "Grok Code Fast 1 (retired→build/4.3)", context: 256000, tags: ["code", "fast", "retired"] },
@@ -309,6 +310,7 @@ const DEFAULT_FAMILY_RATES = {
   sonnet: { in: 3e-6, out: 15e-6 },
   haiku: { in: 0.8e-6, out: 4e-6 },
   // xAI list prices ($/token) — short-context band; long-context handled in estimateUsdFromUsage
+  "grok-4.6": { in: 2e-6, out: 6e-6, cachedIn: 0.3e-6, longIn: 4e-6, longOut: 12e-6, longCachedIn: 0.6e-6 },
   "grok-4.5": { in: 2e-6, out: 6e-6, cachedIn: 0.3e-6, longIn: 4e-6, longOut: 12e-6, longCachedIn: 0.6e-6 },
   "grok-4.3": { in: 1.25e-6, out: 2.5e-6, cachedIn: 0.2e-6, longIn: 2.5e-6, longOut: 5e-6, longCachedIn: 0.4e-6 },
   "grok-4.20": { in: 1.25e-6, out: 2.5e-6, cachedIn: 0.2e-6, longIn: 2.5e-6, longOut: 5e-6, longCachedIn: 0.4e-6 },

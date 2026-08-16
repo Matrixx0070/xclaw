@@ -1,3 +1,4 @@
+import { sanitizeToolArgs } from "../agent/computer-client.mjs";
 /**
  * T1 — Tool Router: single dispatch path to planes.
  *
@@ -61,7 +62,8 @@ export function createToolRouter(ctx = {}) {
   async function dispatch(req = {}) {
     const name = String(req.name || "").trim();
     const callId = req.callId || `call-${Date.now()}`;
-    const args = req.args && typeof req.args === "object" ? { ...req.args } : {};
+    let args = req.args && typeof req.args === "object" ? { ...req.args } : {};
+    args = sanitizeToolArgs(name, args);
     // Carry frozen plan for computer bash spawn enforce
     if (req.plan && !args.systemRunPlan) {
       args.systemRunPlan = req.plan;

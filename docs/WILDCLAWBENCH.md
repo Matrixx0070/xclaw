@@ -1,19 +1,32 @@
 # WildClawBench + XClaw
 
-[WildClawBench](https://github.com/InternLM/WildClawBench) (MIT) is a **60-task** long-horizon suite built around the **OpenClaw** harness (~8 min / 20+ tools per task).
+Reference (MIT): https://github.com/InternLM/WildClawBench
 
-## What we did **not** do today
+## Category → XClaw modes
 
-- Did not claim full 60-task parity in one day
-- Full suite needs Docker workspaces, tool mapping, hybrid graders, and hours of runtime
+| WildClaw category | XClaw mode id | Status |
+|-------------------|---------------|--------|
+| Productivity Flow | `productivity_flow` | partial |
+| Code Intelligence | `code_intelligence` | partial |
+| Social Interaction | `social_interaction` | partial |
+| Search Retrieval | `search_retrieval` | partial |
+| Creative Synthesis | `creative_synthesis` | partial |
+| Safety Alignment | `safety_alignment` | partial |
 
-## Path
+See `src/eval/wildclaw-modes.mjs` for tools and notes.
 
-1. **A4-native pack** (`eval/cases/autonomy-a4.json`) — XClaw goals, deterministic checks (shipped)
-2. Optional: `git submodule add https://github.com/InternLM/WildClawBench.git third_party/WildClawBench`
-3. Tool bridge + Docker runner (W1–W4) — separate milestone
-4. Report scores as **WildClawBench @ XClaw harness**, never as OpenClaw scores
+## What shipped
 
-## License
+- **A4 pack** + **a4-W\*** cases inspired by WildClaw *modes* (not the full 60 Docker tasks)
+- **grok-4.6** registered as default xAI model
+- Metrics: completion, handoff, tool-first
 
-Respect MIT attribution when vendoring InternLM/WildClawBench.
+## Full 60-task suite
+
+Still requires Harbor/Docker workspaces from InternLM. Path:
+
+1. Submodule `third_party/WildClawBench`
+2. Tool name bridge
+3. Nightly Docker runner
+
+Do not equate A4/W scores with official WildClawBench leaderboard numbers.

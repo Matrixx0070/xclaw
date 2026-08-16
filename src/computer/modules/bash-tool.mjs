@@ -233,7 +233,11 @@ export const BashTool = {
     required: ["command"],
   },
   execute: executeBash,
-  call: async (args, ctx) => executeBash(args, ctx),
+  call: async (args, ctx) => {
+    const a = { ...(args || {}) };
+    if ("timeout" in a) a.timeout = normalizeBashTimeoutSeconds(a.timeout);
+    return executeBash(a, ctx);
+  },
 };
 
 export const runBash = executeBash;

@@ -14,6 +14,22 @@ import { scoreAutonomyRun, aggregateAutonomy } from "./autonomy-metrics.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "../..");
 
+async function copyFixtureDir(src, dest) {
+  await fs.mkdir(dest, { recursive: true });
+  let entries = [];
+  try {
+    entries = await fs.readdir(src, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const ent of entries) {
+    const s = path.join(src, ent.name);
+    const d = path.join(dest, ent.name);
+    if (ent.isDirectory()) await copyFixtureDir(s, d);
+    else await fs.copyFile(s, d);
+  }
+}
+
 /**
  * @param {object} opts
  * @param {object} opts.cfg
@@ -46,12 +62,11 @@ export async function runAutonomyEval(opts = {}) {
     for (let trial = 1; trial <= trials; trial++) {
       const workspace = path.join(os.tmpdir(), "xclaw-a4", runId, caseDef.id, `t${trial}`);
       await fs.mkdir(workspace, { recursive: true });
-      // copy empty fixture
+      // copy case fixture (default empty)
       try {
-        const fix = path.join(EVAL_ROOT, "fixtures", "empty");
-        for (const f of await fs.readdir(fix).catch(() => [])) {
-          await fs.copyFile(path.join(fix, f), path.join(workspace, f)).catch(() => {});
-        }
+        const fixtureName = caseDef.fixture || caseDef.sandbox?.fixture || "empty";
+        const fix = path.join(EVAL_ROOT, "fixtures", fixtureName);
+        await copyFixtureDir(fix, workspace);
       } catch {
         /* */
       }
