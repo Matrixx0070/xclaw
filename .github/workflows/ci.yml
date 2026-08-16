@@ -10,6 +10,10 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Unit/agent tests need a computer. Bundle is not in git; use native escape hatch on CI.
+    env:
+      XCLAW_COMPUTER_ENGINE: native
+      XCLAW_BUNDLE_AUTOFETCH: "0"
     steps:
       - uses: actions/checkout@v4
 
