@@ -24,7 +24,6 @@ describe("Strategy C3 generated computer", () => {
     const gen = path.join(root, "src/computer/generated/computer-server.mjs");
     assert.ok(fs.existsSync(gen));
     assert.ok(fs.statSync(gen).size > 1000);
-    // The build must never write the bundle: absent stays absent; present unchanged.
     const after = fs.existsSync(bundle) ? fs.statSync(bundle).size : null;
     assert.equal(after, before);
     const stamp = JSON.parse(
@@ -36,15 +35,26 @@ describe("Strategy C3 generated computer", () => {
   });
 
   it("engine resolves generated entry", () => {
-    assert.equal(
-      resolveComputerEngine({ computer: { engine: "generated" } }),
-      "generated"
-    );
-    const entry = resolveComputerEntryPath(
-      { computer: { engine: "generated" } },
-      root
-    );
-    assert.match(entry, /generated\/computer-server\.mjs$/);
+    const prev = process.env.XCLAW_COMPUTER_ENGINE;
+    const prevN = process.env.XCLAW_COMPUTER_NATIVE;
+    delete process.env.XCLAW_COMPUTER_ENGINE;
+    delete process.env.XCLAW_COMPUTER_NATIVE;
+    try {
+      assert.equal(
+        resolveComputerEngine({ computer: { engine: "generated" } }),
+        "generated"
+      );
+      const entry = resolveComputerEntryPath(
+        { computer: { engine: "generated" } },
+        root
+      );
+      assert.match(entry, /generated\/computer-server\.mjs$/);
+    } finally {
+      if (prev !== undefined) process.env.XCLAW_COMPUTER_ENGINE = prev;
+      else delete process.env.XCLAW_COMPUTER_ENGINE;
+      if (prevN !== undefined) process.env.XCLAW_COMPUTER_NATIVE = prevN;
+      else delete process.env.XCLAW_COMPUTER_NATIVE;
+    }
   });
 
   it("generated server serves /health", async () => {

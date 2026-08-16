@@ -47,11 +47,12 @@ async function loadEngineApi() {
     return await import("./engine.mjs");
   } catch {
     return {
-      resolveComputerEngine: () =>
-        process.env.XCLAW_COMPUTER_NATIVE === "0" ||
-        process.env.XCLAW_COMPUTER_ENGINE === "bundle"
-          ? "bundle"
-          : "native",
+      resolveComputerEngine: () => {
+        const e = process.env.XCLAW_COMPUTER_ENGINE || process.env.XCLAW_COMPUTER_NATIVE;
+        if (e === "native" || e === "thin" || e === "1" || e === "true") return "native";
+        if (e === "generated" || e === "gen") return "generated";
+        return "bundle";
+      },
       resolveComputerEntryPath: (cfg, root) => {
         const eng =
           process.env.XCLAW_COMPUTER_ENGINE === "bundle" ||
@@ -71,7 +72,7 @@ async function loadEngineApi() {
         entryBytes: null,
         isFallbackBundle: false,
         strategyPhase: "C4",
-        policy: { defaultEngine: "native", handEditBundle: false },
+        policy: { defaultEngine: "bundle", handEditBundle: false },
       }),
     };
   }
@@ -251,9 +252,9 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
     resolveComputerEntryPath,
     describeComputerEngine,
   } = await loadEngineApi();
-  const engine = resolveComputerEngine(cfg);
-  const engineInfo = describeComputerEngine(cfg, workRoot);
-  const entry = resolveComputerEntryPath(cfg, workRoot);
+  let engine = resolveComputerEngine(cfg);
+  let engineInfo = describeComputerEngine(cfg, workRoot);
+  let entry = resolveComputerEntryPath(cfg, workRoot);
 
   console.log(
     `[xclaw] Computer engine=${engineInfo.engine} phase=${engineInfo.strategyPhase} fallbackBundle=${engineInfo.isFallbackBundle}`
@@ -261,6 +262,40 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
   console.log(
     `[xclaw] Computer entry=${entry} exists=${engineInfo.entryExists} bytes=${engineInfo.entryBytes ?? "n/a"}`
   );
+
+  // Product default is bundle, but the 16MB artifact is not in git. If missing
+  // (CI, fresh clone), fall back to native so agent tests and lab still run.
+  if (engine === "bundle" && !fs.existsSync(entry)) {
+    const allowNativeFallback = !["0", "false", "off"].includes(
+      String(process.env.XCLAW_BUNDLE_FALLBACK_NATIVE ?? "1").toLowerCase()
+    );
+    const autofetch = !["0", "false", "off"].includes(
+      String(process.env.XCLAW_BUNDLE_AUTOFETCH || "1").toLowerCase()
+    );
+    if (autofetch) {
+      console.log("[xclaw] Computer bundle missing — fetching from release…");
+      const fetchScript = path.join(workRoot, "scripts/fetch-computer-bundle.mjs");
+      const r = spawnSync(process.execPath, [fetchScript], {
+        cwd: workRoot,
+        encoding: "utf8",
+        stdio: "inherit",
+      });
+      if (r.status === 0 && fs.existsSync(entry)) {
+        console.log("[xclaw] Bundle fetch ok");
+      }
+    }
+    if (!fs.existsSync(entry) && allowNativeFallback) {
+      const nativeEntry = path.join(workRoot, "src/computer/thin-server.mjs");
+      if (fs.existsSync(nativeEntry)) {
+        console.warn(
+          `[xclaw] Bundle not installed — falling back to native: ${nativeEntry}`
+        );
+        engine = "native";
+        entry = nativeEntry;
+        engineInfo = { ...engineInfo, engine: "native", entry: nativeEntry, entryExists: true };
+      }
+    }
+  }
 
   if (engine === "native" || engine === "generated") {
     if (!fs.existsSync(entry)) {
@@ -328,34 +363,13 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
     };
   }
 
-  // bundle / full CDP fallback — the bundle is an opt-in release artifact,
-  // not tracked in git. Fetch it on demand (optionally auto).
+  // Bundle path — entry must exist (fetch/fallback handled above)
   if (!fs.existsSync(entry)) {
-    const isDefaultBundle = entry.endsWith(path.join("computer", "xclaw-server.mjs"));
-    const autofetch =
-      isDefaultBundle &&
-      !["0", "false", "off"].includes(String(process.env.XCLAW_BUNDLE_AUTOFETCH || "").toLowerCase());
-    if (autofetch) {
-      console.log("[xclaw] Computer bundle missing — fetching from release (npm run fetch:bundle)…");
-      const fetchScript = path.join(workRoot, "scripts/fetch-computer-bundle.mjs");
-      const r = spawnSync(process.execPath, [fetchScript], {
-        cwd: workRoot,
-        encoding: "utf8",
-        stdio: "inherit",
-      });
-      if (r.status !== 0 || !fs.existsSync(entry)) {
-        throw new Error(
-          `Computer bundle missing and auto-fetch failed: ${entry}\n` +
-            `Run: npm run fetch:bundle  (set XCLAW_BUNDLE_AUTOFETCH=0 to disable auto-fetch)`
-        );
-      }
-    } else {
-      throw new Error(
-        `Computer bundle not found: ${entry}\n` +
-          `It is an opt-in 16MB release artifact (XCLAW_COMPUTER_ENGINE=bundle). ` +
-          `Install it with: npm run fetch:bundle`
-      );
-    }
+    throw new Error(
+      `Computer bundle not found: ${entry}\n` +
+        `Install with: npm run fetch:bundle\n` +
+        `Or set XCLAW_COMPUTER_ENGINE=native for the thin server.`
+    );
   }
 
   const env = {

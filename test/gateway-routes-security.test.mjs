@@ -93,7 +93,7 @@ describe("gateway routes/security", () => {
     assert.equal(payload.body.controlPlane, "gateway");
     assert.ok(payload.body.approvalGate);
     assert.ok(payload.body.computerEngine);
-    assert.ok(["bundle","native","generated"].includes(payload.body.computerEngine.engine));
+    assert.equal(payload.body.computerEngine.engine, "native");
   });
 
   it("returns false for unrelated paths", async () => {

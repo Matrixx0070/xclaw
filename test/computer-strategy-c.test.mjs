@@ -87,9 +87,20 @@ describe("Strategy C computer policy", () => {
   });
 
   it("bundle engine selectable", () => {
-    assert.equal(
-      resolveComputerEngine({ computer: { engine: "bundle" } }),
-      "bundle"
-    );
+    const prev = process.env.XCLAW_COMPUTER_ENGINE;
+    const prevN = process.env.XCLAW_COMPUTER_NATIVE;
+    delete process.env.XCLAW_COMPUTER_ENGINE;
+    delete process.env.XCLAW_COMPUTER_NATIVE;
+    try {
+      assert.equal(
+        resolveComputerEngine({ computer: { engine: "bundle" } }),
+        "bundle"
+      );
+    } finally {
+      if (prev !== undefined) process.env.XCLAW_COMPUTER_ENGINE = prev;
+      else delete process.env.XCLAW_COMPUTER_ENGINE;
+      if (prevN !== undefined) process.env.XCLAW_COMPUTER_NATIVE = prevN;
+      else delete process.env.XCLAW_COMPUTER_NATIVE;
+    }
   });
 });
