@@ -134,6 +134,7 @@ export async function runAgent(req = {}) {
       stopReason: raw?.stopReason || null,
       usage: raw?.usage,
       goalReceipt: raw?.goalReceipt || null,
+      reach: raw?.reach || null,
       raw,
       channel: opts.channel,
       sessionId: opts.chatSessionId,

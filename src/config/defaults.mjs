@@ -56,6 +56,8 @@ export const DEFAULT_CONFIG = {
     entry: "src/computer/xclaw-server.mjs",
     autoStart: true,
     startTimeoutMs: 45_000,
+    /** Attach to user Chromium: env XCLAW_CDP_URL wins */
+    cdpUrl: null,
     env: {},
     watchdog: {
       enabled: true,

@@ -41,6 +41,11 @@ import {
   buildAlternateStrategyNudge,
   buildGoalReceipt,
 } from "./goal-loop.mjs";
+import {
+  resolveReach,
+  formatCapabilityBanner,
+  probeComputerHttp,
+} from "./capability-reach.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
@@ -166,7 +171,27 @@ export async function runAgentLoop(options) {
   const autonomyAppendix = buildAutonomyAppendix(autonomyPolicy);
   const goalPlan = buildGoalPlan(userMessage);
   const goalPlanAppendix = formatGoalPlanForPrompt(goalPlan);
-  const effectiveBasePrompt = [BASE_SYSTEM_PROMPT, autonomyAppendix, goalPlanAppendix]
+  // A3 reach — probe computer when possible (non-blocking timeout)
+  let computerOk = null;
+  const reachPreview = resolveReach(cfg, { workingDir });
+  try {
+    computerOk = await probeComputerHttp(reachPreview.computerUrl);
+  } catch {
+    computerOk = null;
+  }
+  const reach = resolveReach(cfg, {
+    workingDir,
+    computerOk: computerOk === null ? true : computerOk,
+    computerUrl: reachPreview.computerUrl,
+  });
+  const capabilityBanner = formatCapabilityBanner(reach);
+  onEvent({ type: "reach", phase: "banner", reach });
+  const effectiveBasePrompt = [
+    BASE_SYSTEM_PROMPT,
+    autonomyAppendix,
+    goalPlanAppendix,
+    capabilityBanner,
+  ]
     .filter(Boolean)
     .join("\n");
   let alternateStrategyUsed = false;
@@ -2049,6 +2074,7 @@ export async function runAgentLoop(options) {
     suggestions,
     turnState,
     goalReceipt,
+    reach,
     // Why the run ended — orchestrators must distinguish "the model finished"
     // from "the runtime cut it off" (a turn cap is an execution constraint,
     // never evidence the user's objective is complete).
