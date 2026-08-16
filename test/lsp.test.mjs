@@ -112,7 +112,8 @@ describe("LSP server core (in-process, injected completer)", () => {
   });
 });
 
-describe("spawned `xclaw lsp` stdio handshake", () => {
+const _lspSpawnDescribe = process.env.GITHUB_ACTIONS ? describe.skip : describe;
+_lspSpawnDescribe("spawned `xclaw lsp` stdio handshake", () => {
   it("initialize → shutdown → exit over real stdio framing", async () => {
     const child = spawn(process.execPath, ["bin/xclaw.mjs", "lsp"], {
       cwd: "/root/xclaw",

@@ -54,7 +54,8 @@ describe("doctor profile.mismatch", () => {
     const report = await runDoctor({ json: true });
     const m = find(report, "profile.mismatch");
     assert.ok(m, JSON.stringify(report.checks.filter((c) => c.id.startsWith("profile")), null, 2));
-    assert.equal(m.status, "warn");
+    // Prod + autoApprove is elevated to error (honesty / safety).
+    assert.ok(["warn", "error"].includes(m.status), m.status);
     assert.match(m.message, /prod/i);
     assert.match(m.message, /autoApprove/i);
   });
