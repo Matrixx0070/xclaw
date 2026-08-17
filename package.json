@@ -63,7 +63,8 @@
     "eval/",
     "INSTALL.md",
     "CHANGELOG.md",
-    "deploy/"
+    "deploy/",
+    "SECURITY.md"
   ],
   "engines": {
     "node": ">=22"
