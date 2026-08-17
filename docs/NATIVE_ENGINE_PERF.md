@@ -1,0 +1,47 @@
+# Native (thin) engine performance
+
+Measured on this host: 2026-08-17 (lab node). Numbers are order-of-magnitude guides, not SLAs.
+
+## Footprint
+
+| Engine | Entry size | RSS (steady) | Tools listed |
+|--------|------------|--------------|--------------|
+| **thin-native** | **~7.5 KB** (`thin-server.mjs`) | **~60 MB** | **7** (includes `xclaw_computer_act`) |
+| **bundle** | **~16.1 MB** (`xclaw-server.mjs`) | **~170 MB** | **6** |
+
+Thin is ~**3× smaller RSS** and ~**2000× smaller on disk** for the entry module.
+
+## Latency (same machine, localhost HTTP)
+
+| Metric | thin-native | bundle |
+|--------|-------------|--------|
+| Spawn → `/health` ready | ~1.9 s | ~1.6 s |
+| `/health` p50 | ~0.7 ms | ~1.0 ms |
+| Session create | ~4 ms | ~380 ms |
+| `tools/list` | ~2 ms | ~6 ms |
+| `xclaw_bash` echo p50 | ~6 ms | ~2 ms |
+
+Notes:
+
+- **Cold start** is dominated by Node process boot, not entry parse; both reach health in ~1.5–2 s here.
+- Bundle **session create** was much slower in this run (~380 ms vs ~4 ms) — worth watching if agents create many sessions.
+- Bundle **bash** micro-calls were slightly faster (amortized internals); both are negligible vs LLM RTTs (100s of ms–seconds).
+
+## Capability vs speed
+
+| Concern | Winner |
+|---------|--------|
+| Startup / memory / maintained `computer_act` | **thin-native** |
+| Full historical BrowserService / skills surface inside one process | **bundle** (16MB artifact) |
+| Agent-perceived speed (LLM + tools) | **Neither** — model latency dominates |
+
+For lab/dev agent loops, **native is the better default**: lower RSS, explicit CUA tools, editable modules. Prod can keep bundle when the full in-process skill/browser surface is required.
+
+## How to re-bench
+
+```bash
+node tmp-live/bench-computer.mjs
+# or scripts equivalent once checked in
+```
+
+Env: `XCLAW_COMPUTER_ENGINE=native|bundle`.
