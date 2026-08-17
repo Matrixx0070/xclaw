@@ -1,0 +1,89 @@
+/**
+ * Optional bridge: local listen edge → gateway /ws/voice
+ * Uses Node undici/websocket if available (Node 22+).
+ */
+
+/**
+ * @param {string} text
+ * @param {{ url?: string, token?: string, speak?: boolean, timeoutMs?: number }} [opts]
+ */
+export async function sendUtteranceToGateway(text, opts = {}) {
+  const base =
+    opts.url ||
+    process.env.XCLAW_VOICE_WS ||
+    process.env.XCLAW_GATEWAY_WS ||
+    "";
+  if (!base) {
+    return { ok: false, error: "no_gateway_ws", skipped: true };
+  }
+  let wsUrl = base;
+  if (base.startsWith("http://")) {
+    wsUrl = base.replace(/^http/, "ws").replace(/\/?$/, "") + "/ws/voice";
+  } else if (base.startsWith("https://")) {
+    wsUrl = base.replace(/^https/, "wss").replace(/\/?$/, "") + "/ws/voice";
+  } else if (!base.includes("/ws/")) {
+    wsUrl = base.replace(/\/?$/, "") + "/ws/voice";
+  }
+
+  const WS = globalThis.WebSocket;
+  if (!WS) {
+    return { ok: false, error: "WebSocket not available in this runtime" };
+  }
+
+  const timeoutMs = opts.timeoutMs ?? 120_000;
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (r) => {
+      if (settled) return;
+      settled = true;
+      try {
+        ws.close();
+      } catch {
+        /* */
+      }
+      resolve(r);
+    };
+    const timer = setTimeout(() => done({ ok: false, error: "timeout" }), timeoutMs);
+    if (timer.unref) timer.unref();
+
+    let ws;
+    try {
+      ws = new WS(wsUrl);
+    } catch (e) {
+      clearTimeout(timer);
+      done({ ok: false, error: e.message || String(e) });
+      return;
+    }
+
+    ws.addEventListener("open", () => {
+      ws.send(
+        JSON.stringify({
+          type: "utterance",
+          text,
+          speak: opts.speak !== false,
+        })
+      );
+    });
+    ws.addEventListener("message", (ev) => {
+      try {
+        const msg = JSON.parse(String(ev.data));
+        if (msg.type === "reply") {
+          clearTimeout(timer);
+          done({ ok: true, reply: msg.text, command: msg.command, tts: msg.tts });
+        }
+        if (msg.type === "error") {
+          clearTimeout(timer);
+          done({ ok: false, error: msg.error });
+        }
+      } catch {
+        /* */
+      }
+    });
+    ws.addEventListener("error", () => {
+      clearTimeout(timer);
+      done({ ok: false, error: "ws_error" });
+    });
+  });
+}
+
+export default { sendUtteranceToGateway };
