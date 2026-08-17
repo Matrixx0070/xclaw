@@ -136,3 +136,19 @@ xclaw harness "Create notes/hello.txt with HELLO. Re-read to confirm." \
   --contains notes/hello.txt:HELLO \
   --max-turns 12
 ```
+
+
+## Checkpoint eviction
+
+```bash
+xclaw resume prune
+xclaw resume prune --dry-run
+```
+
+Defaults: keep **100** newest terminal CPs, drop older than **14 days**, never delete `running`/`resuming`.
+
+```json
+{ "checkpoints": { "maxCount": 100, "maxAgeMs": 1209600000, "pruneOnTick": true } }
+```
+
+`xclaw evolve tick` prunes unless `checkpoints.pruneOnTick` is false.
