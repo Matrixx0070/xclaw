@@ -1,0 +1,28 @@
+{
+  "at": "2026-08-17T04:23:02.024Z",
+  "cdp": "http://127.0.0.1:9222",
+  "pages": [
+    "https://example.com/",
+    "https://example.com/",
+    "https://example.com/",
+    "about:blank"
+  ],
+  "results": {
+    "screenshot": {
+      "ok": true,
+      "pageUrl": "https://example.com/",
+      "engine": "cdp-motor",
+      "bytes": 18455
+    },
+    "click": {
+      "ok": true,
+      "pageUrl": "https://example.com/",
+      "engine": "cdp-motor"
+    },
+    "key": {
+      "ok": true,
+      "engine": "cdp-motor"
+    }
+  },
+  "livePass": true
+}
