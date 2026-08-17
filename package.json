@@ -47,7 +47,8 @@
     "live-e2e:cron": "node bin/xclaw.mjs live-e2e",
     "live-e2e:schedule": "node bin/xclaw.mjs live-e2e-schedule",
     "build:computer": "node scripts/build-computer-bundle.mjs",
-    "computer:build": "node scripts/build-computer-bundle.mjs"
+    "computer:build": "node scripts/build-computer-bundle.mjs",
+    "smoke:arc": "node scripts/smoke-arc.mjs"
   },
   "files": [
     "bin/",
