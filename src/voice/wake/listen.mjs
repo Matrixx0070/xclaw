@@ -28,6 +28,7 @@ import { routeVoiceUtterance, casualReply } from "../router.mjs";
 import { sendUtteranceToGateway } from "../gateway-bridge.mjs";
 import { recordUntilEndpoint } from "../vad.mjs";
 import { speakSentences } from "../sentence-tts.mjs";
+import { streamSpeakReply, shouldStreamVoiceReply } from "../stream-reply.mjs";
 
 /**
  * @param {object} cfg
@@ -211,6 +212,32 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
           process.env.OPENAI_API_KEY ||
           cfg.agent?.model);
       try {
+        if (
+          preferAgent &&
+          opts.stream !== false &&
+          shouldStreamVoiceReply(userText, route.mode) &&
+          speakReplies
+        ) {
+          const streamed = await streamSpeakReply(userText, cfg, {
+            speech: entente.speech,
+          });
+          if (streamed.ok && streamed.text) {
+            reply = streamed.text;
+            console.log(`[xclaw:stream] ${reply.slice(0, 500)}`);
+            onEvent({
+              type: "listen.reply",
+              text: reply.slice(0, 500),
+              streamed: true,
+              firstAudioMs: streamed.firstAudioMs,
+            });
+            entente.setLastSpoken(reply);
+            continue; // already spoke via sentence stream
+          }
+          // fall through to job/local on stream failure
+          if (streamed.error) {
+            onEvent({ type: "listen.stream_fallback", error: streamed.error });
+          }
+        }
         if (preferAgent) {
           const { runJob } = await import("../../jobs/job.mjs");
           const job = await runJob({
