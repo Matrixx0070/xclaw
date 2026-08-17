@@ -94,8 +94,29 @@ export async function runVoiceTui(cfg = {}, opts = {}) {
     }
 
     history.push({ role: "user", content: userText });
-    const thought = await localThink(userText, cfg, { history });
-    const reply = thought.text || "(no reply)";
+    let reply = "";
+    // Prefer full agent (tools) when a cloud/local OpenAI-compatible key path works
+    const preferAgent = opts.agent !== false && (process.env.XAI_API_KEY || process.env.OPENAI_API_KEY || cfg.agent?.model);
+    if (preferAgent) {
+      try {
+        const { runJob } = await import("../jobs/job.mjs");
+        const job = await runJob({
+          goal: userText,
+          cfg,
+          maxTurns: opts.maxTurns || 8,
+          timeoutMs: opts.timeoutMs || 120_000,
+          autoApprove: cfg.security?.autoApprove ?? true,
+        });
+        reply = String(job.text || job.error || "(no reply)").slice(0, 2000);
+      } catch (e) {
+        console.log("(agent fallback)", e.message || e);
+        const thought = await localThink(userText, cfg, { history });
+        reply = thought.text || "(no reply)";
+      }
+    } else {
+      const thought = await localThink(userText, cfg, { history });
+      reply = thought.text || "(no reply)";
+    }
     history.push({ role: "assistant", content: reply });
     console.log("xclaw>", reply);
 
