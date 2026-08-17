@@ -43,6 +43,8 @@ export const TOOL_PLANE = {
   browser_tab: "computer",
   xclaw_browser_network_details: "computer",
   browser_network_details: "computer",
+  xclaw_computer_act: "computer",
+  computer_act: "computer",
 
   // Local (src/tools/*)
   xclaw_image_search: "local",
@@ -114,7 +116,7 @@ export function inferPlane(name) {
   if (TOOL_PLANE[stripped]) return TOOL_PLANE[stripped];
   if (/bash|shell|exec|terminal/.test(n)) return "computer";
   if (/file_|read_file|write_file|edit_file|list_dir/.test(n)) return "computer";
-  if (/browser|cdp|screenshot|navigate/.test(n)) return "computer";
+  if (/browser|cdp|screenshot|navigate|computer_act|desktop_act/.test(n)) return "computer";
   if (/mcp|connected/.test(n)) return "mcp";
   if (/search|web_search/.test(n)) return "search";
   if (/spawn|subagent|recall|memory/.test(n)) return "agent";

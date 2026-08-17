@@ -1,0 +1,54 @@
+[
+  {
+    "id": "cua-i6-01_observe_native",
+    "tags": ["cua", "i6", "observe"],
+    "name": "Native browser observe returns structure",
+    "kind": "unit",
+    "steps": ["extractInteractiveElements", "observeFromTab"]
+  },
+  {
+    "id": "cua-i6-02_act_fail_closed",
+    "tags": ["cua", "i6", "safety"],
+    "name": "computer_act fails closed without CDP",
+    "kind": "unit",
+    "expectCode": "CUA_ACT_REQUIRES_BUNDLE"
+  },
+  {
+    "id": "cua-i6-03_ref_cache",
+    "tags": ["cua", "i6", "ref"],
+    "name": "observe cache stores refs for act",
+    "kind": "unit"
+  },
+  {
+    "id": "cua-i6-04_desktop_disabled",
+    "tags": ["cua", "i6", "desktop"],
+    "name": "desktop act disabled by default",
+    "kind": "unit",
+    "expectCode": "DESKTOP_GUI_DISABLED"
+  },
+  {
+    "id": "cua-i6-05_desktop_observe",
+    "tags": ["cua", "i6", "atspi"],
+    "name": "desktop observe returns ok or honest ATSPI code",
+    "kind": "unit"
+  },
+  {
+    "id": "cua-i6-06_reach_policy",
+    "tags": ["cua", "i6", "reach"],
+    "name": "capability-reach exposes cuaPolicy tools_first",
+    "kind": "unit"
+  },
+  {
+    "id": "cua-i6-07_serial_planes",
+    "tags": ["cua", "i6", "planes"],
+    "name": "CUA actuation tools are computer plane not parallel-safe",
+    "kind": "unit"
+  },
+  {
+    "id": "cua-i6-08_multistep_policy",
+    "tags": ["cua", "i6", "long-horizon"],
+    "name": "Simulated multi-step: observe → need coords → no silent click",
+    "kind": "unit",
+    "horizon": "policy-chain"
+  }
+]

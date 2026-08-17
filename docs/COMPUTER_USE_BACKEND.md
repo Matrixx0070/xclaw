@@ -98,3 +98,18 @@ Returns `elements[]` with `ref` (`d1`…), `role`, `name`, `bbox`, `cx`, `cy`.
 Requires `python3` + `pyatspi` (or `gir1.2-atspi-2.0`). Helper: `scripts/desktop-atspi-observe.py`.
 
 Not PyAutoGUI — structured a11y, not pixels. Act still needs `XCLAW_DESKTOP_GUI=1` + xdotool.
+
+
+## I6 — CUA eval suite
+
+Offline long-horizon **policy** suite (no LLM required):
+
+```bash
+node scripts/eval-cua-i6.mjs
+# or
+node --test test/cua-i6.test.mjs
+```
+
+Cases in `eval/cases/cua-i6.json`. Report: `reports/autonomy/cua-i6.json`.
+
+Validates: observe structure, act fail-closed, ref cache, desktop disabled, AT-SPI honest errors, reach policy, serial planes, multi-step observe→no silent click chain.

@@ -1,0 +1,50 @@
+{
+  "suite": "cua-i6",
+  "at": "2026-08-17T04:07:47.494Z",
+  "total": 8,
+  "pass": 8,
+  "fail": 0,
+  "passRate": 1,
+  "rows": [
+    {
+      "id": "cua-i6-01_observe_native",
+      "pass": true,
+      "detail": "els=3 mode=html-structure"
+    },
+    {
+      "id": "cua-i6-02_act_fail_closed",
+      "pass": true,
+      "detail": "CUA_ACT_REQUIRES_BUNDLE"
+    },
+    {
+      "id": "cua-i6-03_ref_cache",
+      "pass": true,
+      "detail": "{\"ref\":\"e1\",\"role\":\"button\",\"name\":\"OK\"}"
+    },
+    {
+      "id": "cua-i6-04_desktop_disabled",
+      "pass": true,
+      "detail": "DESKTOP_GUI_DISABLED"
+    },
+    {
+      "id": "cua-i6-05_desktop_observe",
+      "pass": true,
+      "detail": "ATSPI_NOT_INSTALLED"
+    },
+    {
+      "id": "cua-i6-06_reach_policy",
+      "pass": true,
+      "detail": "policy=tools_first_then_observe_then_gui observe=true desktop=false"
+    },
+    {
+      "id": "cua-i6-07_serial_planes",
+      "pass": true,
+      "detail": "plane=computer serial=true"
+    },
+    {
+      "id": "cua-i6-08_multistep_policy",
+      "pass": true,
+      "detail": "act=CUA_ACT_REQUIRES_BUNDLE obs=1 desk=DESKTOP_GUI_DISABLED shot_blocked=true"
+    }
+  ]
+}
