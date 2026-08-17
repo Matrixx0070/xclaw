@@ -23,8 +23,14 @@ async function ensureDirsAndFile() {
   try {
     await fs.access(file);
   } catch {
-    const cfg = structuredClone(DEFAULT_CONFIG);
-    await fs.writeFile(file, JSON.stringify(cfg, null, 2) + "\n", "utf8");
+    // Minimal seed only — do NOT freeze full DEFAULT_CONFIG onto disk.
+    // Runtime merges DEFAULT → profile → user → env; baking the whole tree
+    // caused profile packs (e.g. lab native engine) to be overridden forever.
+    const seed = {
+      version: DEFAULT_CONFIG.version || 1,
+      profile: DEFAULT_CONFIG.profile || "lab",
+    };
+    await fs.writeFile(file, JSON.stringify(seed, null, 2) + "\n", "utf8");
     console.log(`[xclaw] Created config at ${file}`);
     if (process.env.XCLAW_QUIET !== "1") {
       console.log(
