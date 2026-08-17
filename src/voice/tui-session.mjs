@@ -12,27 +12,7 @@ import {
 } from "./providers/local.mjs";
 import { createSpeechPlane } from "./speech-plane.mjs";
 import { createEntente, voiceCommandsHelp } from "./entente.mjs";
-
-function playWav(path) {
-  return new Promise((resolve) => {
-    const tryBins = [
-      ["ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", path]],
-      ["aplay", [path]],
-      ["paplay", [path]],
-    ];
-    (async () => {
-      for (const [bin, args] of tryBins) {
-        const ok = await new Promise((res) => {
-          const c = spawn(bin, args, { stdio: "ignore" });
-          c.on("error", () => res(false));
-          c.on("close", (code) => res(code === 0));
-        });
-        if (ok) return resolve({ ok: true, player: bin });
-      }
-      resolve({ ok: false, error: "no aplay/ffplay/paplay" });
-    })();
-  });
-}
+import { playWav } from "./playback.mjs";
 
 /**
  * Interactive text loop with optional TTS. Type /quit to exit.
@@ -70,8 +50,8 @@ export async function runVoiceTui(cfg = {}, opts = {}) {
         const begin = speech.beginSpeak(classified.reply);
         if (begin.ok) {
           const spoken = await localSpeak(classified.reply, cfg);
-          if (spoken.ok) await playWav(spoken.path);
-          speech.endSpeak(begin.epoch);
+          if (spoken.ok) await playWav(spoken.path, { speech, epoch: begin.epoch });
+          else speech.endSpeak(begin.epoch);
         }
       }
       continue;
@@ -135,12 +115,14 @@ export async function runVoiceTui(cfg = {}, opts = {}) {
       if (begin.ok) {
         const spoken = await localSpeak(reply, cfg);
         if (spoken.ok) {
-          const play = await playWav(spoken.path);
-          if (!play.ok) console.log("(tts file:", spoken.path, play.error || "", ")");
+          const play = await playWav(spoken.path, { speech, epoch: begin.epoch });
+          if (!play.ok && !play.interrupted) {
+            console.log("(tts file:", spoken.path, play.error || "", ")");
+          }
         } else {
           console.log("(tts)", spoken.error);
+          speech.endSpeak(begin.epoch);
         }
-        speech.endSpeak(begin.epoch);
       }
     }
   }
