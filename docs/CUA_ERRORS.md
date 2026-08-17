@@ -24,7 +24,18 @@ Failures also include `recovery` / `hint` when enriched via `enrichCuaError`.
 | `USE_BROWSER_OBSERVE` | browser | Use `browser_tab` observe |
 | `CUA_ACT_REQUIRES_BUNDLE` | cdp | Set `XCLAW_CDP_URL` |
 | `CUA_ACT_NOT_EXTRACTED` | bundle | CDP or extract BrowserService |
-| `CDP_ATTACH_FAILED` | cdp | Chrome debug port / curl version |
+| `CDP_ATTACH_FAILED` | cdp | Chrome down / wrong port |
+| `CDP_NO_PAGE` | cdp | No page target — open tab / navigate |
+| `CDP_NOT_LOOPBACK` | cdp | Host not 127.0.0.1 |
+| `CDP_SOCKET_CLOSED` | cdp | WS closed mid-command |
+| `CDP_TIMEOUT` | cdp | HTTP/WS timeout |
+| `CDP_HTTP_FAILED` | cdp | /json/* failed |
+| `CDP_WS_FAILED` | cdp | WebSocket upgrade failed |
+| `CDP_EVAL_FAILED` | cdp | Runtime.evaluate error |
+| `CDP_NAVIGATE_FAILED` | cdp | Page.navigate failed |
+| `CDP_SCREENSHOT_FAILED` | cdp | captureScreenshot failed |
+| `CDP_INPUT_FAILED` | cdp | Input.dispatch* failed |
+| `CUA_ACT_NEED_URL` | cdp | navigate needs url |
 | `CUA_ACT_NEED_COORDS` | cdp | Pass x,y or observe ref |
 | `CUA_ACT_NEED_KEY` | cdp | Pass key string |
 | `CUA_ACT_UNKNOWN` | cdp | click/type/key/scroll/screenshot |
@@ -80,3 +91,11 @@ node scripts/cua-doctor.mjs               # includes retryMetrics
 | `avgDelayMs` / `delayMsMax` | backoff timing |
 
 Disable JSONL: `XCLAW_CUA_METRICS=0`. Custom dir: `XCLAW_CUA_METRICS_DIR`.
+
+## classifyCdpError
+
+```js
+import { classifyCdpError, lookupCuaError } from "../src/computer/cua-errors.mjs";
+const code = classifyCdpError(err);
+const { recovery } = lookupCuaError(code);
+```

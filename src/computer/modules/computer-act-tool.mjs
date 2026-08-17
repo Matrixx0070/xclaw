@@ -12,7 +12,7 @@
 import { createCdpClient } from "../../browser/cdp-client.mjs";
 import { planClick, planType, planScroll, executeSteps } from "../../browser/motor.mjs";
 import { runDesktopAct, runDesktopObserve, probeDesktopDriver } from "./desktop-driver.mjs";
-import { enrichCuaError } from "../cua-errors.mjs";
+import { enrichCuaError, classifyCdpError } from "../cua-errors.mjs";
 import { withCuaRetry } from "../cua-retry.mjs";
 
 /** @type {Map<string, { elements: object[], at: number, url?: string }>} */
@@ -224,10 +224,11 @@ async function runComputerActImpl(input = {}) {
     );
     tab = attachResult.tab || tab;
   } catch (e) {
+    const code = classifyCdpError(e);
     return {
       ok: false,
       error: `CDP attach failed: ${e?.message || e}`,
-      code: "CDP_ATTACH_FAILED",
+      code,
       engine,
       cdp: cdpEp,
       retries: Number(process.env.XCLAW_CUA_RETRIES ?? 2),
@@ -245,28 +246,37 @@ async function runComputerActImpl(input = {}) {
           engine: "cdp-motor",
         };
       }
-      await tab.navigate(url);
-      // brief settle for SPA/document load
       try {
-        await tab.send("Page.enable");
-        await new Promise((r) => setTimeout(r, Number(input.waitMs) || 400));
-      } catch {
-        /* ignore */
+        await tab.navigate(url);
+        try {
+          await tab.send("Page.enable");
+          await new Promise((r) => setTimeout(r, Number(input.waitMs) || 400));
+        } catch {
+          /* ignore settle errors */
+        }
+        let pageUrl = null;
+        try {
+          pageUrl = await tab.evaluate("location.href");
+        } catch {
+          pageUrl = url;
+        }
+        return {
+          ok: true,
+          action: "navigate",
+          engine: "cdp-motor",
+          url,
+          pageUrl,
+          cuaPolicy: "tools_first_then_observe_then_gui",
+        };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e?.message || String(e),
+          code: classifyCdpError(e) === "CDP_ATTACH_FAILED" ? "CDP_NAVIGATE_FAILED" : classifyCdpError(e),
+          engine: "cdp-motor",
+          url,
+        };
       }
-      let pageUrl = null;
-      try {
-        pageUrl = await tab.evaluate("location.href");
-      } catch {
-        pageUrl = url;
-      }
-      return {
-        ok: true,
-        action: "navigate",
-        engine: "cdp-motor",
-        url,
-        pageUrl,
-        cuaPolicy: "tools_first_then_observe_then_gui",
-      };
     }
 
     if (action === "screenshot") {
@@ -370,10 +380,11 @@ async function runComputerActImpl(input = {}) {
     );
     return result;
   } catch (e) {
+    const code = classifyCdpError(e);
     return {
       ok: false,
       error: e?.message || String(e),
-      code: "CUA_ACT_EXEC_FAILED",
+      code: code === "CDP_ATTACH_FAILED" ? "CUA_ACT_EXEC_FAILED" : code,
       engine: "cdp-motor",
     };
   } finally {

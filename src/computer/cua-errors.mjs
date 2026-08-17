@@ -30,6 +30,67 @@ export const CUA_ERROR_CATALOG = {
     recovery:
       "CDP URL set but attach failed. Ensure Chrome is running with --remote-debugging-port and the port matches. Try: curl $XCLAW_CDP_URL/json/version",
   },
+  CDP_NO_PAGE: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "No page target under CDP. Open a tab in the debugged Chrome or use action=navigate / client.newPage.",
+  },
+  CDP_NOT_LOOPBACK: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "CDP host is not loopback. Use 127.0.0.1 or set allowRemote only in trusted networks.",
+  },
+  CDP_SOCKET_CLOSED: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "CDP WebSocket closed mid-command. Chrome may have exited; restart debug browser and retry.",
+  },
+  CDP_TIMEOUT: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "CDP HTTP/WS timeout. Check Chrome is responsive; increase load; retry with XCLAW_CUA_RETRIES.",
+  },
+  CDP_HTTP_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "CDP HTTP /json/* failed. Verify XCLAW_CDP_URL and curl $XCLAW_CDP_URL/json/version.",
+  },
+  CDP_WS_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "CDP WebSocket upgrade/connect failed. Port may be HTTP-only or blocked; confirm webSocketDebuggerUrl.",
+  },
+  CDP_EVAL_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "Runtime.evaluate threw in page. Re-observe DOM; selector/ref may be stale.",
+  },
+  CDP_NAVIGATE_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "Page.navigate failed. Check URL scheme (http/https), network, and that the tab still exists.",
+  },
+  CDP_SCREENSHOT_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "Page.captureScreenshot failed. Page may be crashed or target detached; re-attach and retry.",
+  },
+  CDP_INPUT_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery:
+      "Input.dispatch* failed. Page may not be focused or target closed; navigate/observe then retry.",
+  },
+
   CUA_ACT_NEED_COORDS: {
     severity: "error",
     surface: "cdp",
@@ -280,4 +341,27 @@ export function lookupCuaError(code) {
   return CUA_ERROR_CATALOG[code] || null;
 }
 
-export default { CUA_ERROR_CATALOG, enrichCuaError, lookupCuaError };
+
+/**
+ * Map CDP/client Error messages → stable CUA codes.
+ * @param {unknown} err
+ * @returns {string}
+ */
+export function classifyCdpError(err) {
+  const msg = String(err?.message || err || "");
+  if (/not loopback|allowRemote/i.test(msg)) return "CDP_NOT_LOOPBACK";
+  if (/no CDP page target|no page target/i.test(msg)) return "CDP_NO_PAGE";
+  if (/socket closed|WebSocket.*close/i.test(msg)) return "CDP_SOCKET_CLOSED";
+  if (/timeout|ETIMEDOUT/i.test(msg)) return "CDP_TIMEOUT";
+  if (/ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH/i.test(msg)) return "CDP_ATTACH_FAILED";
+  if (/\/json\/|invalid JSON|CDP HTTP/i.test(msg)) return "CDP_HTTP_FAILED";
+  if (/WS timeout|upgrade|websocket/i.test(msg)) return "CDP_WS_FAILED";
+  if (/evaluate failed|exceptionDetails/i.test(msg)) return "CDP_EVAL_FAILED";
+  if (/Page\.navigate|navigate failed/i.test(msg)) return "CDP_NAVIGATE_FAILED";
+  if (/captureScreenshot|screenshot/i.test(msg)) return "CDP_SCREENSHOT_FAILED";
+  if (/Input\.dispatch/i.test(msg)) return "CDP_INPUT_FAILED";
+  if (/CDP attach/i.test(msg)) return "CDP_ATTACH_FAILED";
+  return "CDP_ATTACH_FAILED";
+}
+
+export default { CUA_ERROR_CATALOG, enrichCuaError, lookupCuaError, classifyCdpError };

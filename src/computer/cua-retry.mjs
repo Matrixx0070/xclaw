@@ -4,10 +4,19 @@
  */
 
 import { recordCuaRetryTick, recordCuaRetryOutcome } from "./cua-retry-metrics.mjs";
+import { classifyCdpError } from "./cua-errors.mjs";
 
 /** Codes safe to retry (network / race / brief CDP blip). */
 export const CUA_TRANSIENT_CODES = new Set([
   "CDP_ATTACH_FAILED",
+  "CDP_NAVIGATE_FAILED",
+  "CDP_INPUT_FAILED",
+  "CDP_SCREENSHOT_FAILED",
+  "CDP_NO_PAGE",
+  "CDP_WS_FAILED",
+  "CDP_HTTP_FAILED",
+  "CDP_SOCKET_CLOSED",
+  "CDP_TIMEOUT",
   "CUA_ACT_EXEC_FAILED",
   "ATSPI_EXEC_FAILED",
   "ATSPI_EMPTY",
@@ -30,12 +39,10 @@ export function extractCuaCode(errOrResult) {
   if (!errOrResult) return null;
   if (typeof errOrResult === "object") {
     if (errOrResult.code) return String(errOrResult.code);
-    if (errOrResult.message && /CDP attach/i.test(errOrResult.message)) return "CDP_ATTACH_FAILED";
+    if (errOrResult.message) return classifyCdpError(errOrResult);
   }
   if (errOrResult instanceof Error) {
-    if (/ECONNREFUSED|ETIMEDOUT|ECONNRESET|socket hang up/i.test(errOrResult.message)) {
-      return "CDP_ATTACH_FAILED";
-    }
+    return classifyCdpError(errOrResult);
   }
   return null;
 }
