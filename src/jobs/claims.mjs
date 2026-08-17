@@ -63,6 +63,37 @@ export function extractClaimsAndCitations(text) {
   return { citations, claims, structured };
 }
 
+
+/** Paths mentioned in claim text */
+export function extractClaimPaths(text) {
+  const raw = String(text || "");
+  const paths = new Set();
+  // quoted paths, bare paths with extension, relative segments
+  const re =
+    /(?:^|[\s`"'(])((?:\.\/|[\w.-]+\/)*[\w.-]+\.(?:md|txt|json|js|mjs|ts|tsx|py|yml|yaml|toml|html|css|sh|log|csv))(?:$|[\s`"'"),:])/gi;
+  let m;
+  while ((m = re.exec(raw))) {
+    paths.add(m[1].replace(/^\.\//, ""));
+  }
+  return [...paths];
+}
+
+/** Paths appearing in evidence summaries (tool args/results previews) */
+export function extractEvidencePaths(evidence = []) {
+  const paths = new Set();
+  const re =
+    /(?:^|[\s`"'(/=])((?:\.\/|[\w.-]+\/)*[\w.-]+\.(?:md|txt|json|js|mjs|ts|tsx|py|yml|yaml|toml|html|css|sh|log|csv))(?:$|[\s`"'"),:])/gi;
+  for (const e of evidence) {
+    const sum = String(e.summary || "");
+    let m;
+    const r = new RegExp(re.source, "gi");
+    while ((m = r.exec(sum))) {
+      paths.add(m[1].replace(/^\.\//, ""));
+    }
+  }
+  return [...paths];
+}
+
 export function scoreClaimsAgainstEvidence(finalText, evidence = [], opts = {}) {
   const { citations, claims, structured } = extractClaimsAndCitations(finalText);
   const ids = new Set();
@@ -101,6 +132,30 @@ export function scoreClaimsAgainstEvidence(finalText, evidence = [], opts = {}) 
       warnings.push(`orphan claim: ${c.slice(0, 80)}`);
     }
   }
+
+  // Path binding: claimed file paths should appear in some tool evidence
+  const claimPaths = new Set();
+  for (const c of claims) {
+    for (const p of extractClaimPaths(c)) claimPaths.add(p);
+  }
+  for (const p of extractClaimPaths(finalText)) claimPaths.add(p);
+  const evidencePaths = new Set(extractEvidencePaths(evidence));
+  const unboundPaths = [...claimPaths].filter((p) => {
+    if (evidencePaths.has(p)) return false;
+    // basename match
+    const base = p.split("/").pop();
+    for (const ep of evidencePaths) {
+      if (ep === p || ep.endsWith("/" + base) || ep.split("/").pop() === base) return false;
+    }
+    return true;
+  });
+  if (unboundPaths.length && (opts.hard || opts.pathBind)) {
+    if (!hasToolEvidence) {
+      warnings.push(`path claims without tools: ${unboundPaths.slice(0, 5).join(",")}`);
+    } else {
+      warnings.push(`path not in tool evidence: ${unboundPaths.slice(0, 5).join(",")}`);
+    }
+  }
   if (orphanCitations.length) {
     warnings.push(`unknown citations: ${orphanCitations.join(",")}`);
   }
@@ -125,6 +180,9 @@ export function scoreClaimsAgainstEvidence(finalText, evidence = [], opts = {}) 
     structured,
     orphanCitations,
     hasToolEvidence,
+    claimPaths: [...claimPaths],
+    evidencePaths: [...evidencePaths],
+    unboundPaths,
     warnings,
     ok: warnings.length === 0,
   };
