@@ -1735,9 +1735,19 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       }
       if (sub === "install") {
         const file = args[2];
-        if (!file) { console.error("Usage: xclaw skills install <proposal.md>"); process.exit(1); }
-        const out = await installProposal(cfg, file, { force: args.includes("--force") });
+        if (!file) {
+          console.error("Usage: xclaw skills install <proposal.md> [--force] [--owner-approved]");
+          process.exit(1);
+        }
+        const out = await installProposal(cfg, file, {
+          force: args.includes("--force"),
+          ownerApproved:
+            args.includes("--owner-approved") ||
+            args.includes("--owner") ||
+            process.env.XCLAW_SKILLS_INSTALL === "1",
+        });
         console.log(JSON.stringify(out, null, 2));
+        process.exitCode = out.ok === false ? 1 : 0;
         break;
       }
       if (sub === "reject") {
@@ -1916,6 +1926,7 @@ Commands:
   transcripts          list | show <sessionId>
   eval                 Eval suite (--tag, --mock, --json)
   job <goal>           Verified job in a temp workspace
+  skills               list|proposals|install|reject  (prod install needs --owner-approved)
   version              Print version
   info                 Version + ready + queue summary
   wait-ready           Poll until ready
