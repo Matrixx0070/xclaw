@@ -95,3 +95,8 @@ sudo apt install -y espeak-ng ffmpeg
 # optional STT: whisper.cpp → whisper-cli on PATH
 # optional TUI mic: arecord (alsa-utils)
 ```
+
+
+### WebChat UI
+
+Open `/chat/` — **🎤** uses browser SpeechRecognition; **🔊** calls gateway `/api/voice/speak` (server-side espeak/piper).
