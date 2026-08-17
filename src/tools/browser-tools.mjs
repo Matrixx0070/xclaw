@@ -17,48 +17,6 @@ import {
   exportMitmCa,
   trustMitmCaInProfile,
 } from "../browser/mitm.mjs";
-import {
-  createActionId,
-  networkCursor,
-  networkDeltaSince,
-  bindActionFlows,
-  readActionBindings,
-  formatA11ySnapshot,
-  assertOutcome,
-} from "../browser/sense.mjs";
-import {
-  loadPolicy,
-  savePolicy,
-  evaluateRequestPolicy,
-  exportProofBundle,
-} from "../browser/truth.mjs";
-import {
-  loadTimeline,
-  scoreCausal,
-  timeTravelReport,
-} from "../browser/timetravel.mjs";
-import {
-  listTabLeases,
-  releaseTabLease,
-  requireTabLease,
-  listCommitGates,
-  openCommitGate,
-  resolveCommitGate,
-  requireCommitGate,
-  fabricStatus,
-} from "../browser/physics.mjs";
-import {
-  acquireWithHeartbeat,
-  touchLease,
-  startLeaseHeartbeat,
-  stopLeaseHeartbeat,
-  listLeaseHeartbeats,
-} from "../browser/lease-heartbeat.mjs";
-import {
-  bindRole,
-  getBoundRole,
-  resolveRole,
-} from "../browser/role-binding.mjs";
 
 function textResult(text, extra = {}) {
   return { content: [{ type: "text", text: String(text ?? "") }], ...extra };
@@ -567,18 +525,59 @@ export function createBrowserObserveTool(ctx = {}) {
   return {
     name: "browser_observe",
     description:
-      "Primary sense channel (Horizon 1): structure snapshot of the page + MITM network cursor. Use before acting. Prefer over browser_screenshot unless canvas/unknown widget.",
+      "Primary hybrid sense (Horizon 1 / P0.4): structure-first a11y tree with set-of-marks indices + click coords, network delta when MITM on, optional pixels. Prefer over screenshot-only. Set include_pixels=true for vision fallback on canvas/unknown widgets.",
     parameters: {
       type: "object",
       properties: {
         url: { type: "string" },
         tabId: { type: "string" },
+        max_nodes: { type: "number", description: "Max interactive nodes (default 150)" },
+        include_pixels: {
+          type: "boolean",
+          description: "Also capture screenshot path (default false — structure first)",
+        },
       },
     },
     async execute(args = {}) {
-      // Delegate to structure snapshot (same path, clearer agent name)
       const snap = createBrowserSnapshotTool(ctx);
-      return snap.execute(args);
+      const structureResult = await snap.execute(args);
+      if (structureResult?.isError || !args.include_pixels) {
+        return structureResult;
+      }
+      // Hybrid: append pixel channel without replacing structure
+      try {
+        const shot = createBrowserScreenshotTool(ctx);
+        const pixelResult = await shot.execute({
+          tabId: args.tabId,
+          url: undefined, // already navigated by structure path if url given
+        });
+        const structText = (structureResult.content || [])
+          .filter((c) => c.type === "text")
+          .map((c) => c.text)
+          .join("\n");
+        const pixelText = (pixelResult.content || [])
+          .filter((c) => c.type === "text")
+          .map((c) => c.text)
+          .join("\n");
+        return textResult(
+          [
+            structText,
+            "",
+            "channel: pixels (secondary)",
+            pixelText,
+          ].join("\n"),
+          {
+            metadata: {
+              ...(structureResult.metadata || {}),
+              hybrid: true,
+              pixels: pixelResult.metadata || null,
+            },
+          }
+        );
+      } catch (e) {
+        // structure alone is still useful
+        return structureResult;
+      }
     },
   };
 }
