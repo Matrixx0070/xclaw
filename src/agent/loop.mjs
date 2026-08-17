@@ -145,6 +145,29 @@ Rules:
  * @param {AbortSignal} [options.signal]
  * @param {(event: object) => void} [options.onEvent]
  */
+
+/** Coerce provider assistant content (string | parts[]) to plain text. */
+export function normalizeAssistantContent(content) {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((p) => {
+        if (typeof p === "string") return p;
+        if (p && typeof p === "object") {
+          if (typeof p.text === "string") return p.text;
+          if (typeof p.content === "string") return p.content;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  if (typeof content === "object" && typeof content.text === "string") return content.text;
+  return String(content);
+}
+
 export async function runAgentLoop(options) {
   const {
     userMessage,
@@ -1069,7 +1092,7 @@ export async function runAgentLoop(options) {
 
       const calls = assistant.tool_calls || [];
       if (!calls.length) {
-        finalText = assistant.content || "";
+        finalText = normalizeAssistantContent(assistant.content);
         // Optional verify role pass on final tool-free answer
         if (
           typeof provider.verify === "function" ||
@@ -1109,6 +1132,56 @@ export async function runAgentLoop(options) {
           }
         }
         naturalStop = true; // clean tool-free completion — on_stop may veto
+        // Empty final after tool work: one rescue chat (models often end with tool_calls only
+        // then a blank content turn). Mirrors maxTurns finalAnswerRescue.
+        if (
+          !String(finalText).trim() &&
+          toolTrace.length > 0 &&
+          cfg.agent?.finalAnswerRescue !== false
+        ) {
+          try {
+            const toolNames = toolTrace
+              .map((x) => x.name || x.tool)
+              .filter(Boolean)
+              .slice(-12);
+            const rescueMsgs = [
+              ...messages,
+              {
+                role: "user",
+                content:
+                  "You already ran tools (" +
+                  toolNames.join(", ") +
+                  "). Write the final answer for the user now. Quote any file contents or results you produced. Do not call tools.",
+              },
+            ];
+            const rescued = await provider.chat({
+              messages: rescueMsgs,
+              tools: [],
+              temperature: 0.2,
+            });
+            const rText = normalizeAssistantContent(
+              rescued?.content ?? rescued?.message?.content ?? rescued?.choices?.[0]?.message?.content
+            );
+            if (rText) {
+              finalText = rText;
+              onEvent({ type: "loop", phase: "empty_final_rescue", chars: rText.length });
+            }
+          } catch (re) {
+            onEvent({
+              type: "loop",
+              phase: "empty_final_rescue_error",
+              message: String(re?.message || re),
+            });
+          }
+        }
+        // Last resort: structured receipt so CLI is never silent after successful tools
+        if (!String(finalText).trim() && toolTrace.length > 0) {
+          const names = toolTrace.map((x) => x.name || x.tool).filter(Boolean);
+          finalText =
+            `Completed ${names.length} tool call(s): ${names.slice(-8).join(", ")}. ` +
+            `(Model returned empty final text; see tool results above.)`;
+          onEvent({ type: "loop", phase: "empty_final_stub", tools: names.length });
+        }
         break;
       }
 
@@ -2077,8 +2150,11 @@ export async function runAgentLoop(options) {
   });
   onEvent({ type: "goal_loop", phase: "receipt", receipt: goalReceipt });
 
+  const presentedText = stripClaimsBlock(finalText) || "(no response)";
   return {
-    text: stripClaimsBlock(finalText) || "(no response)",
+    text: presentedText,
+    /** Alias for orchestrators/tests that historically read finalText */
+    finalText: presentedText,
     turns,
     toolTrace,
     model: provider?.model,
