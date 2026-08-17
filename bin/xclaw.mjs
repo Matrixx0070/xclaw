@@ -905,6 +905,16 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         await runVoiceTui(cfg, { args: args.slice(2) });
         break;
       }
+      if (sub === "listen") {
+        const { runVoiceListen } = await import("../src/voice/wake/listen.mjs");
+        const noSpeak = args.includes("--no-speak");
+        const noAgent = args.includes("--no-agent");
+        await runVoiceListen(cfg, {
+          speak: !noSpeak,
+          agent: !noAgent,
+        });
+        break;
+      }
       if (sub === "wake-probe" || sub === "wake") {
         const {
           probeWakeStack,
@@ -927,7 +937,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         console.log(JSON.stringify(stack, null, 2));
         break;
       }
-      console.error("Usage: xclaw voice probe|speak|transcribe|once|tui|wake-probe");
+      console.error("Usage: xclaw voice probe|speak|transcribe|once|tui|listen|wake-probe");
       process.exit(1);
       break;
     }
