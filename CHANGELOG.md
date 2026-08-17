@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.78.0 — Operator features (2026-08-17)
+
+- **browser**: set-of-marks click/type (`mark: N`) + MARK_* error codes
+- **approvals**: CLI + `/approvals` API, `APPROVAL_NOT_FOUND`
+- **cost**: hard stop `BUDGET_EXCEEDED` (day/job), agent loop gate, doctor
+- **runs**: durable agent snapshots `~/.xclaw/agent-runs/`, `xclaw runs`
+- **telegram**: `RATE_LIMITED`, `xclaw channels telegram test`
+
 ## 3.77.2 — Install guide (2026-08-17)
 
 - **INSTALL.md**: v3.77.1+ checkout, self-test, prod autonomy/security pointers
