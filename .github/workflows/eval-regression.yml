@@ -51,7 +51,14 @@ jobs:
             test/browser-a8-fabric.test.mjs \
             test/bounded-queue.test.mjs \
             test/checkpoint.test.mjs \
-            test/long-horizon-fixtures.test.mjs
+            test/long-horizon-fixtures.test.mjs \
+            test/long-harness.test.mjs \
+            test/cost-governor.test.mjs \
+            test/approvals-inbox.test.mjs \
+            test/browser-mark-click.test.mjs \
+            test/agent-run-store.test.mjs \
+            test/telegram-callback-auth.test.mjs \
+            test/telegram-prod-policy.test.mjs
       - name: OAuth + P5/P6 packs
         run: |
           node --test \
