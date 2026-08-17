@@ -365,6 +365,33 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
       severity: "warn",
     });
   }
+  try {
+    const { canInstallSkills } = await import("../skills/propose.mjs");
+    const gate = canInstallSkills(cfg);
+    const prof = String(cfg.profile || process.env.XCLAW_PROFILE || "lab").toLowerCase();
+    if (prof === "prod" && gate.ok && cfg.skills?.allowInstall) {
+      push("skills.install", true, {
+        summary: "prod allowInstall=true — auto skill writeback enabled (owner-aware)",
+        severity: "warn",
+        ...gate,
+      });
+    } else if (!gate.ok) {
+      push("skills.install", true, {
+        summary: `gated (${gate.reason}) — proposals only; xclaw skills install --owner-approved`,
+        ...gate,
+      });
+    } else {
+      push("skills.install", true, {
+        summary: `install allowed (${gate.reason})`,
+        ...gate,
+      });
+    }
+  } catch (err) {
+    push("skills.install", true, {
+      summary: err.message || String(err),
+      severity: "warn",
+    });
+  }
 
   push("runtime", true, {
     summary: `node ${process.version} · ${process.platform}/${process.arch}`,
