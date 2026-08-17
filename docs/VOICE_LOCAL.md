@@ -180,7 +180,12 @@ Server → `ready` · `reply` · `event` · `error`
 Target: kill path **&lt;50ms** synchronous; audio stops without waiting for `playWav` await.
 
 
-## VAD endpointing (command window)
+## VAD (Voice Activity Detection)
+
+Energy RMS with **open/close hysteresis** (reduces false endpoints).
+
+### Command window (default on)
+
 
 After wake, XClaw streams mic PCM and **stops on silence** instead of a fixed 4s clip.
 
@@ -228,3 +233,12 @@ chatStream onDelta → createSentenceStreamSpeaker → first sentence audio ASAP
 Tool-like phrases (`run`, `write file`, `browse`, …) still use full `runJob` then sentence TTS.
 
 Disable stream: `voice.listen.stream: false` or env-only path without API keys (localThink).
+
+
+### Wake window (optional)
+
+```json
+{ "voice": { "vad": { "wake": true, "wakeSilenceMs": 350 } } }
+```
+
+Doctor: `voice.vad` shows open/close thresholds.
