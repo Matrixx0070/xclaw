@@ -29,12 +29,34 @@ Set `XCLAW_COMPUTER_ENGINE=bundle` or `XCLAW_CDP_URL=http://127.0.0.1:9222`.
 
 `resolveReach()` reports: `browserObserve`, `screenshot`, `desktopGui` (false until DesktopDriver), `cuaPolicy`, `fullBrowser`.
 
+## CDP motor path (I2b)
+
+When `XCLAW_CDP_URL=http://127.0.0.1:9222` (loopback Chromium with remote debugging):
+
+```bash
+chromium --remote-debugging-port=9222 --user-data-dir=$HOME/.xclaw/chrome-cdp
+export XCLAW_CDP_URL=http://127.0.0.1:9222
+```
+
+`xclaw_computer_act` uses `src/browser/cdp-client.mjs` + `src/browser/motor.mjs` (planClick/planType/planScroll → Input.dispatch*).
+
+| action | needs |
+|--------|--------|
+| click | x, y |
+| type | text |
+| key | key |
+| scroll | deltaY (optional x,y) |
+| screenshot | — |
+
+`ref` from observe is label-only until ref→coords mapping lands.
+
 ## Roadmap
 
 - **I1** observe — done (native structure)
-- **I2** wire Horizon motor click/type on bundle path
-- **I3** planes serial marks for actuation (done for existing computer tools)
-- **I4–I5** DesktopDriver optional
+- **I2** stub — done (fail closed)
+- **I2b** CDP motor path — done (CLEAN); bundle BrowserService still BUNDLE_ONLY
+- **I3** planes serial — done
+- **I4–I5** DesktopDriver optional + observe ref→coords
 - **I6** long-horizon eval
 
 Do **not** hand-edit `xclaw-server.mjs`; extend modules and rebuild.

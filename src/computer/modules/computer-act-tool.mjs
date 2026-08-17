@@ -1,24 +1,51 @@
 /**
- * I2 stub — unified computer actuation entry (CUA).
+ * I2 — unified computer actuation (CUA) on existing planes.
  *
- * Native: always fails closed with CUA_ACT_REQUIRES_BUNDLE unless action is observe-only.
- * Bundle/CDP: future path will dispatch to Horizon motor + Input.dispatch*.
+ * Policy: tools → observe → GUI act.
  *
- * Policy: tools → observe → act. Do not invent coordinates on native.
+ * Paths:
+ *   1) XCLAW_CDP_URL / CDP_URL set → Horizon motor + cdp-client (CLEAN)
+ *   2) engine=bundle without CDP URL → honest NOT_EXTRACTED (BrowserService still bundle-only)
+ *   3) native/thin without CDP → CUA_ACT_REQUIRES_BUNDLE
  */
+
+import { createCdpClient } from "../../browser/cdp-client.mjs";
+import { planClick, planType, planScroll, executeSteps } from "../../browser/motor.mjs";
+
+function parseCdpUrl(raw) {
+  if (!raw) return null;
+  try {
+    const u = new URL(String(raw));
+    return {
+      host: u.hostname || "127.0.0.1",
+      port: Number(u.port) || 9222,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolveCdpEndpoint() {
+  const raw = process.env.XCLAW_CDP_URL || process.env.CDP_URL || null;
+  return parseCdpUrl(raw);
+}
 
 /**
  * @param {object} input
  * @param {string} [input.action] click|type|key|scroll|screenshot|observe
- * @param {string} [input.tabId]
- * @param {string} [input.ref] element ref from observe
+ * @param {string} [input.tabId] ignored on raw CDP attach (matches first/url page)
+ * @param {string} [input.urlMatch] substring to pick CDP page
+ * @param {string} [input.ref] reserved for future observe→coords mapping
  * @param {number} [input.x]
  * @param {number} [input.y]
  * @param {string} [input.text]
  * @param {string} [input.key]
+ * @param {number} [input.deltaX]
+ * @param {number} [input.deltaY]
  */
 export async function runComputerAct(input = {}) {
   const action = String(input.action || "click").toLowerCase();
+
   if (action === "observe") {
     return {
       ok: false,
@@ -30,42 +57,148 @@ export async function runComputerAct(input = {}) {
   }
 
   const engine = process.env.XCLAW_COMPUTER_ENGINE || "native";
-  const cdp = process.env.XCLAW_CDP_URL || process.env.CDP_URL || null;
-  const canAct = engine === "bundle" || engine === "generated" || Boolean(cdp);
+  const cdpEp = resolveCdpEndpoint();
+  const canAct = Boolean(cdpEp) || engine === "bundle" || engine === "generated";
 
   if (!canAct) {
     return {
       ok: false,
       error:
-        "GUI actuation (click/type/key/scroll/screenshot) requires CDP bundle or XCLAW_CDP_URL. Prefer tools/APIs, then xclaw_browser_tab action=observe.",
+        "GUI actuation (click/type/key/scroll/screenshot) requires XCLAW_CDP_URL or CDP bundle. Prefer tools/APIs, then xclaw_browser_tab action=observe.",
       code: "CUA_ACT_REQUIRES_BUNDLE",
       engine: engine === "thin" ? "native" : engine,
       cuaPolicy: "tools_first_then_observe_then_gui",
-      hint: "XCLAW_COMPUTER_ENGINE=bundle or export XCLAW_CDP_URL=http://127.0.0.1:9222",
+      hint: "export XCLAW_CDP_URL=http://127.0.0.1:9222  # or XCLAW_COMPUTER_ENGINE=bundle",
     };
   }
 
-  // Bundle path not yet wired to Horizon motor in CLEAN modules (I2 complete = wire here).
-  return {
-    ok: false,
-    error:
-      "CDP/bundle actuation path not yet extracted to CLEAN modules. BrowserService remains bundle-only (BUNDLE_ONLY_REGIONS). See docs/COMPUTER_USE_BACKEND.md I2.",
-    code: "CUA_ACT_NOT_EXTRACTED",
-    engine,
-    cdpAttach: Boolean(cdp),
-    requested: {
+  // Prefer explicit CDP attach (CLEAN path). Bundle-without-CDP stays deferred.
+  if (!cdpEp) {
+    return {
+      ok: false,
+      error:
+        "engine=bundle without XCLAW_CDP_URL: BrowserService actuation is still BUNDLE_ONLY. Attach CDP for CLEAN motor path, or extract BrowserService modules.",
+      code: "CUA_ACT_NOT_EXTRACTED",
+      engine,
+      cuaPolicy: "tools_first_then_observe_then_gui",
+      hint: "export XCLAW_CDP_URL=http://127.0.0.1:9222",
+    };
+  }
+
+  let client;
+  let tab;
+  try {
+    client = createCdpClient({ host: cdpEp.host, port: cdpEp.port });
+    tab = await client.attach(input.urlMatch || undefined);
+  } catch (e) {
+    return {
+      ok: false,
+      error: `CDP attach failed: ${e?.message || e}`,
+      code: "CDP_ATTACH_FAILED",
+      engine,
+      cdp: cdpEp,
+    };
+  }
+
+  try {
+    if (action === "screenshot") {
+      const buf = await tab.screenshot();
+      const b64 = buf.toString("base64");
+      return {
+        ok: true,
+        action: "screenshot",
+        engine: "cdp-motor",
+        mime: "image/png",
+        bytes: buf.length,
+        /** callers may persist; we return prefix only in metadata-heavy logs */
+        dataBase64Length: b64.length,
+        dataBase64: b64.slice(0, 120) + (b64.length > 120 ? "…" : ""),
+        pageUrl: tab.page?.url || null,
+      };
+    }
+
+    let plan;
+    if (action === "click") {
+      const x = Number(input.x);
+      const y = Number(input.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return {
+          ok: false,
+          error: "click requires numeric x,y (map from observe refs in a later step)",
+          code: "CUA_ACT_NEED_COORDS",
+          engine: "cdp-motor",
+        };
+      }
+      plan = planClick({
+        x,
+        y,
+        button: input.button || "left",
+        clickCount: input.clickCount || 1,
+        label: input.ref || input.label,
+      });
+    } else if (action === "type") {
+      plan = planType({ text: input.text ?? "" });
+    } else if (action === "scroll") {
+      plan = planScroll({
+        x: Number(input.x) || 0,
+        y: Number(input.y) || 0,
+        deltaX: Number(input.deltaX) || 0,
+        deltaY: Number(input.deltaY) || 100,
+      });
+    } else if (action === "key") {
+      // minimal key via type plan single char or raw dispatch
+      const key = String(input.key || "");
+      if (!key) {
+        return { ok: false, error: "key requires key string", code: "CUA_ACT_NEED_KEY" };
+      }
+      await tab.send("Input.dispatchKeyEvent", { type: "keyDown", key });
+      await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key });
+      return {
+        ok: true,
+        action: "key",
+        engine: "cdp-motor",
+        key,
+        pageUrl: tab.page?.url || null,
+      };
+    } else {
+      return {
+        ok: false,
+        error: `unsupported action: ${action}`,
+        code: "CUA_ACT_UNKNOWN",
+      };
+    }
+
+    const result = await executeSteps(tab, plan.steps);
+    return {
+      ok: true,
       action,
-      tabId: input.tabId || null,
-      ref: input.ref || null,
-      hasCoords: input.x != null && input.y != null,
-    },
-  };
+      engine: "cdp-motor",
+      executed: result.executed,
+      total: result.total,
+      meta: plan.meta,
+      pageUrl: tab.page?.url || null,
+      cuaPolicy: "tools_first_then_observe_then_gui",
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e?.message || String(e),
+      code: "CUA_ACT_EXEC_FAILED",
+      engine: "cdp-motor",
+    };
+  } finally {
+    try {
+      tab?.close?.();
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export const ComputerActTool = {
   name: "xclaw_computer_act",
   description:
-    "CUA GUI actuation (click/type/key/scroll/screenshot). Requires bundle or XCLAW_CDP_URL. Prefer connectors/tools and xclaw_browser_tab observe first. Native engine fails closed.",
+    "CUA GUI actuation via CDP (click/type/key/scroll/screenshot) when XCLAW_CDP_URL is set. Prefer connectors/tools and xclaw_browser_tab observe first. Native without CDP fails closed.",
   inputSchema: {
     type: "object",
     properties: {
@@ -74,11 +207,16 @@ export const ComputerActTool = {
         description: "click | type | key | scroll | screenshot",
       },
       tabId: { type: "string" },
-      ref: { type: "string", description: "Element ref from observe" },
+      urlMatch: { type: "string", description: "Pick CDP page by URL substring" },
+      ref: { type: "string", description: "Element ref from observe (label only until ref→coords)" },
       x: { type: "number" },
       y: { type: "number" },
       text: { type: "string" },
       key: { type: "string" },
+      deltaX: { type: "number" },
+      deltaY: { type: "number" },
+      button: { type: "string" },
+      clickCount: { type: "number" },
     },
   },
   isReadOnly: () => false,
