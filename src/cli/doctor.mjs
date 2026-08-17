@@ -1345,6 +1345,32 @@ export async function runDoctor(opts = {}) {
     /* pm2 optional */
   }
 
+
+  // CUA / computer-use readiness (CDP + desktop drivers + retry metrics)
+  try {
+    const { runCuaDoctor } = await import("../computer/cua-doctor.mjs");
+    const cua = await runCuaDoctor(process.env);
+    for (const c of cua.checks || []) {
+      const status =
+        c.severity === "error" ? "error" : c.severity === "warn" ? "warn" : "ok";
+      const msg = c.hint ? `${c.message} — ${c.hint.split("\n")[0]}` : c.message;
+      push(`cua.${c.id}`, status, msg, {
+        surface: "cua",
+        recovery: c.hint || null,
+        retryMetrics: c.id === "cua_retry_metrics" ? cua.retryMetrics : undefined,
+      });
+    }
+    if (cua.retryMetrics && (cua.retryMetrics.retries > 0 || cua.retryMetrics.attempts > 1)) {
+      push(
+        "cua.retry.summary",
+        cua.retryMetrics.retries > 50 ? "warn" : "ok",
+        `retry attempts=${cua.retryMetrics.attempts} retries=${cua.retryMetrics.retries} successRate=${cua.retryMetrics.successRate ?? "n/a"}`
+      );
+    }
+  } catch (e) {
+    push("cua.doctor", "warn", e?.message || String(e));
+  }
+
   return finish(checks, opts);
 
 
