@@ -88,6 +88,42 @@ Roadmap: **[docs/ROADMAP.md](./docs/ROADMAP.md)** · MCP: **[docs/MCP-PARITY.md]
 
 ---
 
+
+---
+
+## Hands-free (away from keyboard)
+
+Keep the **gateway** process running. Assign work, then let evolve + heartbeat recover and drain the queue.
+
+```bash
+export XCLAW_PROFILE=lab
+export XAI_API_KEY=...
+
+# Queue grounded work
+xclaw goal "Write notes/status.md with OK" --harness --exists notes/status.md --contains notes/status.md:OK
+
+# Posture
+xclaw evolve status
+xclaw doctor
+
+# Optional: enable heartbeat in config
+# autonomy.level=full
+# autonomy.heartbeat.enabled=true
+# autonomy.heartbeat.everyMs=1800000
+
+xclaw gateway   # ensureHeartbeat + queue worker + evolve on each HB tick
+```
+
+| Command | Purpose |
+|---------|---------|
+| `xclaw goal "…" [--harness …]` | Enqueue owner goals |
+| `xclaw evolve status` | Blockers, interrupted CPs, queue |
+| `xclaw evolve tick` | Resume running CPs + prune + start queue worker |
+| `xclaw resume <id>` | Manual recovery with strategy |
+| `xclaw resume prune` | Evict old terminal checkpoints |
+
+Full playbook: **[docs/SELF_EVOLUTION.md](./docs/SELF_EVOLUTION.md)** · principles: **[docs/PRINCIPLES.md](./docs/PRINCIPLES.md)**
+
 ## Strategy C (computer)
 
 **Modules are the source of truth.** Do **not** hand-edit the ~16MB `xclaw-server.mjs` bundle.
