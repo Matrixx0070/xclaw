@@ -169,3 +169,12 @@ Server → `ready` · `reply` · `event` · `error`
 - Playback: `src/voice/playback.mjs` — `playWav(path, { speech, epoch })` auto-stops on barge-in
 - Gateway: `{ "type": "barge_in" }` on `/ws/voice`
 - Voice commands: “stop talking”, `/mute`, “hold on”
+
+
+### Barge-in latency
+
+1. Registered **stoppers** run first (SIGKILL process group of player)
+2. Speech **epoch** advances (stale TTS ignored)
+3. Listeners notified (`killPathMs` on event)
+
+Target: kill path **&lt;50ms** synchronous; audio stops without waiting for `playWav` await.
