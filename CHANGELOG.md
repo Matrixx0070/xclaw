@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.78.1 — Telegram hardening (2026-08-17)
+
+- **doctor**: telegram token/policy/rateLimit/writerLock/runtime/lastError
+- **prod**: force `dmPolicy` off `open` → allowlist|pairing (`XCLAW_TELEGRAM_DM_POLICY` break-glass)
+- **callbacks**: shared `authorizeTelegramCallback` (owner/allowlist/RATE_LIMITED)
+
 ## 3.78.0 — Operator features (2026-08-17)
 
 - **browser**: set-of-marks click/type (`mark: N`) + MARK_* error codes
