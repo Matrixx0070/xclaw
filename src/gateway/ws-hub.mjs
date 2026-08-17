@@ -26,6 +26,30 @@ function acceptKey(secKey) {
   return crypto.createHash("sha1").update(secKey + GUID).digest("base64");
 }
 
+/** Encode a binary WebSocket frame */
+export function encodeBinaryFrame(buf) {
+  const payload = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  const len = payload.length;
+  let header;
+  if (len < 126) {
+    header = Buffer.alloc(2);
+    header[0] = 0x82; // FIN + binary
+    header[1] = len;
+  } else if (len < 65536) {
+    header = Buffer.alloc(4);
+    header[0] = 0x82;
+    header[1] = 126;
+    header.writeUInt16BE(len, 2);
+  } else {
+    header = Buffer.alloc(10);
+    header[0] = 0x82;
+    header[1] = 127;
+    header.writeUInt32BE(0, 2);
+    header.writeUInt32BE(len, 6);
+  }
+  return Buffer.concat([header, payload]);
+}
+
 /** Encode a text WebSocket frame */
 export function encodeTextFrame(str) {
   const payload = Buffer.from(str, "utf8");
@@ -606,4 +630,4 @@ export function wsOutboundStats() {
   return { ...outboundStats, clients: clients.size };
 }
 
-export default { attachWebSocketHub, broadcast, wsClientCount, wsOutboundStats, encodeTextFrame, decodeFrames, createFrameParser };
+export default { attachWebSocketHub, broadcast, wsClientCount, wsOutboundStats, encodeTextFrame, encodeBinaryFrame, decodeFrames, createFrameParser };
