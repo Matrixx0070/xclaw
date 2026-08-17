@@ -1,12 +1,16 @@
 /**
  * Gateway voice session WebSocket — /ws/voice
  *
- * Client messages:
+ * Client messages (JSON text):
  *   { type: "ping" }
- *   { type: "utterance", text: "..." }     // committed STT text from edge
+ *   { type: "utterance", text: "..." }
  *   { type: "wake", phrase?, text? }
- *   { type: "command", text: "..." }      // force voice-command path
+ *   { type: "command", text: "..." }
  *   { type: "barge_in" }
+ *   { type: "pcm_start", sampleRate?: 16000, channels?: 1 }
+ *   { type: "pcm_end" }   // finalize PCM buffer → STT → agent
+ *
+ * Client binary frames: raw S16_LE mono PCM (after pcm_start)
  *
  * Server messages:
  *   { type: "ready", sessionId }
@@ -84,13 +88,20 @@ export function attachVoiceWebSocket(server, opts = {}) {
     const sessionId = crypto.randomUUID();
     const entente = createEntente();
     const parser = createFrameParser();
-    const state = { sessionId, entente, socket, busy: false };
+    const state = {
+      sessionId,
+      entente,
+      socket,
+      busy: false,
+      pcm: null, // { sampleRate, channels, chunks: Buffer[], bytes }
+    };
     sessions.set(sessionId, state);
 
     sendJson(socket, {
       type: "ready",
       sessionId,
       path,
+      pcm: { codec: "s16le", sampleRate: 16000, channels: 1 },
       at: new Date().toISOString(),
     });
 
@@ -102,6 +113,10 @@ export function attachVoiceWebSocket(server, opts = {}) {
         return;
       }
       for (const msg of messages) {
+        if (msg.type === "binary") {
+          handlePcmBinary(state, msg.data, cfg);
+          continue;
+        }
         if (msg.type !== "text") continue;
         let body;
         try {
