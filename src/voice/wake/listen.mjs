@@ -23,28 +23,7 @@ import {
 } from "../providers/local.mjs";
 import { createEntente, voiceCommandsHelp } from "../entente.mjs";
 import fs from "node:fs/promises";
-import { spawn } from "node:child_process";
-
-function playWav(filePath) {
-  return new Promise((resolve) => {
-    const tryBins = [
-      ["ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", filePath]],
-      ["aplay", [filePath]],
-      ["paplay", [filePath]],
-    ];
-    (async () => {
-      for (const [bin, args] of tryBins) {
-        const ok = await new Promise((res) => {
-          const c = spawn(bin, args, { stdio: "ignore" });
-          c.on("error", () => res(false));
-          c.on("close", (code) => res(code === 0));
-        });
-        if (ok) return resolve({ ok: true, player: bin });
-      }
-      resolve({ ok: false });
-    })();
-  });
-}
+import { playWav } from "../playback.mjs";
 
 /**
  * @param {object} cfg
@@ -125,7 +104,7 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
     // Acknowledge wake lightly
     if (speakReplies && !entente.speech.isSuppressed()) {
       const ack = await localSpeak("Yes?", cfg);
-      if (ack.ok) await playWav(ack.path);
+      if (ack.ok) await playWav(ack.path, { speech: entente.speech });
     }
 
     // Command window
@@ -175,8 +154,11 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
         const begin = entente.speech.beginSpeak(reply);
         if (begin.ok) {
           const sp = await localSpeak(String(reply).slice(0, 400), cfg);
-          if (sp.ok) await playWav(sp.path);
-          entente.speech.endSpeak(begin.epoch);
+          if (sp.ok) {
+            await playWav(sp.path, { speech: entente.speech, epoch: begin.epoch });
+          } else {
+            entente.speech.endSpeak(begin.epoch);
+          }
           entente.setLastSpoken(reply);
         }
       }
@@ -218,8 +200,11 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
       const begin = entente.speech.beginSpeak(reply);
       if (begin.ok) {
         const sp = await localSpeak(reply.slice(0, 400), cfg);
-        if (sp.ok) await playWav(sp.path);
-        entente.speech.endSpeak(begin.epoch);
+        if (sp.ok) {
+          await playWav(sp.path, { speech: entente.speech, epoch: begin.epoch });
+        } else {
+          entente.speech.endSpeak(begin.epoch);
+        }
       }
     }
   }
