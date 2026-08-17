@@ -65,6 +65,7 @@ export async function runJob(opts) {
           wallMs: 0,
           text: "",
           error: budget.message || "cost hard cap",
+          code: budget.code || "BUDGET_EXCEEDED",
           costBlocked: true,
           evidence: [],
         };
