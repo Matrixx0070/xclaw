@@ -487,8 +487,24 @@ export async function runDoctor(opts = {}) {
   }
 
   const ch = await httpGet(`http://${cHost === "0.0.0.0" ? "127.0.0.1" : cHost}:${cPort}/health`);
-  if (ch.ok) push("computer.health", "ok", `Computer :${cPort} up`);
-  else {
+  if (ch.ok) {
+    let engLabel = "unknown";
+    try {
+      const body = typeof ch.data === "string" ? JSON.parse(ch.data) : ch.data;
+      engLabel = body?.engine || body?.status || "up";
+      push(
+        "computer.engine",
+        "ok",
+        `live=${engLabel} config=${cfg.computer?.engine || process.env.XCLAW_COMPUTER_ENGINE || "default"}`
+      );
+      if (Array.isArray(body?.tools)) {
+        push("computer.tools", "ok", `${body.tools.length} tools advertised`);
+      }
+    } catch {
+      push("computer.engine", "ok", `Computer :${cPort} up`);
+    }
+    push("computer.health", "ok", `Computer :${cPort} up (${engLabel})`);
+  } else {
     let running = false;
     try { running = await isComputerRunning(cfg); } catch {}
     push(
@@ -498,6 +514,26 @@ export async function runDoctor(opts = {}) {
         ? `Computer :${cPort} up (probe)`
         : `Computer :${cPort} not reachable — start with: xclaw gateway (${ch.error || ch.status})`
     );
+  }
+  try {
+    const { resolveComputerEngine } = await import("../computer/engine.mjs");
+    const eng = resolveComputerEngine(cfg);
+    if (!ch.ok) {
+      push("computer.engine", "warn", `resolved=${eng} (server not reachable)`);
+    }
+  } catch (e) {
+    push("computer.engine", "warn", e?.message || String(e));
+  }
+  try {
+    const { computerClientCacheStats } = await import("../agent/computer-client.mjs");
+    const st = computerClientCacheStats();
+    push(
+      "computer.sessionPool",
+      "ok",
+      `reuse sessions=${st.sessions} toolsLists=${st.toolsLists} (in-process)`
+    );
+  } catch (e) {
+    push("computer.sessionPool", "warn", e?.message || String(e));
   }
   try {
     const { watchdogStatus } = await import("../computer/watchdog.mjs");
