@@ -1,3 +1,10 @@
+## Doctor
+
+```bash
+node scripts/cua-doctor.mjs
+# → reports/autonomy/cua-doctor.json
+```
+
 # Computer Use Backend (integrate, don’t rewrite)
 
 XClaw attaches CUA capabilities to the **existing** computer plane:
@@ -183,13 +190,3 @@ Helper: `scripts/desktop-ax-observe.py` → `mode: "ax"`, refs `a1`…
 ```
 
 Helper: `scripts/desktop-ax-act.py` (CGEvent + AXPress with CGEvent fallback).
-
-## Live CDP smoke
-
-```bash
-google-chrome-stable --headless=new --no-sandbox --remote-debugging-port=9222 --user-data-dir=/tmp/xclaw-cdp about:blank &
-export XCLAW_CDP_URL=http://127.0.0.1:9222
-node scripts/cdp-live-smoke.mjs
-# → reports/autonomy/cdp-live-smoke.json  livePass: true
-```
-

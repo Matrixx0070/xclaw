@@ -1,0 +1,58 @@
+{
+  "suite": "cua-doctor",
+  "platform": "linux",
+  "at": "2026-08-17T04:26:14.993Z",
+  "checks": [
+    {
+      "id": "cua_policy",
+      "ok": true,
+      "severity": "ok",
+      "message": "policy=tools_first_then_observe_then_gui",
+      "hint": "Prefer APIs/tools → browser observe → CDP act → desktop GUI last"
+    },
+    {
+      "id": "cdp",
+      "ok": true,
+      "severity": "warn",
+      "message": "XCLAW_CDP_URL not set — computer_act click/type/screenshot fail closed",
+      "hint": "Start Chrome: google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/xclaw-cdp about:blank\nexport XCLAW_CDP_URL=http://127.0.0.1:9222\nThen: node scripts/cdp-live-smoke.mjs"
+    },
+    {
+      "id": "desktop_opt_in",
+      "ok": true,
+      "severity": "ok",
+      "message": "desktop GUI act disabled (default fail-closed)",
+      "hint": "export XCLAW_DESKTOP_GUI=1 only in lab when you need native OS GUI"
+    },
+    {
+      "id": "desktop_linux_act",
+      "ok": true,
+      "severity": "warn",
+      "message": "no xdotool/ydotool on PATH",
+      "hint": "sudo apt install xdotool   # or ydotool for Wayland"
+    },
+    {
+      "id": "desktop_linux_observe",
+      "ok": true,
+      "severity": "warn",
+      "message": "AT-SPI: ATSPI_NOT_INSTALLED",
+      "hint": "sudo apt install python3-pyatspi  # or gir1.2-atspi-2.0 + pyatspi"
+    },
+    {
+      "id": "reach_flags",
+      "ok": true,
+      "severity": "ok",
+      "message": "browserObserve=true desktopGui=false",
+      "hint": null
+    }
+  ],
+  "summary": {
+    "cdpConfigured": false,
+    "desktopGui": false,
+    "errors": 0,
+    "warnings": 3
+  },
+  "ok": true,
+  "warnings": 3,
+  "errors": 0
+}

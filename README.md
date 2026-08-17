@@ -49,6 +49,39 @@ More install detail: [INSTALL.md](./INSTALL.md)
 
 ---
 
+## Computer use (browser CDP + optional desktop)
+
+Default is **fail-closed**: agents prefer tools/APIs; GUI actuation needs explicit setup.
+
+### Browser CDP (recommended for web UI)
+
+```bash
+google-chrome-stable --headless=new --no-sandbox \
+  --remote-debugging-port=9222 --user-data-dir=/tmp/xclaw-cdp about:blank &
+export XCLAW_CDP_URL=http://127.0.0.1:9222
+node scripts/cdp-live-smoke.mjs    # screenshot + click + key
+node scripts/cua-doctor.mjs        # readiness report
+```
+
+Tools: `xclaw_browser_tab` (observe structure) → `xclaw_computer_act` (click/type when CDP is up).
+
+### Desktop OS GUI (lab only)
+
+| OS | Observe | Act (needs `XCLAW_DESKTOP_GUI=1`) |
+|----|---------|-----------------------------------|
+| Linux | AT-SPI (`python3-pyatspi`) | `xdotool` or `ydotool` |
+| Windows | `pip install pywinauto` | same + opt-in |
+| macOS | `pyobjc` AX + **Accessibility** TCC | CGEvent / AXPress + opt-in |
+
+```bash
+export XCLAW_DESKTOP_GUI=1   # only when you need OS-level input
+node scripts/cua-doctor.mjs
+```
+
+Full design: [docs/COMPUTER_USE_BACKEND.md](./docs/COMPUTER_USE_BACKEND.md)
+
+---
+
 ## Secrets
 
 Full checklist: [docs/SECRETS.md](./docs/SECRETS.md)
