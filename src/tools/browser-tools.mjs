@@ -1,3 +1,18 @@
+import {
+  setMarksFromStructure,
+  resolveMark,
+  clearMarkCache,
+} from "../browser/mark-cache.mjs";
+import {
+  createActionId,
+  networkCursor,
+  networkDeltaSince,
+  bindActionFlows,
+  formatA11ySnapshot,
+  STRUCTURE_SNAPSHOT_JS,
+  readActionBindings,
+  assertOutcome,
+} from "../browser/sense.mjs";
 /**
  * Browser screenshot + snapshot tools — drive computer xclaw_browser_tab.
  */
@@ -192,6 +207,14 @@ export function createBrowserSnapshotTool(ctx = {}) {
           }
         }
 
+        let markMeta = null;
+        if (structure?.nodes) {
+          markMeta = setMarksFromStructure(sessionId, structure, { tabId: args.tabId });
+        } else {
+          // soft: parse failed / no nodes — do not poison coordinates
+          markMeta = { ok: false, code: "STRUCTURE_PARSE_FAILED" };
+        }
+
         return textResult(body, {
           metadata: {
             source: "browser_snapshot",
@@ -205,6 +228,7 @@ export function createBrowserSnapshotTool(ctx = {}) {
             structure: structure
               ? { title: structure.title, url: structure.url, nodeCount: structure.nodeCount }
               : null,
+            marks: markMeta,
           },
         });
       } catch (e) {
@@ -927,42 +951,70 @@ export function createBrowserClickTool(ctx = {}) {
   return {
     name: "browser_click",
     description:
-      "A4 humanized CDP click at viewport coordinates (Fitts path + reaction/settle). Uses computer xclaw_browser_tab motor field.",
+      "Click at viewport (x,y) or by set-of-marks index from the last browser_observe/snapshot (mark: N → bbox center). Prefer mark after observe. Errors: MARK_CACHE_EMPTY, MARK_UNKNOWN, MARK_STALE, MARK_NOT_VISIBLE.",
     parameters: {
       type: "object",
       properties: {
         x: { type: "number" },
         y: { type: "number" },
+        mark: { type: "number", description: "Set-of-marks index from last observe (@N)" },
         tabId: { type: "string" },
         fromX: { type: "number" },
         fromY: { type: "number" },
         targetWidth: { type: "number" },
         label: { type: "string" },
         clickCount: { type: "number" },
+        url: { type: "string", description: "Optional URL check for MARK_STALE" },
       },
-      required: ["x", "y"],
     },
     async execute(args = {}) {
       const { computer, sessionId } = ctx;
       if (!computer || !sessionId) return errorResult("Computer session required");
+      let x = args.x;
+      let y = args.y;
+      let markMeta = null;
+      if (args.mark != null && args.mark !== "") {
+        const resolved = resolveMark(sessionId, args.mark, {
+          tabId: args.tabId,
+          url: args.url,
+        });
+        if (!resolved.ok) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: `${resolved.code}: ${resolved.message}` }],
+            code: resolved.code,
+            metadata: resolved,
+          };
+        }
+        x = resolved.x;
+        y = resolved.y;
+        markMeta = resolved;
+      }
+      if (x == null || y == null || Number.isNaN(Number(x)) || Number.isNaN(Number(y))) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "MARK_CACHE_EMPTY: provide x,y or mark after browser_observe" }],
+          code: "MARK_CACHE_EMPTY",
+        };
+      }
       try {
         const result = await computer.callTool(sessionId, "xclaw_browser_tab", {
           tabId: args.tabId,
           motor: {
             op: "click",
-            x: args.x,
-            y: args.y,
+            x: Number(x),
+            y: Number(y),
             fromX: args.fromX,
             fromY: args.fromY,
-            targetWidth: args.targetWidth,
-            label: args.label,
+            targetWidth: args.targetWidth ?? markMeta?.meta?.w,
+            label: args.label || (markMeta ? `@${markMeta.mark}` : undefined),
             clickCount: args.clickCount || 1,
           },
           waitTime: 0.1,
         });
         return result?.isError ? result : textResult(
           typeof result === "object" ? JSON.stringify(result).slice(0, 4000) : String(result),
-          { metadata: { motor: "click", ...(result?.metadata || {}) } }
+          { metadata: { motor: "click", x: Number(x), y: Number(y), mark: markMeta, ...(result?.metadata || {}) } }
         );
       } catch (e) {
         return errorResult(e?.message || String(e));
@@ -975,12 +1027,13 @@ export function createBrowserTypeTool(ctx = {}) {
   return {
     name: "browser_type",
     description:
-      "A4 humanized CDP typing (per-key delays via motor). Focus the field first (click) when needed.",
+      "A4 humanized CDP typing. Optional mark: click that set-of-marks target first (same errors as browser_click).",
     parameters: {
       type: "object",
       properties: {
         text: { type: "string" },
         tabId: { type: "string" },
+        mark: { type: "number", description: "Optional: click @mark before typing" },
       },
       required: ["text"],
     },
@@ -988,6 +1041,28 @@ export function createBrowserTypeTool(ctx = {}) {
       const { computer, sessionId } = ctx;
       if (!computer || !sessionId) return errorResult("Computer session required");
       try {
+        if (args.mark != null && args.mark !== "") {
+          const resolved = resolveMark(sessionId, args.mark, { tabId: args.tabId });
+          if (!resolved.ok) {
+            return {
+              isError: true,
+              content: [{ type: "text", text: `${resolved.code}: ${resolved.message}` }],
+              code: resolved.code,
+              metadata: resolved,
+            };
+          }
+          await computer.callTool(sessionId, "xclaw_browser_tab", {
+            tabId: args.tabId,
+            motor: {
+              op: "click",
+              x: resolved.x,
+              y: resolved.y,
+              label: `@${resolved.mark}`,
+              clickCount: 1,
+            },
+            waitTime: 0.1,
+          });
+        }
         const result = await computer.callTool(sessionId, "xclaw_browser_tab", {
           tabId: args.tabId,
           motor: { op: "type", text: args.text },
