@@ -773,6 +773,25 @@ export async function runDoctor(opts = {}) {
     push("skills.install", "warn", e.message || String(e));
   }
 
+  try {
+    const { getSharedApprovalGate } = await import("../security/approvals.mjs");
+    const gate = getSharedApprovalGate(cfg);
+    const pending = gate.listPending();
+    const sla = gate.slaStats?.() || { pending: pending.length };
+    if (pending.length > 0) {
+      push(
+        "approvals.pending",
+        "warn",
+        `${pending.length} pending (maxAgeMs=${sla.maxAgeMs || 0}) — xclaw approvals list`
+      );
+    } else {
+      push("approvals.pending", "ok", "0 pending");
+    }
+  } catch (e) {
+    push("approvals.pending", "warn", e.message || String(e));
+  }
+
+
 
   // R1 channel + computer health
   try {
