@@ -10,6 +10,8 @@ export function createSpeechPlane(opts = {}) {
   let playing = false;
   let suppressed = false; // "stop talking" until next explicit speak
   const listeners = new Set();
+  /** @type {Set<() => void>} */
+  const stoppers = new Set();
 
   function emit(ev) {
     for (const fn of listeners) {
@@ -46,6 +48,15 @@ export function createSpeechPlane(opts = {}) {
       const from = speechEpoch;
       speechEpoch += 1;
       playing = false;
+      // Kill any registered playback processes
+      for (const stop of [...stoppers]) {
+        try {
+          stop();
+        } catch {
+          /* */
+        }
+      }
+      stoppers.clear();
       emit({
         type: "speech.barge_in",
         epochFrom: from,
@@ -55,6 +66,15 @@ export function createSpeechPlane(opts = {}) {
         ...meta,
       });
       return { speechEpoch, muted: true, jobsCancelled: false };
+    },
+
+    /**
+     * Playback registers a stop fn; bargeIn invokes all.
+     * @param {() => void} fn
+     */
+    registerStopper(fn) {
+      stoppers.add(fn);
+      return () => stoppers.delete(fn);
     },
 
     /** Explicit "stop talking" — still does not cancel jobs */
