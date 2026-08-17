@@ -160,3 +160,12 @@ Client → server JSON:
 | `ping` | pong |
 
 Server → `ready` · `reply` · `event` · `error`
+
+
+## Barge-in
+
+- `speech.bargeIn()` advances **epoch**, clears `playing`, runs registered **stoppers** (kills `aplay`/`ffplay`)
+- Does **not** cancel agent/tool jobs (`jobContinue: true`)
+- Playback: `src/voice/playback.mjs` — `playWav(path, { speech, epoch })` auto-stops on barge-in
+- Gateway: `{ "type": "barge_in" }` on `/ws/voice`
+- Voice commands: “stop talking”, `/mute`, “hold on”
