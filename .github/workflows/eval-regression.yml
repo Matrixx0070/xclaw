@@ -53,6 +53,9 @@ jobs:
             test/checkpoint.test.mjs \
             test/long-horizon-fixtures.test.mjs \
             test/long-harness.test.mjs \
+            test/principles.test.mjs \
+            test/mid-run-checkpoint.test.mjs \
+            test/checkpoint-recovery.test.mjs \
             test/cost-governor.test.mjs \
             test/approvals-inbox.test.mjs \
             test/browser-mark-click.test.mjs \
