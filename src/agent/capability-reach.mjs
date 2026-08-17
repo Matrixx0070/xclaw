@@ -117,6 +117,20 @@ export function formatCapabilityBanner(reach) {
     );
   }
   lines.push(
+    `- CUA policy: ${reach.cuaPolicy || "tools_first_then_observe_then_gui"} (APIs/tools → browser observe → CDP act → desktop last).`
+  );
+  lines.push(
+    "- Tools: xclaw_browser_tab (observe structure) · xclaw_computer_act (click/type/key/screenshot when CDP or desktop opt-in)."
+  );
+  if (reach.browserObserve) {
+    lines.push("- Browser observe: available (HTML structure / refs) without screenshots.");
+  }
+  if (reach.desktopGui) {
+    lines.push("- Desktop GUI act: ENABLED (XCLAW_DESKTOP_GUI) — OS-level input allowed (lab).");
+  } else {
+    lines.push("- Desktop GUI act: disabled (default). Prefer CDP; opt-in only if required.");
+  }
+  lines.push(
     "- Be honest: never claim you can see the user's screen or GUI without CDP/computer evidence."
   );
   return lines.join("\n");

@@ -48,7 +48,8 @@ export function buildAutonomyAppendix(policy) {
   }
   lines.push(
     `- Handoff budget: at most ${policy.maxHandoffs} request(s) for user-provided secrets or confirmations per goal.`,
-    "- Close the loop: act → observe → answer. Prefer a completed result over a checklist for the user."
+    "- Close the loop: act → observe → answer. Prefer a completed result over a checklist for the user.",
+    "- GUI: use xclaw_browser_tab observe before xclaw_computer_act; do not request user screenshots when tools can observe."
   );
   return lines.join("\n");
 }

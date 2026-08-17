@@ -25,6 +25,8 @@ const FORCE_SERIAL = new Set([
   "edit_file",
   "xclaw_browser_tab",
   "browser_tab",
+  "xclaw_computer_act",
+  "computer_act",
   "xclaw_spawn_subagent",
   "xclaw_swarm_run",
   "xclaw_swarm_merge_approve",

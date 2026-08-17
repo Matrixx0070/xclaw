@@ -18,6 +18,9 @@ export const OPENCLAW_TO_XCLAW = {
   ls: "xclaw_file_list",
   browser: "xclaw_browser_tab",
   browser_tab: "xclaw_browser_tab",
+  computer_act: "xclaw_computer_act",
+  computer: "xclaw_computer_act",
+  desktop_act: "xclaw_computer_act",
   web_search: "xclaw_web_search",
   search: "xclaw_web_search",
   web_fetch: "xclaw_web_fetch",
@@ -46,7 +49,8 @@ export function adaptWildClawPrompt(prompt) {
   p +=
     "\n\n---\nXClaw harness notes:\n" +
     "- Workspace is the current working directory. Prefer relative paths under results/.\n" +
-    "- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n" +
+    "- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_computer_act, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n" +
+    "- CUA: tools/APIs first → browser_tab observe → computer_act (needs XCLAW_CDP_URL) → desktop only if XCLAW_DESKTOP_GUI=1.\n" +
     "- Do not ask the user to perform steps you can do with tools.\n" +
     "- When finished, ensure required output files exist under results/ when the task asks for saved files.\n";
   return p;
