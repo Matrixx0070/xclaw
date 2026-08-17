@@ -59,3 +59,24 @@ Transient failures are retried with exponential backoff (`src/computer/cua-retry
 **Not retried:** `DESKTOP_GUI_DISABLED`, `CUA_ACT_REQUIRES_BUNDLE`, `*_NEED_*`, `CUA_ACT_UNKNOWN`, `AX_TCC_REQUIRED`, missing installs.
 
 Successful retries set `retried: true` and `retries: N` on the result.
+
+## Retry metrics
+
+In-process counters + optional JSONL:
+
+```bash
+node scripts/cua-retry-metrics.mjs demo   # force sample retries
+node scripts/cua-retry-metrics.mjs show
+node scripts/cua-retry-metrics.mjs tail   # ~/.xclaw/metrics/cua-retry.jsonl
+node scripts/cua-doctor.mjs               # includes retryMetrics
+```
+
+| Field | Meaning |
+|-------|---------|
+| `attempts` | withCuaRetry invocations |
+| `retries` | backoff sleeps |
+| `retriedSuccesses` | success after ≥1 retry |
+| `byCode` | per-code retry / finalOk / finalFail |
+| `avgDelayMs` / `delayMsMax` | backoff timing |
+
+Disable JSONL: `XCLAW_CUA_METRICS=0`. Custom dir: `XCLAW_CUA_METRICS_DIR`.

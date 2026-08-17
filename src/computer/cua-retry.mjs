@@ -3,6 +3,8 @@
  * Permanent codes (DISABLED, NEED_*, UNKNOWN) are never retried.
  */
 
+import { recordCuaRetryTick, recordCuaRetryOutcome } from "./cua-retry-metrics.mjs";
+
 /** Codes safe to retry (network / race / brief CDP blip). */
 export const CUA_TRANSIENT_CODES = new Set([
   "CDP_ATTACH_FAILED",
@@ -99,6 +101,11 @@ export function backoffMs(attempt, opts = {}) {
  */
 export async function withCuaRetry(fn, opts = {}) {
   const retries = Math.max(0, opts.retries ?? 2);
+  const userOnRetry = opts.onRetry;
+  const onRetry = (info) => {
+    recordCuaRetryTick(info);
+    userOnRetry?.(info);
+  };
   const isRetryable =
     opts.isRetryable ||
     ((result, err) => {
@@ -121,7 +128,7 @@ export async function withCuaRetry(fn, opts = {}) {
       lastErr = null;
       if (result && result.ok === false && attempt < retries && isRetryable(result, null)) {
         const delay = backoffMs(attempt, opts);
-        opts.onRetry?.({
+        onRetry({
           attempt: attempt + 1,
           delayMs: delay,
           code: result.code,
@@ -131,18 +138,20 @@ export async function withCuaRetry(fn, opts = {}) {
         continue;
       }
       if (result && typeof result === "object") {
-        return {
+        const out = {
           ...result,
           retries: attempts - 1,
           retried: attempts > 1,
         };
+        recordCuaRetryOutcome(out);
+        return out;
       }
       return result;
     } catch (e) {
       lastErr = e instanceof Error ? e : new Error(String(e));
       if (attempt < retries && isRetryable(null, lastErr)) {
         const delay = backoffMs(attempt, opts);
-        opts.onRetry?.({
+        onRetry({
           attempt: attempt + 1,
           delayMs: delay,
           code: extractCuaErrorCode(lastErr),
@@ -151,14 +160,30 @@ export async function withCuaRetry(fn, opts = {}) {
         await sleep(delay, opts.signal);
         continue;
       }
+      recordCuaRetryOutcome({
+        ok: false,
+        code: extractCuaCode(lastErr) || "THROW",
+        retries: attempts - 1,
+        retried: attempts > 1,
+      });
       throw lastErr;
     }
   }
 
   if (lastResult && typeof lastResult === "object") {
-    return { ...lastResult, retries: attempts - 1, retried: attempts > 1 };
+    const out = { ...lastResult, retries: attempts - 1, retried: attempts > 1 };
+    recordCuaRetryOutcome(out);
+    return out;
   }
-  if (lastErr) throw lastErr;
+  if (lastErr) {
+    recordCuaRetryOutcome({
+      ok: false,
+      code: extractCuaCode(lastErr) || "THROW",
+      retries: attempts - 1,
+      retried: attempts > 1,
+    });
+    throw lastErr;
+  }
   return lastResult;
 }
 

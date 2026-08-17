@@ -7,6 +7,7 @@ import http from "node:http";
 import { probeDesktopDriver, whichDesktopTools, runDesktopObserve } from "./modules/desktop-driver.mjs";
 import { resolveReach } from "../agent/capability-reach.mjs";
 import { lookupCuaError, CUA_ERROR_CATALOG } from "./cua-errors.mjs";
+import { getCuaRetryMetrics } from "./cua-retry-metrics.mjs";
 
 function httpGet(url, timeoutMs = 2500) {
   return new Promise((resolve) => {
@@ -150,6 +151,17 @@ export async function runCuaDoctor(env = process.env) {
   }
 
   // Reach flags
+  const rm = getCuaRetryMetrics();
+  push(
+    "cua_retry_metrics",
+    true,
+    rm.retries > 20 ? "warn" : "ok",
+    `attempts=${rm.attempts} retries=${rm.retries} successRate=${rm.successRate ?? "n/a"} avgDelayMs=${rm.avgDelayMs}`,
+    rm.retries > 0
+      ? `JSONL: ${rm.jsonlPath} · top codes: ${Object.keys(rm.byCode).slice(0, 5).join(",") || "—"}`
+      : "No retries yet in this process"
+  );
+
   push(
     "reach_flags",
     true,
@@ -172,6 +184,7 @@ export async function runCuaDoctor(env = process.env) {
       warnings,
     },
     errorCatalogSize: Object.keys(CUA_ERROR_CATALOG).length,
+    retryMetrics: getCuaRetryMetrics(),
     ok: errors === 0,
     warnings,
     errors,
