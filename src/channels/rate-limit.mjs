@@ -27,3 +27,7 @@ export function createRateLimiter(opts = {}) {
 
   return { allow, reset, windowMs, max };
 }
+
+
+/** Stable code for channel / agent consumers */
+export const RATE_LIMITED = "RATE_LIMITED";
