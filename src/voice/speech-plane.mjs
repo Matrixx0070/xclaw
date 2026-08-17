@@ -45,10 +45,8 @@ export function createSpeechPlane(opts = {}) {
      * User interrupt: mute only. Does NOT cancel agent jobs.
      */
     bargeIn(meta = {}) {
-      const from = speechEpoch;
-      speechEpoch += 1;
-      playing = false;
-      // Kill any registered playback processes
+      const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
+      // 1) Kill audio FIRST (before epoch/listeners) — lowest perceived latency
       for (const stop of [...stoppers]) {
         try {
           stop();
@@ -57,15 +55,28 @@ export function createSpeechPlane(opts = {}) {
         }
       }
       stoppers.clear();
+      // 2) Advance epoch so in-flight beginSpeak becomes stale
+      const from = speechEpoch;
+      speechEpoch += 1;
+      playing = false;
+      const killPathMs =
+        (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0;
+      // 3) Notify listeners (metrics / UI) after audio is already stopping
       emit({
         type: "speech.barge_in",
         epochFrom: from,
         epochTo: speechEpoch,
-        jobContinue: true, // contract: cognitive plane must honor
+        jobContinue: true,
+        killPathMs,
         at: Date.now(),
         ...meta,
       });
-      return { speechEpoch, muted: true, jobsCancelled: false };
+      return {
+        speechEpoch,
+        muted: true,
+        jobsCancelled: false,
+        killPathMs,
+      };
     },
 
     /**
@@ -123,6 +134,7 @@ export function createSpeechPlane(opts = {}) {
         playing,
         suppressed,
         policy: "barge_in_mutes_speech_only",
+        stoppers: stoppers.size,
       };
     },
   };
