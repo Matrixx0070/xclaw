@@ -56,6 +56,13 @@ describe("resume lock / mark resumed", () => {
     assert.equal(r.resumed, false);
   });
 
+  it("missing checkpoint returns NOT_FOUND code", async () => {
+    const r = await resumeJobFromCheckpoint(cfg, "job_does_not_exist_xyz");
+    assert.equal(r.code, "CHECKPOINT_NOT_FOUND");
+    assert.equal(r.resumed, false);
+    assert.equal(r.pass, false);
+  });
+
   it("cross-process file lock exclusive", async () => {
     const a = await tryAcquireResumeLock("job_file_lock", cfg);
     assert.equal(a, true);
