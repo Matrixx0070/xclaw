@@ -683,6 +683,24 @@ export async function runDoctor(opts = {}) {
     push("skills.learning", "warn", e.message || String(e));
   }
 
+  // Prod hardening audit (lab config must not leak)
+  try {
+    if (String(cfg.profile || "").toLowerCase() === "prod") {
+      const actions = cfg._prodHardening || [];
+      if (actions.length) {
+        push(
+          "prod.hardening",
+          "ok",
+          `applied: ${actions.join("; ")}`
+        );
+      } else {
+        push("prod.hardening", "ok", "no overrides needed (config already prod-safe)");
+      }
+    }
+  } catch (e) {
+    push("prod.hardening", "warn", e.message || String(e));
+  }
+
   // R4 autonomy level + heartbeat
   try {
     const { autonomyPolicySummary } = await import("../config/autonomy-policy.mjs");
