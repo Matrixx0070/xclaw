@@ -90,6 +90,115 @@ export async function listCheckpoints(cfg, { limit = 20 } = {}) {
   return out.slice(0, limit);
 }
 
+
+/**
+ * Evict old terminal checkpoints.
+ * Never deletes status running|resuming unless opts.forceAll.
+ *
+ * cfg.checkpoints.maxCount (default 100)
+ * cfg.checkpoints.maxAgeMs (default 14d)
+ * cfg.checkpoints.pruneOnSave (default false — call explicitly or from evolve)
+ */
+export async function pruneCheckpoints(cfg, opts = {}) {
+  const cpc = cfg?.checkpoints || {};
+  const maxCount = opts.maxCount ?? cpc.maxCount ?? 100;
+  const maxAgeMs =
+    opts.maxAgeMs ??
+    cpc.maxAgeMs ??
+    14 * 24 * 60 * 60 * 1000;
+  const forceAll = opts.forceAll === true;
+  const keep = new Set(
+    opts.keepStatuses ||
+      cpc.keepStatuses || ["running", "resuming"]
+  );
+
+  const d = dir(cfg);
+  let files = [];
+  try {
+    files = (await fs.readdir(d)).filter((f) => f.endsWith(".json"));
+  } catch {
+    return { removed: 0, kept: 0, reason: "no_dir" };
+  }
+
+  const rows = [];
+  for (const f of files) {
+    const fp = path.join(d, f);
+    try {
+      const j = JSON.parse(await fs.readFile(fp, "utf8"));
+      rows.push({
+        fp,
+        id: j.id || f.replace(/\.json$/, ""),
+        status: j.status || "unknown",
+        at: Date.parse(j.at || 0) || 0,
+        midRun: Boolean(j.midRun),
+      });
+    } catch {
+      // corrupt → eligible for removal
+      rows.push({ fp, id: f, status: "corrupt", at: 0, midRun: false });
+    }
+  }
+
+  rows.sort((a, b) => b.at - a.at);
+  const now = Date.now();
+  const toRemove = [];
+  let keptProtected = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const protectedStatus = keep.has(r.status) || (r.midRun && r.status === "running");
+    if (protectedStatus && !forceAll) {
+      keptProtected += 1;
+      continue;
+    }
+    const tooOld = maxAgeMs > 0 && r.at > 0 && now - r.at > maxAgeMs;
+    const overCount = maxCount > 0 && i >= maxCount;
+    // Count only non-protected toward maxCount: recompute index among evictable
+    if (tooOld || overCount) {
+      toRemove.push(r);
+    }
+  }
+
+  // Refine maxCount: among non-protected, keep newest maxCount
+  const evictable = rows.filter(
+    (r) => forceAll || !(keep.has(r.status) || (r.midRun && r.status === "running"))
+  );
+  const over = maxCount > 0 ? evictable.slice(maxCount) : [];
+  const old = maxAgeMs > 0
+    ? evictable.filter((r) => r.at > 0 && now - r.at > maxAgeMs)
+    : [];
+  const removeSet = new Map();
+  for (const r of [...over, ...old]) {
+    removeSet.set(r.fp, r);
+  }
+  // corrupt always removable
+  for (const r of rows) {
+    if (r.status === "corrupt") removeSet.set(r.fp, r);
+  }
+
+  let removed = 0;
+  if (!opts.dryRun) {
+    for (const r of removeSet.values()) {
+      try {
+        await fs.unlink(r.fp);
+        removed += 1;
+      } catch {
+        /* */
+      }
+    }
+  } else {
+    removed = removeSet.size;
+  }
+
+  return {
+    removed,
+    kept: rows.length - (opts.dryRun ? 0 : removed),
+    protected: keptProtected,
+    dryRun: Boolean(opts.dryRun),
+    maxCount,
+    maxAgeMs,
+  };
+}
+
 /** Classify checkpoint / job error for recovery strategy */
 export function classifyFailure(error = "", cp = null) {
   const e = String(error || cp?.error || "");
