@@ -40,6 +40,12 @@ export function resolveReach(cfg = {}, live = {}) {
   const computerHttp = live.computerOk !== false; // optimistic unless probed false
   const cdpAttach = Boolean(cdpUrl);
 
+  const screenshot =
+    String(engine) === "bundle" || Boolean(cdpAttach);
+  const browserObserve = true; // native HTML structure observe always available
+  const desktopGui = false; // no DesktopDriver yet — honesty over claim
+  const cuaPolicy = "tools_first_then_observe_then_gui";
+
   return {
     profile: String(profile),
     engine: String(engine),
@@ -48,6 +54,10 @@ export function resolveReach(cfg = {}, live = {}) {
     computerHttp,
     computerUrl,
     cdpAttach,
+    browserObserve,
+    screenshot,
+    desktopGui,
+    cuaPolicy,
     cdpUrl: cdpUrl || null,
     /** true when we can drive a browser beyond native fetch tabs */
     fullBrowser: cdpAttach || engine === "bundle" || engine === "generated",

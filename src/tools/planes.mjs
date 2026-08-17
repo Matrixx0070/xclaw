@@ -76,6 +76,14 @@ export const TOOL_PLANE = {
  * Tools that may run concurrently with other parallel-safe tools.
  * @type {Set<string>}
  */
+/** CUA actuation (click/type/screenshot) must stay serial — never add to PARALLEL_SAFE */
+export const CUA_SERIAL_ACTUATION = new Set([
+  "xclaw_browser_tab", // when action is click/type; native blocks these
+  "browser_tab",
+  "xclaw_computer_act",
+  "computer_act",
+]);
+
 export const PARALLEL_SAFE = new Set([
   "xclaw_file_read",
   "file_read",

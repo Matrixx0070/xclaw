@@ -19,6 +19,7 @@ import {
   BrowserNetworkDetailsTool,
   runBrowserNetworkDetails,
 } from "./browser-network-details-tool.mjs";
+import { ComputerActTool, runComputerAct } from "./computer-act-tool.mjs";
 
 /** @typedef {{ name: string, description: any, inputSchema?: object, call: Function }} ComputerTool */
 
@@ -30,6 +31,7 @@ export const MAINTAINED_TOOLS = [
   FileEditTool,
   BrowserTabTool,
   BrowserNetworkDetailsTool,
+  ComputerActTool,
 ];
 
 /** Roles still only in bundle / extracted snapshots (not yet CLEAN) */
@@ -78,6 +80,8 @@ export {
   runBrowserTab,
   BrowserNetworkDetailsTool,
   runBrowserNetworkDetails,
+  ComputerActTool,
+  runComputerAct,
 };
 
 export default {

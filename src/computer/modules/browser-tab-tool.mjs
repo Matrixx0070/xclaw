@@ -1,14 +1,18 @@
 /**
- * CLEAN xclaw_browser_tab — lightweight native implementation (P0→P1).
+ * CLEAN xclaw_browser_tab — lightweight native implementation (P0→P1 + CUA observe).
  *
  * Full CDP/Chrome path lives in the bundle engine (XCLAW_COMPUTER_ENGINE=bundle).
  * Native engine:
  *   - navigate/fetch URL (redirect-aware)
- *   - tab registry (list / read)
+ *   - tab registry (list / read / observe)
  *   - title, text, links extraction
- *   - jsCode/screenshot → clear error pointing at bundle/CDP
+ *   - observe → structured element candidates (HTML-derived a11y-like tree)
+ *   - jsCode/screenshot/click → clear error pointing at bundle/CDP
+ *
+ * CUA policy: prefer observe (structure) before vision/screenshot; tools before GUI.
  *
  * @see docs/BROWSER_UNBUNDLE.md
+ * @see docs/COMPUTER_USE_BACKEND.md
  */
 
 import { safeFetch } from "../../security/ssrf.mjs";
@@ -111,6 +115,144 @@ function extractLinks(html, baseUrl, limit = 30) {
   return links;
 }
 
+/**
+ * Poor-man's accessibility tree from HTML (native engine).
+ * Prefer this over screenshot for planning; CDP bundle can replace with real AX.
+ * @param {string} html
+ * @param {string} baseUrl
+ * @param {number} [limit=40]
+ */
+export function extractInteractiveElements(html, baseUrl, limit = 40) {
+  const elements = [];
+  const push = (el) => {
+    if (elements.length >= limit) return;
+    elements.push(el);
+  };
+  const strip = (s) =>
+    String(s || "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 160);
+
+  // anchors
+  const aRe = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = aRe.exec(html)) && elements.length < limit) {
+    const attrs = m[1];
+    const hrefM = attrs.match(/href=["']([^"']+)["']/i);
+    let href = hrefM ? hrefM[1] : null;
+    if (href) {
+      try {
+        href = new URL(href, baseUrl).href;
+      } catch {
+        /* keep raw */
+      }
+    }
+    const name =
+      strip(m[2]) ||
+      (attrs.match(/aria-label=["']([^"']+)["']/i) || [])[1] ||
+      (attrs.match(/title=["']([^"']+)["']/i) || [])[1] ||
+      href ||
+      "link";
+    push({
+      ref: `e${elements.length + 1}`,
+      role: "link",
+      name,
+      href: href || undefined,
+      tag: "a",
+    });
+  }
+
+  // buttons
+  const btnRe = /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
+  while ((m = btnRe.exec(html)) && elements.length < limit) {
+    const attrs = m[1];
+    const name =
+      strip(m[2]) ||
+      (attrs.match(/aria-label=["']([^"']+)["']/i) || [])[1] ||
+      (attrs.match(/name=["']([^"']+)["']/i) || [])[1] ||
+      "button";
+    const disabled = /\bdisabled\b/i.test(attrs);
+    push({
+      ref: `e${elements.length + 1}`,
+      role: "button",
+      name,
+      disabled: disabled || undefined,
+      tag: "button",
+    });
+  }
+
+  // inputs / textarea / select
+  const inputRe = /<(input|textarea|select)\b([^>]*)\/?>/gi;
+  while ((m = inputRe.exec(html)) && elements.length < limit) {
+    const tag = m[1].toLowerCase();
+    const attrs = m[2];
+    const typeM = attrs.match(/\btype=["']([^"']+)["']/i);
+    const type = (typeM ? typeM[1] : tag === "input" ? "text" : tag).toLowerCase();
+    if (type === "hidden") continue;
+    const name =
+      (attrs.match(/aria-label=["']([^"']+)["']/i) || [])[1] ||
+      (attrs.match(/placeholder=["']([^"']+)["']/i) || [])[1] ||
+      (attrs.match(/\bname=["']([^"']+)["']/i) || [])[1] ||
+      (attrs.match(/\bid=["']([^"']+)["']/i) || [])[1] ||
+      type;
+    const role =
+      type === "submit" || type === "button"
+        ? "button"
+        : type === "checkbox"
+          ? "checkbox"
+          : type === "radio"
+            ? "radio"
+            : tag === "select"
+              ? "combobox"
+              : "textbox";
+    push({
+      ref: `e${elements.length + 1}`,
+      role,
+      name: strip(name),
+      tag,
+      inputType: type !== tag ? type : undefined,
+    });
+  }
+
+  return elements;
+}
+
+/**
+ * Build CUA-style observe payload from a stored tab (native HTML path).
+ * @param {object} tab
+ */
+export function observeFromTab(tab) {
+  const html = tab.html || "";
+  const elements = html
+    ? extractInteractiveElements(html, tab.url || "https://example.invalid")
+    : (tab.links || []).map((l, i) => ({
+        ref: `e${i + 1}`,
+        role: "link",
+        name: l.label || l.href,
+        href: l.href,
+        tag: "a",
+      }));
+  return {
+    ok: true,
+    action: "observe",
+    tabId: tab.id,
+    url: tab.url,
+    title: tab.title,
+    status: tab.status,
+    engine: "native-fetch",
+    mode: "html-structure",
+    /** Structured candidates — prefer over screenshot for planning */
+    elements,
+    elementCount: elements.length,
+    textPreview: String(tab.text || "").slice(0, 3000),
+    links: (tab.links || []).slice(0, 15),
+    notes:
+      "Native observe is HTML-derived (not OS accessibility). For real AX tree + click/type use XCLAW_COMPUTER_ENGINE=bundle or CDP attach.",
+  };
+}
+
 function listTabs() {
   return [...tabs.values()].map((t) => ({
     tabId: t.id,
@@ -123,12 +265,14 @@ function listTabs() {
 
 /**
  * @param {object} input
- * @param {string} [input.action] navigate|list|read (default: navigate if url, else list/read)
+ * @param {string} [input.action] navigate|list|read|observe (default: navigate if url, else list)
  * @param {string} [input.url]
  * @param {string} [input.tabId]
  * @param {string} [input.jsCode]
  * @param {boolean} [input.includeNetwork]
  * @param {string} [input.screenshot]
+ * @param {string} [input.click]  — not supported on native
+ * @param {string} [input.type]   — not supported on native
  */
 export async function runBrowserTab(input = {}) {
   const action = String(input.action || "").toLowerCase();
@@ -146,13 +290,23 @@ export async function runBrowserTab(input = {}) {
     return {
       ok: false,
       error:
-        "screenshot requires the CDP bundle engine. Native browser_tab does not capture images. See docs/BROWSER_UNBUNDLE.md",
+        "screenshot requires the CDP bundle engine. Prefer action=observe on native for structure. See docs/BROWSER_UNBUNDLE.md",
       tabId: input.tabId || null,
       engine: "native-fetch",
     };
   }
+  if (input.click || input.type || action === "click" || action === "type") {
+    return {
+      ok: false,
+      error:
+        "click/type require CDP bundle or attached Chromium (XCLAW_CDP_URL). On native, use action=observe then tools/API; do not invent coordinates.",
+      tabId: input.tabId || null,
+      engine: "native-fetch",
+      code: "CUA_ACT_REQUIRES_BUNDLE",
+    };
+  }
 
-  if (action === "list" || (!input.url && !input.tabId && action !== "read")) {
+  if (action === "list" || (!input.url && !input.tabId && action !== "read" && action !== "observe")) {
     return {
       ok: true,
       action: "list",
@@ -162,7 +316,22 @@ export async function runBrowserTab(input = {}) {
     };
   }
 
-  if (action === "read" || (input.tabId && !input.url)) {
+  if (action === "observe") {
+    if (!input.tabId) {
+      return {
+        ok: false,
+        error: "observe requires tabId (navigate first)",
+        engine: "native-fetch",
+      };
+    }
+    const tab = tabs.get(input.tabId);
+    if (!tab) {
+      return { ok: false, error: `Unknown tabId: ${input.tabId}`, tabId: input.tabId };
+    }
+    return observeFromTab(tab);
+  }
+
+  if (action === "read" || (input.tabId && !input.url && action !== "observe")) {
     const tab = tabs.get(input.tabId);
     if (!tab) {
       return { ok: false, error: `Unknown tabId: ${input.tabId}`, tabId: input.tabId };
@@ -184,7 +353,7 @@ export async function runBrowserTab(input = {}) {
   if (!input.url) {
     return {
       ok: false,
-      error: "url required for navigate (or action=list|read with tabId)",
+      error: "url required for navigate (or action=list|read|observe with tabId)",
       engine: "native-fetch",
     };
   }
@@ -232,13 +401,15 @@ export async function runBrowserTab(input = {}) {
     description,
     text,
     links,
+    /** keep HTML for observe (capped) */
+    html: String(res.body || "").slice(0, 500_000),
     status: res.status,
     at: new Date().toISOString(),
     network: [networkEntry],
   };
   tabs.set(id, tab);
 
-  return {
+  const out = {
     ok: true,
     action: "navigate",
     tabId: id,
@@ -258,6 +429,13 @@ export async function runBrowserTab(input = {}) {
         }))
       : undefined,
   };
+  if (input.observe === true || action === "navigate_observe") {
+    const obs = observeFromTab(tab);
+    out.elements = obs.elements;
+    out.elementCount = obs.elementCount;
+    out.mode = obs.mode;
+  }
+  return out;
 }
 
 /** Shared accessors for network-details + tests */
@@ -287,19 +465,26 @@ export function _resetTabsForTests() {
 export const BrowserTabTool = {
   name: "xclaw_browser_tab",
   description:
-    "Lightweight native browser: navigate/fetch URL, list/read tabs, extract title/text/links. jsCode and screenshot require CDP bundle (see docs/BROWSER_UNBUNDLE.md).",
+    "Browser plane (CUA-aware): navigate/fetch URL, list/read tabs, action=observe for structured interactive elements (HTML a11y-like tree). Prefer observe before screenshot. jsCode/screenshot/click/type require CDP bundle (XCLAW_COMPUTER_ENGINE=bundle or XCLAW_CDP_URL). See docs/BROWSER_UNBUNDLE.md and docs/COMPUTER_USE_BACKEND.md.",
   inputSchema: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        description: "navigate | list | read (default: navigate if url set)",
+        description:
+          "navigate | list | read | observe (default: navigate if url set). observe requires tabId.",
       },
-      url: { type: "string" },
-      tabId: { type: "string" },
-      jsCode: { type: "string" },
-      screenshot: { type: "string" },
+      url: { type: "string", description: "URL for navigate" },
+      tabId: { type: "string", description: "Tab id for read/observe/list targeting" },
+      observe: {
+        type: "boolean",
+        description: "If true on navigate, also return elements[] (same as action=observe)",
+      },
+      jsCode: { type: "string", description: "Bundle/CDP only" },
+      screenshot: { type: "string", description: "Bundle/CDP only — prefer action=observe on native" },
       includeNetwork: { type: "boolean" },
+      click: { type: "string", description: "Bundle/CDP only" },
+      type: { type: "string", description: "Bundle/CDP only" },
     },
   },
   isReadOnly: () => true,
