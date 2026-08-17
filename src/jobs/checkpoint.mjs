@@ -18,18 +18,39 @@ export async function saveCheckpoint(cfg, job) {
     id: job.id,
     goal: job.goal,
     workspace: job.workspace,
-    status: job.status,
-    pass: job.pass,
-    turns: job.turns,
+    status: job.status || "running",
+    pass: job.pass ?? null,
+    turns: job.turns ?? 0,
     text: String(job.text || "").slice(0, 4000),
     error: job.error,
     verify: job.verify,
-    toolTrace: (job.toolTrace || []).slice(-12),
+    toolTrace: (job.toolTrace || []).slice(-20),
+    evidence: (job.evidence || []).slice(-30),
+    groundingWarnings: job.groundingWarnings || [],
+    midRun: Boolean(job.midRun),
+    checkpointTurn: job.checkpointTurn ?? job.turns ?? null,
     at: new Date().toISOString(),
     maxTurns: job.maxTurns,
   };
-  await fs.writeFile(fp, JSON.stringify(slim, null, 2));
+  const tmp = fp + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(slim, null, 2));
+  await fs.rename(tmp, fp);
   return fp;
+}
+
+/**
+ * Mid-run checkpoint (every N turns). status stays "running".
+ * @param {object} cfg
+ * @param {object} partial — id, goal, workspace, turns, toolTrace, text?, evidence?
+ */
+export async function saveMidRunCheckpoint(cfg, partial) {
+  return saveCheckpoint(cfg, {
+    ...partial,
+    status: "running",
+    pass: null,
+    midRun: true,
+    checkpointTurn: partial.turns ?? partial.checkpointTurn,
+  });
 }
 
 export async function loadCheckpoint(cfg, jobId) {
