@@ -28,8 +28,8 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 4. **Computer-use depth**  
    Hybrid observe (screenshot + a11y/DOM where available); reduce pure-coordinate fragility on dynamic UIs.
 
-5. **Durable browser profile**  
-   Document + default lab path for `XCLAW_BROWSER_PROFILE_DIR` so login sessions survive restarts (doctor `h0.profile` warn).
+5. **Durable browser profile** — **done**  
+   Default vault `~/.xclaw/browser-profiles/default`; opt-out `XCLAW_BROWSER_EPHEMERAL=1`; doctor no longer warns when using default.
 
 ## P1 — hardening
 
