@@ -48,10 +48,29 @@ export async function printStatus(opts = {}) {
     sessions = [];
   }
 
+  let autonomy = null;
+  try {
+    const { autonomyPolicySummary } = await import("../config/autonomy-policy.mjs");
+    autonomy = autonomyPolicySummary(cfg);
+  } catch {
+    autonomy = null;
+  }
+  const fabric = {
+    commitGates:
+      process.env.XCLAW_COMMIT_GATES === "1" ||
+      process.env.XCLAW_COMMIT_GATES === "true",
+    fabricEnforce:
+      process.env.XCLAW_FABRIC_ENFORCE === "1" ||
+      process.env.XCLAW_FABRIC_ENFORCE === "true",
+    prodHardening: cfg._prodHardening || [],
+  };
+
   const report = {
     ok: Boolean(gw.ok && gw.body?.status === "healthy"),
     profile: cfg.profile || process.env.XCLAW_PROFILE || "lab",
     configPath: cfg.paths?.configFile || null,
+    autonomy,
+    fabric,
     gateway: {
       url: gwUrl,
       up: Boolean(gw.ok && gw.body?.status === "healthy"),
@@ -82,6 +101,18 @@ export async function printStatus(opts = {}) {
   console.log("============");
   console.log(`Profile:  ${report.profile}`);
   console.log(`Config:   ${report.configPath || "—"}`);
+  if (report.autonomy) {
+    const a = report.autonomy;
+    console.log(
+      `Autonomy: level=${a.level} autoApprove=${a.autoApprove} policy=${a.approvalPolicy} maxTurns=${a.maxTurns} heartbeat=${a.heartbeatEnabled}`
+    );
+  }
+  console.log(
+    `Fabric:   commitGates=${report.fabric.commitGates} fabricEnforce=${report.fabric.fabricEnforce}` +
+      (report.fabric.prodHardening?.length
+        ? ` hardening=${report.fabric.prodHardening.length}`
+        : "")
+  );
   console.log(`Gateway:  ${gwUrl}`);
   console.log(`Computer: ${compUrl}`);
   console.log("");
