@@ -867,6 +867,25 @@ export async function runDoctor(opts = {}) {
   }
 
   try {
+    const { listCheckpoints, pruneCheckpoints } = await import("../jobs/checkpoint.mjs");
+    const list = await listCheckpoints(cfg, { limit: 50 });
+    const running = list.filter((c) => c.status === "running" || c.status === "resuming").length;
+    const resumed = list.filter((c) => c.status === "resumed").length;
+    push(
+      "checkpoints.store",
+      running > 5 ? "warn" : "ok",
+      `listed=${list.length} running=${running} resumed=${resumed} dir=~/.xclaw/checkpoints`
+    );
+    if (opts.pruneCheckpoints) {
+      const pr = await pruneCheckpoints(cfg, { dryRun: false });
+      push("checkpoints.prune", "ok", `removed=${pr.removed} kept=${pr.kept}`);
+    }
+  } catch (e) {
+    push("checkpoints.store", "warn", e.message || String(e));
+  }
+
+
+  try {
     const { handsFreeStatus } = await import("../autonomy/self-evolve.mjs");
     const st = await handsFreeStatus(cfg);
     if (st.blockers?.length) {
@@ -1515,7 +1534,7 @@ function finish(checks, opts) {
 
 export async function doctorMain(args = []) {
   const json = args.includes("--json");
-  const report = await runDoctor({ json });
+  const report = await runDoctor({ json, pruneCheckpoints: args.includes("--prune-checkpoints") });
   process.exitCode = report.exitCode;
   return report;
 }
