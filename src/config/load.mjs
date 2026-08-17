@@ -94,6 +94,11 @@ export function enforceProdHardening(cfg = {}) {
   if (out.gateway && out.gateway.requireAuth !== true && process.env.XCLAW_GATEWAY_TOKEN) {
     out.gateway = { ...out.gateway, requireAuth: true };
   }
+  // Prefer OS sandbox on prod (auto uses bwrap when present and usable)
+  if (!out.security.osSandbox || out.security.osSandbox === "off") {
+    out.security.osSandbox = "auto";
+    out._prodHardening.push("forced security.osSandbox=auto");
+  }
   return out;
 }
 
