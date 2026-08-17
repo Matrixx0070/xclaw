@@ -82,3 +82,9 @@ Failed jobs may **propose** skills under `~/.xclaw/skill-proposals/` (always saf
 | prod | **blocked** unless `skills.allowInstall: true`, `XCLAW_SKILLS_INSTALL=1`, or `ownerApproved` on the install call |
 
 Proposals stay review-only in prod until the owner promotes them.
+
+```bash
+xclaw skills proposals
+xclaw skills install <file.md> --owner-approved   # prod
+xclaw skills reject <file.md> "not useful"
+```
