@@ -119,6 +119,10 @@ export async function enqueueJob(cfg, item) {
     workspace: item.workspace || null,
     maxTurns: item.maxTurns,
     timeoutMs: item.timeoutMs,
+    harness: Boolean(item.harness),
+    groundHard: item.groundHard,
+    claimsRequireEvidence: item.claimsRequireEvidence,
+    requireStructuredClaims: item.requireStructuredClaims,
     priority: resolvePriority(item),
     class: item.class || item.priorityClass || "batch",
     status: "queued",
@@ -247,7 +251,7 @@ async function processNext(cfg) {
     try {
       next.attempts = (next.attempts || 0) + 1;
       await saveItem(cfg, next);
-      const job = await runJob({
+      const jobOpts = {
         id: next.id.replace(/^q_/, "job_"),
         goal: next.goal,
         cfg,
@@ -256,7 +260,25 @@ async function processNext(cfg) {
         maxTurns: next.maxTurns || cfg.agent?.maxTurns || 12,
         timeoutMs: next.timeoutMs || 180_000,
         autoApprove: true,
-      });
+        groundHard: next.groundHard,
+        claimsRequireEvidence: next.claimsRequireEvidence,
+        requireStructuredClaims: next.requireStructuredClaims,
+      };
+      let job;
+      const useHarness =
+        next.harness === true ||
+        cfg.queue?.useHarness === true ||
+        cfg.harness?.queueDefault === true;
+      if (useHarness) {
+        try {
+          const { runLongHarness } = await import("./long-harness.mjs");
+          job = await runLongHarness(jobOpts);
+        } catch {
+          job = await runJob(jobOpts);
+        }
+      } else {
+        job = await runJob(jobOpts);
+      }
       await saveJobSummary(job).catch(() => {});
       await recordJob(cfg, job).catch(() => {});
       const admDone = getDefaultAdmission(cfg);
