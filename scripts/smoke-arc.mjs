@@ -17,6 +17,13 @@ const packs = [
   "test/browser-profile-default.test.mjs",
   "test/browser-observe-hybrid.test.mjs",
   "test/long-horizon-fixtures.test.mjs",
+  "test/telegram-prod-policy.test.mjs",
+  "test/telegram-callback-auth.test.mjs",
+  "test/agent-run-store.test.mjs",
+  "test/browser-mark-click.test.mjs",
+  "test/approvals-inbox.test.mjs",
+  "test/cost-governor.test.mjs",
+  "test/long-harness.test.mjs",
   "test/bounded-queue.test.mjs",
   "test/sandbox-tmp-allow.test.mjs",
 ];
