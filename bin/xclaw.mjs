@@ -1655,10 +1655,20 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     }
     case "resume": {
       const { loadConfig } = await import("../src/config/load.mjs");
-      const { resumeJobFromCheckpoint, listCheckpoints } = await import("../src/jobs/checkpoint.mjs");
+      const {
+        resumeJobFromCheckpoint,
+        listCheckpoints,
+        pruneCheckpoints,
+      } = await import("../src/jobs/checkpoint.mjs");
       const cfg = await loadConfig();
       if (!args[1] || args[1] === "list") {
         console.log(JSON.stringify(await listCheckpoints(cfg), null, 2));
+        break;
+      }
+      if (args[1] === "prune") {
+        const dryRun = args.includes("--dry-run");
+        const out = await pruneCheckpoints(cfg, { dryRun });
+        console.log(JSON.stringify(out, null, 2));
         break;
       }
       const job = await resumeJobFromCheckpoint(cfg, args[1]);
