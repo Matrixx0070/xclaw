@@ -12,7 +12,7 @@ import { recordJob } from "./history.mjs";
 import { rememberJob } from "../memory/durable.mjs";
 import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
 import { saveCheckpoint } from "./checkpoint.mjs";
-import { checkCostBudget, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
+import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
 import { checkSeatBudget, recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
 
 /** @typedef {"pending"|"running"|"succeeded"|"failed"|"cancelled"|"budget_exceeded"} JobStatus */
@@ -142,7 +142,6 @@ export async function runJob(opts) {
       cfg: jobCfg,
       workingDir: workspace,
       signal: ac.signal,
-      ledgerIds: { jobId: id },
       onEvent: (e) => {
         push(e);
         if (e.type === "tool" && e.phase === "end") {
@@ -171,7 +170,7 @@ export async function runJob(opts) {
       });
     }
 
-    const groundHard = Boolean(options.groundHard || options.groundingHard || cfg.jobs?.groundHard);
+    const groundHard = Boolean(opts.groundHard || opts.groundingHard || cfg.jobs?.groundHard);
     groundWarn = flagUngroundedClaims(agentResult.text, evidence.snapshot(), { hard: groundHard });
     for (const w of groundWarn) {
       evidence.add({ source: "system", summary: `grounding: ${w}` });
@@ -180,8 +179,8 @@ export async function runJob(opts) {
       agentResult.text,
       evidence.snapshot(),
       {
-        hard: groundHard || options.claimsRequireEvidence,
-        requireStructured: Boolean(options.requireStructuredClaims),
+        hard: groundHard || opts.claimsRequireEvidence,
+        requireStructured: Boolean(opts.requireStructuredClaims),
       }
     );
     for (const w of claimScore.warnings) {
@@ -190,7 +189,7 @@ export async function runJob(opts) {
     }
     if (
       groundingShouldFail(groundWarn, { hard: groundHard }) ||
-      ((groundHard || options.claimsRequireEvidence) && !claimScore.ok)
+      ((groundHard || opts.claimsRequireEvidence) && !claimScore.ok)
     ) {
       groundingFailed = true;
       status = "failed";
@@ -273,9 +272,7 @@ export async function runJob(opts) {
         estimateUsdFromUsage(job.usage, cfg) ??
         0;
       job.costUsd = usd;
-      // NOTE: no recordJobCost here anymore — the agent loop itself feeds
-      // the daily governor for every run now; recording again here would
-      // double-count job traffic.
+      await recordJobCost(cfg, { usd, jobId: job.id });
       if (seatsEnabled(cfg)) {
         const peer = opts.peer || opts.seatPeer || opts.from || null;
         const tok =
