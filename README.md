@@ -223,3 +223,7 @@ Deep / historical design notes live under `docs/`—prefer this README + XCLAW.m
 ## License
 
 MIT — see [THIRD_PARTY.md](./THIRD_PARTY.md) for bundled components.
+
+## Live use
+
+See [docs/LIVE_RUNBOOK.md](docs/LIVE_RUNBOOK.md) for native computer + CDP agent runs.

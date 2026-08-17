@@ -126,6 +126,7 @@ export async function runAgent(req = {}) {
     return {
       ok: true,
       text,
+      finalText: text,
       turns: raw?.turns,
       model: raw?.model,
       toolTrace: raw?.toolTrace,
@@ -143,6 +144,7 @@ export async function runAgent(req = {}) {
     return {
       ok: false,
       text: "",
+      finalText: "",
       error: e?.message || String(e),
       channel: opts.channel,
       sessionId: opts.chatSessionId,
