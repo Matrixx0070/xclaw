@@ -6,6 +6,37 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 
+
+/**
+ * P2 — Owner-gated skill writeback.
+ * Prod never auto-installs skills unless explicitly allowed.
+ *
+ * Allow when:
+ *   - profile is lab/dev, OR
+ *   - cfg.skills.allowInstall === true, OR
+ *   - XCLAW_SKILLS_INSTALL=1, OR
+ *   - opts.ownerApproved === true
+ */
+export function canInstallSkills(cfg = {}, opts = {}) {
+  if (opts.ownerApproved === true) return { ok: true, reason: "owner_approved" };
+  if (
+    process.env.XCLAW_SKILLS_INSTALL === "1" ||
+    process.env.XCLAW_SKILLS_INSTALL === "true"
+  ) {
+    return { ok: true, reason: "env" };
+  }
+  if (cfg?.skills?.allowInstall === true) return { ok: true, reason: "config" };
+  const profile = String(cfg?.profile || process.env.XCLAW_PROFILE || "lab").toLowerCase();
+  if (profile === "prod") {
+    return {
+      ok: false,
+      reason: "prod_requires_owner",
+      hint: "Set skills.allowInstall=true, XCLAW_SKILLS_INSTALL=1, or pass ownerApproved",
+    };
+  }
+  return { ok: true, reason: `profile_${profile}` };
+}
+
 function proposalsDir(cfg) {
   const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
   return path.join(base, "skill-proposals");
@@ -94,6 +125,10 @@ export async function listProposals(cfg, limit = 20) {
  * @param {{ force?: boolean }} [opts]
  */
 export async function installProposal(cfg, proposalFile, opts = {}) {
+  const gate = canInstallSkills(cfg, opts);
+  if (!gate.ok) {
+    return { ok: false, installed: false, ...gate };
+  }
   const dir = proposalsDir(cfg);
   const fp = path.isAbsolute(proposalFile)
     ? proposalFile
@@ -122,18 +157,7 @@ export async function installProposal(cfg, proposalFile, opts = {}) {
     }
   }
   await fs.writeFile(dest, body);
-  // Archive the source proposal so it leaves the review queue — leaving it
-  // listed invited a second Install click, which errors with "already exists".
-  let archived = null;
-  try {
-    const installedDir = path.join(dir, "installed");
-    await fs.mkdir(installedDir, { recursive: true });
-    archived = path.join(installedDir, path.basename(fp));
-    await fs.rename(fp, archived);
-  } catch {
-    archived = null; // best-effort: the install itself already succeeded
-  }
-  return { name, path: dest, from: fp, archived };
+  return { ok: true, installed: true, name, path: dest, from: fp };
 }
 
 export async function rejectProposal(cfg, proposalFile, reason = "") {
