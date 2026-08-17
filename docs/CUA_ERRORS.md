@@ -43,3 +43,19 @@ Full map: `src/computer/cua-errors.mjs` (`CUA_ERROR_CATALOG`).
 node -e "import { lookupCuaError } from './src/computer/cua-errors.mjs'; console.log(lookupCuaError('AX_TCC_REQUIRED'))"
 node scripts/cua-doctor.mjs
 ```
+
+## Retry policy
+
+Transient failures are retried with exponential backoff (`src/computer/cua-retry.mjs`).
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| `XCLAW_CUA_RETRIES` | `2` | max retries after first attempt |
+| `XCLAW_CUA_RETRY_BASE_MS` | `100`–`120` | base delay |
+| `XCLAW_CUA_RETRY_MAX_MS` | `2000`–`3000` | cap |
+
+**Retried:** `CDP_ATTACH_FAILED`, `CUA_ACT_EXEC_FAILED`, `*_EXEC_FAILED`, empty helper, brief registry blips.
+
+**Not retried:** `DESKTOP_GUI_DISABLED`, `CUA_ACT_REQUIRES_BUNDLE`, `*_NEED_*`, `CUA_ACT_UNKNOWN`, `AX_TCC_REQUIRED`, missing installs.
+
+Successful retries set `retried: true` and `retries: N` on the result.

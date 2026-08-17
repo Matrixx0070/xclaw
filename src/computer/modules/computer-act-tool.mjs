@@ -13,6 +13,7 @@ import { createCdpClient } from "../../browser/cdp-client.mjs";
 import { planClick, planType, planScroll, executeSteps } from "../../browser/motor.mjs";
 import { runDesktopAct, runDesktopObserve, probeDesktopDriver } from "./desktop-driver.mjs";
 import { enrichCuaError } from "../cua-errors.mjs";
+import { withCuaRetry } from "../cua-retry.mjs";
 
 /** @type {Map<string, { elements: object[], at: number, url?: string }>} */
 const observeCache = new Map();
@@ -196,8 +197,19 @@ async function runComputerActImpl(input = {}) {
   let client;
   let tab;
   try {
-    client = createCdpClient({ host: cdpEp.host, port: cdpEp.port });
-    tab = await client.attach(input.urlMatch || undefined);
+    const attachResult = await withCuaRetry(
+      async () => {
+        client = createCdpClient({ host: cdpEp.host, port: cdpEp.port });
+        tab = await client.attach(input.urlMatch || undefined);
+        return { ok: true, tab };
+      },
+      {
+        retries: Number(process.env.XCLAW_CUA_RETRIES ?? 2),
+        baseMs: Number(process.env.XCLAW_CUA_RETRY_BASE_MS ?? 120),
+        maxMs: Number(process.env.XCLAW_CUA_RETRY_MAX_MS ?? 3000),
+      }
+    );
+    tab = attachResult.tab || tab;
   } catch (e) {
     return {
       ok: false,
@@ -205,6 +217,7 @@ async function runComputerActImpl(input = {}) {
       code: "CDP_ATTACH_FAILED",
       engine,
       cdp: cdpEp,
+      retries: Number(process.env.XCLAW_CUA_RETRIES ?? 2),
     };
   }
 
@@ -280,17 +293,35 @@ async function runComputerActImpl(input = {}) {
       };
     }
 
-    const result = await executeSteps(tab, plan.steps);
-    return {
-      ok: true,
-      action,
-      engine: "cdp-motor",
-      executed: result.executed,
-      total: result.total,
-      meta: plan.meta,
-      pageUrl: tab.page?.url || null,
-      cuaPolicy: "tools_first_then_observe_then_gui",
-    };
+    const result = await withCuaRetry(
+      async () => {
+        const r = await executeSteps(tab, plan.steps);
+        if (r && r.ok === false) {
+          return {
+            ok: false,
+            error: r.error || "executeSteps failed",
+            code: "CUA_ACT_EXEC_FAILED",
+            engine: "cdp-motor",
+          };
+        }
+        return {
+          ok: true,
+          action,
+          engine: "cdp-motor",
+          executed: r.executed,
+          total: r.total,
+          meta: plan.meta,
+          pageUrl: tab.page?.url || null,
+          cuaPolicy: "tools_first_then_observe_then_gui",
+        };
+      },
+      {
+        retries: Number(process.env.XCLAW_CUA_RETRIES ?? 2),
+        baseMs: Number(process.env.XCLAW_CUA_RETRY_BASE_MS ?? 80),
+        maxMs: Number(process.env.XCLAW_CUA_RETRY_MAX_MS ?? 2000),
+      }
+    );
+    return result;
   } catch (e) {
     return {
       ok: false,

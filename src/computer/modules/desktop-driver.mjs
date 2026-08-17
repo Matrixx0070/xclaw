@@ -1,4 +1,5 @@
 import { enrichCuaError } from "../cua-errors.mjs";
+import { withCuaRetry } from "../cua-retry.mjs";
 /**
  * I5 / I5b — DesktopDriver (OS GUI outside the browser).
  *
@@ -87,44 +88,54 @@ async function runPythonObserveHelper(scriptPath, input = {}, env = process.env,
   const args = [scriptPath];
   if (input.app) args.push("--app", String(input.app));
   if (input.max) args.push("--max", String(Number(input.max) || 40));
-  try {
-    const { stdout, stderr } = await execFileAsync("python3", args, {
-      timeout: 15000,
-      env: { ...process.env, ...env },
-      maxBuffer: 4 * 1024 * 1024,
-    });
-    const raw = String(stdout || "").trim();
-    if (!raw) {
-      return { ok: false, error: stderr || "empty observe output", code: codes.empty || "OBSERVE_EMPTY" };
-    }
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return {
-        ok: false,
-        error: "invalid JSON from observe helper",
-        code: codes.badJson || "OBSERVE_BAD_JSON",
-        raw: raw.slice(0, 200),
-      };
-    }
-  } catch (e) {
-    const msg = e?.message || String(e);
-    if (e?.stdout) {
+
+  return withCuaRetry(
+    async () => {
       try {
-        return JSON.parse(String(e.stdout));
-      } catch {
-        /* fall through */
+        const { stdout, stderr } = await execFileAsync("python3", args, {
+          timeout: 15000,
+          env: { ...process.env, ...env },
+          maxBuffer: 4 * 1024 * 1024,
+        });
+        const raw = String(stdout || "").trim();
+        if (!raw) {
+          return { ok: false, error: stderr || "empty observe output", code: codes.empty || "OBSERVE_EMPTY" };
+        }
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return {
+            ok: false,
+            error: "invalid JSON from observe helper",
+            code: codes.badJson || "OBSERVE_BAD_JSON",
+            raw: raw.slice(0, 200),
+          };
+        }
+      } catch (e) {
+        const msg = e?.message || String(e);
+        if (e?.stdout) {
+          try {
+            return JSON.parse(String(e.stdout));
+          } catch {
+            /* fall through */
+          }
+        }
+        if (/No such file|ENOENT/i.test(msg)) {
+          return {
+            ok: false,
+            error: "python3 or observe helper missing",
+            code: codes.missing || "OBSERVE_HELPER_MISSING",
+          };
+        }
+        return { ok: false, error: msg, code: codes.exec || "OBSERVE_EXEC_FAILED" };
       }
+    },
+    {
+      retries: Number(env.XCLAW_CUA_RETRIES ?? process.env.XCLAW_CUA_RETRIES ?? 2),
+      baseMs: Number(env.XCLAW_CUA_RETRY_BASE_MS ?? process.env.XCLAW_CUA_RETRY_BASE_MS ?? 100),
+      maxMs: Number(env.XCLAW_CUA_RETRY_MAX_MS ?? process.env.XCLAW_CUA_RETRY_MAX_MS ?? 2500),
     }
-    if (/No such file|ENOENT/i.test(msg)) {
-      return {
-        ok: false,
-        error: "python3 or observe helper missing",
-        code: codes.missing || "OBSERVE_HELPER_MISSING",
-      };
-    }
-    return { ok: false, error: msg, code: codes.exec || "OBSERVE_EXEC_FAILED" };
-  }
+  );
 }
 
 /**

@@ -193,3 +193,6 @@ Helper: `scripts/desktop-ax-observe.py` → `mode: "ax"`, refs `a1`…
 ```
 
 Helper: `scripts/desktop-ax-act.py` (CGEvent + AXPress with CGEvent fallback).
+
+
+Retry: see [CUA_ERRORS.md](./CUA_ERRORS.md#retry-policy).
