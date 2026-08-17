@@ -55,4 +55,15 @@ describe("resume lock / mark resumed", () => {
     assert.equal(r.note, "already_resumed");
     assert.equal(r.resumed, false);
   });
+
+  it("cross-process file lock exclusive", async () => {
+    const a = await tryAcquireResumeLock("job_file_lock", cfg);
+    assert.equal(a, true);
+    const b = await tryAcquireResumeLock("job_file_lock", cfg);
+    assert.equal(b, false);
+    await releaseResumeLock("job_file_lock", cfg);
+    const c = await tryAcquireResumeLock("job_file_lock", cfg);
+    assert.equal(c, true);
+    await releaseResumeLock("job_file_lock", cfg);
+  });
 });
