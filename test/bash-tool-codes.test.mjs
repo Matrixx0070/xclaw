@@ -39,6 +39,16 @@ describe("xclaw_bash codes", () => {
     assert.equal(r.code, "BASH_TIMEOUT");
   });
 
+  it("abort signal", async () => {
+    const ac = new AbortController();
+    const p = executeBash({ command: "sleep 30", timeout: 60 }, { signal: ac.signal });
+    setTimeout(() => ac.abort(), 100);
+    const r = await p;
+    assert.equal(r.ok, false);
+    assert.equal(r.interrupted, true);
+    assert.equal(r.code, "BASH_ABORTED");
+  });
+
   it("background started code", async () => {
     const r = await executeBash({ command: "sleep 30", background: true });
     assert.equal(r.ok, true);
