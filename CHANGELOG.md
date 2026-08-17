@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.77.2 — Install guide (2026-08-17)
+
+- **INSTALL.md**: v3.77.1+ checkout, self-test, prod autonomy/security pointers
+
 ## 3.77.1 — Security doc (2026-08-17)
 
 - **SECURITY.md**: operator hygiene, prod gates, fabric/skills checklist; linked from README
