@@ -7,18 +7,17 @@ describe("voice PCM websocket framing", () => {
   it("encodeBinaryFrame is opcode binary", () => {
     const frame = encodeBinaryFrame(Buffer.from([1, 2, 3, 4]));
     assert.equal(frame[0] & 0x0f, 0x2);
-    assert.equal(frame[0] & 0x80, 0x80); // FIN
+    assert.equal(frame[0] & 0x80, 0x80);
   });
 
   it("parser accepts binary payload", () => {
-    const payload = Buffer.alloc(320, 7);
-    // Build client masked binary frame
+    const payload = Buffer.alloc(64, 7);
     const mask = Buffer.from([1, 2, 3, 4]);
     const masked = Buffer.alloc(payload.length);
     for (let i = 0; i < payload.length; i++) masked[i] = payload[i] ^ mask[i % 4];
-    const header = Buffer.alloc(2 + 4);
+    const header = Buffer.alloc(6);
     header[0] = 0x82;
-    header[1] = 0x80 | payload.length; // masked, len < 126
+    header[1] = 0x80 | payload.length; // masked + len < 126
     mask.copy(header, 2);
     const frame = Buffer.concat([header, masked]);
     const parser = createFrameParser({ requireMask: true });
