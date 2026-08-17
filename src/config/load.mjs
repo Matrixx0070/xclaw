@@ -99,6 +99,30 @@ export function enforceProdHardening(cfg = {}) {
     out.security.osSandbox = "auto";
     out._prodHardening.push("forced security.osSandbox=auto");
   }
+
+  // Telegram: never leave prod on dmPolicy=open (break-glass: XCLAW_TELEGRAM_DM_POLICY)
+  const envDm = process.env.XCLAW_TELEGRAM_DM_POLICY
+    ? String(process.env.XCLAW_TELEGRAM_DM_POLICY).toLowerCase()
+    : null;
+  out.channels = { ...(out.channels || {}) };
+  out.channels.telegram = { ...(out.channels.telegram || {}) };
+  const tg = out.channels.telegram;
+  if (envDm === "open" || envDm === "allowlist" || envDm === "pairing") {
+    if (tg.dmPolicy !== envDm) {
+      tg.dmPolicy = envDm;
+      out._prodHardening.push(`env channels.telegram.dmPolicy=${envDm}`);
+    }
+  } else if (tg.dmPolicy === "open" || !tg.dmPolicy) {
+    // Prefer allowlist when allowFrom is configured; otherwise pairing
+    const allow = tg.allowedChatIds || tg.allowFrom || [];
+    const next =
+      Array.isArray(allow) && allow.length > 0 ? "allowlist" : "pairing";
+    if (tg.dmPolicy !== next) {
+      tg.dmPolicy = next;
+      out._prodHardening.push(`forced channels.telegram.dmPolicy=${next}`);
+    }
+  }
+
   return out;
 }
 
