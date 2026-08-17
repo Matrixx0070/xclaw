@@ -1709,6 +1709,38 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       console.log(JSON.stringify(await readSkillLoopMetrics(cfg), null, 2));
       break;
     }
+    case "runs":
+    case "agent-runs": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const {
+        listAgentRuns,
+        loadAgentRun,
+        deleteAgentRun,
+      } = await import("../src/agent/run-store.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "list";
+      if (sub === "list") {
+        console.log(JSON.stringify({ runs: await listAgentRuns(cfg) }, null, 2));
+        break;
+      }
+      if (sub === "show" || sub === "get") {
+        const id = args[2];
+        if (!id) { console.error("Usage: xclaw runs show <sessionId>"); process.exit(1); }
+        const out = await loadAgentRun(cfg, id);
+        console.log(JSON.stringify(out, null, 2));
+        process.exitCode = out.ok ? 0 : 1;
+        break;
+      }
+      if (sub === "delete") {
+        const id = args[2];
+        if (!id) { console.error("Usage: xclaw runs delete <sessionId>"); process.exit(1); }
+        console.log(JSON.stringify(await deleteAgentRun(cfg, id), null, 2));
+        break;
+      }
+      console.error("Usage: xclaw runs [list|show <id>|delete <id>]");
+      process.exit(1);
+      break;
+    }
     case "approvals": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const {
