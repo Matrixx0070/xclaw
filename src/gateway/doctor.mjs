@@ -335,6 +335,37 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
     });
   }
 
+  // Autonomy + prod hardening (parity with CLI doctor)
+  try {
+    const { autonomyPolicySummary } = await import("../config/autonomy-policy.mjs");
+    const sum = autonomyPolicySummary(cfg);
+    push("autonomy.level", true, {
+      summary: `level=${sum.level} autoApprove=${sum.autoApprove} policy=${sum.approvalPolicy} maxTurns=${sum.maxTurns} heartbeat=${sum.heartbeatEnabled}`,
+      ...sum,
+    });
+  } catch (err) {
+    push("autonomy.level", true, {
+      summary: err.message || String(err),
+      severity: "warn",
+    });
+  }
+  try {
+    if (String(cfg.profile || "").toLowerCase() === "prod") {
+      const actions = cfg._prodHardening || [];
+      push("prod.hardening", true, {
+        summary: actions.length
+          ? `applied: ${actions.join("; ")}`
+          : "no overrides needed (config already prod-safe)",
+        actions,
+      });
+    }
+  } catch (err) {
+    push("prod.hardening", true, {
+      summary: err.message || String(err),
+      severity: "warn",
+    });
+  }
+
   push("runtime", true, {
     summary: `node ${process.version} · ${process.platform}/${process.arch}`,
     node: process.version,
