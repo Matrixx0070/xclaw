@@ -20,6 +20,7 @@ import {
 import { deliverToChannel } from "./channel-deliver.mjs";
 
 let ensured = false;
+let afterHookBound = false;
 let spendUsdToday = 0;
 let spendDay = null;
 let lastSkipReason = null;
@@ -200,25 +201,28 @@ export function ensureHeartbeat(cfg = {}) {
   ensured = true;
   startScheduler();
 
-  onCron("cron:after", async (payload) => {
-    if (payload?.name !== name) return;
-    if (payload.ok === false && payload.job?.delivery?.channel && payload.job?.delivery?.to) {
-      lastError = payload.error || "heartbeat failed";
-      try {
-        await deliverToChannel(
-          {
-            mode: "announce",
-            channel: payload.job.delivery.channel,
-            to: payload.job.delivery.to,
-            text: `⚠️ Heartbeat failed: ${lastError}`,
-          },
-          cfg
-        );
-      } catch {
-        /* */
+  if (!afterHookBound) {
+    afterHookBound = true;
+    onCron("cron:after", async (payload) => {
+      if (payload?.name !== name) return;
+      if (payload.ok === false && payload.job?.delivery?.channel && payload.job?.delivery?.to) {
+        lastError = payload.error || "heartbeat failed";
+        try {
+          await deliverToChannel(
+            {
+              mode: "announce",
+              channel: payload.job.delivery.channel,
+              to: payload.job.delivery.to,
+              text: `⚠️ Heartbeat failed: ${lastError}`,
+            },
+            cfg
+          );
+        } catch {
+          /* */
+        }
       }
-    }
-  });
+    });
+  }
 
   return {
     ok: true,
