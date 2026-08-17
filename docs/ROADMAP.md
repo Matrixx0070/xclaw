@@ -19,8 +19,8 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 1. **Channel-delivered heartbeat**  
    Wire `autonomy.heartbeat.delivery` end-to-end for Telegram/Discord (owner notify on non-`HEARTBEAT_OK`).
 
-2. **OS sandbox default on prod**  
-   When `bwrap` is present, prod profile should prefer `XCLAW_OS_SANDBOX=bwrap` without manual env (doctor already warns).
+2. **OS sandbox default on prod** — **done**  
+   Prod `osSandbox: auto`; `enforceProdHardening` forces `off`→`auto`; doctor probes `works=true|false`.
 
 3. **Eval regression as release gate**  
    Expand `scripts/eval-regression.mjs` with 1–2 long-horizon job fixtures (verify + checkpoint) so CI fails on agent-loop regressions, not only unit packs.
