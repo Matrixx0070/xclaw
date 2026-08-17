@@ -62,3 +62,36 @@ export XCLAW_PIPER_MODEL=/models/en_US-lessac-medium.onnx   # optional
 import { probeLocalVoiceStack } from "./src/voice/providers/local.mjs";
 console.log(await probeLocalVoiceStack());
 ```
+
+
+## Surfaces (talk with XClaw)
+
+| Surface | How |
+|---------|-----|
+| **CLI / TUI** | `xclaw voice probe` · `xclaw voice speak "hi"` · `xclaw voice transcribe file.ogg` · `xclaw voice tui` |
+| **WebUI** | Gateway `GET /api/voice/probe` · `POST /api/voice/speak` `{text}` · `POST /api/voice/transcribe` `{path}` |
+| **Telegram** | Voice notes → local STT transcript injected into agent text; replies with `voiceOut.enabled` → TTS ogg |
+
+### Telegram config
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "voiceOut": { "enabled": true, "mode": "on_request", "maxChars": 400 }
+    }
+  },
+  "voice": { "localOnly": true }
+}
+```
+
+`mode: "always"` speaks every reply; `"on_request"` when user sends a voice note or `/voice`.
+
+### Dependencies
+
+```bash
+sudo apt install -y espeak-ng ffmpeg
+# optional better TTS: piper + XCLAW_PIPER_MODEL=...
+# optional STT: whisper.cpp → whisper-cli on PATH
+# optional TUI mic: arecord (alsa-utils)
+```
