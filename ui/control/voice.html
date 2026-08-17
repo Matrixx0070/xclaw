@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XClaw — Voice latency</title>
+  <link rel="stylesheet" href="/control/styles.css" />
+  <style>
+    .charts { display: grid; gap: 1.25rem; padding: 1rem; }
+    .card { background: #1a1d23; border-radius: 8px; padding: 1rem; border: 1px solid #2a2f3a; }
+    .card h2 { margin: 0 0 0.5rem; font-size: 0.95rem; opacity: 0.9; }
+    .stats { font-size: 0.8rem; opacity: 0.75; margin-bottom: 0.75rem; }
+    svg.bar { width: 100%; height: 120px; }
+    .bar rect { fill: #3b82f6; }
+    .bar rect:hover { fill: #60a5fa; }
+    .axis { font-size: 9px; fill: #94a3b8; }
+    .spark { font-family: ui-monospace, monospace; font-size: 1.25rem; letter-spacing: 1px; }
+    .counters { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+    .pill { background: #0f172a; padding: 0.35rem 0.65rem; border-radius: 999px; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="app" style="max-width:900px;margin:0 auto;">
+    <header style="padding:1rem;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <h1 style="margin:0;font-size:1.25rem;">Voice latency</h1>
+        <p style="margin:0.25rem 0 0;opacity:0.7;font-size:0.85rem;">TTFA · VAD · barge-in (live from gateway process)</p>
+      </div>
+      <div>
+        <button type="button" id="btn-refresh" class="btn">Refresh</button>
+        <a href="/control/" style="margin-left:0.5rem;font-size:0.85rem;">Control</a>
+      </div>
+    </header>
+    <div class="charts">
+      <div class="card">
+        <div class="counters" id="counters"></div>
+      </div>
+      <div class="card">
+        <h2>Time to first audio (ms)</h2>
+        <div class="stats" id="ttfa-stats"></div>
+        <div class="spark" id="ttfa-spark"></div>
+        <svg class="bar" id="ttfa-chart" viewBox="0 0 400 120" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="card">
+        <h2>VAD capture duration (ms)</h2>
+        <div class="stats" id="vad-stats"></div>
+        <svg class="bar" id="vad-chart" viewBox="0 0 400 120" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="card">
+        <h2>Barge-in kill path (ms)</h2>
+        <div class="stats" id="kill-stats"></div>
+        <svg class="bar" id="kill-chart" viewBox="0 0 400 120" preserveAspectRatio="none"></svg>
+      </div>
+    </div>
+  </div>
+  <script>
+    const blocks = "▁▂▃▄▅▆▇█";
+    function sparkline(values, width = 32) {
+      if (!values.length) return "—";
+      const slice = values.slice(-width);
+      const max = Math.max(...slice, 1);
+      return slice.map((v) => blocks[Math.min(7, Math.floor((v / max) * 7))]).join("");
+    }
+    function hist(values, bucketMs, maxMs) {
+      const buckets = [];
+      for (let lo = 0; lo < maxMs; lo += bucketMs) buckets.push({ lo, hi: lo + bucketMs, count: 0 });
+      let overflow = 0;
+      for (const v of values) {
+        if (v == null || v < 0 || !Number.isFinite(v)) continue;
+        if (v >= maxMs) { overflow++; continue; }
+        buckets[Math.floor(v / bucketMs)].count++;
+      }
+      return { buckets, overflow, maxMs };
+    }
+    function drawBars(svg, hist) {
+      const w = 400, h = 120, pad = 16;
+      const max = Math.max(1, ...hist.buckets.map((b) => b.count), hist.overflow);
+      const n = hist.buckets.length + (hist.overflow ? 1 : 0);
+      const bw = (w - pad * 2) / n;
+      let html = "";
+      hist.buckets.forEach((b, i) => {
+        const bh = (b.count / max) * (h - pad * 2);
+        const x = pad + i * bw;
+        const y = h - pad - bh;
+        html += `<rect x="${x}" y="${y}" width="${bw * 0.85}" height="${Math.max(bh, b.count ? 2 : 0)}" data-label="${b.lo}-${b.hi}" />`;
+      });
+      svg.innerHTML = html;
+    }
+    function collect(recent, key) {
+      return recent.map((e) => e[key]).filter((n) => typeof n === "number");
+    }
+    async function load() {
+      const r = await fetch("/api/voice/metrics");
+      const j = await r.json();
+      const c = j.counters || {};
+      document.getElementById("counters").innerHTML = [
+        ["wakes", c.wakeHits],
+        ["utterances", c.utterances],
+        ["barge-ins", c.bargeIns],
+        ["stream", c.streamReplies],
+        ["agent", c.agentReplies],
+        ["casual", c.casualReplies],
+      ].map(([k, v]) => `<span class="pill"><b>${v ?? 0}</b> ${k}</span>`).join("");
+      const recent = j.recent || [];
+      const ttfa = collect(recent, "firstAudioMs");
+      const vad = collect(recent, "durationMs");
+      const kill = collect(recent, "killPathMs");
+      const L = j.latency || {};
+      document.getElementById("ttfa-stats").textContent =
+        `p50=${L.ttfaMs?.p50 ?? "n/a"}  p95=${L.ttfaMs?.p95 ?? "n/a"}  n=${L.ttfaMs?.n ?? 0}`;
+      document.getElementById("ttfa-spark").textContent = sparkline(ttfa);
+      document.getElementById("vad-stats").textContent =
+        `p50=${L.vadDurationMs?.p50 ?? "n/a"}  n=${L.vadDurationMs?.n ?? 0}`;
+      document.getElementById("kill-stats").textContent =
+        `p50=${L.bargeInKillMs?.p50 ?? "n/a"}  n=${L.bargeInKillMs?.n ?? 0}`;
+      drawBars(document.getElementById("ttfa-chart"), hist(ttfa, 100, 1500));
+      drawBars(document.getElementById("vad-chart"), hist(vad, 200, 4000));
+      drawBars(document.getElementById("kill-chart"), hist(kill, 5, 50));
+    }
+    document.getElementById("btn-refresh").onclick = load;
+    load();
+    setInterval(load, 5000);
+  </script>
+</body>
+</html>
