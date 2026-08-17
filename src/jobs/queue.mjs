@@ -127,7 +127,7 @@ export async function enqueueJob(cfg, item) {
     class: item.class || item.priorityClass || "batch",
     status: "queued",
     attempts: 0,
-    maxAttempts: item.maxAttempts ?? 1,
+    maxAttempts: item.maxAttempts ?? (item.harness ? 2 : 1),
     createdAt: nowIso,
     enqueuedAt: nowIso,
     maxWaitMs: item.maxWaitMs ?? maxWaitMsCfg(cfg),
