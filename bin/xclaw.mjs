@@ -1915,6 +1915,72 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       await evalMain(args.slice(1));
       break;
     }
+    case "harness": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const { runLongHarness } = await import("../src/jobs/long-harness.mjs");
+      const cfg = await loadConfig();
+      const goalParts = [];
+      let maxTurns = null;
+      let timeoutMs = null;
+      let workspace = null;
+      const verify = [];
+      for (let i = 1; i < args.length; i++) {
+        const a = args[i];
+        if (a === "--max-turns" && args[i + 1]) { maxTurns = Number(args[++i]); continue; }
+        if (a === "--timeout" && args[i + 1]) { timeoutMs = Number(args[++i]); continue; }
+        if (a === "--workspace" && args[i + 1]) { workspace = args[++i]; continue; }
+        if (a === "--contains" && args[i + 1]) {
+          const pathText = args[++i];
+          const sp = pathText.split(":");
+          if (sp.length >= 2) verify.push({ type: "file_contains", path: sp[0], text: sp.slice(1).join(":") });
+          continue;
+        }
+        if (a === "--exists" && args[i + 1]) {
+          verify.push({ type: "file_exists", path: args[++i] });
+          continue;
+        }
+        if (a === "--cmd" && args[i + 1]) {
+          verify.push({ type: "command", cmd: args[++i], exitCode: 0 });
+          continue;
+        }
+        if (a.startsWith("-")) continue;
+        goalParts.push(a);
+      }
+      const goal = goalParts.join(" ").trim();
+      if (!goal) {
+        console.error("Usage: xclaw harness \"goal\" [--exists path] [--contains path:text] [--cmd 'node test'] [--max-turns N] [--timeout ms]");
+        process.exit(1);
+      }
+      const job = await runLongHarness({
+        goal,
+        cfg,
+        verify,
+        maxTurns: maxTurns || undefined,
+        timeoutMs: timeoutMs || undefined,
+        workspace: workspace || undefined,
+        onEvent: (e) => {
+          if (e.type === "harness" || e.type === "job" || (e.type === "tool" && e.phase === "end")) {
+            console.error(JSON.stringify(e));
+          }
+        },
+      });
+      console.log(JSON.stringify({
+        id: job.id,
+        pass: job.pass,
+        status: job.status,
+        groundingFailed: job.groundingFailed,
+        claimScore: job.claimScore,
+        verify: job.verify,
+        turns: job.turns,
+        wallMs: job.wallMs,
+        harness: job.harness,
+        text: (job.text || "").slice(0, 2000),
+        error: job.error,
+        workspace: job.workspace,
+      }, null, 2));
+      process.exitCode = job.pass ? 0 : 1;
+      break;
+    }
     case "job": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const { runJob, saveJobSummary } = await import("../src/jobs/job.mjs");
@@ -2052,6 +2118,7 @@ Commands:
   transcripts          list | show <sessionId>
   eval                 Eval suite (--tag, --mock, --json)
   job <goal>           Verified job in a temp workspace
+  harness <goal>       Long-run grounded harness (anti-hallucination)
   skills               list|proposals|install|reject  (prod install needs --owner-approved)
   approvals            list|policy|approve <id>|deny <id>
   version              Print version
