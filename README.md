@@ -79,6 +79,8 @@ Project memory injected into the agent: **[XCLAW.md](./XCLAW.md)** (edit this fo
 
 Autonomy levels (`off` · `supervised` · `lab` · `full`): **[docs/AUTONOMY.md](./docs/AUTONOMY.md)** — or `XCLAW_AUTONOMY_LEVEL=…` / `autonomy.level` in config.
 
+Browser fabric (tab leases + commit gates): **[docs/FABRIC.md](./docs/FABRIC.md)** — enable with `XCLAW_COMMIT_GATES=1` + `XCLAW_FABRIC_ENFORCE=1`.
+
 ---
 
 ## Strategy C (computer)
