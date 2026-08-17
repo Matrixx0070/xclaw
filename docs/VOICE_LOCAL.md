@@ -100,3 +100,18 @@ sudo apt install -y espeak-ng ffmpeg
 ### WebChat UI
 
 Open `/chat/` — **🎤** uses browser SpeechRecognition; **🔊** calls gateway `/api/voice/speak` (server-side espeak/piper).
+
+
+## Voice commands
+
+| Say / type | Effect |
+|------------|--------|
+| stop talking, shut up, `/mute` | Mute TTS (jobs keep running) |
+| unmute, `/unmute` | Allow speech again |
+| cancel that, `/cancel` | Cancel active voice-agent jobs |
+| keep going, `/continue` | Status of active work |
+| status, `/status` | Speech + job snapshot |
+| repeat, `/repeat` | Re-speak last reply |
+| help, `/commands` | List commands |
+
+**Contract:** barge-in / mute never cancels shell, browser, or swarm jobs.
