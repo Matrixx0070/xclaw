@@ -842,6 +842,140 @@ export async function runDoctor(opts = {}) {
     push("channels.health", "warn", e.message || String(e));
   }
 
+  // Telegram channel posture (feature 5 follow-up)
+  try {
+    const conf = cfg.channels?.telegram || {};
+    const token =
+      conf.token ||
+      process.env.TELEGRAM_BOT_TOKEN ||
+      process.env.XCLAW_TELEGRAM_TOKEN ||
+      "";
+    const enabled = conf.enabled !== false && Boolean(token || conf.enabled === true);
+    const dmPolicy = conf.dmPolicy || "pairing";
+    const allow =
+      conf.allowedChatIds ||
+      conf.allowFrom ||
+      [];
+    const allowN = Array.isArray(allow) ? allow.length : 0;
+    const rate = conf.rateLimit || cfg.channels?.rateLimit || {};
+    const transport = conf.webhookUrl ? "webhook" : "long-poll";
+    const profile = String(cfg.profile || process.env.XCLAW_PROFILE || "lab").toLowerCase();
+
+    if (!token && conf.enabled === true) {
+      push("telegram.token", "error", "NO_TELEGRAM_TOKEN — channels.telegram.enabled but no token");
+    } else if (!token) {
+      push("telegram.token", "ok", "disabled (no token)");
+    } else {
+      push("telegram.token", "ok", "token configured (env or config)");
+    }
+
+    if (token || conf.enabled === true) {
+      if (profile === "prod" && dmPolicy === "open") {
+        push(
+          "telegram.policy",
+          "error",
+          "prod dmPolicy=open — set allowlist or pairing"
+        );
+      } else if (dmPolicy === "allowlist" && allowN === 0) {
+        push(
+          "telegram.policy",
+          "warn",
+          "dmPolicy=allowlist but allowedChatIds/allowFrom empty"
+        );
+      } else if (dmPolicy === "open") {
+        push("telegram.policy", "warn", "dmPolicy=open — any chat can message the bot");
+      } else {
+        push(
+          "telegram.policy",
+          "ok",
+          `dmPolicy=${dmPolicy} allowFrom=${allowN}`
+        );
+      }
+
+      push(
+        "telegram.rateLimit",
+        "ok",
+        `max=${rate.max ?? 20} windowMs=${rate.windowMs ?? 60000}`
+      );
+
+      if (transport === "webhook" && !conf.webhookSecret && !conf.secretToken) {
+        push(
+          "telegram.webhook",
+          "warn",
+          "webhook transport without secretToken — set channels.telegram.webhookSecret"
+        );
+      } else if (transport === "webhook") {
+        push("telegram.webhook", "ok", "webhook + secret configured (or secret present)");
+      } else {
+        push("telegram.transport", "ok", "long-poll (default)");
+      }
+
+      // Writer lock file presence (does not prove ownership)
+      try {
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const os = await import("node:os");
+        const lockPath = path.join(os.homedir(), ".xclaw", "locks", "telegram-writer.lock");
+        if (fs.existsSync(lockPath)) {
+          let age = null;
+          let pid = null;
+          try {
+            const raw = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+            pid = raw.pid;
+            age = Date.now() - Date.parse(raw.at || 0);
+          } catch { /* */ }
+          push(
+            "telegram.writerLock",
+            "ok",
+            `lock present pid=${pid ?? "?"} ageMs=${age ?? "?"}`
+          );
+        } else {
+          push(
+            "telegram.writerLock",
+            "ok",
+            "no lock file (gateway not polling or lock unused)"
+          );
+        }
+      } catch (e) {
+        push("telegram.writerLock", "warn", e.message || String(e));
+      }
+
+      // Live status if channel manager available (gateway may be down)
+      try {
+        const { createChannelManager } = await import("../channels/manager.mjs");
+        const m = createChannelManager(cfg);
+        const stList = typeof m.status === "function" ? m.status() : [];
+        const tg = Array.isArray(stList)
+          ? stList.find((c) => c.name === "telegram")
+          : stList?.telegram || null;
+        if (tg?.lastError) {
+          push(
+            "telegram.lastError",
+            "warn",
+            String(tg.lastError).slice(0, 200)
+          );
+        } else if (tg) {
+          push(
+            "telegram.runtime",
+            "ok",
+            `running=${Boolean(tg.running)} transport=${tg.transport || "?"} @${tg.username || "?"}`
+          );
+        } else {
+          push(
+            "telegram.runtime",
+            "ok",
+            "channel not started in this process (start gateway for live loop)"
+          );
+        }
+      } catch (e) {
+        push("telegram.runtime", "warn", e.message || String(e));
+      }
+    }
+  } catch (e) {
+    push("telegram.channel", "warn", e.message || String(e));
+  }
+
+
     // Account linking + vault consistency (L1–L3)
   try {
     const {
