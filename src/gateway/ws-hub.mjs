@@ -391,9 +391,8 @@ export function attachWebSocketHub(server, opts = {}) {
   server.on("upgrade", (req, socket, head) => {
     try {
       const url = new URL(req.url || "/", "http://localhost");
+      // Leave socket alone so other upgrade handlers (e.g. /ws/voice) can claim it
       if (url.pathname !== path) {
-        socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
-        socket.destroy();
         return;
       }
       const key = req.headers["sec-websocket-key"];
