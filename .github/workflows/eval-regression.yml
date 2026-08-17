@@ -45,7 +45,8 @@ jobs:
             test/browser-hooks.test.mjs \
             test/browser-a8-fabric.test.mjs \
             test/bounded-queue.test.mjs \
-            test/checkpoint.test.mjs
+            test/checkpoint.test.mjs \
+            test/long-horizon-fixtures.test.mjs
       - name: OAuth + P5/P6 packs
         run: |
           node --test \
