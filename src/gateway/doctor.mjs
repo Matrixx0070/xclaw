@@ -11,6 +11,9 @@ import { resolveProviderRoute } from "../providers/router.mjs";
 import { listImageProviders } from "../media/canvas.mjs";
 import { loadAllSkills } from "../skills/loader.mjs";
 import { defaultSessionsPath } from "../sessions/persist.mjs";
+import { wsClientCount } from "./ws-hub.mjs";
+import { evictionBufferMetrics, evictionListenerCount } from "./eviction-events.mjs";
+import { streamRegistryStats } from "./stream-resume.mjs";
 
 /**
  * @returns {Promise<object>}
@@ -269,6 +272,69 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
   }
 
   // node
+  // realtime buffers (bounded queues)
+  try {
+    let ws = { clients: wsClientCount(), enqueued: 0, dropped: 0, written: 0 };
+    try {
+      const mod = await import("./ws-hub.mjs");
+      if (typeof mod.wsOutboundStats === "function") ws = mod.wsOutboundStats();
+    } catch {
+      /* outbound stats optional until hub exports it */
+    }
+    const dropRate = ws.enqueued ? ws.dropped / ws.enqueued : 0;
+    const wsOk = dropRate < 0.25;
+    push("ws.outbound", wsOk, {
+      summary: `clients=${ws.clients || wsClientCount()} enqueued=${ws.enqueued || 0} dropped=${ws.dropped || 0} written=${ws.written || 0}`,
+      severity: wsOk ? "ok" : "warn",
+      ...ws,
+      hint: wsOk
+        ? null
+        : "High WS outbound drop rate — slow subscribers or flood; raise outboundMax or reduce broadcast volume",
+    });
+  } catch (err) {
+    push("ws.outbound", true, {
+      summary: "unavailable",
+      severity: "info",
+      error: err.message,
+    });
+  }
+
+  try {
+    const ev = evictionBufferMetrics();
+    const listeners = evictionListenerCount();
+    push("eviction.buffer", true, {
+      summary: `buffered=${ev.depth ?? "?"} dropped=${ev.dropped} listeners=${listeners}`,
+      severity: "ok",
+      metrics: ev,
+      listeners,
+    });
+  } catch (err) {
+    push("eviction.buffer", true, {
+      summary: "unavailable",
+      severity: "info",
+      error: err.message,
+    });
+  }
+
+  try {
+    const st = streamRegistryStats();
+    push("stream.buffers", true, {
+      summary: `streams=${st.streams} events=${st.events} dropped=${st.dropped} subs=${st.subscribers}`,
+      severity: st.dropped > 0 && st.received && st.dropped / st.received > 0.1 ? "warn" : "ok",
+      ...st,
+      hint:
+        st.dropped > 0
+          ? "Stream resume buffers dropped events under capacity — raise stream.capacity if clients need longer replay"
+          : null,
+    });
+  } catch (err) {
+    push("stream.buffers", true, {
+      summary: "unavailable",
+      severity: "info",
+      error: err.message,
+    });
+  }
+
   push("runtime", true, {
     summary: `node ${process.version} · ${process.platform}/${process.arch}`,
     node: process.version,
