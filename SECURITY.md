@@ -23,6 +23,7 @@ When `profile=prod`, XClaw forces safer posture even if a shared lab config file
 | `swarm.autoMerge` | forced `false` |
 | `security.osSandbox` | `auto` (bwrap when usable) |
 | Skill **install** | blocked unless owner-approved |
+| Telegram `dmPolicy=open` | forced to `allowlist` (if allowFrom set) or `pairing` |
 
 See `docs/AUTONOMY.md` and `docs/FABRIC.md`.
 
