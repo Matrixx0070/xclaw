@@ -213,23 +213,40 @@ export async function runDoctor(opts = {}) {
   }
 
   try {
-    const { findBwrap, getOsSandboxMode } = await import("../security/os-sandbox.mjs");
+    const {
+      findBwrap,
+      getOsSandboxMode,
+      probeBwrapWorks,
+    } = await import("../security/os-sandbox.mjs");
     const mode = getOsSandboxMode(cfg);
     const bw = findBwrap();
+    const works = bw ? probeBwrapWorks() : false;
     const prof = cfg.profile || process.env.XCLAW_PROFILE || "lab";
     if (mode === "bwrap" && !bw) {
       push("security.osSandbox", "error", "osSandbox=bwrap but bubblewrap not installed");
+    } else if (mode === "bwrap" && bw && !works) {
+      push(
+        "security.osSandbox",
+        "error",
+        `osSandbox=bwrap but probe failed (${probeBwrapWorks.lastError || "uid map?"})`
+      );
     } else if (prof === "prod" && !bw) {
       push(
         "security.osSandbox",
         "warn",
         `prod without bwrap (mode=${mode}) — install bubblewrap for OS isolation of bash`
       );
+    } else if (prof === "prod" && bw && !works) {
+      push(
+        "security.osSandbox",
+        "warn",
+        `prod bwrap installed but unusable (mode=${mode}) — ${probeBwrapWorks.lastError || "probe failed"}`
+      );
     } else {
       push(
         "security.osSandbox",
         "ok",
-        `mode=${mode} bwrap=${bw || "not-found"}`
+        `mode=${mode} bwrap=${bw || "not-found"} works=${works}`
       );
     }
   } catch (e) {
