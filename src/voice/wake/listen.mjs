@@ -24,6 +24,8 @@ import {
 import { createEntente, voiceCommandsHelp } from "../entente.mjs";
 import fs from "node:fs/promises";
 import { playWav } from "../playback.mjs";
+import { routeVoiceUtterance, casualReply } from "../router.mjs";
+import { sendUtteranceToGateway } from "../gateway-bridge.mjs";
 
 /**
  * @param {object} cfg
@@ -141,14 +143,13 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
     console.log(`[you] ${userText}`);
     onEvent({ type: "listen.utterance", text: userText });
 
+    const route = routeVoiceUtterance(userText);
+    onEvent({ type: "listen.route", mode: route.mode });
+
     // Voice commands first
-    const classified = entente.onUserText(userText);
-    if (
-      classified.intent?.kind &&
-      classified.intent.kind !== "utterance" &&
-      classified.intent.kind !== "none"
-    ) {
-      const reply = classified.reply || classified.intent.kind;
+    if (route.mode === "command") {
+      const classified = entente.onUserText(userText);
+      const reply = classified.reply || classified.intent?.kind || "ok";
       console.log(`[cmd] ${reply}`);
       if (speakReplies && reply && !entente.speech.isSuppressed()) {
         const begin = entente.speech.beginSpeak(reply);
@@ -165,31 +166,58 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
       continue;
     }
 
-    // Full utterance → agent or local think
-    let reply = "";
-    const preferAgent =
-      opts.agent !== false &&
-      (process.env.XAI_API_KEY ||
-        process.env.OPENAI_API_KEY ||
-        cfg.agent?.model);
-    try {
-      if (preferAgent) {
-        const { runJob } = await import("../../jobs/job.mjs");
-        const job = await runJob({
-          goal: userText,
-          cfg,
-          maxTurns: opts.maxTurns || 8,
-          timeoutMs: opts.timeoutMs || 120_000,
-          autoApprove: cfg.security?.autoApprove ?? true,
-        });
-        reply = String(job.text || job.error || "").slice(0, 2000);
-      } else {
-        const { localThink } = await import("../providers/local.mjs");
-        const thought = await localThink(userText, cfg, { history: [] });
-        reply = thought.text || "(no reply)";
+    // Optional gateway bridge
+    if (opts.gateway || process.env.XCLAW_VOICE_WS || process.env.XCLAW_GATEWAY_WS) {
+      const g = await sendUtteranceToGateway(userText, {
+        url: opts.gatewayUrl || process.env.XCLAW_VOICE_WS || process.env.XCLAW_GATEWAY_WS,
+        speak: false,
+      });
+      if (g.ok && g.reply) {
+        console.log(`[gateway] ${String(g.reply).slice(0, 500)}`);
+        onEvent({ type: "listen.reply", text: String(g.reply).slice(0, 500), via: "gateway" });
+        entente.setLastSpoken(g.reply);
+        if (speakReplies && !entente.speech.isSuppressed()) {
+          const begin = entente.speech.beginSpeak(g.reply);
+          if (begin.ok) {
+            const sp = await localSpeak(String(g.reply).slice(0, 400), cfg);
+            if (sp.ok) await playWav(sp.path, { speech: entente.speech, epoch: begin.epoch });
+            else entente.speech.endSpeak(begin.epoch);
+          }
+        }
+        continue;
       }
-    } catch (e) {
-      reply = `Error: ${e.message || e}`;
+    }
+
+    // Casual path — no tools, minimal latency
+    let reply = "";
+    if (route.mode === "casual" && opts.agent !== true) {
+      reply = casualReply(userText);
+      console.log(`[casual] ${reply}`);
+    } else {
+      const preferAgent =
+        opts.agent !== false &&
+        (process.env.XAI_API_KEY ||
+          process.env.OPENAI_API_KEY ||
+          cfg.agent?.model);
+      try {
+        if (preferAgent) {
+          const { runJob } = await import("../../jobs/job.mjs");
+          const job = await runJob({
+            goal: userText,
+            cfg,
+            maxTurns: opts.maxTurns || 8,
+            timeoutMs: opts.timeoutMs || 120_000,
+            autoApprove: cfg.security?.autoApprove ?? true,
+          });
+          reply = String(job.text || job.error || "").slice(0, 2000);
+        } else {
+          const { localThink } = await import("../providers/local.mjs");
+          const thought = await localThink(userText, cfg, { history: [] });
+          reply = thought.text || "(no reply)";
+        }
+      } catch (e) {
+        reply = `Error: ${e.message || e}`;
+      }
     }
 
     console.log(`[xclaw] ${reply.slice(0, 500)}`);
