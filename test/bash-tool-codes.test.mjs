@@ -39,6 +39,15 @@ describe("xclaw_bash codes", () => {
     assert.equal(r.code, "BASH_TIMEOUT");
   });
 
+  it("background started code", async () => {
+    const r = await executeBash({ command: "sleep 30", background: true });
+    assert.equal(r.ok, true);
+    assert.equal(r.code, "BASH_BG_STARTED");
+    assert.ok(r.pid);
+    assert.ok(r.logFile);
+    await executeBash({ command: `kill ${r.pid} 2>/dev/null; kill -9 ${r.pid} 2>/dev/null; true`, timeout: 5 });
+  });
+
   it("output truncated code", async () => {
     // ~2.2MB of 'x' — over the 2_000_000 char keep limit
     const r = await executeBash({

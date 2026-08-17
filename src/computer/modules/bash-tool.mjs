@@ -144,13 +144,14 @@ export async function executeBash(input = {}, ctx = {}) {
       pid: child.pid,
       logFile,
       stdout: "",
-      stderr: "",
+      stderr: `Started in background (PID ${child.pid}). Log: ${logFile}`,
       timedOut: false,
       interrupted: false,
       spawnEnforced: Boolean(check.enforced),
       osSandboxed,
       netIsolated: Boolean(wrapped.netIsolated),
       envPolicy: envPolicy.mode,
+      code: "BASH_BG_STARTED",
     };
   }
 
@@ -260,7 +261,7 @@ export async function executeBash(input = {}, ctx = {}) {
 export const BashTool = {
   name: "xclaw_bash",
   description:
-    "Run a bash command in a fresh non-login shell at the session cwd. timeout is SECONDS (default 30, max 120) — never milliseconds. Prefer short commands; for long jobs use background=true and read the logFile.",
+    "Run a bash command in a fresh non-login shell at the session cwd. timeout is SECONDS (default 30, max 120) — never milliseconds. Long jobs: background=true → {pid, logFile, code:BASH_BG_STARTED}. Status example: kill -0 <pid> 2>/dev/null && echo ALIVE || echo DEAD; tail -n 40 <logFile>. Kill example: kill <pid> || kill -9 <pid>.",
   inputSchema: {
     type: "object",
     properties: {
