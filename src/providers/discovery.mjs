@@ -1,3 +1,4 @@
+import { fetchJsonWithRetry } from "../utils/fetch-retry.mjs";
 /**
  * Live model discovery — Phase live-discovery.
  *
@@ -17,8 +18,6 @@ import { resolveProviderToken } from "../auth/profiles.mjs";
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000; // 1h
 
-// SCAFFOLD: name-pattern model classification — replace with capability
-// metadata from provider APIs (or a pricing/capability catalog) when added.
 const NON_CHAT_RE =
   /(embed|embedding|whisper|tts|tts-|realtime|audio|dall-e|dalle|image|imagine|video|moderation|transcribe|speech|voice|omni-moderation|text-embedding|ada-002|babbage|davinci-002$)/i;
 
@@ -42,17 +41,12 @@ export function isChatModelId(id) {
   return !NON_CHAT_RE.test(String(id));
 }
 
-export async function resolveApiKey(cfg, providerId, def) {
-  // cfg.agent.apiKey is the ACTIVE provider's cached credential (loadConfig
-  // fills it) — using it for a DIFFERENT provider ships one vendor's token to
-  // another's /models endpoint (e.g. an Anthropic key hitting api.x.ai → HTTP
-  // 400). Only honor it when it belongs to this provider. Mirrors the guard in
-  // registry.resolveProviderRouteAsync (3.86.1 cross-provider leak fix).
-  const agentKeyApplies = !cfg.agent?.provider || cfg.agent.provider === providerId;
+async function resolveApiKey(cfg, providerId, def) {
   let apiKey =
-    (agentKeyApplies ? cfg.agent?.apiKey : null) ||
+    cfg.agent?.apiKey ||
     cfg.providers?.[providerId]?.apiKey ||
     process.env[def.envKey] ||
+    process.env.XCLAW_API_KEY ||
     "";
   if (!apiKey) {
     try {
@@ -62,8 +56,7 @@ export async function resolveApiKey(cfg, providerId, def) {
       /* */
     }
   }
-  // XCLAW_API_KEY is the explicit generic override — last resort, any provider.
-  return apiKey || process.env.XCLAW_API_KEY || "";
+  return apiKey || "";
 }
 
 async function readCache(fp, ttlMs) {
@@ -143,7 +136,7 @@ function normalizeGeminiList(body) {
 /**
  * Build request for a provider.
  */
-export function buildDiscoveryRequest(providerId, baseUrl, apiKey) {
+function buildDiscoveryRequest(providerId, baseUrl, apiKey) {
   const p = String(providerId).toLowerCase();
   const base = baseUrl.replace(/\/$/, "");
 
@@ -162,25 +155,16 @@ export function buildDiscoveryRequest(providerId, baseUrl, apiKey) {
 
   // Anthropic native
   if (p === "anthropic") {
+    // Anthropic may expose /v1/models with x-api-key
     const root = base.replace(/\/v1$/, "") + "/v1";
-    // OAuth access tokens (sk-ant-oat*) must use Bearer + the oauth beta header
-    // and NO x-api-key — the x-api-key path 401s for OAuth. Plain API keys
-    // (sk-ant-api*) use x-api-key.
-    const isOAuth = String(apiKey || "").startsWith("sk-ant-oat");
-    const auth = !apiKey
-      ? {}
-      : isOAuth
-        ? {
-            Authorization: `Bearer ${apiKey}`,
-            "anthropic-beta": process.env.ANTHROPIC_OAUTH_BETA || "oauth-2025-04-20",
-          }
-        : { "x-api-key": apiKey };
     return {
       url: `${root}/models`,
       headers: {
         Accept: "application/json",
         "anthropic-version": process.env.ANTHROPIC_VERSION || "2023-06-01",
-        ...auth,
+        ...(apiKey
+          ? { "x-api-key": apiKey, Authorization: `Bearer ${apiKey}` }
+          : {}),
       },
       fallbackUrl: null,
       parser: "openai",
@@ -220,13 +204,14 @@ export function buildDiscoveryRequest(providerId, baseUrl, apiKey) {
 }
 
 async function fetchJson(url, headers, timeoutMs, signal) {
-  const res = await fetch(url, { headers, signal });
-  if (!res.ok) {
-    const err = new Error(`HTTP ${res.status}`);
-    err.status = res.status;
-    throw err;
-  }
-  return res.json();
+  return fetchJsonWithRetry(url, {
+    headers,
+    signal,
+    timeoutMs,
+    retries: 3,
+    baseMs: 200,
+    maxDelayMs: 8_000,
+  });
 }
 
 /**
@@ -243,12 +228,12 @@ export async function fetchLiveModels(
   } = {}
 ) {
   const def = getProvider(cfg, providerId);
-  const apiKey = await resolveApiKey(cfg, providerId, def);
-  const baseUrl = (cfg.providers?.[providerId]?.baseUrl || def.baseUrl || "").replace(/\/$/, "");
+  const baseUrl = (def.baseUrl || "").replace(/\/$/, "");
   if (!baseUrl && providerId !== "google") {
     return { ok: false, error: "no baseUrl", models: [], provider: providerId };
   }
 
+  const apiKey = await resolveApiKey(cfg, providerId, def);
   const fp = keyFingerprint(apiKey);
   const cacheFp = cachePath(cfg, providerId, fp);
 
