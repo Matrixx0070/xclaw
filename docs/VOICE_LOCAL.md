@@ -115,3 +115,16 @@ Open `/chat/` — **🎤** uses browser SpeechRecognition; **🔊** calls gatewa
 | help, `/commands` | List commands |
 
 **Contract:** barge-in / mute never cancels shell, browser, or swarm jobs.
+
+
+## Wake word (W0)
+
+```bash
+xclaw voice wake-probe           # arecord / STT / openWakeWord availability
+xclaw voice wake-probe once      # 2s record → energy → STT → phrase match
+xclaw voice wake-probe once --force-stt
+```
+
+Phrases (config `voice.wake.phrases`): default `hey xclaw`, `okay xclaw`, `hi xclaw`, `xclaw`.
+
+W0 is **probe only**. Continuous listen loop is **W1**.
