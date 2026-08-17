@@ -26,6 +26,7 @@ import {
   promoteAndInstall,
 } from "../skills/loop.mjs";
 import { listProposals, canInstallSkills, installProposal } from "../skills/propose.mjs";
+import { queueStats, startQueueWorker, listQueue } from "../jobs/queue.mjs";
 
 function evolveDir(cfg) {
   const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
@@ -113,6 +114,13 @@ export async function handsFreeStatus(cfg) {
     });
   }
 
+  let queue = { queued: 0, running: 0, dead: 0 };
+  try {
+    queue = await queueStats(cfg);
+  } catch {
+    /* */
+  }
+
   return {
     handsFree: blockers.length === 0 && (level === "lab" || level === "full" || level === "supervised"),
     level,
@@ -132,6 +140,7 @@ export async function handsFreeStatus(cfg) {
       autoPromote: evolve.autoPromote === true,
       maxAutoResume: evolve.maxAutoResume ?? 2,
     },
+    queue,
   };
 }
 
@@ -143,6 +152,14 @@ export async function handsFreeStatus(cfg) {
  * 4. Log event
  */
 export async function runEvolutionTick(cfg, opts = {}) {
+  // Ensure background queue worker runs even without full gateway
+  try {
+    if ((cfg.evolve || cfg.autonomy?.evolve || {}).queueWorker !== false) {
+      startQueueWorker(cfg);
+    }
+  } catch {
+    /* */
+  }
   const status = await handsFreeStatus(cfg);
   const evolve = cfg.evolve || cfg.autonomy?.evolve || {};
   const actions = [];
