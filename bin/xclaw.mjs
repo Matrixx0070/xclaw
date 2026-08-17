@@ -1709,6 +1709,46 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       console.log(JSON.stringify(await readSkillLoopMetrics(cfg), null, 2));
       break;
     }
+    case "approvals": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const {
+        listPendingApprovals,
+        decideApproval,
+        getSharedApprovalGate,
+      } = await import("../src/security/approvals.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "list";
+      if (sub === "list" || sub === "pending") {
+        const pending = listPendingApprovals(cfg);
+        console.log(JSON.stringify({ count: pending.length, pending }, null, 2));
+        break;
+      }
+      if (sub === "policy") {
+        console.log(JSON.stringify(getSharedApprovalGate(cfg).policyInfo(), null, 2));
+        break;
+      }
+      if (sub === "approve") {
+        const id = args[2];
+        if (!id) { console.error("Usage: xclaw approvals approve <id> [note]"); process.exit(1); }
+        const note = args.slice(3).join(" ");
+        const out = decideApproval(cfg, id, true, note);
+        console.log(JSON.stringify(out, null, 2));
+        process.exitCode = out.ok ? 0 : 1;
+        break;
+      }
+      if (sub === "deny") {
+        const id = args[2];
+        if (!id) { console.error("Usage: xclaw approvals deny <id> [reason]"); process.exit(1); }
+        const note = args.slice(3).join(" ") || "Denied by operator";
+        const out = decideApproval(cfg, id, false, note);
+        console.log(JSON.stringify(out, null, 2));
+        process.exitCode = out.ok ? 0 : 1;
+        break;
+      }
+      console.error("Usage: xclaw approvals [list|policy|approve <id>|deny <id>]");
+      process.exit(1);
+      break;
+    }
     case "skills": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const {
@@ -1933,6 +1973,7 @@ Commands:
   eval                 Eval suite (--tag, --mock, --json)
   job <goal>           Verified job in a temp workspace
   skills               list|proposals|install|reject  (prod install needs --owner-approved)
+  approvals            list|policy|approve <id>|deny <id>
   version              Print version
   info                 Version + ready + queue summary
   wait-ready           Poll until ready
