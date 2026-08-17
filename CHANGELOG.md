@@ -2,6 +2,8 @@
 
 ## Unreleased — Autonomy levels
 
+- **docs/AUTONOMY.md**: levels, heartbeat, jobs/queue/swarm pointers
+
 - **`src/config/autonomy-policy.mjs`**: levels `off | supervised | lab | full` → security + maxTurns + heartbeat defaults
 - **`loadConfig`**: applies level without clobbering explicit user settings
 - **doctor**: `autonomy.level` check
