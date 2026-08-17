@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Job status bugfix
+
+- **jobs/job.mjs**: replace undefined `options` with `opts` after verify/grounding (job was `failed` despite verify pass)
+- **Live verified**: multi-phase `/jobs` long-horizon → `status=succeeded` `pass=true`, node --test green
+
+
 ## Unreleased — Swarm isolate path fixes
 
 - **sandbox**: `allowPaths` honored without secondary `..` rejection
