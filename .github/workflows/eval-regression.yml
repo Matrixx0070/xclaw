@@ -36,6 +36,16 @@ jobs:
             test/prod-hardening.test.mjs \
             test/sandbox-tmp-allow.test.mjs
           node bin/xclaw.mjs self-test
+
+      - name: Browser fabric (leases, gates, hooks)
+        run: |
+          node --test \
+            test/browser-physics.test.mjs \
+            test/browser-hooks-a3.test.mjs \
+            test/browser-hooks.test.mjs \
+            test/browser-a8-fabric.test.mjs \
+            test/bounded-queue.test.mjs \
+            test/checkpoint.test.mjs
       - name: OAuth + P5/P6 packs
         run: |
           node --test \
