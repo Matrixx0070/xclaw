@@ -1,5 +1,8 @@
 ## Doctor
 
+Error codes: [CUA_ERRORS.md](./CUA_ERRORS.md).
+
+
 ```bash
 node scripts/cua-doctor.mjs
 # → reports/autonomy/cua-doctor.json

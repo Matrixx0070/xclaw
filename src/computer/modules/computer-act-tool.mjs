@@ -12,6 +12,7 @@
 import { createCdpClient } from "../../browser/cdp-client.mjs";
 import { planClick, planType, planScroll, executeSteps } from "../../browser/motor.mjs";
 import { runDesktopAct, runDesktopObserve, probeDesktopDriver } from "./desktop-driver.mjs";
+import { enrichCuaError } from "../cua-errors.mjs";
 
 /** @type {Map<string, { elements: object[], at: number, url?: string }>} */
 const observeCache = new Map();
@@ -133,7 +134,7 @@ function resolveCdpEndpoint() {
  * @param {number} [input.deltaX]
  * @param {number} [input.deltaY]
  */
-export async function runComputerAct(input = {}) {
+async function runComputerActImpl(input = {}) {
   const action = String(input.action || "click").toLowerCase();
 
   if (action === "observe") {
@@ -338,3 +339,10 @@ export const ComputerActTool = {
 };
 
 export default ComputerActTool;
+
+
+/** @param {Parameters<typeof runComputerActImpl>[0]} input */
+export async function runComputerAct(input) {
+  const r = await runComputerActImpl(input);
+  return enrichCuaError(r);
+}

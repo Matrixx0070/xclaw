@@ -6,6 +6,7 @@ import os from "node:os";
 import http from "node:http";
 import { probeDesktopDriver, whichDesktopTools, runDesktopObserve } from "./modules/desktop-driver.mjs";
 import { resolveReach } from "../agent/capability-reach.mjs";
+import { lookupCuaError, CUA_ERROR_CATALOG } from "./cua-errors.mjs";
 
 function httpGet(url, timeoutMs = 2500) {
   return new Promise((resolve) => {
@@ -170,10 +171,19 @@ export async function runCuaDoctor(env = process.env) {
       errors,
       warnings,
     },
+    errorCatalogSize: Object.keys(CUA_ERROR_CATALOG).length,
     ok: errors === 0,
     warnings,
     errors,
   };
 }
+
+/** Resolve recovery text for a CUA code (CLI / agents). */
+export function explainCuaCode(code) {
+  const e = lookupCuaError(code);
+  if (!e) return { code, known: false, recovery: null };
+  return { code, known: true, ...e };
+}
+
 
 export default { runCuaDoctor };

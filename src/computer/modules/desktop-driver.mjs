@@ -1,3 +1,4 @@
+import { enrichCuaError } from "../cua-errors.mjs";
 /**
  * I5 / I5b — DesktopDriver (OS GUI outside the browser).
  *
@@ -132,7 +133,7 @@ async function runPythonObserveHelper(scriptPath, input = {}, env = process.env,
  *   win32  → UI Automation (pywinauto)
  *   darwin → not implemented yet (honest code)
  */
-export async function runDesktopObserve(input = {}, env = process.env) {
+async function runDesktopObserveImpl(input = {}, env = process.env) {
   const probe = probeDesktopDriver(env);
 
   if (probe.platform === "linux") {
@@ -173,7 +174,7 @@ export async function runDesktopObserve(input = {}, env = process.env) {
 /**
  * Opt-in OS input injection (Linux xdotool/ydotool).
  */
-export async function runDesktopAct(input = {}, env = process.env) {
+async function runDesktopActImpl(input = {}, env = process.env) {
   const probe = probeDesktopDriver(env);
   if (!probe.enabled) {
     return {
@@ -365,9 +366,18 @@ export async function runDesktopAct(input = {}, env = process.env) {
   }
 }
 
+export async function runDesktopObserve(input = {}, env = process.env) {
+  return enrichCuaError(await runDesktopObserveImpl(input, env));
+}
+
+export async function runDesktopAct(input = {}, env = process.env) {
+  return enrichCuaError(await runDesktopActImpl(input, env));
+}
+
 export default {
   probeDesktopDriver,
   whichDesktopTools,
   runDesktopAct,
   runDesktopObserve,
 };
+
