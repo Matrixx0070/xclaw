@@ -268,7 +268,14 @@ export function createApprovalGate(cfg = {}) {
 
   function decide(pendingId, approved, note = "") {
     const item = pending.get(pendingId);
-    if (!item) return { ok: false, error: "unknown_pending" };
+    if (!item) {
+      return {
+        ok: false,
+        code: "APPROVAL_NOT_FOUND",
+        error: "unknown_pending",
+        message: `No pending approval: ${pendingId}`,
+      };
+    }
     pending.delete(pendingId);
 
     if (approved && item.plan && revalidateOnDecide) {
@@ -372,4 +379,14 @@ export function getSharedApprovalGate(cfg = {}) {
 export function resetSharedApprovalGate(cfg = {}) {
   sharedGate = createApprovalGate(cfg);
   return sharedGate;
+}
+
+
+/** Convenience for CLI / doctor */
+export function listPendingApprovals(cfg = {}) {
+  return getSharedApprovalGate(cfg).listPending();
+}
+
+export function decideApproval(cfg, id, approved, note = "") {
+  return getSharedApprovalGate(cfg).decide(id, approved, note);
 }
