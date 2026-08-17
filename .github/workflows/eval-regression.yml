@@ -34,7 +34,12 @@ jobs:
           node --test \
             test/autonomy-policy.test.mjs \
             test/prod-hardening.test.mjs \
-            test/sandbox-tmp-allow.test.mjs
+            test/sandbox-tmp-allow.test.mjs \
+            test/skill-install-gate.test.mjs \
+            test/heartbeat-delivery.test.mjs \
+            test/browser-profile-default.test.mjs \
+            test/browser-observe-hybrid.test.mjs \
+            test/host-workspace.test.mjs
           node bin/xclaw.mjs self-test
 
       - name: Browser fabric (leases, gates, hooks)
