@@ -127,3 +127,15 @@ xclaw runs show <sessionId>
 `GET /agent-runs?id=` · Codes: `SESSION_NOT_FOUND` | `SESSION_CORRUPT` | `SESSION_UNSUPPORTED_VERSION` | `SESSION_WORKDIR_MISSING`
 
 Pass `sessionId` / `persistRun` into the agent loop to write snapshots after a run.
+
+
+## Telegram channel
+
+```bash
+xclaw channels telegram status
+xclaw channels telegram test <chatId>
+```
+
+Config: `channels.telegram.token`, `dmPolicy` (`open|allowlist|pairing`), `allowedChatIds` / `allowFrom`, `rateLimit: { max, windowMs }`.
+
+Inbound over limit → `RATE_LIMITED` (no agent spawn). Strangers denied silently under allowlist.
