@@ -11,6 +11,7 @@ import {
   buildPairingReply,
 } from "../../pairing/pairing-store.mjs";
 import { createRateLimiter } from "../rate-limit.mjs";
+import { authorizeTelegramCallback } from "./callback-auth.mjs";
 import { handleChannelCommand } from "../commands.mjs";
 import {
   createTelegramStreamer,
@@ -106,9 +107,6 @@ export function createTelegramChannel(cfg) {
   let messagesHandled = 0;
   let callbacksHandled = 0;
   let lastError = null;
-  let lastPollOkAt = null;
-  let lastPollErrorAt = null;
-  let consecutivePollFails = 0;
   let lastOkAt = null;
   let loopAlive = false;
   let writerLock = null;
@@ -211,15 +209,8 @@ export function createTelegramChannel(cfg) {
   /**
    * Notify owner of a pending tool approval (inline buttons).
    */
-  // One prompt per pending: the loop emits approval_required twice (once at
-  // creation via onPending, again as a state update when authorize times
-  // out). Live-observed: Frank got identical prompts exactly 120s apart and
-  // tapped Allow on pendings whose turn had already moved on.
-  const promptedApprovals = new Set();
-
   async function notifyOwnerApproval(item) {
     if (!ownerChatId || !item?.id) return { ok: false, reason: "no_owner" };
-    if (promptedApprovals.has(item.id)) return { ok: false, reason: "already_prompted" };
     try {
       await sendMessage(
         ownerChatId,
@@ -227,17 +218,8 @@ export function createTelegramChannel(cfg) {
         undefined,
         { reply_markup: approvalInlineKeyboard({ pendingId: item.id, tool: item.tool }) }
       );
-      // log delivery: raw sendMessage bypasses the reply-path "→" logging, so
-      // without this line the gateway log cannot show whether the approval
-      // prompt ever reached the owner (bit us diagnosing a live SLA-denial)
-      console.log(`[telegram] → ${ownerChatId}: approval prompt ${item.id} (${item.tool})`);
-      // latch only on successful delivery — a failed send must stay eligible
-      // for the loop's natural re-emission
-      if (promptedApprovals.size > 200) promptedApprovals.clear();
-      promptedApprovals.add(item.id);
       return { ok: true };
     } catch (err) {
-      console.warn(`[telegram] approval prompt ${item.id} FAILED: ${err.message}`);
       return { ok: false, reason: err.message };
     }
   }
@@ -369,17 +351,32 @@ export function createTelegramChannel(cfg) {
     };
   }
 
+  function authorizeCallback(cq, data) {
+    const fromId = cq.from?.id;
+    const chatId = cq.message?.chat?.id ?? fromId;
+    return authorizeTelegramCallback({
+      fromId,
+      chatId,
+      data,
+      ownerChatId,
+      dmPolicy,
+      allowFrom: conf.allowedChatIds || conf.allowFrom || [],
+      isApproved: (ch, id) => pairing.isApproved(ch, id),
+      rateLimiter,
+    });
+  }
+
   async function handleCallbackQuery(cq) {
     if (!cq || !cq.id) return;
     const data = parseCallbackData(cq.data);
-    const fromId = cq.from?.id;
-    // Only owner (if set) may press admin buttons
-    if (ownerChatId && String(fromId) !== String(ownerChatId)) {
-      await answerCallback(cq.id, "Not authorized");
-      return;
-    }
     if (!data) {
       await answerCallback(cq.id, "Unknown action");
+      return;
+    }
+    const auth = authorizeCallback(cq, data);
+    if (!auth.ok) {
+      recordTelegramDeny(auth.code || "callback");
+      await answerCallback(cq.id, auth.message || "Not authorized");
       return;
     }
     try {
@@ -684,11 +681,6 @@ export function createTelegramChannel(cfg) {
         workingDir: workspace,
         rateLimiter,
         stream: streamOpts.enabled && streamOpts.partialText !== false,
-        // detached mission updates (objective runtime) push through the bot
-        notify: async (t) => {
-          await sendMessage(chatId, String(t).slice(0, 3900));
-          console.log(`[telegram] → ${chatId}: [mission] ${String(t).slice(0, 60)}`);
-        },
         onEvent: (e) => {
           if (e.type === "tool" && e.phase === "start") {
             console.log(`[telegram]   → ${e.name}`);
@@ -701,15 +693,11 @@ export function createTelegramChannel(cfg) {
             streamer.setPartial(e.accumulated).catch(() => {});
             recordTelegramStreamDelta();
           } else if (e.type === "security" && e.phase === "approval_required") {
-            // timedOut re-emissions are state updates on an already-prompted
-            // pending — never a fresh ask
-            if (!e.timedOut) {
-              notifyOwnerApproval({
-                id: e.pendingId,
-                tool: e.name,
-                args: e.args,
-              }).catch(() => {});
-            }
+            notifyOwnerApproval({
+              id: e.pendingId,
+              tool: e.name,
+              args: e.args,
+            }).catch(() => {});
           } else if (e.type === "security" && e.phase === "denied") {
             recordTelegramDeny(e.reason || "security");
           }
@@ -745,20 +733,6 @@ export function createTelegramChannel(cfg) {
           }
         } else if (streamer) {
           streamer.close();
-        }
-        // Deliver any images the agent produced (generate_image / edit_image)
-        // as actual photos — the text reply alone left the picture on the server.
-        if (Array.isArray(out.images) && out.images.length) {
-          const { sendPhotoFile } = await import("./photo-out.mjs");
-          for (const imgPath of out.images.slice(0, 10)) {
-            try {
-              const r = await sendPhotoFile({ token, chatId, filePath: imgPath, replyTo: msg.message_id });
-              if (r.ok) console.log(`[telegram] 🖼 ${r.method} ${imgPath.split("/").pop()}`);
-              else console.warn(`[telegram] photo send failed (${imgPath}): ${r.error}`);
-            } catch (ierr) {
-              console.warn(`[telegram] photo-out error:`, ierr.message || ierr);
-            }
-          }
         }
         if (wantVoice) {
           try {
@@ -893,17 +867,9 @@ export function createTelegramChannel(cfg) {
         }
       },
       onUpdate: handleUpdate,
-      onPollOk: () => {
-        lastPollOkAt = new Date().toISOString();
-        consecutivePollFails = 0;
-      },
       onError: (info) => {
         lastError = info.message || info.code;
         recordTelegramError(info.phase || "poll");
-        if ((info.phase || "poll") === "poll") {
-          lastPollErrorAt = new Date().toISOString();
-          consecutivePollFails += 1;
-        }
         if (info.code === "UNAUTHORIZED") {
           stopped = true;
         }
@@ -1015,10 +981,6 @@ export function createTelegramChannel(cfg) {
         stopped,
         lastError,
         lastOkAt,
-        // poll-level liveness (the watchdog's outage signal)
-        lastPollOkAt,
-        lastPollErrorAt,
-        consecutivePollFails,
         stream: telegramStreamOptions(conf).enabled,
         voiceOut: voiceOutOptions(conf).enabled,
         groups: groupPolicyOptions(conf),
