@@ -7,7 +7,7 @@ describe("enforceProdHardening", () => {
   it("forces autoApprove off on prod", () => {
     const cfg = enforceProdHardening({
       profile: "prod",
-      security: { autoApprove: true, approvalPolicy: "never" },
+      security: { autoApprove: true, approvalPolicy: "never", osSandbox: "off" },
       autonomy: { level: "full" },
       swarm: { autoMerge: true },
     });
@@ -15,6 +15,7 @@ describe("enforceProdHardening", () => {
     assert.equal(cfg.security.approvalPolicy, "risky");
     assert.equal(cfg.autonomy.level, "supervised");
     assert.equal(cfg.swarm.autoMerge, false);
+    assert.equal(cfg.security.osSandbox, "auto");
     assert.ok(cfg._prodHardening.length >= 2);
   });
 
