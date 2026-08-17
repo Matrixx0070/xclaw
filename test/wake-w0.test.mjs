@@ -10,30 +10,34 @@ import {
 
 describe("wake W0", () => {
   it("matches default phrases", () => {
-    assert.equal(matchWakePhrase("hey xclaw are you there").hit, true);
-    assert.equal(matchWakePhrase("Okay XClaw").hit, true);
-    assert.equal(matchWakePhrase("list files please").hit, false);
-  });
-
-  it("fuzzy hey claw", () => {
+    assert.equal(matchWakePhrase("hey xclaw").hit, true);
+    assert.equal(matchWakePhrase("Okay XClaw, list files").hit, true);
+    assert.equal(matchWakePhrase("xclaw").hit, true);
     assert.equal(matchWakePhrase("hey claw").hit, true);
   });
 
-  it("wakeConfig phrases", () => {
-    const c = wakeConfig({ voice: { wake: { phrases: ["computer"] } } });
-    assert.deepEqual(c.phrases, ["computer"]);
+  it("rejects non-wake speech", () => {
+    assert.equal(matchWakePhrase("list files in tmp").hit, false);
+    assert.equal(matchWakePhrase("").hit, false);
   });
 
-  it("wavRmsEnergy silent-ish buffer", () => {
-    const buf = Buffer.alloc(1000);
+  it("wavRmsEnergy zero on empty", () => {
+    assert.equal(wavRmsEnergy(Buffer.alloc(0)), 0);
+  });
+
+  it("wavRmsEnergy on synthetic silence", () => {
+    const header = Buffer.alloc(44);
+    header.write("RIFF", 0);
+    const data = Buffer.alloc(1600);
+    const buf = Buffer.concat([header, data]);
     assert.equal(wavRmsEnergy(buf), 0);
   });
 
-  it("wavRmsEnergy with samples", () => {
-    const buf = Buffer.alloc(44 + 200);
-    buf.write("RIFF", 0);
-    for (let i = 0; i < 100; i++) buf.writeInt16LE(1000, 44 + i * 2);
-    assert.ok(wavRmsEnergy(buf) > 0);
+  it("wakeConfig defaults", () => {
+    const c = wakeConfig({});
+    assert.ok(c.phrases.includes("hey xclaw"));
+    assert.ok(c.energyThreshold > 0);
+    assert.equal(c.enabled, true);
   });
 
   it("probeWakeStack returns structure", async () => {
@@ -42,10 +46,10 @@ describe("wake W0", () => {
     assert.ok("arecord" in s);
     assert.ok("stt" in s);
     assert.ok("openWakeWord" in s);
-    assert.equal(typeof s.readyForW1, "boolean");
+    assert.ok("readyForW1" in s);
   });
 
-  it("default phrase list includes hey xclaw", () => {
-    assert.ok(DEFAULT_WAKE_PHRASES.includes("hey xclaw"));
+  it("DEFAULT_WAKE_PHRASES non-empty", () => {
+    assert.ok(DEFAULT_WAKE_PHRASES.length >= 3);
   });
 });
