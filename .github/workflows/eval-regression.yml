@@ -53,6 +53,10 @@ jobs:
             test/checkpoint.test.mjs \
             test/long-horizon-fixtures.test.mjs \
             test/long-harness.test.mjs \
+            test/self-evolve.test.mjs \
+            test/checkpoint-prune.test.mjs \
+            test/resume-lock.test.mjs \
+            test/path-bind.test.mjs \
             test/principles.test.mjs \
             test/mid-run-checkpoint.test.mjs \
             test/checkpoint-recovery.test.mjs \
