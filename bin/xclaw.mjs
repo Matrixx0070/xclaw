@@ -1695,6 +1695,8 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         recoveryKind: job.recoveryKind,
         recoveryStrategy: job.recoveryStrategy,
         note: job.note,
+        code: job.code || null,
+        error: job.error || null,
       }, null, 2));
       process.exitCode = job.pass ? 0 : 1;
       break;
