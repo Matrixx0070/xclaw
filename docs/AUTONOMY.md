@@ -113,3 +113,17 @@ Over hard cap → agent/job **stops** with `BUDGET_EXCEEDED` (no further provide
 xclaw cost
 xclaw doctor   # cost.governor check
 ```
+
+
+## Agent run resume (durable)
+
+Snapshots under `~/.xclaw/agent-runs/`.
+
+```bash
+xclaw runs list
+xclaw runs show <sessionId>
+```
+
+`GET /agent-runs?id=` · Codes: `SESSION_NOT_FOUND` | `SESSION_CORRUPT` | `SESSION_UNSUPPORTED_VERSION` | `SESSION_WORKDIR_MISSING`
+
+Pass `sessionId` / `persistRun` into the agent loop to write snapshots after a run.
