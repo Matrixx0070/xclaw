@@ -19,17 +19,23 @@ export async function runVerifyChecks(workspace, checks = []) {
   return { ok: results.every((r) => r.pass), results };
 }
 
+function resolveCheckPath(workspace, filePath) {
+  const raw = String(filePath || "");
+  if (!raw) return path.resolve(workspace);
+  return path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(workspace, raw);
+}
+
 async function runOne(workspace, check) {
   const type = check.type;
   try {
     switch (type) {
       case "file_exists": {
-        const p = path.join(workspace, check.path);
+        const p = resolveCheckPath(workspace, check.path);
         await fs.access(p);
         return { type, path: check.path, pass: true };
       }
       case "file_contains": {
-        const p = path.join(workspace, check.path);
+        const p = resolveCheckPath(workspace, check.path);
         const text = await fs.readFile(p, "utf8");
         let pass = false;
         if (check.regex) {
@@ -43,13 +49,13 @@ async function runOne(workspace, check) {
         return { type, path: check.path, pass, detail: pass ? "match" : "no match" };
       }
       case "file_equals": {
-        const p = path.join(workspace, check.path);
+        const p = resolveCheckPath(workspace, check.path);
         const text = await fs.readFile(p, "utf8");
         const pass = text === (check.content ?? "");
         return { type, path: check.path, pass };
       }
       case "file_not_exists": {
-        const p = path.join(workspace, check.path);
+        const p = resolveCheckPath(workspace, check.path);
         try {
           await fs.access(p);
           return { type, path: check.path, pass: false, detail: "exists" };
