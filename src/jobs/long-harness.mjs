@@ -61,6 +61,8 @@ export async function runLongHarness(opts) {
   const groundingRetry =
     opts.groundingRetry ?? h.groundingRetry ?? 1;
   const persistRun = opts.persistRun ?? h.persistRun ?? true;
+  const checkpointEveryTurns =
+    opts.checkpointEveryTurns ?? h.checkpointEveryTurns ?? 3;
 
   const workspace =
     opts.workspace ||
@@ -97,6 +99,7 @@ export async function runLongHarness(opts) {
     requireStructuredClaims,
     systemNotes,
     persistRun,
+    checkpointEveryTurns,
     sessionId: opts.sessionId || opts.id,
   };
 
