@@ -1,3 +1,10 @@
+## Unreleased
+
+### Hands-free / evolve
+- Self-evolution tick: resume locks, checkpoint prune, path-binding grounding
+- `xclaw goal --harness` queue path, heartbeat handler refresh
+- Offline fixtures for resume gates (level, approval, budget)
+
 # Changelog
 
 ## 3.78.1 — Telegram hardening (2026-08-17)
