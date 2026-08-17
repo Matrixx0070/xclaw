@@ -972,6 +972,12 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         if (!isCommitSensitive("https://pay.example.com/checkout")) throw new Error("checkout");
         if (isCommitSensitive("https://example.com/about")) throw new Error("about");
       });
+      await check("skill-install-gate", async () => {
+        const { canInstallSkills } = await import("../src/skills/propose.mjs");
+        if (canInstallSkills({ profile: "lab" }).ok !== true) throw new Error("lab");
+        if (canInstallSkills({ profile: "prod" }).ok !== false) throw new Error("prod should block");
+        if (canInstallSkills({ profile: "prod" }, { ownerApproved: true }).ok !== true) throw new Error("owner");
+      });
       const failed = tests.filter((x) => !x.ok);
       console.log(JSON.stringify({ ok: failed.length === 0, tests }, null, 2));
       process.exit(failed.length ? 1 : 0);
