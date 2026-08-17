@@ -100,3 +100,16 @@ Default user-data-dir: `~/.xclaw/browser-profiles/default` (cookies / localStora
 | `XCLAW_BROWSER_PROFILE_DIR` | Override vault path |
 | `XCLAW_BROWSER_PROFILE_DIR=tmp` or `ephemeral` | Ephemeral mkdtemp |
 | `XCLAW_BROWSER_EPHEMERAL=1` | Force ephemeral |
+
+
+## Set-of-marks click (feature 4)
+
+1. `browser_observe` / `browser_snapshot` fills a session mark cache (`@N` + bbox center).
+2. `browser_click({ mark: N })` or `browser_type({ mark: N, text })` resolves coordinates.
+
+| Code | Meaning |
+|------|---------|
+| `MARK_CACHE_EMPTY` | Observe first |
+| `MARK_UNKNOWN` | Bad index (see `validMarks`) |
+| `MARK_STALE` | TTL or URL change — re-observe |
+| `MARK_NOT_VISIBLE` | Zero-size bbox |
