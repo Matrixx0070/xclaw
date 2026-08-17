@@ -68,3 +68,17 @@ Break-glass: `XCLAW_ALLOW_PROD_AUTO=1`.
 `XCLAW_AUTONOMY_LEVEL` **overrides** `autonomy.level` in the config file (same idea as `XCLAW_PROFILE`).
 
 Doctor reports `prod.hardening` when actions were applied.
+
+
+## Skill install (self-evolution)
+
+Failed jobs may **propose** skills under `~/.xclaw/skill-proposals/` (always safe).
+
+**Installing** into `~/.xclaw/skills/` is gated:
+
+| Profile | Default |
+|---------|---------|
+| lab / dev | install allowed |
+| prod | **blocked** unless `skills.allowInstall: true`, `XCLAW_SKILLS_INSTALL=1`, or `ownerApproved` on the install call |
+
+Proposals stay review-only in prod until the owner promotes them.
