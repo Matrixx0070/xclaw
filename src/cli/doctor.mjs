@@ -791,6 +791,25 @@ export async function runDoctor(opts = {}) {
     push("approvals.pending", "warn", e.message || String(e));
   }
 
+  try {
+    const { getCostGovernorStatus } = await import("../tokens/cost-governor.mjs");
+    const st = await getCostGovernorStatus(cfg);
+    if (!st.ok) {
+      push("cost.governor", "error", st.message || `BUDGET_EXCEEDED spent=$${st.spentUsd}`);
+    } else if (st.soft) {
+      push("cost.governor", "warn", st.message || `soft cap spent=$${st.spentUsd}`);
+    } else {
+      push(
+        "cost.governor",
+        "ok",
+        `spent=$${Number(st.spentUsd||0).toFixed(4)} hard=$${st.limits?.dailyHardUsd} day=${st.day}`
+      );
+    }
+  } catch (e) {
+    push("cost.governor", "warn", e.message || String(e));
+  }
+
+
 
 
   // R1 channel + computer health
