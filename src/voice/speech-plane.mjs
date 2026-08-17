@@ -71,6 +71,13 @@ export function createSpeechPlane(opts = {}) {
         at: Date.now(),
         ...meta,
       });
+      try {
+        import("./metrics.mjs").then((m) =>
+          m.recordVoiceMetric("barge_in", { killPathMs })
+        );
+      } catch {
+        /* */
+      }
       return {
         speechEpoch,
         muted: true,
