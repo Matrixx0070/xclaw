@@ -27,6 +27,7 @@ Exit code **0** only if verify checks pass **and** claims are grounded.
 | `timeoutMs` | `300000` |
 | `groundingRetry` | `1` corrective re-run on grounding fail |
 | `persistRun` | snapshot under `~/.xclaw/agent-runs/` |
+| `checkpointEveryTurns` | `3` — mid-run checkpoint to `~/.xclaw/checkpoints/` |
 
 ## What “without hallucination” means here
 
@@ -66,3 +67,22 @@ const job = await runLongHarness({
   }
 }
 ```
+
+
+## Mid-run checkpoints
+
+Every N agent turns (default **3**), the job writes:
+
+`~/.xclaw/checkpoints/<jobId>.json`
+
+with `status: "running"`, `midRun: true`, recent `toolTrace` / `evidence`.
+
+```bash
+xclaw resume <jobId>          # existing recovery path
+# or
+ls ~/.xclaw/checkpoints/
+```
+
+Events: `{ type: "job", phase: "checkpoint", turn, path }`.
+
+Config: `harness.checkpointEveryTurns` or `jobs.checkpointEveryTurns` (set `0` to disable).
