@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.77.1 — Security doc (2026-08-17)
+
+- **SECURITY.md**: operator hygiene, prod gates, fabric/skills checklist; linked from README
+
 ## 3.77.0 — Autonomy, fabric, prod gates (2026-08-17)
 
 Production-minded ops plane for long-lived agents:
