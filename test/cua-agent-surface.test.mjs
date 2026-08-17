@@ -4,7 +4,7 @@ import { listNativeTools } from "../src/computer/native-tools.mjs";
 import { formatCapabilityBanner, resolveReach } from "../src/agent/capability-reach.mjs";
 import { buildAutonomyAppendix, resolveAutonomyPolicy } from "../src/agent/autonomy-policy.mjs";
 import { OPENCLAW_TO_XCLAW } from "../src/tools/aliases/openclaw-map.mjs";
-import { isParallelSafe } from "../src/agent/tool-concurrency.mjs";
+import { isParallelSafeTool } from "../src/agent/tool-concurrency.mjs";
 
 describe("CUA agent surface", () => {
   it("lists xclaw_computer_act as native tool", () => {
@@ -29,6 +29,6 @@ describe("CUA agent surface", () => {
   });
 
   it("computer_act is serial not parallel-safe", () => {
-    assert.equal(isParallelSafe("xclaw_computer_act"), false);
+    assert.equal(isParallelSafeTool("xclaw_computer_act"), false);
   });
 });
