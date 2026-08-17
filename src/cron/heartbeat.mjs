@@ -12,6 +12,7 @@
 import {
   addJob,
   listJobs,
+  updateJob,
   start as startScheduler,
   status as schedulerStatus,
   on as onCron,
@@ -73,6 +74,7 @@ export function recordSpend(usd) {
 
 /**
  * Ensure system heartbeat job exists and scheduler is running.
+ * Re-binds handler on every call so upgrades (evolve tick) apply to existing jobs.
  */
 export function ensureHeartbeat(cfg = {}) {
   const hb = cfg.autonomy?.heartbeat || cfg.heartbeat || {};
@@ -83,109 +85,121 @@ export function ensureHeartbeat(cfg = {}) {
 
   const everyMs = Math.max(60_000, Number(hb.everyMs) || 30 * 60_000);
   const name = hb.name || "xclaw-heartbeat";
-  const existing = listJobs().find((j) => j.name === name);
-  if (existing) {
-    ensured = true;
-    startScheduler();
-    return { ok: true, enabled: true, jobId: existing.id, everyMs, existing: true };
-  }
-
   const prompt =
     hb.prompt ||
     "Heartbeat: briefly check for urgent owner tasks. If nothing needs action, reply with exactly: HEARTBEAT_OK";
 
-  const job = addJob({
-    name,
-    description: "R4 autonomy heartbeat",
-    enabled: true,
-    schedule: { kind: "every", everyMs },
-    payload: { prompt, message: prompt },
-    delivery: {
-      // mode none: agent runs without auto-push; we deliver only on non-HEARTBEAT_OK / failure
-      mode: "none",
-      channel: hb.delivery?.channel || null,
-      to: hb.delivery?.to || null,
-    },
-    handler: async (j) => {
-      lastRunAt = new Date().toISOString();
-      lastError = null;
-      if (inQuietHours(cfg)) {
-        lastSkipReason = "quiet_hours";
-        j._lastSkip = lastSkipReason;
-        return;
-      }
-      const spend = canSpend(cfg, 0);
-      if (!spend.ok) {
-        lastSkipReason = spend.reason;
-        j._lastSkip = lastSkipReason;
-        return;
-      }
-      lastSkipReason = null;
+  const delivery = {
+    mode: "none",
+    channel: hb.delivery?.channel || null,
+    to: hb.delivery?.to || null,
+  };
 
-      // Self-evolution tick (resume interrupted / optional promote) before LLM heartbeat
+  const handler = async (j) => {
+    lastRunAt = new Date().toISOString();
+    lastError = null;
+    if (inQuietHours(cfg)) {
+      lastSkipReason = "quiet_hours";
+      j._lastSkip = lastSkipReason;
+      return;
+    }
+    const spend = canSpend(cfg, 0);
+    if (!spend.ok) {
+      lastSkipReason = spend.reason;
+      j._lastSkip = lastSkipReason;
+      return;
+    }
+    lastSkipReason = null;
+
+    // Self-evolution tick before LLM heartbeat
+    try {
+      const ev = cfg.evolve || cfg.autonomy?.evolve || {};
+      if (ev.enabled !== false && ev.tickOnHeartbeat !== false) {
+        const { runEvolutionTick } = await import("../autonomy/self-evolve.mjs");
+        j._lastEvolve = await runEvolutionTick(cfg, {
+          dryRun: ev.dryRun === true,
+          autoPromote: ev.autoPromote === true,
+          autoResume: ev.autoResume !== false,
+        });
+      }
+    } catch (e) {
+      j._lastEvolve = { error: e.message || String(e) };
+    }
+
+    const { announceCronJob } = await import("./announce.mjs");
+    const ann = await announceCronJob(
+      {
+        ...j,
+        payload: { prompt, message: prompt },
+        delivery: j.delivery,
+      },
+      { cfg }
+    );
+    j._lastAnnounce = ann;
+
+    const text = String(ann?.text || ann?.delivery?.text || "").trim();
+    const silenceOk =
+      hb.silenceOk !== false &&
+      (/^HEARTBEAT_OK$/i.test(text) || text.length < 8);
+
+    if (j.delivery?.channel && j.delivery?.to && !silenceOk) {
       try {
-        const ev = cfg.evolve || cfg.autonomy?.evolve || {};
-        if (ev.enabled !== false && ev.tickOnHeartbeat !== false) {
-          const { runEvolutionTick } = await import("../autonomy/self-evolve.mjs");
-          j._lastEvolve = await runEvolutionTick(cfg, {
-            dryRun: ev.dryRun === true,
-            autoPromote: ev.autoPromote === true,
-            autoResume: ev.autoResume !== false,
-          });
-        }
+        const sent = await deliverToChannel(
+          {
+            mode: "announce",
+            channel: j.delivery.channel,
+            to: j.delivery.to,
+            text: `⏱ Heartbeat\n${text.slice(0, 3500)}`,
+          },
+          cfg
+        );
+        j._lastDelivery = sent;
+        if (!sent?.ok) lastError = sent?.reason || "delivery_failed";
       } catch (e) {
-        j._lastEvolve = { error: e.message || String(e) };
+        lastError = e.message;
       }
+    } else if (silenceOk) {
+      j._lastDelivery = { ok: true, skipped: true, reason: "silence_ok" };
+    }
 
-      const { announceCronJob } = await import("./announce.mjs");
-      const ann = await announceCronJob(
-        {
-          ...j,
-          payload: { prompt, message: prompt },
-          delivery: j.delivery,
-        },
-        { cfg }
-      );
-      j._lastAnnounce = ann;
+    const usd = Number(ann?.usage?.costUsd || ann?.costUsd || 0);
+    if (usd) recordSpend(usd);
+  };
 
-      const text = String(ann?.text || ann?.delivery?.text || "").trim();
-      const silenceOk =
-        hb.silenceOk !== false &&
-        (/^HEARTBEAT_OK$/i.test(text) || text.length < 8);
+  const existing = listJobs().find((j) => j.name === name);
+  let job;
+  let wasExisting = false;
+  if (existing) {
+    wasExisting = true;
+    updateJob(existing.id, {
+      schedule: { kind: "every", everyMs },
+      payload: { prompt, message: prompt },
+      delivery,
+      enabled: true,
+      description: "R4 autonomy heartbeat",
+    });
+    job = listJobs().find((j) => j.id === existing.id) || existing;
+    job.handler = handler;
+    job.schedule = { kind: "every", everyMs };
+    job.payload = { prompt, message: prompt };
+    job.delivery = delivery;
+    job.enabled = true;
+  } else {
+    job = addJob({
+      name,
+      description: "R4 autonomy heartbeat",
+      enabled: true,
+      schedule: { kind: "every", everyMs },
+      payload: { prompt, message: prompt },
+      delivery,
+      handler,
+    });
+  }
 
-      // Optional owner notify on non-trivial results or failures
-      if (j.delivery?.channel && j.delivery?.to && !silenceOk) {
-        try {
-          const sent = await deliverToChannel(
-            {
-              mode: "announce",
-              channel: j.delivery.channel,
-              to: j.delivery.to,
-              text: `⏱ Heartbeat\n${text.slice(0, 3500)}`,
-            },
-            cfg
-          );
-          j._lastDelivery = sent;
-          if (!sent?.ok) lastError = sent?.reason || "delivery_failed";
-        } catch (e) {
-          lastError = e.message;
-        }
-      } else if (silenceOk) {
-        j._lastDelivery = { ok: true, skipped: true, reason: "silence_ok" };
-      }
-
-      // Rough spend accounting if usage present
-      const usd = Number(ann?.usage?.costUsd || ann?.costUsd || 0);
-      if (usd) recordSpend(usd);
-    },
-  });
-
-  // stash cfg for announce path
   job._cfg = cfg;
   ensured = true;
   startScheduler();
 
-  // Notify on cron failure
   onCron("cron:after", async (payload) => {
     if (payload?.name !== name) return;
     if (payload.ok === false && payload.job?.delivery?.channel && payload.job?.delivery?.to) {
@@ -206,7 +220,14 @@ export function ensureHeartbeat(cfg = {}) {
     }
   });
 
-  return { ok: true, enabled: true, jobId: job.id, everyMs, existing: false };
+  return {
+    ok: true,
+    enabled: true,
+    jobId: job.id,
+    everyMs,
+    existing: wasExisting,
+    handlerRefreshed: true,
+  };
 }
 
 export function heartbeatStatus() {
