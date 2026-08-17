@@ -33,9 +33,9 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 
 ## P1 — hardening
 
-- Swarm absolute-path goals outside git: optional “host workspace” mode without worktree when goal paths are absolute.
-- Gateway doctor version string drift (`0.6.1` vs package `3.76.x`).
-- Rotate any keys/PATs that appeared in chat; prefer env-only secrets.
+- Swarm absolute-path goals outside git: optional “host workspace” mode without worktree when goal paths are absolute. — **done** (`shouldUseHostWorkspace`, `XCLAW_SWARM_HOST_WORKSPACE`)
+- Gateway doctor version string drift (`0.6.1` vs package `3.76.x`). — **done** (reads `package.json`)
+- Rotate any keys/PATs that appeared in chat; prefer env-only secrets. — **operator action** (not code)
 
 ## P2 — research / stretch
 
