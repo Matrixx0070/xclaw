@@ -128,4 +128,53 @@ describe("self-evolution offline fixtures", () => {
       0
     );
   });
+
+  it("pending approval blocker skips resume", async () => {
+    const { getSharedApprovalGate } = await import("../src/security/approvals.mjs");
+    const gate = getSharedApprovalGate({
+      security: {
+        autoApprove: false,
+        approvalPolicy: "risky",
+        requireApproval: ["bash"],
+        bindSystemRunPlan: false,
+      },
+    });
+    // Seed a pending approval (non-blocking long timeout)
+    const pendingPromise = gate.authorize("bash", { command: "echo fixture" }, {
+      timeoutMs: 200,
+    });
+    // Give authorize a tick to register pending
+    await new Promise((r) => setTimeout(r, 20));
+    const pending = gate.listPending();
+    assert.ok(pending.length >= 1, "expected pending approval");
+
+    await saveMidRunCheckpoint(cfg, {
+      id: "job_fx_apr_1",
+      goal: "with approval",
+      workspace: path.join(dir, "ws"),
+      turns: 2,
+      maxTurns: 10,
+    });
+
+    const r = await runEvolutionTick(cfg, { dryRun: true, autoResume: true });
+    assert.ok(
+      r.status.blockers.some((b) => b.kind === "approval"),
+      `expected approval blocker, got ${JSON.stringify(r.status.blockers)}`
+    );
+    assert.equal(
+      r.actions.filter((a) => a.type === "resume" && a.id === "job_fx_apr_1").length,
+      0
+    );
+
+    // Cleanup: approve/deny so timers don't linger
+    for (const p of gate.listPending()) {
+      try {
+        gate.decide(p.id, false, "test cleanup");
+      } catch {
+        /* */
+      }
+    }
+    pendingPromise.catch(() => {});
+    await new Promise((r) => setTimeout(r, 250));
+  });
 });
