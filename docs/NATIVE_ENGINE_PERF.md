@@ -45,3 +45,15 @@ node tmp-live/bench-computer.mjs
 ```
 
 Env: `XCLAW_COMPUTER_ENGINE=native|bundle`.
+
+## Session reuse
+
+Agent computer client can **reuse** sessions for the same `workingDir` (default on for native):
+
+- `XCLAW_COMPUTER_REUSE_SESSION=1` force on
+- `=0` force off
+- `computer.reuseSession` in config
+- Soft destroy keeps the session for the next `runAgent` in-process
+- `XCLAW_COMPUTER_REUSE_HARD_DESTROY=1` forces HTTP destroy
+
+Avoids repeated create cost (bundle ~380 ms create was the main outlier in benches).

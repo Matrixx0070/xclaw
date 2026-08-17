@@ -99,12 +99,30 @@ export function sanitizeToolArgs(name, args = {}) {
   return args;
 }
 
+/** @type {Map<string, { sessionId: string, workingDir: string, at: number }>} */
+const sessionReusePool = new Map();
+
+function reuseEnabled(cfg) {
+  if (process.env.XCLAW_COMPUTER_REUSE_SESSION === "0") return false;
+  if (process.env.XCLAW_COMPUTER_REUSE_SESSION === "1") return true;
+  if (cfg.computer?.reuseSession === false) return false;
+  if (cfg.computer?.reuseSession === true) return true;
+  // Default on for native/thin (cheap sessions still benefit multi-run); off for explicit remote
+  const eng = process.env.XCLAW_COMPUTER_ENGINE || cfg.computer?.engine || "";
+  return eng === "native" || eng === "thin" || eng === "";
+}
+
+function poolKey(baseUrl, workingDir) {
+  return `${baseUrl}::${workingDir}`;
+}
+
 export function createComputerClient(cfg) {
   const baseUrl =
     cfg.computer?.remoteUrl ||
     computerBaseUrl(cfg) ||
     `http://${cfg.computer?.host || "127.0.0.1"}:${cfg.computer?.port || 4243}`;
   const backoffOpts = backoffOptsFromConfig(cfg);
+  const canReuse = reuseEnabled(cfg);
 
   function request(method, path, body, signal) {
     const authHeaders = computerAuthHeaders(cfg, body);
@@ -130,13 +148,50 @@ export function createComputerClient(cfg) {
     },
 
     async createSession(workingDir = process.cwd()) {
+      const wd = String(workingDir || process.cwd());
+      if (canReuse) {
+        const key = poolKey(baseUrl, wd);
+        const hit = sessionReusePool.get(key);
+        if (hit?.sessionId) {
+          // Validate session still exists via tools/list (cheap on thin)
+          try {
+            await request("POST", `/xclaw/sessions/${hit.sessionId}/tools/list`, {
+              method: "tools/list",
+            });
+            hit.at = Date.now();
+            return hit.sessionId;
+          } catch {
+            sessionReusePool.delete(key);
+          }
+        }
+      }
       const r = await request("POST", "/xclaw/sessions/create", {
-        workingDir,
+        workingDir: wd,
       });
+      if (canReuse && r.sessionId) {
+        sessionReusePool.set(poolKey(baseUrl, wd), {
+          sessionId: r.sessionId,
+          workingDir: wd,
+          at: Date.now(),
+        });
+      }
       return r.sessionId;
     },
 
     async destroySession(sessionId) {
+      // Soft-destroy when reusing: keep session for next runAgent in-process
+      if (canReuse) {
+        for (const [k, v] of sessionReusePool.entries()) {
+          if (v.sessionId === sessionId) {
+            // leave pooled; agent loop still "destroys" but we no-op HTTP
+            if (process.env.XCLAW_COMPUTER_REUSE_HARD_DESTROY === "1") {
+              sessionReusePool.delete(k);
+              return request("POST", "/xclaw/sessions/destroy", { sessionId });
+            }
+            return { ok: true, reused: true };
+          }
+        }
+      }
       return request("POST", "/xclaw/sessions/destroy", { sessionId });
     },
 
@@ -194,4 +249,10 @@ export function formatToolResult(result) {
   if (texts.length) return texts.join("\n");
   if (result.metadata) return JSON.stringify(result.metadata, null, 2);
   return JSON.stringify(result);
+}
+
+
+/** Test/helper: drop reuse pool */
+export function clearComputerSessionPool() {
+  sessionReusePool.clear();
 }
