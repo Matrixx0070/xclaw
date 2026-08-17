@@ -201,10 +201,22 @@ export function horizon0Checklist(env = process.env) {
   checks.push({
     id: "profile",
     ok: true,
-    detail: env.XCLAW_BROWSER_PROFILE_DIR
-      ? `durable=${env.XCLAW_BROWSER_PROFILE_DIR}`
-      : "ephemeral (set XCLAW_BROWSER_PROFILE_DIR for identity)",
-    warn: !env.XCLAW_BROWSER_PROFILE_DIR,
+    detail: (() => {
+      const eph =
+        env.XCLAW_BROWSER_EPHEMERAL === "1" ||
+        env.XCLAW_BROWSER_EPHEMERAL === "true" ||
+        env.XCLAW_BROWSER_PROFILE_DIR === "tmp" ||
+        env.XCLAW_BROWSER_PROFILE_DIR === "ephemeral";
+      if (eph) return "ephemeral (opt-out)";
+      if (env.XCLAW_BROWSER_PROFILE_DIR)
+        return `durable=${env.XCLAW_BROWSER_PROFILE_DIR}`;
+      return "durable=~/.xclaw/browser-profiles/default (default vault)";
+    })(),
+    warn:
+      env.XCLAW_BROWSER_EPHEMERAL === "1" ||
+      env.XCLAW_BROWSER_EPHEMERAL === "true" ||
+      env.XCLAW_BROWSER_PROFILE_DIR === "tmp" ||
+      env.XCLAW_BROWSER_PROFILE_DIR === "ephemeral",
   });
   checks.push({
     id: "headed",
