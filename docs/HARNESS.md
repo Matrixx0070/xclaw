@@ -152,3 +152,16 @@ Defaults: keep **100** newest terminal CPs, drop older than **14 days**, never d
 ```
 
 `xclaw evolve tick` prunes unless `checkpoints.pruneOnTick` is false.
+
+
+## Resume retries
+
+Transport failures on `xclaw resume` / evolve auto-resume retry with full-jitter backoff:
+
+| Knob | Default |
+|------|---------|
+| `checkpoints.resumeRetries` | **2** when recovery kind is `transport`, else **0** |
+| `checkpoints.retryBaseMs` | 400 |
+| CLI/API `retries` | overrides config |
+
+Queue items with `harness: true` default `maxAttempts: 2`.
