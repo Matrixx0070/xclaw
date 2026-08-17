@@ -1915,6 +1915,25 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       await evalMain(args.slice(1));
       break;
     }
+    case "goal": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const { enqueueJob, listQueue, startQueueWorker } = await import("../src/jobs/queue.mjs");
+      const cfg = await loadConfig();
+      startQueueWorker(cfg);
+      const sub = args[1];
+      if (sub === "list") {
+        console.log(JSON.stringify({ queue: await listQueue(cfg) }, null, 2));
+        break;
+      }
+      const goal = (sub === "add" ? args.slice(2) : args.slice(1)).join(" ").trim();
+      if (!goal || goal === "add") {
+        console.error('Usage: xclaw goal "do this while I am away" | xclaw goal list | xclaw goal add "..."');
+        process.exit(1);
+      }
+      const item = await enqueueJob(cfg, { goal, class: "batch" });
+      console.log(JSON.stringify({ enqueued: true, id: item.id, goal: item.goal }, null, 2));
+      break;
+    }
     case "evolve": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const {
