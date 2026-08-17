@@ -1,8 +1,8 @@
 /* Strategy C3 GENERATED — do not hand-edit. Full CDP remains xclaw-server.mjs */
 
 // src/computer/thin-server.mjs
-import http2 from "node:http";
-import crypto3 from "node:crypto";
+import http3 from "node:http";
+import crypto4 from "node:crypto";
 
 // src/computer/modules/bash-tool.mjs
 import { spawn } from "node:child_process";
@@ -584,10 +584,25 @@ function buildToolEnv(cfg = {}, sourceEnv = process.env) {
 
 // src/computer/modules/bash-tool.mjs
 var DEFAULT_TIMEOUT_SECONDS = 30;
+var MAX_TIMEOUT_SECONDS = 120;
+function normalizeBashTimeoutSeconds(raw) {
+  if (raw == null || raw === "") return DEFAULT_TIMEOUT_SECONDS;
+  let n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_TIMEOUT_SECONDS;
+  if (n > 1e3) n = n / 1e3;
+  if (n > MAX_TIMEOUT_SECONDS) n = MAX_TIMEOUT_SECONDS;
+  return n;
+}
 async function executeBash(input = {}, ctx = {}) {
   let command = String(input.command || "");
   if (!command.trim()) {
-    return { ok: false, stdout: "", stderr: "command is required", exitCode: 1 };
+    return {
+      ok: false,
+      stdout: "",
+      stderr: "command is required",
+      exitCode: 1,
+      code: "BASH_EMPTY_COMMAND"
+    };
   }
   const plan = input.systemRunPlan || input.plan || ctx.systemRunPlan || ctx.plan || null;
   const mode = getSpawnEnforceMode(ctx.cfg || {});
@@ -604,12 +619,13 @@ async function executeBash(input = {}, ctx = {}) {
       stderr: check.error || "spawn enforce denied",
       exitCode: 126,
       blocked: true,
-      reason: check.reason || "spawn_enforce"
+      reason: check.reason || "spawn_enforce",
+      code: "BASH_SPAWN_DENIED"
     };
   }
   command = check.command || command;
-  const timeoutSec = Number(input.timeout ?? DEFAULT_TIMEOUT_SECONDS);
-  const timeoutMs = Math.min(12e4, Math.max(0, timeoutSec * 1e3));
+  const timeoutSec = normalizeBashTimeoutSeconds(input.timeout);
+  const timeoutMs = Math.min(MAX_TIMEOUT_SECONDS * 1e3, Math.max(0, Math.round(timeoutSec * 1e3)));
   const cwd = check.cwd || ctx.cwd || process.cwd();
   const background = Boolean(input.background);
   const envPolicy = buildToolEnv(ctx.cfg || {});
@@ -635,7 +651,8 @@ async function executeBash(input = {}, ctx = {}) {
       stderr: wrapped.error || "os sandbox denied",
       exitCode: 126,
       blocked: true,
-      reason: wrapped.reason || "os_sandbox"
+      reason: wrapped.reason || "os_sandbox",
+      code: "BASH_SANDBOX_DENIED"
     };
   }
   spec = wrapped;
@@ -677,12 +694,34 @@ async function executeBash(input = {}, ctx = {}) {
     let stderr = "";
     let timedOut = false;
     let interrupted = false;
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     const max = 2e6;
     child.stdout.on("data", (c) => {
-      if (stdout.length < max) stdout += c.toString();
+      if (stdout.length >= max) {
+        stdoutTruncated = true;
+        return;
+      }
+      const s = c.toString();
+      if (stdout.length + s.length > max) {
+        stdout += s.slice(0, max - stdout.length);
+        stdoutTruncated = true;
+      } else {
+        stdout += s;
+      }
     });
     child.stderr.on("data", (c) => {
-      if (stderr.length < max) stderr += c.toString();
+      if (stderr.length >= max) {
+        stderrTruncated = true;
+        return;
+      }
+      const s = c.toString();
+      if (stderr.length + s.length > max) {
+        stderr += s.slice(0, max - stderr.length);
+        stderrTruncated = true;
+      } else {
+        stderr += s;
+      }
     });
     let timer = null;
     if (timeoutMs > 0) {
@@ -707,29 +746,51 @@ async function executeBash(input = {}, ctx = {}) {
     }
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
+      const exitCode = code ?? 1;
+      const ok = !timedOut && !interrupted && exitCode === 0;
+      const outputTruncated = stdoutTruncated || stderrTruncated;
+      if (outputTruncated) {
+        const note = `
+[xclaw] BASH_OUTPUT_TRUNCATED: kept first ${max} chars` + (stdoutTruncated ? " (stdout)" : "") + (stderrTruncated ? " (stderr)" : "");
+        if (stderr.length + note.length <= max + 200) stderr += note;
+      }
+      let errCode;
+      if (timedOut) errCode = "BASH_TIMEOUT";
+      else if (interrupted) errCode = "BASH_ABORTED";
+      else if (exitCode !== 0) errCode = "BASH_EXIT_NONZERO";
+      else if (outputTruncated) errCode = "BASH_OUTPUT_TRUNCATED";
+      else errCode = "BASH_OK";
       resolve({
-        ok: !timedOut && !interrupted && code === 0,
+        ok,
         stdout,
         stderr,
-        exitCode: code ?? 1,
+        exitCode,
         timedOut,
         interrupted,
+        outputTruncated,
+        truncated: { stdout: stdoutTruncated, stderr: stderrTruncated, maxChars: max },
         spawnEnforced: Boolean(check.enforced),
         osSandboxed,
         netIsolated: Boolean(wrapped.netIsolated),
-        envPolicy: envPolicy.mode
+        envPolicy: envPolicy.mode,
+        code: errCode
       });
     });
   });
 }
 var BashTool = {
   name: "xclaw_bash",
-  description: "Executes a given bash command in a fresh shell at the session working directory.",
+  description: "Run a bash command in a fresh non-login shell at the session cwd. timeout is SECONDS (default 30, max 120) \u2014 never milliseconds. Prefer short commands; for long jobs use background=true and read the logFile.",
   inputSchema: {
     type: "object",
     properties: {
       command: { type: "string", description: "Bash command to run" },
-      timeout: { type: "number", description: "Timeout seconds" },
+      timeout: {
+        type: "number",
+        description: "Timeout in SECONDS only (1\u2013120). Default 30. Do NOT pass 30000 or other millisecond values.",
+        minimum: 0,
+        maximum: 120
+      },
       background: { type: "boolean" },
       systemRunPlan: {
         type: "object",
@@ -739,7 +800,11 @@ var BashTool = {
     required: ["command"]
   },
   execute: executeBash,
-  call: async (args, ctx) => executeBash(args, ctx)
+  call: async (args, ctx) => {
+    const a = { ...args || {} };
+    if ("timeout" in a) a.timeout = normalizeBashTimeoutSeconds(a.timeout);
+    return executeBash(a, ctx);
+  }
 };
 
 // src/computer/modules/file-tools.mjs
@@ -1103,6 +1168,1991 @@ async function safeFetch(rawUrl, init = {}, cfg = {}, opts = {}) {
   throw e;
 }
 
+// src/browser/cdp-client.mjs
+import http2 from "node:http";
+import crypto3 from "node:crypto";
+var LOOPBACK = /* @__PURE__ */ new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+function httpGetJson(host, port, path8, timeoutMs = 4e3) {
+  return new Promise((resolve, reject) => {
+    const req = http2.get({ host, port, path: path8, timeout: timeoutMs }, (r) => {
+      let d = "";
+      r.on("data", (c) => d += c);
+      r.on("end", () => {
+        try {
+          resolve(JSON.parse(d));
+        } catch (e) {
+          reject(new Error(`CDP ${path8}: invalid JSON (${e.message})`));
+        }
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error("CDP HTTP timeout")));
+    req.on("error", reject);
+  });
+}
+function wsConnect(wsUrl, opts = {}) {
+  const {
+    timeoutMs = 8e3,
+    keepAlive = true,
+    keepAliveInitialDelayMs = 3e4,
+    heartbeatIntervalMs = 0,
+    heartbeatTimeoutMs = 5e3,
+    onDisconnect = null
+  } = opts;
+  const u = new URL(wsUrl);
+  const key = crypto3.randomBytes(16).toString("base64");
+  return new Promise((resolve, reject) => {
+    const req = http2.request({
+      host: u.hostname,
+      port: u.port,
+      path: u.pathname + u.search,
+      timeout: timeoutMs,
+      headers: {
+        Connection: "Upgrade",
+        Upgrade: "websocket",
+        "Sec-WebSocket-Key": key,
+        "Sec-WebSocket-Version": "13"
+      }
+    });
+    req.on("timeout", () => req.destroy(new Error("CDP WS timeout")));
+    req.on("upgrade", (res, socket) => {
+      socket.setNoDelay(true);
+      if (keepAlive !== false) {
+        try {
+          socket.setKeepAlive(true, Math.max(0, Number(keepAliveInitialDelayMs) || 3e4));
+        } catch {
+        }
+      }
+      const pending = /* @__PURE__ */ new Map();
+      let id = 0;
+      let buf = Buffer.alloc(0);
+      let closed = false;
+      let heartbeatTimer = null;
+      let onPong = null;
+      function failPending(err) {
+        const e = err instanceof Error ? err : new Error(String(err || "CDP socket closed"));
+        for (const { reject: rej2 } of pending.values()) {
+          try {
+            rej2(e);
+          } catch {
+          }
+        }
+        pending.clear();
+      }
+      function markClosed(err) {
+        if (closed) return;
+        closed = true;
+        stopHeartbeat();
+        failPending(err || new Error("CDP socket closed"));
+        try {
+          onDisconnect?.(err instanceof Error ? err : err ? new Error(String(err)) : void 0);
+        } catch {
+        }
+      }
+      function writeFrame(opcode, payload = Buffer.alloc(0)) {
+        if (closed || socket.destroyed) {
+          throw new Error("CDP socket closed");
+        }
+        const data = Buffer.isBuffer(payload) ? payload : Buffer.from(payload || []);
+        const mask = crypto3.randomBytes(4);
+        const masked = Buffer.from(data);
+        for (let i = 0; i < masked.length; i++) masked[i] ^= mask[i % 4];
+        let header;
+        const b0 = 128 | opcode & 15;
+        if (data.length < 126) {
+          header = Buffer.from([b0, 128 | data.length]);
+        } else if (data.length < 65536) {
+          header = Buffer.alloc(4);
+          header[0] = b0;
+          header[1] = 128 | 126;
+          header.writeUInt16BE(data.length, 2);
+        } else {
+          header = Buffer.alloc(10);
+          header[0] = b0;
+          header[1] = 128 | 127;
+          header.writeBigUInt64BE(BigInt(data.length), 2);
+        }
+        socket.write(Buffer.concat([header, mask, masked]));
+      }
+      socket.on("data", (chunk) => {
+        buf = Buffer.concat([buf, chunk]);
+        for (; ; ) {
+          if (buf.length < 2) return;
+          const fin = (buf[0] & 128) !== 0;
+          const op = buf[0] & 15;
+          let len = buf[1] & 127;
+          let off = 2;
+          const masked = (buf[1] & 128) !== 0;
+          if (len === 126) {
+            if (buf.length < 4) return;
+            len = buf.readUInt16BE(2);
+            off = 4;
+          } else if (len === 127) {
+            if (buf.length < 10) return;
+            len = Number(buf.readBigUInt64BE(2));
+            off = 10;
+          }
+          const maskLen = masked ? 4 : 0;
+          if (buf.length < off + maskLen + len) return;
+          let payload = buf.slice(off + maskLen, off + maskLen + len);
+          if (masked) {
+            const mkey = buf.slice(off, off + 4);
+            payload = Buffer.from(payload);
+            for (let i = 0; i < payload.length; i++) payload[i] ^= mkey[i % 4];
+          }
+          buf = buf.slice(off + maskLen + len);
+          if (op === 8) {
+            try {
+              if (!closed) writeFrame(8, payload.length ? payload : Buffer.alloc(0));
+            } catch {
+            }
+            markClosed(new Error("CDP peer closed WebSocket"));
+            socket.destroy();
+            return;
+          }
+          if (op === 9) {
+            try {
+              writeFrame(10, payload);
+            } catch {
+            }
+            continue;
+          }
+          if (op === 10) {
+            try {
+              onPong?.(payload);
+            } catch {
+            }
+            continue;
+          }
+          if (op === 1 && fin) {
+            try {
+              const msg = JSON.parse(payload.toString("utf8"));
+              if (msg.id && pending.has(msg.id)) {
+                const { resolve: res2, reject: rej2 } = pending.get(msg.id);
+                pending.delete(msg.id);
+                if (msg.error) rej2(new Error(msg.error.message || "CDP error"));
+                else res2(msg.result);
+              }
+            } catch {
+            }
+          }
+        }
+      });
+      socket.on("error", (err) => {
+        markClosed(err || new Error("CDP socket error"));
+      });
+      socket.on("close", () => {
+        markClosed(new Error("CDP socket closed"));
+      });
+      socket.on("end", () => {
+        markClosed(new Error("CDP socket ended"));
+      });
+      function send(method, params = {}, { timeoutMs: t = 15e3 } = {}) {
+        if (closed) return Promise.reject(new Error("CDP socket closed"));
+        const mid = ++id;
+        const data = Buffer.from(JSON.stringify({ id: mid, method, params }));
+        try {
+          writeFrame(1, data);
+        } catch (e) {
+          return Promise.reject(e);
+        }
+        return new Promise((res2, rej2) => {
+          pending.set(mid, { resolve: res2, reject: rej2 });
+          setTimeout(() => {
+            if (pending.has(mid)) {
+              pending.delete(mid);
+              rej2(new Error(`CDP ${method} timed out`));
+            }
+          }, t).unref?.();
+        });
+      }
+      function ping(payload = Buffer.alloc(0), opts2 = {}) {
+        if (closed) return Promise.reject(new Error("CDP socket closed"));
+        const data = Buffer.isBuffer(payload) ? payload : Buffer.from(String(payload || ""), "utf8");
+        const body = data.length > 125 ? data.subarray(0, 125) : data;
+        try {
+          writeFrame(9, body);
+        } catch (e) {
+          return Promise.reject(e);
+        }
+        if (!opts2.wait) return Promise.resolve();
+        const waitMs = Number(opts2.timeoutMs) > 0 ? Number(opts2.timeoutMs) : 5e3;
+        return new Promise((res2, rej2) => {
+          const prev = onPong;
+          const timer = setTimeout(() => {
+            onPong = prev;
+            rej2(new Error("CDP WebSocket ping timed out"));
+          }, waitMs);
+          timer.unref?.();
+          onPong = (pongPayload) => {
+            onPong = prev;
+            clearTimeout(timer);
+            res2(pongPayload);
+            try {
+              prev?.(pongPayload);
+            } catch {
+            }
+          };
+        });
+      }
+      function stopHeartbeat() {
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+      }
+      function startHeartbeat(hbOpts = {}) {
+        stopHeartbeat();
+        const interval = Number(hbOpts.intervalMs) > 0 ? Number(hbOpts.intervalMs) : Number(heartbeatIntervalMs) > 0 ? Number(heartbeatIntervalMs) : 3e4;
+        const waitMs = Number(hbOpts.timeoutMs) > 0 ? Number(hbOpts.timeoutMs) : Number(heartbeatTimeoutMs) || 5e3;
+        const onMiss = hbOpts.onMiss || ((err) => markClosed(err));
+        heartbeatTimer = setInterval(() => {
+          if (closed) {
+            stopHeartbeat();
+            return;
+          }
+          ping("xclaw-hb", { wait: true, timeoutMs: waitMs }).catch((err) => {
+            try {
+              onMiss(err instanceof Error ? err : new Error(String(err)));
+            } catch {
+            }
+          });
+        }, interval);
+        heartbeatTimer.unref?.();
+        return () => stopHeartbeat();
+      }
+      if (Number(heartbeatIntervalMs) > 0) {
+        startHeartbeat({
+          intervalMs: heartbeatIntervalMs,
+          timeoutMs: heartbeatTimeoutMs
+        });
+      }
+      resolve({
+        send,
+        ping,
+        startHeartbeat,
+        stopHeartbeat,
+        isOpen: () => !closed && !socket.destroyed,
+        close: () => {
+          stopHeartbeat();
+          if (!closed) {
+            try {
+              writeFrame(8, Buffer.alloc(0));
+            } catch {
+            }
+          }
+          markClosed(new Error("CDP socket closed by client"));
+          socket.destroy();
+        }
+      });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+function createCdpClient(opts = {}) {
+  const host = String(opts.host || "127.0.0.1");
+  const port = Number(opts.port || 9222);
+  if (!LOOPBACK.has(host) && opts.allowRemote !== true) {
+    throw new Error(`CDP host ${host} is not loopback (set allowRemote to override)`);
+  }
+  const wsOpts = {
+    keepAlive: opts.keepAlive !== false,
+    keepAliveInitialDelayMs: opts.keepAliveInitialDelayMs ?? 3e4,
+    heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 0,
+    heartbeatTimeoutMs: opts.heartbeatTimeoutMs ?? 5e3
+  };
+  return {
+    host,
+    port,
+    /** @returns {Promise<Array<{id,type,url,title,webSocketDebuggerUrl}>>} */
+    async listPages() {
+      const targets = await httpGetJson(host, port, "/json/list");
+      return (Array.isArray(targets) ? targets : []).filter((t) => t.type === "page");
+    },
+    /** Open a new tab (modern Chrome requires PUT /json/new). */
+    async newPage(url) {
+      const q = url ? `?${encodeURIComponent(url)}` : "";
+      return new Promise((resolve, reject) => {
+        const req = http2.request(
+          { host, port, path: `/json/new${q}`, method: "PUT", timeout: 5e3 },
+          (r) => {
+            let d = "";
+            r.on("data", (c) => d += c);
+            r.on("end", () => {
+              try {
+                resolve(JSON.parse(d));
+              } catch (e) {
+                reject(new Error(`CDP /json/new: ${e.message}`));
+              }
+            });
+          }
+        );
+        req.on("timeout", () => req.destroy(new Error("CDP /json/new timeout")));
+        req.on("error", reject);
+        req.end();
+      });
+    },
+    /**
+     * Attach to a page (by predicate, url substring, or the first page).
+     * @returns {Promise<{page, send, ping, evaluate, navigate, screenshot, close}>}
+     */
+    async attach(match) {
+      const pages = await this.listPages();
+      let page = null;
+      if (typeof match === "function") page = pages.find(match);
+      else if (typeof match === "string" && match) page = pages.find((p) => String(p.url || "").includes(match));
+      if (!page) page = pages[0];
+      if (!page) throw new Error("no CDP page target available");
+      const ws = await wsConnect(page.webSocketDebuggerUrl, wsOpts);
+      return {
+        page,
+        /** Raw CDP command access for advanced callers (Input.*, DOM.*, …). */
+        send: (method, params, sendOpts) => ws.send(method, params, sendOpts),
+        /** WebSocket-level ping (not a CDP domain method). */
+        ping: (payload, pingOpts) => ws.ping(payload, pingOpts),
+        startHeartbeat: (hbOpts) => ws.startHeartbeat(hbOpts),
+        stopHeartbeat: () => ws.stopHeartbeat(),
+        isOpen: () => ws.isOpen(),
+        async evaluate(expression, { awaitPromise = true, timeoutMs } = {}) {
+          const r = await ws.send(
+            "Runtime.evaluate",
+            { expression, returnByValue: true, awaitPromise },
+            timeoutMs ? { timeoutMs } : {}
+          );
+          if (r?.exceptionDetails) {
+            throw new Error(r.exceptionDetails.exception?.description || "evaluate failed");
+          }
+          return r?.result?.value;
+        },
+        async navigate(url) {
+          await ws.send("Page.enable");
+          await ws.send("Page.navigate", { url });
+        },
+        async screenshot() {
+          const r = await ws.send("Page.captureScreenshot", { format: "png" });
+          return Buffer.from(r.data, "base64");
+        },
+        close() {
+          ws.close();
+        }
+      };
+    }
+  };
+}
+
+// src/browser/humanize.mjs
+var ENABLED = process.env.XCLAW_BROWSER_HUMANIZE !== "0" && process.env.XCLAW_BROWSER_HUMANIZE !== "false";
+var SPEED = Math.max(
+  0.25,
+  Math.min(3, Number(process.env.XCLAW_BROWSER_HUMANIZE_SPEED) || 1)
+);
+function gauss(mean = 0, std = 1) {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return mean + std * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function clampMs(ms, min = 8, max = 8e3) {
+  return Math.max(min, Math.min(max, Math.round(ms * SPEED)));
+}
+function reactionDelay() {
+  if (!ENABLED) return 0;
+  const ms = Math.exp(gauss(5.5, 0.35));
+  return clampMs(ms, 80, 1200);
+}
+function keyDelay(char = "a") {
+  if (!ENABLED) return 0;
+  let base = 55 + gauss(0, 18);
+  if (char === " " || char === "\n") base += 40 + Math.random() * 80;
+  if (/[.,!?;:]/.test(char)) base += 60 + Math.random() * 120;
+  if (Math.random() < 0.04) base += 180 + Math.random() * 400;
+  return clampMs(base, 25, 900);
+}
+function settleDelay() {
+  if (!ENABLED) return 0;
+  return clampMs(90 + gauss(40, 35), 40, 600);
+}
+function sleep(ms) {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((r) => setTimeout(r, ms));
+}
+function bezier(t, p0, p1, p2, p3) {
+  const u = 1 - t;
+  const tt = t * t;
+  const uu = u * u;
+  const uuu = uu * u;
+  const ttt = tt * t;
+  return {
+    x: uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x,
+    y: uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y
+  };
+}
+function fittsDuration(distancePx, targetWidthPx = 24, opts = {}) {
+  const a = opts.a ?? 70;
+  const b = opts.b ?? 120;
+  const W = Math.max(4, Number(targetWidthPx) || 24);
+  const D = Math.max(1, Number(distancePx) || 1);
+  const id = Math.log2(D / W + 1);
+  let mt = a + b * id;
+  if (ENABLED) mt += gauss(0, mt * 0.12);
+  return clampMs(mt, 40, 2500);
+}
+function readingPause(text = "") {
+  if (!ENABLED) return 0;
+  const n = String(text || "").length;
+  if (n < 8) return clampMs(40 + gauss(20, 15), 0, 200);
+  const base = n / 18 * 1e3;
+  return clampMs(base * (0.7 + Math.random() * 0.6) + gauss(0, 80), 60, 8e3);
+}
+function fittsID(distancePx, targetWidthPx = 24) {
+  const W = Math.max(4, Number(targetWidthPx) || 24);
+  const D = Math.max(1, Number(distancePx) || 1);
+  return Math.log2(D / W + 1);
+}
+function mousePath(x0, y0, x1, y1, opts = {}) {
+  const dist = Math.hypot(x1 - x0, y1 - y0);
+  if (dist < 2 || !ENABLED) {
+    return [{ x: x1, y: y1, delayMs: 0 }];
+  }
+  const steps = Math.max(
+    8,
+    Math.min(48, Math.round(dist / (opts.stepPx || 12)))
+  );
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const curve = (0.15 + Math.random() * 0.35) * dist * (Math.random() < 0.5 ? 1 : -1);
+  const overshoot = Math.random() < 0.25 ? 0.08 + Math.random() * 0.12 : 0;
+  const p0 = { x: x0, y: y0 };
+  const p3 = {
+    x: x1 + dx * overshoot,
+    y: y1 + dy * overshoot
+  };
+  const p1 = {
+    x: x0 + dx * 0.25 + nx * curve * 0.6,
+    y: y0 + dy * 0.25 + ny * curve * 0.6
+  };
+  const p2 = {
+    x: x0 + dx * 0.75 + nx * curve * 0.4,
+    y: y0 + dy * 0.75 + ny * curve * 0.4
+  };
+  const targetW = opts.targetWidth ?? opts.width ?? null;
+  const totalMs = targetW ? fittsDuration(dist, targetW, opts.fitts || {}) : clampMs(180 + dist * 0.35 + gauss(0, 30), 60, 2200);
+  const path8 = [];
+  let prevT = 0;
+  for (let i = 1; i <= steps; i++) {
+    const u = i / steps;
+    const t = u * u * (3 - 2 * u);
+    const pt = bezier(t, p0, p1, p2, p3);
+    const tremor = opts.tremor != null ? Number(opts.tremor) : 1.8;
+    const jitter = (1 - u) * tremor;
+    pt.x += gauss(0, jitter);
+    pt.y += gauss(0, jitter);
+    const dt = (t - prevT) * totalMs;
+    path8.push({
+      x: Math.round(pt.x * 10) / 10,
+      y: Math.round(pt.y * 10) / 10,
+      delayMs: clampMs(dt + gauss(0, 4), 4, 120)
+    });
+    prevT = t;
+  }
+  path8.push({ x: x1, y: y1, delayMs: clampMs(12 + Math.random() * 20, 8, 40) });
+  return path8;
+}
+function typingPlan(text) {
+  if (!ENABLED) {
+    return [...text].map((c) => ({ char: c, delayMs: 0 }));
+  }
+  return [...text].map((c) => ({ char: c, delayMs: keyDelay(c) }));
+}
+async function humanType(text, dispatchKey) {
+  await sleep(reactionDelay());
+  for (const { char, delayMs } of typingPlan(text)) {
+    await dispatchKey(char);
+    await sleep(delayMs);
+  }
+  await sleep(settleDelay());
+}
+async function humanClick(from, to, dispatchMouse, opts = {}) {
+  await sleep(reactionDelay());
+  if (opts.label) await sleep(readingPause(String(opts.label).slice(0, 120)));
+  const path8 = mousePath(from.x, from.y, to.x, to.y, opts);
+  for (const step of path8) {
+    await dispatchMouse(step.x, step.y, "mouseMoved");
+    await sleep(step.delayMs);
+  }
+  await dispatchMouse(to.x, to.y, "mousePressed");
+  await sleep(clampMs(45 + gauss(15, 12), 30, 120));
+  await dispatchMouse(to.x, to.y, "mouseReleased");
+  await sleep(settleDelay());
+}
+function scrollPlan(totalDeltaY, opts = {}) {
+  if (!ENABLED || Math.abs(totalDeltaY) < 5) {
+    return [{ deltaY: totalDeltaY, delayMs: 0 }];
+  }
+  const steps = Math.max(3, Math.min(18, Math.round(Math.abs(totalDeltaY) / 40)));
+  const plan = [];
+  let remaining = totalDeltaY;
+  for (let i = 0; i < steps; i++) {
+    const frac = (steps - i) / (steps * (steps + 1) / 2);
+    let d = remaining * (0.35 + Math.random() * 0.4);
+    if (i === steps - 1) d = remaining;
+    remaining -= d;
+    plan.push({
+      deltaY: Math.round(d),
+      delayMs: clampMs(28 + gauss(12, 10) + i * 4, 12, 90)
+    });
+  }
+  return plan;
+}
+async function humanScroll(totalDeltaY, dispatchWheel) {
+  await sleep(reactionDelay() * 0.6);
+  for (const step of scrollPlan(totalDeltaY)) {
+    if (step.deltaY !== 0) await dispatchWheel(step.deltaY);
+    await sleep(step.delayMs);
+  }
+  await sleep(settleDelay() * 0.7);
+}
+var humanize = {
+  enabled: ENABLED,
+  speed: SPEED,
+  reactionDelay,
+  keyDelay,
+  settleDelay,
+  sleep,
+  mousePath,
+  typingPlan,
+  humanType,
+  humanClick,
+  scrollPlan,
+  humanScroll,
+  fittsDuration,
+  fittsID,
+  readingPause
+};
+
+// src/browser/motor.mjs
+function planClick(opts = {}) {
+  const x = Number(opts.x);
+  const y = Number(opts.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error("motor.planClick requires numeric x,y");
+  }
+  const fromX = Number.isFinite(Number(opts.fromX)) ? Number(opts.fromX) : x - 40;
+  const fromY = Number.isFinite(Number(opts.fromY)) ? Number(opts.fromY) : y - 30;
+  const button = opts.button || "left";
+  const clickCount = opts.clickCount || 1;
+  const targetWidth = opts.targetWidth ?? opts.width ?? 24;
+  const steps = [];
+  const react = reactionDelay();
+  if (react > 0) steps.push({ method: "_sleep", params: {}, delayMs: react });
+  if (opts.label) {
+    const rp = readingPause(String(opts.label));
+    if (rp > 0) steps.push({ method: "_sleep", params: {}, delayMs: rp });
+  }
+  const path8 = mousePath(fromX, fromY, x, y, {
+    targetWidth,
+    tremor: opts.tremor
+  });
+  for (const pt of path8) {
+    steps.push({
+      method: "Input.dispatchMouseEvent",
+      params: {
+        type: "mouseMoved",
+        x: pt.x,
+        y: pt.y,
+        button: "none"
+      },
+      delayMs: pt.delayMs || 0
+    });
+  }
+  for (let c = 1; c <= clickCount; c++) {
+    steps.push({
+      method: "Input.dispatchMouseEvent",
+      params: {
+        type: "mousePressed",
+        x,
+        y,
+        button,
+        clickCount: c
+      },
+      delayMs: 20 + Math.round(Math.random() * 25)
+    });
+    steps.push({
+      method: "Input.dispatchMouseEvent",
+      params: {
+        type: "mouseReleased",
+        x,
+        y,
+        button,
+        clickCount: c
+      },
+      delayMs: 30 + Math.round(Math.random() * 40)
+    });
+  }
+  const settle = settleDelay();
+  if (settle > 0) steps.push({ method: "_sleep", params: {}, delayMs: settle });
+  return {
+    steps,
+    meta: {
+      kind: "click",
+      x,
+      y,
+      fromX,
+      fromY,
+      targetWidth,
+      fittsMs: fittsDuration(Math.hypot(x - fromX, y - fromY), targetWidth),
+      humanize: humanize.enabled,
+      stepCount: steps.length
+    }
+  };
+}
+function planType(opts = {}) {
+  const text = String(opts.text ?? "");
+  const steps = [];
+  const react = reactionDelay();
+  if (react > 0) steps.push({ method: "_sleep", params: {}, delayMs: react });
+  for (const ch of text) {
+    const delay = keyDelay(ch);
+    steps.push({
+      method: "Input.dispatchKeyEvent",
+      params: {
+        type: "keyDown",
+        text: ch,
+        unmodifiedText: ch,
+        key: ch
+      },
+      delayMs: Math.max(8, Math.floor(delay * 0.4))
+    });
+    steps.push({
+      method: "Input.dispatchKeyEvent",
+      params: {
+        type: "char",
+        text: ch,
+        unmodifiedText: ch
+      },
+      delayMs: Math.max(4, Math.floor(delay * 0.2))
+    });
+    steps.push({
+      method: "Input.dispatchKeyEvent",
+      params: {
+        type: "keyUp",
+        text: ch,
+        unmodifiedText: ch,
+        key: ch
+      },
+      delayMs: Math.max(8, Math.floor(delay * 0.4))
+    });
+  }
+  const settle = settleDelay();
+  if (settle > 0) steps.push({ method: "_sleep", params: {}, delayMs: settle });
+  return {
+    steps,
+    meta: {
+      kind: "type",
+      length: text.length,
+      humanize: humanize.enabled,
+      stepCount: steps.length
+    }
+  };
+}
+function planScroll(opts = {}) {
+  const x = Number(opts.x) || 0;
+  const y = Number(opts.y) || 0;
+  const deltaY = Number(opts.deltaY) || 300;
+  const deltaX = Number(opts.deltaX) || 0;
+  const steps = [];
+  const react = reactionDelay();
+  if (react > 0) steps.push({ method: "_sleep", params: {}, delayMs: react });
+  const chunks = Math.max(1, Math.min(12, Math.round(Math.abs(deltaY) / 80)));
+  const tick = deltaY / chunks;
+  for (let i = 0; i < chunks; i++) {
+    steps.push({
+      method: "Input.dispatchMouseEvent",
+      params: {
+        type: "mouseWheel",
+        x,
+        y,
+        deltaX: deltaX / chunks,
+        deltaY: tick
+      },
+      delayMs: 40 + Math.round(Math.random() * 50)
+    });
+  }
+  const settle = settleDelay();
+  if (settle > 0) steps.push({ method: "_sleep", params: {}, delayMs: settle });
+  return {
+    steps,
+    meta: { kind: "scroll", deltaY, chunks, humanize: humanize.enabled }
+  };
+}
+async function executeSteps(tabClient, steps, opts = {}) {
+  const sleepFn = opts.sleep || sleep;
+  const log = opts.log || (() => {
+  });
+  let executed = 0;
+  for (const step of steps) {
+    if (step.method === "_sleep") {
+      await sleepFn(step.delayMs || 0);
+      executed++;
+      continue;
+    }
+    try {
+      if (typeof tabClient.send === "function") {
+        await tabClient.send(step.method, step.params);
+      } else {
+        const [domain, method] = step.method.split(".");
+        const target = tabClient[domain];
+        if (target && typeof target[method] === "function") {
+          await target[method](step.params);
+        } else if (typeof tabClient[step.method] === "function") {
+          await tabClient[step.method](step.params);
+        } else {
+          throw new Error(`no dispatcher for ${step.method}`);
+        }
+      }
+    } catch (e) {
+      log(`motor step failed ${step.method}: ${e?.message || e}`);
+      throw e;
+    }
+    if (step.delayMs) await sleepFn(step.delayMs);
+    executed++;
+  }
+  return { executed, total: steps.length };
+}
+
+// src/computer/cua-errors.mjs
+var CUA_ERROR_CATALOG = {
+  // computer_act / CDP
+  USE_BROWSER_OBSERVE: {
+    severity: "info",
+    surface: "browser",
+    recovery: "Call xclaw_browser_tab with action=observe for structure. computer_act is for GUI actuation only."
+  },
+  CUA_ACT_REQUIRES_BUNDLE: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Set XCLAW_CDP_URL to a Chrome remote-debugging endpoint (e.g. http://127.0.0.1:9222). Prefer tools/APIs first."
+  },
+  CUA_ACT_NOT_EXTRACTED: {
+    severity: "error",
+    surface: "bundle",
+    recovery: "engine=bundle without CDP: attach XCLAW_CDP_URL for CLEAN motor path, or extract BrowserService modules."
+  },
+  CDP_ATTACH_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "CDP URL set but attach failed. Ensure Chrome is running with --remote-debugging-port and the port matches. Try: curl $XCLAW_CDP_URL/json/version"
+  },
+  CDP_NO_PAGE: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "No page target under CDP. Open a tab in the debugged Chrome or use action=navigate / client.newPage."
+  },
+  CDP_NOT_LOOPBACK: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "CDP host is not loopback. Use 127.0.0.1 or set allowRemote only in trusted networks."
+  },
+  CDP_SOCKET_CLOSED: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "CDP WebSocket closed mid-command. Chrome may have exited; restart debug browser and retry."
+  },
+  CDP_TIMEOUT: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "CDP HTTP/WS timeout. Check Chrome is responsive; increase load; retry with XCLAW_CUA_RETRIES."
+  },
+  CDP_HTTP_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "CDP HTTP /json/* failed. Verify XCLAW_CDP_URL and curl $XCLAW_CDP_URL/json/version."
+  },
+  CDP_WS_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "CDP WebSocket upgrade/connect failed. Port may be HTTP-only or blocked; confirm webSocketDebuggerUrl."
+  },
+  CDP_EVAL_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Runtime.evaluate threw in page. Re-observe DOM; selector/ref may be stale."
+  },
+  CDP_NAVIGATE_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Page.navigate failed. Check URL scheme (http/https), network, and that the tab still exists."
+  },
+  CDP_SCREENSHOT_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Page.captureScreenshot failed. Page may be crashed or target detached; re-attach and retry."
+  },
+  CDP_INPUT_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Input.dispatch* failed. Page may not be focused or target closed; navigate/observe then retry."
+  },
+  CUA_ACT_NEED_COORDS: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Provide x,y or a valid observe ref (eN) with tabId after observe."
+  },
+  CUA_ACT_NEED_URL: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Pass url (https://\u2026) for action=navigate."
+  },
+  CUA_ACT_NEED_KEY: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Pass key string (e.g. Enter, Tab, Control+s)."
+  },
+  CUA_ACT_UNKNOWN: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Supported actions: navigate, click, type, key, scroll, screenshot (observe via browser_tab)."
+  },
+  CUA_ACT_EXEC_FAILED: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Motor/CDP command failed mid-execution. Check page still open; retry once; re-observe if DOM changed."
+  },
+  // Desktop common
+  DESKTOP_GUI_DISABLED: {
+    severity: "warn",
+    surface: "desktop",
+    recovery: "Default fail-closed. Lab only: export XCLAW_DESKTOP_GUI=1. Prefer XCLAW_CDP_URL for browser UIs."
+  },
+  DESKTOP_GUI_UNSUPPORTED_OS: {
+    severity: "error",
+    surface: "desktop",
+    recovery: "This OS path is not available here. Use browser CDP or run on a supported host OS."
+  },
+  DESKTOP_GUI_NO_BACKEND: {
+    severity: "error",
+    surface: "desktop",
+    recovery: "Install xdotool (Linux) or ydotool (Wayland). Windows/mac use pywinauto/pyobjc helpers."
+  },
+  DESKTOP_OBSERVE_UNSUPPORTED_OS: {
+    severity: "error",
+    surface: "desktop",
+    recovery: "Observe helper is OS-specific. Use the matching platform helper or browser observe."
+  },
+  DESKTOP_NEED_COORDS: {
+    severity: "error",
+    surface: "desktop",
+    recovery: "desktop click requires numeric x,y (or invoke with name after observe)."
+  },
+  DESKTOP_NEED_KEY: {
+    severity: "error",
+    surface: "desktop",
+    recovery: "Pass key (e.g. enter, cmd+s)."
+  },
+  DESKTOP_NEED_NAME: {
+    severity: "error",
+    surface: "desktop",
+    recovery: "invoke requires name (and optional title/app) matching an accessibility node."
+  },
+  DESKTOP_NEED_TEXT: {
+    severity: "error",
+    surface: "desktop",
+    recovery: "type requires text string."
+  },
+  DESKTOP_ACT_UNKNOWN: {
+    severity: "error",
+    surface: "desktop",
+    recovery: "Supported: click, type, key, invoke (platform-dependent)."
+  },
+  DESKTOP_ACT_FAILED: {
+    severity: "error",
+    surface: "desktop",
+    recovery: "OS input injection failed. Check backend binary, display server, and permissions."
+  },
+  // AT-SPI
+  ATSPI_NOT_INSTALLED: {
+    severity: "warn",
+    surface: "desktop-linux",
+    recovery: "sudo apt install python3-pyatspi   # or gir1.2-atspi-2.0"
+  },
+  ATSPI_REGISTRY_FAILED: {
+    severity: "error",
+    surface: "desktop-linux",
+    recovery: "AT-SPI registry unavailable. Is a desktop session running? Check accessibility bus."
+  },
+  ATSPI_WALK_FAILED: {
+    severity: "error",
+    surface: "desktop-linux",
+    recovery: "Tree walk failed. Retry; filter with app=; check app exposes AT-SPI."
+  },
+  ATSPI_EMPTY: {
+    severity: "warn",
+    surface: "desktop-linux",
+    recovery: "Helper returned empty stdout. Reinstall helper script / python3."
+  },
+  ATSPI_HELPER_MISSING: {
+    severity: "error",
+    surface: "desktop-linux",
+    recovery: "scripts/desktop-atspi-observe.py or python3 missing from install."
+  },
+  ATSPI_EXEC_FAILED: {
+    severity: "error",
+    surface: "desktop-linux",
+    recovery: "Failed to exec AT-SPI helper. Check python3 and script permissions."
+  },
+  ATSPI_BAD_JSON: {
+    severity: "error",
+    surface: "desktop-linux",
+    recovery: "Helper emitted non-JSON. See raw field; fix script version mismatch."
+  },
+  // UIA
+  UIA_NOT_INSTALLED: {
+    severity: "warn",
+    surface: "desktop-windows",
+    recovery: "pip install pywinauto"
+  },
+  UIA_DESKTOP_FAILED: {
+    severity: "error",
+    surface: "desktop-windows",
+    recovery: "Could not open UIA Desktop(). Run in an interactive Windows session."
+  },
+  UIA_WALK_FAILED: {
+    severity: "error",
+    surface: "desktop-windows",
+    recovery: "UIA tree walk failed. Try app= filter; run elevated only if target requires it."
+  },
+  UIA_WINDOW_NOT_FOUND: {
+    severity: "error",
+    surface: "desktop-windows",
+    recovery: "No window matched title=. List windows via observe first."
+  },
+  UIA_ELEMENT_NOT_FOUND: {
+    severity: "error",
+    surface: "desktop-windows",
+    recovery: "No element matched name=. Re-observe; names must match UIA Name."
+  },
+  UIA_INVOKE_FAILED: {
+    severity: "error",
+    surface: "desktop-windows",
+    recovery: "Invoke/click_input failed. Element may not support InvokePattern; try coords click."
+  },
+  UIA_ACT_FAILED: {
+    severity: "error",
+    surface: "desktop-windows",
+    recovery: "pywinauto act failed. Check focus, UIPI integrity, and that GUI is not minimized oddly."
+  },
+  UIA_HELPER_MISSING: {
+    severity: "error",
+    surface: "desktop-windows",
+    recovery: "scripts/desktop-uia-*.py or python3 missing."
+  },
+  UIA_EXEC_FAILED: {
+    severity: "error",
+    surface: "desktop-windows",
+    recovery: "Failed to exec UIA helper."
+  },
+  UIA_BAD_JSON: {
+    severity: "error",
+    surface: "desktop-windows",
+    recovery: "UIA helper returned invalid JSON."
+  },
+  UIA_EMPTY: {
+    severity: "warn",
+    surface: "desktop-windows",
+    recovery: "Empty helper stdout."
+  },
+  // AX
+  AX_NOT_INSTALLED: {
+    severity: "warn",
+    surface: "desktop-macos",
+    recovery: "pip install pyobjc-framework-ApplicationServices pyobjc-framework-Quartz pyobjc-framework-Cocoa"
+  },
+  AX_TCC_REQUIRED: {
+    severity: "error",
+    surface: "desktop-macos",
+    recovery: "System Settings \u2192 Privacy & Security \u2192 Accessibility \u2014 allow Terminal/node (or the XClaw app)."
+  },
+  AX_WALK_FAILED: {
+    severity: "error",
+    surface: "desktop-macos",
+    recovery: "AX tree walk failed. Grant Accessibility; retry with app= filter."
+  },
+  AX_ELEMENT_NOT_FOUND: {
+    severity: "error",
+    surface: "desktop-macos",
+    recovery: "No AX element matched name=. Re-observe; titles must match AXTitle."
+  },
+  AX_INVOKE_FAILED: {
+    severity: "error",
+    surface: "desktop-macos",
+    recovery: "AXPress and CGEvent fallback both failed. Check TCC and element visibility."
+  },
+  AX_ACT_FAILED: {
+    severity: "error",
+    surface: "desktop-macos",
+    recovery: "CGEvent/AX act failed. Accessibility must be granted to the host process."
+  },
+  AX_HELPER_MISSING: {
+    severity: "error",
+    surface: "desktop-macos",
+    recovery: "scripts/desktop-ax-*.py or python3 missing."
+  },
+  AX_EXEC_FAILED: {
+    severity: "error",
+    surface: "desktop-macos",
+    recovery: "Failed to exec AX helper."
+  },
+  AX_BAD_JSON: {
+    severity: "error",
+    surface: "desktop-macos",
+    recovery: "AX helper returned invalid JSON."
+  },
+  AX_EMPTY: {
+    severity: "warn",
+    surface: "desktop-macos",
+    recovery: "Empty helper stdout."
+  }
+};
+function enrichCuaError(result) {
+  if (!result || result.ok === true || !result.code) return result;
+  const entry = CUA_ERROR_CATALOG[result.code];
+  if (!entry) return result;
+  return {
+    ...result,
+    severity: result.severity || entry.severity,
+    surface: result.surface || entry.surface,
+    recovery: result.recovery || entry.recovery,
+    hint: result.hint || entry.recovery
+  };
+}
+function classifyCdpError(err) {
+  const msg = String(err?.message || err || "");
+  if (/not loopback|allowRemote/i.test(msg)) return "CDP_NOT_LOOPBACK";
+  if (/no CDP page target|no page target/i.test(msg)) return "CDP_NO_PAGE";
+  if (/socket closed|WebSocket.*close/i.test(msg)) return "CDP_SOCKET_CLOSED";
+  if (/timeout|ETIMEDOUT/i.test(msg)) return "CDP_TIMEOUT";
+  if (/ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH/i.test(msg)) return "CDP_ATTACH_FAILED";
+  if (/\/json\/|invalid JSON|CDP HTTP/i.test(msg)) return "CDP_HTTP_FAILED";
+  if (/WS timeout|upgrade|websocket/i.test(msg)) return "CDP_WS_FAILED";
+  if (/evaluate failed|exceptionDetails/i.test(msg)) return "CDP_EVAL_FAILED";
+  if (/Page\.navigate|navigate failed/i.test(msg)) return "CDP_NAVIGATE_FAILED";
+  if (/captureScreenshot|screenshot/i.test(msg)) return "CDP_SCREENSHOT_FAILED";
+  if (/Input\.dispatch/i.test(msg)) return "CDP_INPUT_FAILED";
+  if (/CDP attach/i.test(msg)) return "CDP_ATTACH_FAILED";
+  return "CDP_ATTACH_FAILED";
+}
+
+// src/computer/cua-retry-metrics.mjs
+import fs6 from "node:fs";
+import path5 from "node:path";
+import os2 from "node:os";
+var state = {
+  startedAt: (/* @__PURE__ */ new Date()).toISOString(),
+  attempts: 0,
+  successes: 0,
+  failures: 0,
+  retries: 0,
+  retriedSuccesses: 0,
+  byCode: /* @__PURE__ */ Object.create(null),
+  delayMsTotal: 0,
+  delayMsMax: 0,
+  lastEvents: []
+};
+var MAX_EVENTS = 50;
+function bumpCode(code, field) {
+  if (!code) code = "unknown";
+  if (!state.byCode[code]) {
+    state.byCode[code] = { retries: 0, finalOk: 0, finalFail: 0 };
+  }
+  state.byCode[code][field] += 1;
+}
+function recordCuaRetryTick({ attempt, delayMs, code, error } = {}) {
+  state.retries += 1;
+  const d = Number(delayMs) || 0;
+  state.delayMsTotal += d;
+  if (d > state.delayMsMax) state.delayMsMax = d;
+  if (code) bumpCode(code, "retries");
+  const ev = {
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    type: "retry",
+    attempt,
+    delayMs: d,
+    code: code || null,
+    error: error ? String(error).slice(0, 160) : null
+  };
+  state.lastEvents.push(ev);
+  if (state.lastEvents.length > MAX_EVENTS) state.lastEvents.shift();
+  appendJsonl(ev);
+}
+function recordCuaRetryOutcome(result) {
+  state.attempts += 1;
+  const code = result?.code || (result?.ok ? "ok" : "unknown");
+  if (result?.ok) {
+    state.successes += 1;
+    if (result.retried) state.retriedSuccesses += 1;
+    bumpCode(result.retried ? `ok_after_retry` : "ok", "finalOk");
+  } else {
+    state.failures += 1;
+    bumpCode(code, "finalFail");
+  }
+  const ev = {
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    type: "outcome",
+    ok: !!result?.ok,
+    code: result?.ok ? "ok" : code,
+    retries: result?.retries ?? 0,
+    retried: !!result?.retried
+  };
+  state.lastEvents.push(ev);
+  if (state.lastEvents.length > MAX_EVENTS) state.lastEvents.shift();
+  appendJsonl(ev);
+}
+function metricsPath() {
+  const dir = process.env.XCLAW_CUA_METRICS_DIR || path5.join(process.env.HOME || os2.homedir() || "/tmp", ".xclaw", "metrics");
+  return path5.join(dir, "cua-retry.jsonl");
+}
+function appendJsonl(ev) {
+  if (process.env.XCLAW_CUA_METRICS === "0") return;
+  try {
+    const p = metricsPath();
+    fs6.mkdirSync(path5.dirname(p), { recursive: true });
+    fs6.appendFileSync(p, JSON.stringify(ev) + "\n");
+  } catch {
+  }
+}
+
+// src/computer/cua-retry.mjs
+var CUA_TRANSIENT_CODES = /* @__PURE__ */ new Set([
+  "CDP_ATTACH_FAILED",
+  "CDP_NAVIGATE_FAILED",
+  "CDP_INPUT_FAILED",
+  "CDP_SCREENSHOT_FAILED",
+  "CDP_NO_PAGE",
+  "CDP_WS_FAILED",
+  "CDP_HTTP_FAILED",
+  "CDP_SOCKET_CLOSED",
+  "CDP_TIMEOUT",
+  "CUA_ACT_EXEC_FAILED",
+  "ATSPI_EXEC_FAILED",
+  "ATSPI_EMPTY",
+  "ATSPI_REGISTRY_FAILED",
+  "UIA_EXEC_FAILED",
+  "UIA_EMPTY",
+  "UIA_ACT_FAILED",
+  "AX_EXEC_FAILED",
+  "AX_EMPTY",
+  "AX_ACT_FAILED",
+  "OBSERVE_EXEC_FAILED",
+  "DESKTOP_ACT_FAILED"
+]);
+function extractCuaCode(errOrResult) {
+  if (!errOrResult) return null;
+  if (typeof errOrResult === "object") {
+    if (errOrResult.code) return String(errOrResult.code);
+    if (errOrResult.message) return classifyCdpError(errOrResult);
+  }
+  if (errOrResult instanceof Error) {
+    return classifyCdpError(errOrResult);
+  }
+  return null;
+}
+function isTransientCuaFailure(code, err = null) {
+  if (code && CUA_TRANSIENT_CODES.has(code)) return true;
+  if (err && /ECONNREFUSED|ETIMEDOUT|ECONNRESET|socket hang up|EPIPE/i.test(err.message || "")) {
+    return true;
+  }
+  return false;
+}
+function sleep2(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(Object.assign(new Error("aborted"), { code: "ABORT_ERR" }));
+      return;
+    }
+    const t = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(Object.assign(new Error("aborted"), { code: "ABORT_ERR" }));
+    };
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+  });
+}
+function backoffMs(attempt, opts = {}) {
+  const base = opts.baseMs ?? 100;
+  const max = opts.maxMs ?? 5e3;
+  const factor = opts.factor ?? 2;
+  const jitter = opts.jitter ?? 0.25;
+  const raw = Math.min(max, base * factor ** attempt);
+  const j = raw * jitter * (Math.random() * 2 - 1);
+  return Math.max(0, Math.round(raw + j));
+}
+async function withCuaRetry(fn, opts = {}) {
+  const retries = Math.max(0, opts.retries ?? 2);
+  const userOnRetry = opts.onRetry;
+  const onRetry = (info) => {
+    recordCuaRetryTick(info);
+    userOnRetry?.(info);
+  };
+  const isRetryable = opts.isRetryable || ((result, err) => {
+    if (err) return isTransientCuaFailure(extractCuaCode(err), err);
+    if (result && result.ok === false) {
+      return isTransientCuaFailure(result.code, null);
+    }
+    return false;
+  });
+  let lastResult = null;
+  let lastErr = null;
+  let attempts = 0;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    attempts = attempt + 1;
+    try {
+      const result = await fn();
+      lastResult = result;
+      lastErr = null;
+      if (result && result.ok === false && attempt < retries && isRetryable(result, null)) {
+        const delay = backoffMs(attempt, opts);
+        onRetry({
+          attempt: attempt + 1,
+          delayMs: delay,
+          code: result.code,
+          error: result.error
+        });
+        await sleep2(delay, opts.signal);
+        continue;
+      }
+      if (result && typeof result === "object") {
+        const out = {
+          ...result,
+          retries: attempts - 1,
+          retried: attempts > 1
+        };
+        recordCuaRetryOutcome(out);
+        return out;
+      }
+      return result;
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      if (attempt < retries && isRetryable(null, lastErr)) {
+        const delay = backoffMs(attempt, opts);
+        onRetry({
+          attempt: attempt + 1,
+          delayMs: delay,
+          code: extractCuaErrorCode(lastErr),
+          error: lastErr.message
+        });
+        await sleep2(delay, opts.signal);
+        continue;
+      }
+      recordCuaRetryOutcome({
+        ok: false,
+        code: extractCuaCode(lastErr) || "THROW",
+        retries: attempts - 1,
+        retried: attempts > 1
+      });
+      throw lastErr;
+    }
+  }
+  if (lastResult && typeof lastResult === "object") {
+    const out = { ...lastResult, retries: attempts - 1, retried: attempts > 1 };
+    recordCuaRetryOutcome(out);
+    return out;
+  }
+  if (lastErr) {
+    recordCuaRetryOutcome({
+      ok: false,
+      code: extractCuaCode(lastErr) || "THROW",
+      retries: attempts - 1,
+      retried: attempts > 1
+    });
+    throw lastErr;
+  }
+  return lastResult;
+}
+function extractCuaErrorCode(err) {
+  return extractCuaCode(err);
+}
+
+// src/computer/modules/desktop-driver.mjs
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import os3 from "node:os";
+import path6 from "node:path";
+import { fileURLToPath } from "node:url";
+var execFileAsync = promisify(execFile);
+function probeDesktopDriver(env = process.env) {
+  const platform = os3.platform();
+  const enabled = env.XCLAW_DESKTOP_GUI === "1" || env.XCLAW_DESKTOP_GUI === "true";
+  const forced = env.XCLAW_DESKTOP_BACKEND || null;
+  return {
+    platform,
+    enabled,
+    backend: forced,
+    tools: { xdotool: null, ydotool: null },
+    cuaOrder: "tools_first_then_browser_then_desktop"
+  };
+}
+async function which(cmd) {
+  try {
+    const { stdout } = await execFileAsync("which", [cmd], { timeout: 2e3 });
+    const p = String(stdout || "").trim();
+    return p || null;
+  } catch {
+    return null;
+  }
+}
+async function whichDesktopTools() {
+  if (os3.platform() !== "linux") {
+    return { xdotool: null, ydotool: null };
+  }
+  const [xdotool, ydotool] = await Promise.all([which("xdotool"), which("ydotool")]);
+  return { xdotool, ydotool };
+}
+function atspiScriptPath() {
+  const here = path6.dirname(fileURLToPath(import.meta.url));
+  return path6.resolve(here, "../../../scripts/desktop-atspi-observe.py");
+}
+function uiaScriptPath() {
+  const here = path6.dirname(fileURLToPath(import.meta.url));
+  return path6.resolve(here, "../../../scripts/desktop-uia-observe.py");
+}
+function uiaActScriptPath() {
+  const here = path6.dirname(fileURLToPath(import.meta.url));
+  return path6.resolve(here, "../../../scripts/desktop-uia-act.py");
+}
+function axScriptPath() {
+  const here = path6.dirname(fileURLToPath(import.meta.url));
+  return path6.resolve(here, "../../../scripts/desktop-ax-observe.py");
+}
+function axActScriptPath() {
+  const here = path6.dirname(fileURLToPath(import.meta.url));
+  return path6.resolve(here, "../../../scripts/desktop-ax-act.py");
+}
+async function runPythonObserveHelper(scriptPath, input = {}, env = process.env, codes = {}) {
+  const args = [scriptPath];
+  if (input.app) args.push("--app", String(input.app));
+  if (input.max) args.push("--max", String(Number(input.max) || 40));
+  return withCuaRetry(
+    async () => {
+      try {
+        const { stdout, stderr } = await execFileAsync("python3", args, {
+          timeout: 15e3,
+          env: { ...process.env, ...env },
+          maxBuffer: 4 * 1024 * 1024
+        });
+        const raw = String(stdout || "").trim();
+        if (!raw) {
+          return { ok: false, error: stderr || "empty observe output", code: codes.empty || "OBSERVE_EMPTY" };
+        }
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return {
+            ok: false,
+            error: "invalid JSON from observe helper",
+            code: codes.badJson || "OBSERVE_BAD_JSON",
+            raw: raw.slice(0, 200)
+          };
+        }
+      } catch (e) {
+        const msg = e?.message || String(e);
+        if (e?.stdout) {
+          try {
+            return JSON.parse(String(e.stdout));
+          } catch {
+          }
+        }
+        if (/No such file|ENOENT/i.test(msg)) {
+          return {
+            ok: false,
+            error: "python3 or observe helper missing",
+            code: codes.missing || "OBSERVE_HELPER_MISSING"
+          };
+        }
+        return { ok: false, error: msg, code: codes.exec || "OBSERVE_EXEC_FAILED" };
+      }
+    },
+    {
+      retries: Number(env.XCLAW_CUA_RETRIES ?? process.env.XCLAW_CUA_RETRIES ?? 2),
+      baseMs: Number(env.XCLAW_CUA_RETRY_BASE_MS ?? process.env.XCLAW_CUA_RETRY_BASE_MS ?? 100),
+      maxMs: Number(env.XCLAW_CUA_RETRY_MAX_MS ?? process.env.XCLAW_CUA_RETRY_MAX_MS ?? 2500)
+    }
+  );
+}
+async function runDesktopObserveImpl(input = {}, env = process.env) {
+  const probe = probeDesktopDriver(env);
+  if (probe.platform === "linux") {
+    return runPythonObserveHelper(atspiScriptPath(), input, env, {
+      empty: "ATSPI_EMPTY",
+      badJson: "ATSPI_BAD_JSON",
+      missing: "ATSPI_HELPER_MISSING",
+      exec: "ATSPI_EXEC_FAILED"
+    });
+  }
+  if (probe.platform === "win32") {
+    return runPythonObserveHelper(uiaScriptPath(), input, env, {
+      empty: "UIA_EMPTY",
+      badJson: "UIA_BAD_JSON",
+      missing: "UIA_HELPER_MISSING",
+      exec: "UIA_EXEC_FAILED"
+    });
+  }
+  if (probe.platform === "darwin") {
+    return runPythonObserveHelper(axScriptPath(), input, env, {
+      empty: "AX_EMPTY",
+      badJson: "AX_BAD_JSON",
+      missing: "AX_HELPER_MISSING",
+      exec: "AX_EXEC_FAILED"
+    });
+  }
+  return {
+    ok: false,
+    error: `desktop observe not implemented for ${probe.platform}`,
+    code: "DESKTOP_OBSERVE_UNSUPPORTED_OS",
+    platform: probe.platform
+  };
+}
+async function runDesktopActImpl(input = {}, env = process.env) {
+  const probe = probeDesktopDriver(env);
+  if (!probe.enabled) {
+    return {
+      ok: false,
+      error: "Desktop GUI disabled. Browser CDP (XCLAW_CDP_URL) is preferred. Opt-in: XCLAW_DESKTOP_GUI=1 (lab only).",
+      code: "DESKTOP_GUI_DISABLED",
+      platform: probe.platform,
+      cuaPolicy: probe.cuaOrder
+    };
+  }
+  const action = String(input.action || "click").toLowerCase();
+  if (probe.platform === "win32") {
+    const script = uiaActScriptPath();
+    const args = [script, action];
+    if (action === "click") {
+      if (!Number.isFinite(Number(input.x)) || !Number.isFinite(Number(input.y))) {
+        return { ok: false, error: "desktop click requires x,y", code: "DESKTOP_NEED_COORDS" };
+      }
+      args.push("--x", String(input.x), "--y", String(input.y));
+      if (input.button) args.push("--button", String(input.button));
+    } else if (action === "type") {
+      args.push("--text", String(input.text ?? ""));
+    } else if (action === "key") {
+      if (!input.key) return { ok: false, error: "key required", code: "DESKTOP_NEED_KEY" };
+      args.push("--key", String(input.key));
+    } else if (action === "invoke") {
+      if (input.title) args.push("--title", String(input.title));
+      if (input.name || input.ref) args.push("--name", String(input.name || input.ref));
+      else return { ok: false, error: "invoke requires name", code: "DESKTOP_NEED_NAME" };
+    } else {
+      return { ok: false, error: `unsupported desktop action: ${action}`, code: "DESKTOP_ACT_UNKNOWN" };
+    }
+    try {
+      const { stdout } = await execFileAsync("python3", args, {
+        timeout: 15e3,
+        env: { ...process.env, ...env },
+        maxBuffer: 2 * 1024 * 1024
+      });
+      const raw = String(stdout || "").trim();
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return { ok: false, error: "invalid JSON from UIA act helper", code: "UIA_BAD_JSON", raw: raw.slice(0, 200) };
+      }
+    } catch (e) {
+      if (e?.stdout) {
+        try {
+          return JSON.parse(String(e.stdout));
+        } catch {
+        }
+      }
+      return {
+        ok: false,
+        error: e?.message || String(e),
+        code: "UIA_ACT_FAILED"
+      };
+    }
+  }
+  if (probe.platform === "darwin") {
+    const script = axActScriptPath();
+    const args = [script, action];
+    if (action === "click") {
+      if (!Number.isFinite(Number(input.x)) || !Number.isFinite(Number(input.y))) {
+        return { ok: false, error: "desktop click requires x,y", code: "DESKTOP_NEED_COORDS" };
+      }
+      args.push("--x", String(input.x), "--y", String(input.y));
+      if (input.button) args.push("--button", String(input.button));
+    } else if (action === "type") {
+      args.push("--text", String(input.text ?? ""));
+    } else if (action === "key") {
+      if (!input.key) return { ok: false, error: "key required", code: "DESKTOP_NEED_KEY" };
+      args.push("--key", String(input.key));
+    } else if (action === "invoke") {
+      if (input.app) args.push("--app", String(input.app));
+      if (input.name || input.ref) args.push("--name", String(input.name || input.ref));
+      else return { ok: false, error: "invoke requires name", code: "DESKTOP_NEED_NAME" };
+    } else {
+      return { ok: false, error: `unsupported desktop action: ${action}`, code: "DESKTOP_ACT_UNKNOWN" };
+    }
+    try {
+      const { stdout } = await execFileAsync("python3", args, {
+        timeout: 15e3,
+        env: { ...process.env, ...env },
+        maxBuffer: 2 * 1024 * 1024
+      });
+      const raw = String(stdout || "").trim();
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return { ok: false, error: "invalid JSON from AX act helper", code: "AX_BAD_JSON", raw: raw.slice(0, 200) };
+      }
+    } catch (e) {
+      if (e?.stdout) {
+        try {
+          return JSON.parse(String(e.stdout));
+        } catch {
+        }
+      }
+      return { ok: false, error: e?.message || String(e), code: "AX_ACT_FAILED" };
+    }
+  }
+  if (probe.platform !== "linux") {
+    return {
+      ok: false,
+      error: `DesktopDriver act not implemented for ${probe.platform}. Use browser CDP for GUI.`,
+      code: "DESKTOP_GUI_UNSUPPORTED_OS",
+      platform: probe.platform
+    };
+  }
+  const tools = await whichDesktopTools();
+  const backend = probe.backend || (tools.xdotool ? "xdotool" : tools.ydotool ? "ydotool" : null);
+  if (!backend) {
+    return {
+      ok: false,
+      error: "No xdotool/ydotool on PATH. Install xdotool or set XCLAW_CDP_URL for browser GUI.",
+      code: "DESKTOP_GUI_NO_BACKEND",
+      platform: "linux",
+      tools
+    };
+  }
+  const bin = backend === "ydotool" ? tools.ydotool : tools.xdotool;
+  try {
+    if (action === "click") {
+      const x = Number(input.x);
+      const y = Number(input.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return { ok: false, error: "desktop click requires x,y", code: "DESKTOP_NEED_COORDS" };
+      }
+      if (backend === "xdotool") {
+        await execFileAsync(
+          bin,
+          ["mousemove", String(Math.round(x)), String(Math.round(y)), "click", "1"],
+          { timeout: 5e3 }
+        );
+      } else {
+        await execFileAsync(
+          bin,
+          ["mousemove", "--absolute", "-x", String(Math.round(x)), "-y", String(Math.round(y))],
+          { timeout: 5e3 }
+        );
+        await execFileAsync(bin, ["click", "0xC0"], { timeout: 3e3 });
+      }
+      return { ok: true, action: "click", backend, x, y, engine: "desktop-driver" };
+    }
+    if (action === "type") {
+      const text = String(input.text ?? "");
+      if (backend === "xdotool") {
+        await execFileAsync(bin, ["type", "--", text], { timeout: 15e3 });
+      } else {
+        await execFileAsync(bin, ["type", text], { timeout: 15e3 });
+      }
+      return { ok: true, action: "type", backend, engine: "desktop-driver" };
+    }
+    if (action === "key") {
+      const key = String(input.key || "");
+      if (!key) return { ok: false, error: "key required", code: "DESKTOP_NEED_KEY" };
+      await execFileAsync(bin, ["key", key], { timeout: 5e3 });
+      return { ok: true, action: "key", key, backend, engine: "desktop-driver" };
+    }
+    return {
+      ok: false,
+      error: `unsupported desktop action: ${action}`,
+      code: "DESKTOP_ACT_UNKNOWN"
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e?.message || String(e),
+      code: "DESKTOP_ACT_FAILED",
+      backend
+    };
+  }
+}
+async function runDesktopObserve(input = {}, env = process.env) {
+  return enrichCuaError(await runDesktopObserveImpl(input, env));
+}
+async function runDesktopAct(input = {}, env = process.env) {
+  return enrichCuaError(await runDesktopActImpl(input, env));
+}
+
+// src/computer/modules/computer-act-tool.mjs
+var observeCache = /* @__PURE__ */ new Map();
+function cacheObserveResult(tabId, payload = {}) {
+  if (!tabId) return;
+  observeCache.set(String(tabId), {
+    elements: Array.isArray(payload.elements) ? payload.elements : [],
+    at: Date.now(),
+    url: payload.url
+  });
+  if (observeCache.size > 32) {
+    const first = observeCache.keys().next().value;
+    observeCache.delete(first);
+  }
+}
+function getCachedObserve(tabId) {
+  return tabId ? observeCache.get(String(tabId)) || null : null;
+}
+async function resolveClickTarget(tab, input = {}) {
+  let x = Number(input.x);
+  let y = Number(input.y);
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    return { x, y, source: "explicit" };
+  }
+  const ref = input.ref ? String(input.ref) : "";
+  const nameHint = input.label || input.name || "";
+  let searchName = nameHint;
+  if (ref && input.tabId) {
+    const cached = getCachedObserve(input.tabId);
+    const el = cached?.elements?.find((e) => e.ref === ref);
+    if (el?.name) searchName = el.name;
+  }
+  if (!ref && !searchName) {
+    return null;
+  }
+  const expr = `(() => {
+    const ref = ${JSON.stringify(ref)};
+    const name = ${JSON.stringify(searchName)};
+    const candidates = [];
+    const push = (node, role) => {
+      if (!node) return;
+      const r = node.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      const label = (node.getAttribute('aria-label') || node.innerText || node.value || node.getAttribute('name') || node.getAttribute('placeholder') || '').trim().slice(0, 160);
+      candidates.push({ role, label, x: r.x + r.width/2, y: r.y + r.height/2, w: r.width, h: r.height });
+    };
+    document.querySelectorAll('a,button,input,textarea,select,[role="button"],[role="link"]').forEach((n) => {
+      const role = n.getAttribute('role') || n.tagName.toLowerCase();
+      push(n, role);
+    });
+    let hit = null;
+    if (ref && /^ed+$/i.test(ref)) {
+      const idx = parseInt(ref.slice(1), 10) - 1;
+      if (idx >= 0 && idx < candidates.length) hit = candidates[idx];
+    }
+    if (!hit && name) {
+      const lower = name.toLowerCase();
+      hit = candidates.find((c) => c.label.toLowerCase().includes(lower)) || null;
+    }
+    return hit;
+  })()`;
+  try {
+    const hit = await tab.evaluate(expr);
+    if (hit && Number.isFinite(hit.x) && Number.isFinite(hit.y)) {
+      return { x: hit.x, y: hit.y, source: "cdp-ref", label: hit.label, role: hit.role };
+    }
+  } catch (e) {
+    return { error: e?.message || String(e) };
+  }
+  return null;
+}
+function parseCdpUrl(raw) {
+  if (!raw) return null;
+  try {
+    const u = new URL(String(raw));
+    return {
+      host: u.hostname || "127.0.0.1",
+      port: Number(u.port) || 9222
+    };
+  } catch {
+    return null;
+  }
+}
+function resolveCdpEndpoint() {
+  const raw = process.env.XCLAW_CDP_URL || process.env.CDP_URL || null;
+  return parseCdpUrl(raw);
+}
+async function runComputerActImpl(input = {}) {
+  const action = String(input.action || "click").toLowerCase();
+  if (action === "observe") {
+    return {
+      ok: false,
+      error: "Use xclaw_browser_tab with action=observe (structure). computer_act is for GUI actuation only.",
+      code: "USE_BROWSER_OBSERVE",
+      engine: process.env.XCLAW_COMPUTER_ENGINE || "native"
+    };
+  }
+  if (input.surface === "desktop" || input.desktop === true) {
+    const a = String(input.action || "click").toLowerCase();
+    if (a === "observe") {
+      const obs = await runDesktopObserve(input);
+      if (obs?.ok && obs.elements) {
+        try {
+          cacheObserveResult(input.tabId || "desktop", obs);
+        } catch {
+        }
+      }
+      return obs;
+    }
+    return runDesktopAct(input);
+  }
+  if (action === "navigate") {
+    const url = String(input.url || input.href || "").trim();
+    if (!url) {
+      return {
+        ok: false,
+        error: "navigate requires url",
+        code: "CUA_ACT_NEED_URL",
+        engine: "native"
+      };
+    }
+  }
+  const engine = process.env.XCLAW_COMPUTER_ENGINE || "native";
+  const cdpEp = resolveCdpEndpoint();
+  const canAct = Boolean(cdpEp) || engine === "bundle" || engine === "generated";
+  if (!canAct) {
+    return {
+      ok: false,
+      error: "GUI actuation (click/type/key/scroll/screenshot) requires XCLAW_CDP_URL or CDP bundle. Prefer tools/APIs, then xclaw_browser_tab action=observe.",
+      code: "CUA_ACT_REQUIRES_BUNDLE",
+      engine: engine === "thin" ? "native" : engine,
+      cuaPolicy: "tools_first_then_observe_then_gui",
+      hint: "export XCLAW_CDP_URL=http://127.0.0.1:9222  # or XCLAW_COMPUTER_ENGINE=bundle"
+    };
+  }
+  if (!cdpEp) {
+    return {
+      ok: false,
+      error: "engine=bundle without XCLAW_CDP_URL: BrowserService actuation is still BUNDLE_ONLY. Attach CDP for CLEAN motor path, or extract BrowserService modules.",
+      code: "CUA_ACT_NOT_EXTRACTED",
+      engine,
+      cuaPolicy: "tools_first_then_observe_then_gui",
+      hint: "export XCLAW_CDP_URL=http://127.0.0.1:9222"
+    };
+  }
+  let client;
+  let tab;
+  try {
+    const attachResult = await withCuaRetry(
+      async () => {
+        client = createCdpClient({ host: cdpEp.host, port: cdpEp.port });
+        tab = await client.attach(input.urlMatch || void 0);
+        return { ok: true, tab };
+      },
+      {
+        retries: Number(process.env.XCLAW_CUA_RETRIES ?? 2),
+        baseMs: Number(process.env.XCLAW_CUA_RETRY_BASE_MS ?? 120),
+        maxMs: Number(process.env.XCLAW_CUA_RETRY_MAX_MS ?? 3e3)
+      }
+    );
+    tab = attachResult.tab || tab;
+  } catch (e) {
+    const code = classifyCdpError(e);
+    return {
+      ok: false,
+      error: `CDP attach failed: ${e?.message || e}`,
+      code,
+      engine,
+      cdp: cdpEp,
+      retries: Number(process.env.XCLAW_CUA_RETRIES ?? 2)
+    };
+  }
+  try {
+    if (action === "navigate") {
+      const url = String(input.url || input.href || "").trim();
+      if (!url) {
+        return {
+          ok: false,
+          error: "navigate requires url",
+          code: "CUA_ACT_NEED_URL",
+          engine: "cdp-motor"
+        };
+      }
+      try {
+        await tab.navigate(url);
+        try {
+          await tab.send("Page.enable");
+          await new Promise((r) => setTimeout(r, Number(input.waitMs) || 400));
+        } catch {
+        }
+        let pageUrl = null;
+        try {
+          pageUrl = await tab.evaluate("location.href");
+        } catch {
+          pageUrl = url;
+        }
+        return {
+          ok: true,
+          action: "navigate",
+          engine: "cdp-motor",
+          url,
+          pageUrl,
+          cuaPolicy: "tools_first_then_observe_then_gui"
+        };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e?.message || String(e),
+          code: classifyCdpError(e) === "CDP_ATTACH_FAILED" ? "CDP_NAVIGATE_FAILED" : classifyCdpError(e),
+          engine: "cdp-motor",
+          url
+        };
+      }
+    }
+    if (action === "screenshot") {
+      const buf = await tab.screenshot();
+      const b64 = buf.toString("base64");
+      return {
+        ok: true,
+        action: "screenshot",
+        engine: "cdp-motor",
+        mime: "image/png",
+        bytes: buf.length,
+        /** callers may persist; we return prefix only in metadata-heavy logs */
+        dataBase64Length: b64.length,
+        dataBase64: b64.slice(0, 120) + (b64.length > 120 ? "\u2026" : ""),
+        pageUrl: tab.page?.url || null
+      };
+    }
+    let plan;
+    if (action === "click") {
+      const target = await resolveClickTarget(tab, input);
+      if (!target || target.error) {
+        return {
+          ok: false,
+          error: target?.error || "click requires x,y or resolvable ref/name (run observe, pass ref or label)",
+          code: "CUA_ACT_NEED_COORDS",
+          engine: "cdp-motor"
+        };
+      }
+      const x = target.x;
+      const y = target.y;
+      plan = planClick({
+        x,
+        y,
+        button: input.button || "left",
+        clickCount: input.clickCount || 1,
+        label: target.label || input.ref || input.label
+      });
+      plan.meta = { ...plan.meta, coordSource: target.source };
+    } else if (action === "type") {
+      plan = planType({ text: input.text ?? "" });
+    } else if (action === "scroll") {
+      plan = planScroll({
+        x: Number(input.x) || 0,
+        y: Number(input.y) || 0,
+        deltaX: Number(input.deltaX) || 0,
+        deltaY: Number(input.deltaY) || 100
+      });
+    } else if (action === "key") {
+      const key = String(input.key || "");
+      if (!key) {
+        return { ok: false, error: "key requires key string", code: "CUA_ACT_NEED_KEY" };
+      }
+      await tab.send("Input.dispatchKeyEvent", { type: "keyDown", key });
+      await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key });
+      return {
+        ok: true,
+        action: "key",
+        engine: "cdp-motor",
+        key,
+        pageUrl: tab.page?.url || null
+      };
+    } else {
+      return {
+        ok: false,
+        error: `unsupported action: ${action}`,
+        code: "CUA_ACT_UNKNOWN"
+      };
+    }
+    const result = await withCuaRetry(
+      async () => {
+        const r = await executeSteps(tab, plan.steps);
+        if (r && r.ok === false) {
+          return {
+            ok: false,
+            error: r.error || "executeSteps failed",
+            code: "CUA_ACT_EXEC_FAILED",
+            engine: "cdp-motor"
+          };
+        }
+        return {
+          ok: true,
+          action,
+          engine: "cdp-motor",
+          executed: r.executed,
+          total: r.total,
+          meta: plan.meta,
+          pageUrl: tab.page?.url || null,
+          cuaPolicy: "tools_first_then_observe_then_gui"
+        };
+      },
+      {
+        retries: Number(process.env.XCLAW_CUA_RETRIES ?? 2),
+        baseMs: Number(process.env.XCLAW_CUA_RETRY_BASE_MS ?? 80),
+        maxMs: Number(process.env.XCLAW_CUA_RETRY_MAX_MS ?? 2e3)
+      }
+    );
+    return result;
+  } catch (e) {
+    const code = classifyCdpError(e);
+    return {
+      ok: false,
+      error: e?.message || String(e),
+      code: code === "CDP_ATTACH_FAILED" ? "CUA_ACT_EXEC_FAILED" : code,
+      engine: "cdp-motor"
+    };
+  } finally {
+    try {
+      tab?.close?.();
+    } catch {
+    }
+  }
+}
+var ComputerActTool = {
+  name: "xclaw_computer_act",
+  description: "CUA GUI actuation via CDP (navigate/click/type/key/scroll/screenshot) when XCLAW_CDP_URL is set. Prefer connectors/tools and xclaw_browser_tab observe first. Supports navigate when CDP is attached. Native without CDP fails closed.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        description: "navigate | click | type | key | scroll | screenshot"
+      },
+      tabId: { type: "string" },
+      url: { type: "string", description: "Target URL for action=navigate" },
+      urlMatch: { type: "string", description: "Pick CDP page by URL substring" },
+      ref: { type: "string", description: "Element ref from observe (label only until ref\u2192coords)" },
+      x: { type: "number" },
+      y: { type: "number" },
+      text: { type: "string" },
+      key: { type: "string" },
+      deltaX: { type: "number" },
+      deltaY: { type: "number" },
+      button: { type: "string" },
+      clickCount: { type: "number" }
+    }
+  },
+  isReadOnly: () => false,
+  async call(input, _ctx = {}) {
+    const data = await runComputerAct(input || {});
+    return { data };
+  }
+};
+async function runComputerAct(input) {
+  const r = await runComputerActImpl(input);
+  return enrichCuaError(r);
+}
+
 // src/computer/modules/browser-tab-tool.mjs
 var tabs = /* @__PURE__ */ new Map();
 var seq = 0;
@@ -1173,6 +3223,97 @@ function extractLinks(html, baseUrl, limit = 30) {
   }
   return links;
 }
+function extractInteractiveElements(html, baseUrl, limit = 40) {
+  const elements = [];
+  const push = (el) => {
+    if (elements.length >= limit) return;
+    elements.push(el);
+  };
+  const strip = (s) => String(s || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+  const aRe = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = aRe.exec(html)) && elements.length < limit) {
+    const attrs = m[1];
+    const hrefM = attrs.match(/href=["']([^"']+)["']/i);
+    let href = hrefM ? hrefM[1] : null;
+    if (href) {
+      try {
+        href = new URL(href, baseUrl).href;
+      } catch {
+      }
+    }
+    const name = strip(m[2]) || (attrs.match(/aria-label=["']([^"']+)["']/i) || [])[1] || (attrs.match(/title=["']([^"']+)["']/i) || [])[1] || href || "link";
+    push({
+      ref: `e${elements.length + 1}`,
+      role: "link",
+      name,
+      href: href || void 0,
+      tag: "a"
+    });
+  }
+  const btnRe = /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
+  while ((m = btnRe.exec(html)) && elements.length < limit) {
+    const attrs = m[1];
+    const name = strip(m[2]) || (attrs.match(/aria-label=["']([^"']+)["']/i) || [])[1] || (attrs.match(/name=["']([^"']+)["']/i) || [])[1] || "button";
+    const disabled = /\bdisabled\b/i.test(attrs);
+    push({
+      ref: `e${elements.length + 1}`,
+      role: "button",
+      name,
+      disabled: disabled || void 0,
+      tag: "button"
+    });
+  }
+  const inputRe = /<(input|textarea|select)\b([^>]*)\/?>/gi;
+  while ((m = inputRe.exec(html)) && elements.length < limit) {
+    const tag = m[1].toLowerCase();
+    const attrs = m[2];
+    const typeM = attrs.match(/\btype=["']([^"']+)["']/i);
+    const type = (typeM ? typeM[1] : tag === "input" ? "text" : tag).toLowerCase();
+    if (type === "hidden") continue;
+    const name = (attrs.match(/aria-label=["']([^"']+)["']/i) || [])[1] || (attrs.match(/placeholder=["']([^"']+)["']/i) || [])[1] || (attrs.match(/\bname=["']([^"']+)["']/i) || [])[1] || (attrs.match(/\bid=["']([^"']+)["']/i) || [])[1] || type;
+    const role = type === "submit" || type === "button" ? "button" : type === "checkbox" ? "checkbox" : type === "radio" ? "radio" : tag === "select" ? "combobox" : "textbox";
+    push({
+      ref: `e${elements.length + 1}`,
+      role,
+      name: strip(name),
+      tag,
+      inputType: type !== tag ? type : void 0
+    });
+  }
+  return elements;
+}
+function observeFromTab(tab) {
+  const html = tab.html || "";
+  const elements = html ? extractInteractiveElements(html, tab.url || "https://example.invalid") : (tab.links || []).map((l, i) => ({
+    ref: `e${i + 1}`,
+    role: "link",
+    name: l.label || l.href,
+    href: l.href,
+    tag: "a"
+  }));
+  const payload = {
+    ok: true,
+    action: "observe",
+    tabId: tab.id,
+    url: tab.url,
+    title: tab.title,
+    status: tab.status,
+    engine: "native-fetch",
+    mode: "html-structure",
+    /** Structured candidates — prefer over screenshot for planning */
+    elements,
+    elementCount: elements.length,
+    textPreview: String(tab.text || "").slice(0, 3e3),
+    links: (tab.links || []).slice(0, 15),
+    notes: "Native observe is HTML-derived (not OS accessibility). For real AX tree + click/type use XCLAW_COMPUTER_ENGINE=bundle or CDP attach."
+  };
+  try {
+    cacheObserveResult(tab.id, payload);
+  } catch {
+  }
+  return payload;
+}
 function listTabs() {
   return [...tabs.values()].map((t) => ({
     tabId: t.id,
@@ -1195,12 +3336,21 @@ async function runBrowserTab(input = {}) {
   if (input.screenshot) {
     return {
       ok: false,
-      error: "screenshot requires the CDP bundle engine. Native browser_tab does not capture images. See docs/BROWSER_UNBUNDLE.md",
+      error: "screenshot requires the CDP bundle engine. Prefer action=observe on native for structure. See docs/BROWSER_UNBUNDLE.md",
       tabId: input.tabId || null,
       engine: "native-fetch"
     };
   }
-  if (action === "list" || !input.url && !input.tabId && action !== "read") {
+  if (input.click || input.type || action === "click" || action === "type") {
+    return {
+      ok: false,
+      error: "click/type require CDP bundle or attached Chromium (XCLAW_CDP_URL). On native, use action=observe then tools/API; do not invent coordinates.",
+      tabId: input.tabId || null,
+      engine: "native-fetch",
+      code: "CUA_ACT_REQUIRES_BUNDLE"
+    };
+  }
+  if (action === "list" || !input.url && !input.tabId && action !== "read" && action !== "observe") {
     return {
       ok: true,
       action: "list",
@@ -1209,7 +3359,21 @@ async function runBrowserTab(input = {}) {
       engine: "native-fetch"
     };
   }
-  if (action === "read" || input.tabId && !input.url) {
+  if (action === "observe") {
+    if (!input.tabId) {
+      return {
+        ok: false,
+        error: "observe requires tabId (navigate first)",
+        engine: "native-fetch"
+      };
+    }
+    const tab2 = tabs.get(input.tabId);
+    if (!tab2) {
+      return { ok: false, error: `Unknown tabId: ${input.tabId}`, tabId: input.tabId };
+    }
+    return observeFromTab(tab2);
+  }
+  if (action === "read" || input.tabId && !input.url && action !== "observe") {
     const tab2 = tabs.get(input.tabId);
     if (!tab2) {
       return { ok: false, error: `Unknown tabId: ${input.tabId}`, tabId: input.tabId };
@@ -1230,7 +3394,7 @@ async function runBrowserTab(input = {}) {
   if (!input.url) {
     return {
       ok: false,
-      error: "url required for navigate (or action=list|read with tabId)",
+      error: "url required for navigate (or action=list|read|observe with tabId)",
       engine: "native-fetch"
     };
   }
@@ -1251,18 +3415,39 @@ async function runBrowserTab(input = {}) {
   const text = htmlToText(res.body);
   const links = extractLinks(res.body, res.finalUrl || input.url);
   const id = input.tabId && tabs.has(input.tabId) ? input.tabId : nextId();
+  const finalUrl = res.finalUrl || input.url;
+  const requestId = `req_${id}`;
+  const networkEntry = {
+    requestId,
+    method: "GET",
+    url: finalUrl,
+    status: res.status,
+    requestHeaders: {
+      "user-agent": "XClawNativeBrowser/3.75",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    },
+    responseHeaders: {
+      "content-type": "text/html; charset=utf-8"
+    },
+    responseBodyPreview: String(res.body || "").slice(0, 8e3),
+    responseBodyBytes: Buffer.byteLength(String(res.body || ""), "utf8"),
+    at: (/* @__PURE__ */ new Date()).toISOString()
+  };
   const tab = {
     id,
-    url: res.finalUrl || input.url,
+    url: finalUrl,
     title,
     description,
     text,
     links,
+    /** keep HTML for observe (capped) */
+    html: String(res.body || "").slice(0, 5e5),
     status: res.status,
-    at: (/* @__PURE__ */ new Date()).toISOString()
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    network: [networkEntry]
   };
   tabs.set(id, tab);
-  return {
+  const out = {
     ok: true,
     action: "navigate",
     tabId: id,
@@ -1273,36 +3458,134 @@ async function runBrowserTab(input = {}) {
     textPreview: tab.text.slice(0, 4e3),
     links: links.slice(0, 20),
     engine: "native-fetch",
-    networkSummaries: input.includeNetwork ? [
-      {
-        requestId: "nav1",
-        method: "GET",
-        url: tab.url,
-        status: tab.status
-      }
-    ] : void 0
+    networkSummaries: input.includeNetwork ? tab.network.map((n) => ({
+      requestId: n.requestId,
+      method: n.method,
+      url: n.url,
+      status: n.status
+    })) : void 0
   };
+  if (input.observe === true || action === "navigate_observe") {
+    const obs = observeFromTab(tab);
+    out.elements = obs.elements;
+    out.elementCount = obs.elementCount;
+    out.mode = obs.mode;
+  }
+  return out;
+}
+function getTab(tabId) {
+  return tabs.get(tabId) || null;
+}
+function listTabNetwork(tabId) {
+  const tab = tabs.get(tabId);
+  if (!tab) return null;
+  return tab.network || [];
+}
+function getNetworkEntry(tabId, requestId) {
+  const list = listTabNetwork(tabId);
+  if (!list) return null;
+  if (requestId) return list.find((n) => n.requestId === requestId) || null;
+  return list[list.length - 1] || null;
 }
 var BrowserTabTool = {
   name: "xclaw_browser_tab",
-  description: "Lightweight native browser: navigate/fetch URL, list/read tabs, extract title/text/links. jsCode and screenshot require CDP bundle (see docs/BROWSER_UNBUNDLE.md).",
+  description: "Browser plane (CUA-aware): navigate/fetch URL, list/read tabs, action=observe for structured interactive elements (HTML a11y-like tree). Prefer observe before screenshot. jsCode/screenshot/click/type require CDP bundle (XCLAW_COMPUTER_ENGINE=bundle or XCLAW_CDP_URL). See docs/BROWSER_UNBUNDLE.md and docs/COMPUTER_USE_BACKEND.md.",
   inputSchema: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        description: "navigate | list | read (default: navigate if url set)"
+        description: "navigate | list | read | observe (default: navigate if url set). observe requires tabId."
       },
-      url: { type: "string" },
-      tabId: { type: "string" },
-      jsCode: { type: "string" },
-      screenshot: { type: "string" },
-      includeNetwork: { type: "boolean" }
+      url: { type: "string", description: "URL for navigate" },
+      tabId: { type: "string", description: "Tab id for read/observe/list targeting" },
+      observe: {
+        type: "boolean",
+        description: "If true on navigate, also return elements[] (same as action=observe)"
+      },
+      jsCode: { type: "string", description: "Bundle/CDP only" },
+      screenshot: { type: "string", description: "Bundle/CDP only \u2014 prefer action=observe on native" },
+      includeNetwork: { type: "boolean" },
+      click: { type: "string", description: "Bundle/CDP only" },
+      type: { type: "string", description: "Bundle/CDP only" }
     }
   },
   isReadOnly: () => true,
   async call(input, _context = {}) {
     const data = await runBrowserTab(input || {});
+    return { data };
+  }
+};
+
+// src/computer/modules/browser-network-details-tool.mjs
+async function runBrowserNetworkDetails(input = {}) {
+  const tabId = String(input.tabId || "").trim();
+  if (!tabId) {
+    return {
+      ok: false,
+      error: "tabId is required",
+      engine: "native-fetch"
+    };
+  }
+  const tab = getTab(tabId);
+  if (!tab) {
+    return {
+      ok: false,
+      error: `Unknown tabId: ${tabId}`,
+      tabId,
+      engine: "native-fetch",
+      hint: "Navigate with xclaw_browser_tab first (native engine)."
+    };
+  }
+  const requestId = input.requestId ? String(input.requestId) : null;
+  const entry = getNetworkEntry(tabId, requestId);
+  if (!entry) {
+    return {
+      ok: false,
+      error: requestId ? `No network entry requestId=${requestId} on tab ${tabId}` : `No network entries on tab ${tabId}`,
+      tabId,
+      available: listTabNetwork(tabId)?.map((n) => n.requestId) || [],
+      engine: "native-fetch"
+    };
+  }
+  const includeBody = input.includeBody !== false;
+  return {
+    ok: true,
+    engine: "native-fetch",
+    tabId,
+    requestId: entry.requestId,
+    method: entry.method,
+    url: entry.url,
+    status: entry.status,
+    requestHeaders: entry.requestHeaders || {},
+    responseHeaders: entry.responseHeaders || {},
+    responseBodyBytes: entry.responseBodyBytes ?? null,
+    responseBodyPreview: includeBody ? entry.responseBodyPreview || null : null,
+    at: entry.at,
+    note: "Native engine records the primary navigation request. Multi-resource CDP capture requires computer.engine=bundle."
+  };
+}
+var BrowserNetworkDetailsTool = {
+  name: "xclaw_browser_network_details",
+  description: "Inspect network details for a native browser tab (headers, status, body preview). Requires prior xclaw_browser_tab navigate.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      tabId: { type: "string", description: "Tab id from xclaw_browser_tab" },
+      requestId: {
+        type: "string",
+        description: "Optional request id; defaults to latest on the tab"
+      },
+      includeBody: {
+        type: "boolean",
+        description: "Include response body preview (default true, capped)"
+      }
+    },
+    required: ["tabId"]
+  },
+  isReadOnly: () => true,
+  async call(input, _ctx = {}) {
+    const data = await runBrowserNetworkDetails(input || {});
     return { data };
   }
 };
@@ -1313,7 +3596,9 @@ var MAINTAINED_TOOLS = [
   FileReadTool,
   FileWriteTool,
   FileEditTool,
-  BrowserTabTool
+  BrowserTabTool,
+  BrowserNetworkDetailsTool,
+  ComputerActTool
 ];
 function listMaintainedTools() {
   return MAINTAINED_TOOLS.map((t) => ({
@@ -1348,13 +3633,13 @@ async function executeNativeTool(name, args = {}, ctx = {}) {
 }
 
 // src/computer/extraction-status.mjs
-import fs6 from "node:fs/promises";
-import path5 from "node:path";
-import { fileURLToPath } from "node:url";
-var root = path5.resolve(path5.dirname(fileURLToPath(import.meta.url)), "../..");
+import fs7 from "node:fs/promises";
+import path7 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+var root = path7.resolve(path7.dirname(fileURLToPath2(import.meta.url)), "../..");
 async function loadModuleMap() {
-  const p = path5.join(root, "src/computer/MODULE_MAP.json");
-  const raw = await fs6.readFile(p, "utf8");
+  const p = path7.join(root, "src/computer/MODULE_MAP.json");
+  const raw = await fs7.readFile(p, "utf8");
   return JSON.parse(raw);
 }
 async function getExtractionStatus() {
@@ -1445,7 +3730,7 @@ async function readJson(req) {
 function createThinComputerServer(opts = {}) {
   const host = opts.host || process.env.XCLAW_COMPUTER_HOST || "127.0.0.1";
   const port = Number(opts.port || process.env.XCLAW_COMPUTER_PORT || 4243);
-  const server = http2.createServer(async (req, res) => {
+  const server = http3.createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${host}:${port}`);
     const send = (code, body) => {
       const raw = typeof body === "string" ? body : JSON.stringify(body);
@@ -1473,7 +3758,7 @@ function createThinComputerServer(opts = {}) {
       }
       if (req.method === "POST" && url.pathname === "/xclaw/sessions/create") {
         const parsed = await readJson(req);
-        const id = `sess_${crypto3.randomBytes(8).toString("hex")}`;
+        const id = `sess_${crypto4.randomBytes(8).toString("hex")}`;
         const workingDir = parsed.workingDir || process.cwd();
         sessions.set(id, {
           id,
