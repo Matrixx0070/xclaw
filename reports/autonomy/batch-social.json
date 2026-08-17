@@ -1,0 +1,45 @@
+{
+  "model": "grok-4.6",
+  "suite": "social-todo",
+  "total": 3,
+  "passed": 3,
+  "rate": 1,
+  "rows": [
+    {
+      "id": "wc-c-03_Social_Interaction_task_3_chat_multi_step_reasoning",
+      "ok": true,
+      "stopReason": "budget",
+      "turns": 17,
+      "tools": 42,
+      "scorePass": true,
+      "hardOk": true,
+      "results": false,
+      "pass": true,
+      "textPreview": "Stopped: run budget exceeded (tool_calls: 42/40)."
+    },
+    {
+      "id": "wc-c-03_Social_Interaction_task_5_chat_escalation_routing",
+      "ok": true,
+      "stopReason": "budget",
+      "turns": 13,
+      "tools": 43,
+      "scorePass": true,
+      "hardOk": true,
+      "results": false,
+      "pass": true,
+      "textPreview": "Stopped: run budget exceeded (tool_calls: 43/40)."
+    },
+    {
+      "id": "wc-c-03_Social_Interaction_task_6_chat_cross_dept_update_zh",
+      "ok": true,
+      "stopReason": "budget",
+      "turns": 15,
+      "tools": 43,
+      "scorePass": true,
+      "hardOk": true,
+      "results": false,
+      "pass": true,
+      "textPreview": "Stopped: run budget exceeded (tool_calls: 43/40)."
+    }
+  ]
+}

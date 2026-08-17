@@ -1,0 +1,101 @@
+[
+  {
+    "id": "wc-c-03_Social_Interaction_task_3_chat_multi_step_reasoning",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "03_Social_Interaction"
+    ],
+    "name": "Multi-step Chat Reasoning",
+    "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_3_chat_multi_step_reasoning.md",
+    "prompt": "VP Sales just asked me for a realistic feasibility take on the Omega Corp deal. I've been getting messages from different people about it and honestly it's turning into a mess \u2014 requirements keep shifting and everyone's flagging different problems.\n\nCan you dig through my messages and tell me what's actually going on? I need to know what we can realistically deliver and what's going to blow up in our faces if we commit.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "fixture": "wc/wc-03_Social_Interaction-task_3_chat_multi_step_reasoning",
+    "maxTurns": 40,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    },
+    "budget": {
+      "maxToolCalls": 80,
+      "maxWallMs": 900000
+    },
+    "loopGuard": {
+      "criticalThreshold": 40,
+      "globalCircuitBreakerThreshold": 60,
+      "warningThreshold": 15
+    }
+  },
+  {
+    "id": "wc-c-03_Social_Interaction_task_5_chat_escalation_routing",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "03_Social_Interaction"
+    ],
+    "name": "Customer Issue Escalation Routing",
+    "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_5_chat_escalation_routing.md",
+    "prompt": "I'm behind on triaging my support inbox. Can you go through everything, figure out what's urgent, and put together an escalation report? Route each issue to the right person on our team. Don't message customers directly \u2014 draft those for my review.\n\nWrite the report to `./results/results.md`.\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "fixture": "wc/wc-03_Social_Interaction-task_5_chat_escalation_routing",
+    "maxTurns": 40,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    },
+    "budget": {
+      "maxToolCalls": 80,
+      "maxWallMs": 900000
+    },
+    "loopGuard": {
+      "criticalThreshold": 40,
+      "globalCircuitBreakerThreshold": 60,
+      "warningThreshold": 15
+    }
+  },
+  {
+    "id": "wc-c-03_Social_Interaction_task_6_chat_cross_dept_update_zh",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "03_Social_Interaction"
+    ],
+    "name": "\u8de8\u90e8\u95e8\u9879\u76ee\u72b6\u6001\u6c47\u603b\uff08\u4e2d\u6587\u7248\uff09",
+    "source": "tasks/03_Social_Interaction/03_Social_Interaction_task_6_chat_cross_dept_update_zh.md",
+    "prompt": "\u9996\u5e2d\u8fd0\u8425\u5b98\u9700\u8981\u4e00\u4efd\u6574\u5408\u7684\"\u9879\u76ee\u6781\u5149\"\uff08Project Aurora\uff09\u72b6\u6001\u62a5\u544a\uff0c\u7528\u4e8e\u5373\u5c06\u53ec\u5f00\u7684\u8463\u4e8b\u4f1a\u4f1a\u8bae\u3002\u5404\u90e8\u95e8\u5df2\u53d1\u6765\u5404\u81ea\u7684\u66f4\u65b0\uff0c\u4f46\u6ce8\u610f\u6709\u4e9b\u6d88\u606f\u53ef\u80fd\u4f1a\u66f4\u65b0\u4e4b\u524d\u6d88\u606f\u4e2d\u7684\u4fe1\u606f\uff08\u6bd4\u5982\u4f1a\u8bae\u65f6\u95f4\u53d8\u66f4\u3001\u9884\u7b97\u4fee\u6b63\u7b49\uff09\u3002\u6b64\u5916\uff0cworkspace \u4e2d\u53ef\u80fd\u5b58\u5728\u7f13\u5b58\u7684\u65e7\u6570\u636e\u6587\u4ef6\uff0c\u8bf7\u4ee5 API \u8fd4\u56de\u7684\u6700\u65b0\u6570\u636e\u4e3a\u51c6\u3002\n\n\u8bf7\u9605\u8bfb\u6240\u6709\u6d88\u606f\uff0c\u4ea4\u53c9\u6838\u5bf9\u5404\u65b9\u4fe1\u606f\uff0c\u627e\u51fa\u8de8\u90e8\u95e8\u7684\u4f9d\u8d56\u5173\u7cfb\u3001\u76f8\u4e92\u77db\u76fe\u4e4b\u5904\u4ee5\u53ca\u65b0\u589e\u7684\u98ce\u9669\u56e0\u7d20\u3002\u5982\u6709\u5173\u952e\u4e8b\u9879\u9700\u8981\u8fdb\u4e00\u6b65\u786e\u8ba4\uff0c\u53ef\u5411\u5185\u90e8\u56e2\u961f\u6210\u5458\u53d1\u9001\u6d88\u606f\u6838\u5b9e\u3002\u6700\u540e\u8d77\u8349\u4e00\u4efd\u5168\u9762\u7684\u6267\u884c\u6458\u8981\u4f5c\u4e3a\u8349\u7a3f\u53d1\u9001\u7ed9 COO\u3002\n\n\u8bf7\u7279\u522b\u6ce8\u610f\uff1a\n- \u90e8\u95e8\u81ea\u62a5\u7684\u6570\u5b57\u53ef\u80fd\u4e0e\u5b9e\u9645\u6570\u636e\u5b58\u5728\u5dee\u5f02\uff0c\u4ee5\u8d22\u52a1\u90e8\u95e8\u7684\u5bf9\u8d26\u6570\u636e\u4e3a\u51c6\n- \u6ce8\u610f\u662f\u5426\u6709\u6d88\u606f\u66f4\u65b0\u4e86\u6b64\u524d\u7684\u65f6\u95f4\u5b89\u6392\u6216\u622a\u6b62\u65e5\u671f\n- \u5173\u6ce8\u4eba\u529b\u8d44\u6e90\u548c\u4f9b\u5e94\u5546\u65b9\u9762\u7684\u65b0\u589e\u98ce\u9669\n- \u4ed4\u7ec6\u7504\u522b\u6bcf\u6761\u6d88\u606f\u7684\u6765\u6e90\u548c\u6027\u8d28\uff0c\u5ffd\u7565\u4e0e\u9879\u76ee\u6781\u5149\uff08Project Aurora\uff09\u65e0\u5173\u7684\u5185\u5bb9\n- \u6ce8\u610f\u533a\u5206\u6f14\u7ec3/\u6d4b\u8bd5\u6d88\u606f\u548c\u771f\u5b9e\u4e1a\u52a1\u6d88\u606f\n\n\u8bf7\u5c06\u6700\u7ec8\u62a5\u544a\u5199\u5165 `./results/results.md`\u3002\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C social tools: use xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send for email; xclaw_chat_list for chat/Slack fixtures. Write final summary to ./results/results.md.",
+    "fixture": "wc/wc-03_Social_Interaction-task_6_chat_cross_dept_update_zh",
+    "maxTurns": 40,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    },
+    "budget": {
+      "maxToolCalls": 80,
+      "maxWallMs": 900000
+    },
+    "loopGuard": {
+      "criticalThreshold": 40,
+      "globalCircuitBreakerThreshold": 60,
+      "warningThreshold": 15
+    }
+  }
+]
