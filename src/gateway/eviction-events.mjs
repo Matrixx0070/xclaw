@@ -1,11 +1,16 @@
 /**
  * In-memory ring buffer + SSE fan-out for live eviction events.
  * Supports Last-Event-ID / ?lastEventId= resume.
+ * Buffer is a bounded queue (drop_oldest) with metrics.
  */
 import { eventsAfterLastId, formatSSEEvent } from "../utils/sse-reconnect.mjs";
+import { createBoundedQueue, DropPolicy } from "../shared/bounded-queue.mjs";
 
 const MAX = 100;
-const recent = [];
+const queue = createBoundedQueue({
+  maxsize: MAX,
+  policy: DropPolicy.DROP_OLDEST,
+});
 const listeners = new Set();
 
 export function pushEvictionEvent(event) {
@@ -14,8 +19,7 @@ export function pushEvictionEvent(event) {
     at: new Date().toISOString(),
     ...event,
   };
-  recent.push(entry);
-  while (recent.length > MAX) recent.shift();
+  queue.push(entry);
   const chunk = formatSSEEvent("eviction", entry, entry.id);
   for (const res of listeners) {
     try {
@@ -37,7 +41,8 @@ export function pushEvictionEvent(event) {
 
 export function listEvictionEvents({ limit = 50 } = {}) {
   const n = Math.min(MAX, Math.max(1, Number(limit) || 50));
-  return recent.slice(-n);
+  const all = queue.toArray();
+  return all.slice(-n);
 }
 
 /**
@@ -49,8 +54,8 @@ export function subscribeEvictionSSE(res, opts = {}) {
   res.on("close", () => listeners.delete(res));
 
   const lastId = opts.lastEventId || null;
+  const recent = queue.toArray();
   const snapshot = eventsAfterLastId(recent, lastId);
-  // If no lastId, still cap initial burst
   const toSend = lastId ? snapshot : snapshot.slice(-20);
 
   for (const entry of toSend) {
@@ -70,6 +75,7 @@ export function subscribeEvictionSSE(res, opts = {}) {
           buffered: recent.length,
           replayed: toSend.length,
           resumedFrom: lastId || null,
+          metrics: queue.metrics,
         },
         `ready-${Date.now()}`
       )
@@ -81,4 +87,9 @@ export function subscribeEvictionSSE(res, opts = {}) {
 
 export function evictionListenerCount() {
   return listeners.size;
+}
+
+/** @returns {object} bounded-queue metrics for doctor/ops */
+export function evictionBufferMetrics() {
+  return queue.metrics;
 }
