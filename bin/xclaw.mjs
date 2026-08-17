@@ -905,7 +905,29 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         await runVoiceTui(cfg, { args: args.slice(2) });
         break;
       }
-      console.error("Usage: xclaw voice probe|speak|transcribe|once|tui");
+      if (sub === "wake-probe" || sub === "wake") {
+        const {
+          probeWakeStack,
+          probeWakeOnce,
+          probeOpenWakeWordOnce,
+        } = await import("../src/voice/wake/index.mjs");
+        if (args[2] === "once" || args[2] === "--once") {
+          const out = await probeWakeOnce(cfg, {
+            forceStt: args.includes("--force-stt"),
+          });
+          console.log(JSON.stringify(out, null, 2));
+          process.exitCode = out.hit ? 0 : 1;
+          break;
+        }
+        if (args[2] === "openwakeword" || args[2] === "oww") {
+          console.log(JSON.stringify(await probeOpenWakeWordOnce(), null, 2));
+          break;
+        }
+        const stack = await probeWakeStack(cfg);
+        console.log(JSON.stringify(stack, null, 2));
+        break;
+      }
+      console.error("Usage: xclaw voice probe|speak|transcribe|once|tui|wake-probe");
       process.exit(1);
       break;
     }
