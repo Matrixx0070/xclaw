@@ -377,11 +377,23 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
 
   const failed = checks.filter((c) => c.ok === false);
   const warnings = checks.filter((c) => c.severity === "warn");
+  let version = "0.0.0";
+  try {
+    const pkgPath = path.join(
+      path.dirname(new URL(import.meta.url).pathname),
+      "..",
+      "..",
+      "package.json"
+    );
+    version = JSON.parse(fs.readFileSync(pkgPath, "utf8")).version || version;
+  } catch {
+    /* keep fallback */
+  }
   return {
     ok: failed.length === 0,
     service: "XClaw",
-    version: "0.6.1",
-    phase: 6.2,
+    version,
+    phase: 7,
     checkedAt: new Date().toISOString(),
     checks,
     failed: failed.map((c) => c.name),
