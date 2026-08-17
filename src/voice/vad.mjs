@@ -197,6 +197,12 @@ export async function recordUntilEndpoint(opts = {}) {
     let peak = 0;
     let done = false;
     const t0 = Date.now();
+    const autoCalibrate = opts.autoCalibrate !== false && (opts.cfg?.voice?.vad?.autoCalibrate !== false);
+    const calFramesNeeded = Math.max(1, Math.ceil(300 / c.frameMs));
+    let calLevels = [];
+    let calibrated = !autoCalibrate;
+    let openThreshold = c.openThreshold;
+    let closeThreshold = c.closeThreshold;
 
     const finish = async (reason) => {
       if (done) return;
@@ -216,8 +222,9 @@ export async function recordUntilEndpoint(opts = {}) {
           durationMs,
           speechMs,
           energyPeak: Math.round(peak),
-          openThreshold: c.openThreshold,
-          closeThreshold: c.closeThreshold,
+          openThreshold,
+          closeThreshold,
+          calibrated,
           error: seenSpeech ? undefined : "no speech detected",
         });
         return;
@@ -267,8 +274,20 @@ export async function recordUntilEndpoint(opts = {}) {
         const rms = pcmRms(frame);
         if (rms > peak) peak = rms;
 
+        // Leading frames: estimate noise floor and raise/lower thresholds
+        if (!calibrated) {
+          calLevels.push(rms);
+          if (calLevels.length >= calFramesNeeded) {
+            const sorted = [...calLevels].sort((a, b) => a - b);
+            const floor = sorted[Math.floor(sorted.length * 0.5)] || 0;
+            openThreshold = Math.max(c.openThreshold, Math.round(floor * 3.5));
+            closeThreshold = Math.max(100, Math.round(openThreshold * 0.65));
+            calibrated = true;
+          }
+        }
+
         if (!inSpeech) {
-          if (rms >= c.openThreshold) {
+          if (rms >= openThreshold) {
             speechRun += 1;
             if (speechRun >= c.hangoverFrames) {
               inSpeech = true;
@@ -280,7 +299,7 @@ export async function recordUntilEndpoint(opts = {}) {
             speechRun = 0;
           }
         } else {
-          if (rms >= c.closeThreshold) {
+          if (rms >= closeThreshold) {
             speechFrames += 1;
             silentRun = 0;
           } else {
@@ -318,6 +337,44 @@ export async function recordUntilEndpoint(opts = {}) {
 /**
  * Doctor-style probe (no mic required for structure).
  */
+/**
+ * Estimate noise floor from leading PCM and suggest open/close thresholds.
+ * @param {Buffer} pcm
+ * @param {object} [c]
+ * @param {{ calibrateMs?: number, speechMargin?: number }} [opts]
+ */
+export function calibrateNoiseFloor(pcm, c = vadConfig({}), opts = {}) {
+  const frameBytes = Math.floor((c.sampleRate * c.frameMs) / 1000) * 2;
+  const calibrateMs = Number(opts.calibrateMs || 300);
+  const frames = Math.max(1, Math.floor(calibrateMs / c.frameMs));
+  const levels = [];
+  for (let i = 0; i < frames; i++) {
+    const off = i * frameBytes;
+    if (off + frameBytes > pcm.length) break;
+    levels.push(pcmRms(pcm.subarray(off, off + frameBytes)));
+  }
+  if (!levels.length) {
+    return {
+      ok: false,
+      error: "insufficient_pcm",
+      openThreshold: c.openThreshold,
+      closeThreshold: c.closeThreshold,
+    };
+  }
+  levels.sort((a, b) => a - b);
+  const floor = levels[Math.floor(levels.length * 0.5)]; // median
+  const margin = Number(opts.speechMargin || 3.5);
+  const openThreshold = Math.max(200, Math.round(floor * margin));
+  const closeThreshold = Math.max(100, Math.round(openThreshold * 0.65));
+  return {
+    ok: true,
+    noiseFloor: Math.round(floor),
+    openThreshold,
+    closeThreshold,
+    samples: levels.length,
+  };
+}
+
 export function probeVad(cfg = {}) {
   const c = vadConfig(cfg);
   return {
@@ -330,7 +387,7 @@ export function probeVad(cfg = {}) {
     maxMs: c.maxMs,
     prerollMs: c.prerollMs,
     hangoverFrames: c.hangoverFrames,
-    enabled: c.enabled,
+    enabled: c.enabled !== false,
   };
 }
 
@@ -339,6 +396,7 @@ export default {
   pcmToWav,
   vadConfig,
   analyzePcmFrames,
+  calibrateNoiseFloor,
   recordUntilEndpoint,
   probeVad,
 };
