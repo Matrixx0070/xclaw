@@ -164,13 +164,35 @@ export async function executeBash(input = {}, ctx = {}) {
     let stderr = "";
     let timedOut = false;
     let interrupted = false;
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     const max = 2_000_000;
 
     child.stdout.on("data", (c) => {
-      if (stdout.length < max) stdout += c.toString();
+      if (stdout.length >= max) {
+        stdoutTruncated = true;
+        return;
+      }
+      const s = c.toString();
+      if (stdout.length + s.length > max) {
+        stdout += s.slice(0, max - stdout.length);
+        stdoutTruncated = true;
+      } else {
+        stdout += s;
+      }
     });
     child.stderr.on("data", (c) => {
-      if (stderr.length < max) stderr += c.toString();
+      if (stderr.length >= max) {
+        stderrTruncated = true;
+        return;
+      }
+      const s = c.toString();
+      if (stderr.length + s.length > max) {
+        stderr += s.slice(0, max - stderr.length);
+        stderrTruncated = true;
+      } else {
+        stderr += s;
+      }
     });
 
     let timer = null;
@@ -202,10 +224,20 @@ export async function executeBash(input = {}, ctx = {}) {
       if (timer) clearTimeout(timer);
       const exitCode = code ?? 1;
       const ok = !timedOut && !interrupted && exitCode === 0;
+      const outputTruncated = stdoutTruncated || stderrTruncated;
+      if (outputTruncated) {
+        const note =
+          `\n[xclaw] BASH_OUTPUT_TRUNCATED: kept first ${max} chars` +
+          (stdoutTruncated ? " (stdout)" : "") +
+          (stderrTruncated ? " (stderr)" : "");
+        if (stderr.length + note.length <= max + 200) stderr += note;
+      }
       let errCode;
       if (timedOut) errCode = "BASH_TIMEOUT";
       else if (interrupted) errCode = "BASH_ABORTED";
       else if (exitCode !== 0) errCode = "BASH_EXIT_NONZERO";
+      else if (outputTruncated) errCode = "BASH_OUTPUT_TRUNCATED";
+      else errCode = "BASH_OK";
       resolve({
         ok,
         stdout,
@@ -213,11 +245,13 @@ export async function executeBash(input = {}, ctx = {}) {
         exitCode,
         timedOut,
         interrupted,
+        outputTruncated,
+        truncated: { stdout: stdoutTruncated, stderr: stderrTruncated, maxChars: max },
         spawnEnforced: Boolean(check.enforced),
         osSandboxed,
         netIsolated: Boolean(wrapped.netIsolated),
         envPolicy: envPolicy.mode,
-        ...(errCode ? { code: errCode } : { code: "BASH_OK" }),
+        code: errCode,
       });
     });
   });

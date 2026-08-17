@@ -38,4 +38,17 @@ describe("xclaw_bash codes", () => {
     assert.equal(r.timedOut, true);
     assert.equal(r.code, "BASH_TIMEOUT");
   });
+
+  it("output truncated code", async () => {
+    // ~2.2MB of 'x' — over the 2_000_000 char keep limit
+    const r = await executeBash({
+      command: "python3 -c 'print(\"x\"*2200000)'",
+      timeout: 30,
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.outputTruncated, true);
+    assert.equal(r.code, "BASH_OUTPUT_TRUNCATED");
+    assert.ok(r.stdout.length <= 2_000_000);
+    assert.match(r.stderr, /BASH_OUTPUT_TRUNCATED/);
+  });
 });
