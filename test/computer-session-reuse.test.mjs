@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   createComputerClient,
   clearComputerSessionPool,
+  computerClientCacheStats,
 } from "../src/agent/computer-client.mjs";
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -54,5 +55,22 @@ describe("computer session reuse", () => {
     await c.destroySession(a);
     const c2 = await c.createSession(wd);
     assert.equal(c2, a); // still pooled after soft destroy
+  });
+
+  it("caches tools/list per session", async () => {
+    clearComputerSessionPool();
+    const cfg = {
+      computer: { host: "127.0.0.1", port: 4243, engine: "native", reuseSession: true },
+    };
+    const c = createComputerClient(cfg);
+    const wd = path.join(root, "tmp-live");
+    const sid = await c.createSession(wd);
+    const t1 = await c.listTools(sid);
+    const t2 = await c.listTools(sid);
+    assert.ok(Array.isArray(t1) && t1.length >= 1);
+    assert.equal(t1.length, t2.length);
+    const stats = computerClientCacheStats();
+    assert.ok(stats.toolsLists >= 1);
+    assert.ok(stats.sessions >= 1);
   });
 });

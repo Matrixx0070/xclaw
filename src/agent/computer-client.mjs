@@ -101,6 +101,8 @@ export function sanitizeToolArgs(name, args = {}) {
 
 /** @type {Map<string, { sessionId: string, workingDir: string, at: number }>} */
 const sessionReusePool = new Map();
+/** @type {Map<string, { tools: any[], at: number }>} */
+const toolsListCache = new Map();
 
 function reuseEnabled(cfg) {
   if (process.env.XCLAW_COMPUTER_REUSE_SESSION === "0") return false;
@@ -153,15 +155,25 @@ export function createComputerClient(cfg) {
         const key = poolKey(baseUrl, wd);
         const hit = sessionReusePool.get(key);
         if (hit?.sessionId) {
-          // Validate session still exists via tools/list (cheap on thin)
+          // Prefer tools cache; otherwise lightweight tools/list probe
+          const cached = toolsListCache.get(hit.sessionId);
+          if (cached?.tools) {
+            hit.at = Date.now();
+            return hit.sessionId;
+          }
           try {
-            await request("POST", `/xclaw/sessions/${hit.sessionId}/tools/list`, {
+            const r = await request("POST", `/xclaw/sessions/${hit.sessionId}/tools/list`, {
               method: "tools/list",
+            });
+            toolsListCache.set(hit.sessionId, {
+              tools: r.tools || [],
+              at: Date.now(),
             });
             hit.at = Date.now();
             return hit.sessionId;
           } catch {
             sessionReusePool.delete(key);
+            toolsListCache.delete(hit.sessionId);
           }
         }
       }
@@ -186,6 +198,7 @@ export function createComputerClient(cfg) {
             // leave pooled; agent loop still "destroys" but we no-op HTTP
             if (process.env.XCLAW_COMPUTER_REUSE_HARD_DESTROY === "1") {
               sessionReusePool.delete(k);
+              toolsListCache.delete(sessionId);
               return request("POST", "/xclaw/sessions/destroy", { sessionId });
             }
             return { ok: true, reused: true };
@@ -196,12 +209,20 @@ export function createComputerClient(cfg) {
     },
 
     async listTools(sessionId) {
+      const sid = String(sessionId || "");
+      const hit = toolsListCache.get(sid);
+      if (hit?.tools) {
+        hit.at = Date.now();
+        return hit.tools;
+      }
       const r = await request(
         "POST",
-        `/xclaw/sessions/${sessionId}/tools/list`,
+        `/xclaw/sessions/${sid}/tools/list`,
         { method: "tools/list" }
       );
-      return r.tools || [];
+      const tools = r.tools || [];
+      toolsListCache.set(sid, { tools, at: Date.now() });
+      return tools;
     },
 
     async callTool(sessionId, name, args) {
@@ -255,4 +276,10 @@ export function formatToolResult(result) {
 /** Test/helper: drop reuse pool */
 export function clearComputerSessionPool() {
   sessionReusePool.clear();
+  toolsListCache.clear();
+}
+
+/** @returns {{ sessions: number, toolsLists: number }} */
+export function computerClientCacheStats() {
+  return { sessions: sessionReusePool.size, toolsLists: toolsListCache.size };
 }
