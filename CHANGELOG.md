@@ -1,5 +1,15 @@
 ## Unreleased
 
+## 3.79.0 — hands-free evolve
+
+- **Self-evolution**: `xclaw evolve status|tick|overlay`, heartbeat evolve phase, handler refresh on ensure
+- **Checkpoints**: resume lock, mark resumed, prune (maxCount/maxAge), path-sorted list
+- **Grounding**: path-binding claims ↔ tool evidence
+- **Goals**: `xclaw goal --harness --exists/--contains/--cmd` → queue runs long harness
+- **Resume CLI**: `--strategy --harness --max-turns --force`
+- **Doctor**: harness.principles, checkpoints.store, evolve.handsFree
+- **Tests**: offline fixtures for resume/approval/budget gates; path-bind; prune; resume-lock
+
 ### Hands-free / evolve
 - Self-evolution tick: resume locks, checkpoint prune, path-binding grounding
 - `xclaw goal --harness` queue path, heartbeat handler refresh
