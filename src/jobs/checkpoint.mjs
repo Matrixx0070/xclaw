@@ -32,6 +32,8 @@ export async function saveCheckpoint(cfg, job) {
     checkpointTurn: job.checkpointTurn ?? job.turns ?? null,
     at: new Date().toISOString(),
     maxTurns: job.maxTurns,
+    resumedBy: job.resumedBy || null,
+    resumedAt: job.resumedAt || null,
   };
   const tmp = fp + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(slim, null, 2));
@@ -66,9 +68,8 @@ export async function listCheckpoints(cfg, { limit = 20 } = {}) {
   } catch {
     return [];
   }
-  files.sort().reverse();
   const out = [];
-  for (const f of files.slice(0, limit)) {
+  for (const f of files) {
     try {
       const j = JSON.parse(await fs.readFile(path.join(d, f), "utf8"));
       out.push({
@@ -78,13 +79,15 @@ export async function listCheckpoints(cfg, { limit = 20 } = {}) {
         at: j.at,
         midRun: j.midRun,
         turns: j.turns,
+        resumedBy: j.resumedBy || null,
         path: path.join(d, f),
       });
     } catch {
       /* */
     }
   }
-  return out;
+  out.sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+  return out.slice(0, limit);
 }
 
 /** Classify checkpoint / job error for recovery strategy */
@@ -199,6 +202,34 @@ export function recoveryStrategyFor(kind, cp = {}, opts = {}) {
   }
 }
 
+
+/**
+ * Mark parent checkpoint so auto-resume will not pick it again.
+ */
+export async function markCheckpointResumed(cfg, jobId, { resumedBy, status = "resumed" } = {}) {
+  const cp = await loadCheckpoint(cfg, jobId);
+  cp.status = status;
+  cp.midRun = false;
+  cp.resumedBy = resumedBy || null;
+  cp.resumedAt = new Date().toISOString();
+  await saveCheckpoint(cfg, cp);
+  return cp;
+}
+
+/** In-process lock to reduce double-resume races within one process */
+const resumeLocks = new Set();
+
+export function tryAcquireResumeLock(jobId) {
+  const id = String(jobId || "");
+  if (!id || resumeLocks.has(id)) return false;
+  resumeLocks.add(id);
+  return true;
+}
+
+export function releaseResumeLock(jobId) {
+  resumeLocks.delete(String(jobId || ""));
+}
+
 /**
  * Resume: classify failure → strategy → re-run with tailored recovery prompt.
  */
@@ -206,6 +237,38 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
   const cp = await loadCheckpoint(cfg, jobId);
   if (cp.pass) {
     return { ...cp, resumed: false, note: "already passed" };
+  }
+  if (cp.status === "resumed" && cp.resumedBy && !opts.force) {
+    return {
+      ...cp,
+      resumed: false,
+      note: "already_resumed",
+      resumedBy: cp.resumedBy,
+    };
+  }
+  if (cp.status === "resuming" && !opts.force) {
+    return { ...cp, resumed: false, note: "resume_in_progress" };
+  }
+
+  const gotLock = tryAcquireResumeLock(jobId);
+  if (!gotLock && !opts.force) {
+    return {
+      id: jobId,
+      resumed: false,
+      note: "resume_locked",
+      pass: false,
+      status: "running",
+    };
+  }
+
+  try {
+  // Mark parent as resuming so parallel ticks skip it
+  try {
+    cp.status = "resuming";
+    cp.midRun = false;
+    await saveCheckpoint(cfg, cp);
+  } catch {
+    /* */
   }
 
   const kind = opts.strategy || classifyFailure(opts.error || cp.error, cp);
@@ -247,5 +310,14 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
   job.resumedFrom = cp.id;
   job.recoveryStrategy = plan.strategy;
   job.recoveryKind = kind;
+
+  try {
+    await markCheckpointResumed(cfg, jobId, { resumedBy: job.id, status: "resumed" });
+  } catch {
+    /* */
+  }
   return job;
+  } finally {
+    releaseResumeLock(jobId);
+  }
 }
