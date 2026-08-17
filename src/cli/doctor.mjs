@@ -749,6 +749,31 @@ export async function runDoctor(opts = {}) {
     push("autonomy.heartbeat", "warn", e.message || String(e));
   }
 
+  // P2 skill install posture
+  try {
+    const { canInstallSkills } = await import("../skills/propose.mjs");
+    const gate = canInstallSkills(cfg);
+    const prof = String(cfg.profile || process.env.XCLAW_PROFILE || "lab").toLowerCase();
+    if (prof === "prod" && gate.ok && cfg.skills?.allowInstall) {
+      push(
+        "skills.install",
+        "warn",
+        "prod allowInstall=true — auto skill writeback enabled (owner-aware)"
+      );
+    } else if (!gate.ok) {
+      push(
+        "skills.install",
+        "ok",
+        `gated (${gate.reason}) — proposals only; xclaw skills install --owner-approved`
+      );
+    } else {
+      push("skills.install", "ok", `install allowed (${gate.reason})`);
+    }
+  } catch (e) {
+    push("skills.install", "warn", e.message || String(e));
+  }
+
+
   // R1 channel + computer health
   try {
     const { channelHealthStatus } = await import("../channels/health-watchdog.mjs");
