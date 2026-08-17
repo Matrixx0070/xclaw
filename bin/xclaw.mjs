@@ -1835,6 +1835,16 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       const ready = await checkReadiness(cfg);
       let q = {};
       try { q = await queueStats(cfg); } catch {}
+      let autonomy = null;
+      try {
+        const { autonomyPolicySummary } = await import("../src/config/autonomy-policy.mjs");
+        autonomy = autonomyPolicySummary(cfg);
+      } catch {}
+      const fabric = {
+        commitGates: process.env.XCLAW_COMMIT_GATES === "1" || process.env.XCLAW_COMMIT_GATES === "true",
+        fabricEnforce: process.env.XCLAW_FABRIC_ENFORCE === "1" || process.env.XCLAW_FABRIC_ENFORCE === "true",
+        prodHardening: cfg._prodHardening || [],
+      };
       const out = {
         version,
         profile: cfg.profile || "dev",
@@ -1843,12 +1853,18 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         computer: ready.body?.checks?.computer,
         queue: { queued: q.queued, running: q.running, failed: q.failed, deadLetter: q.deadLetter },
         gateway: `http://${cfg.gateway?.host}:${cfg.gateway?.port}`,
+        autonomy,
+        fabric,
       };
       if (args.includes("--json")) console.log(JSON.stringify(out, null, 2));
       else {
         console.log(`XClaw ${out.version} · profile=${out.profile} · model=${out.model}`);
         console.log(`ready=${out.ready} · computer=${out.computer?.ok ? "UP" : "DOWN"} · gateway ${out.gateway}`);
         console.log(`queue queued=${out.queue.queued||0} running=${out.queue.running||0} failed=${out.queue.failed||0} dead=${out.queue.deadLetter||0}`);
+        if (autonomy) {
+          console.log(`autonomy level=${autonomy.level} autoApprove=${autonomy.autoApprove} heartbeat=${autonomy.heartbeatEnabled}`);
+        }
+        console.log(`fabric commitGates=${fabric.commitGates} fabricEnforce=${fabric.fabricEnforce}`);
       }
       process.exitCode = out.ready ? 0 : 1;
       break;
