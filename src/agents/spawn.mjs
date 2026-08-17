@@ -76,6 +76,27 @@ function publicView(r) {
 /**
  * Spawn child agent; streams events to parent onEvent with subagentId.
  */
+
+/**
+ * P1 — Prefer host workspace when the goal references absolute paths
+ * outside a git worktree (e.g. /tmp/proof.txt). Opt-in via opts.hostWorkspace
+ * or XCLAW_SWARM_HOST_WORKSPACE=1.
+ */
+export function shouldUseHostWorkspace(opts = {}, task = "") {
+  if (opts.hostWorkspace === true) return true;
+  if (opts.hostWorkspace === false) return false;
+  if (
+    process.env.XCLAW_SWARM_HOST_WORKSPACE === "1" ||
+    process.env.XCLAW_SWARM_HOST_WORKSPACE === "true"
+  ) {
+    return true;
+  }
+  const text = String(task || opts.task || "");
+  // Absolute unix paths that are not under typical repo roots
+  const abs = text.match(/(?:^|\s|["'`])(\/(?:tmp|var\/tmp|home)\/[^\s"'`]+)/);
+  return Boolean(abs);
+}
+
 export async function spawnSubagent(opts = {}) {
   const id = randomUUID();
   const parentId = opts.parentId || null;
@@ -146,11 +167,20 @@ export async function spawnSubagent(opts = {}) {
       record.worktree = { path: wt.path, branch: wt.branch };
     }
   } else if (opts.isolateWorkspace) {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const os = await import("node:os");
-    isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-sub-"));
-    workingDir = isolatedDir;
+    // P1 host workspace: keep process cwd when goal uses absolute host paths
+    // (e.g. /tmp/proof.txt) so verify/writes match owner paths.
+    const taskText = opts.task || opts.goal || "";
+    if (shouldUseHostWorkspace(opts, taskText)) {
+      workingDir = opts.workingDir || process.cwd();
+      record.hostWorkspace = true;
+      record.isolated = false;
+    } else {
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      const os = await import("node:os");
+      isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-sub-"));
+      workingDir = isolatedDir;
+    }
   }
 
   const childCfg = {
