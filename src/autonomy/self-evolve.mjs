@@ -71,9 +71,17 @@ export async function handsFreeStatus(cfg) {
   } catch {
     /* */
   }
-  const interrupted = checkpoints.filter(
-    (c) => c.status === "running" || c.midRun || (c.status && c.status !== "succeeded" && !c.pass)
-  );
+  const interrupted = checkpoints.filter((c) => {
+    if (!c || c.status === "resumed" || c.status === "resuming" || c.status === "succeeded") {
+      return false;
+    }
+    if (c.resumedBy) return false;
+    return (
+      c.status === "running" ||
+      c.midRun ||
+      (c.status && c.status !== "succeeded" && !c.pass)
+    );
+  });
 
   let proposals = [];
   try {
