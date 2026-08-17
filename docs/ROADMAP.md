@@ -25,8 +25,8 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 3. **Eval regression as release gate** — **done**  
    `test/long-horizon-fixtures.test.mjs` (hello workspace + abs verify + checkpoint) in eval-regression + CI.
 
-4. **Computer-use depth**  
-   Hybrid observe (screenshot + a11y/DOM where available); reduce pure-coordinate fragility on dynamic UIs.
+4. **Computer-use depth** — **done**  
+   Structure snapshot: set-of-marks + bbox click coords; `browser_observe` hybrid with optional `include_pixels`.
 
 5. **Durable browser profile** — **done**  
    Default vault `~/.xclaw/browser-profiles/default`; opt-out `XCLAW_BROWSER_EPHEMERAL=1`; doctor no longer warns when using default.
