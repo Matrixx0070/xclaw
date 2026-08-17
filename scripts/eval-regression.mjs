@@ -20,6 +20,7 @@ const UNIT_PACKS = [
   "test/channels-p2.test.mjs",
   "test/provider-registry.test.mjs",
   "test/computer-contract.test.mjs",
+  "test/long-horizon-fixtures.test.mjs",
 ];
 
 function run(args, opts = {}) {
