@@ -328,15 +328,62 @@ export async function markCheckpointResumed(cfg, jobId, { resumedBy, status = "r
 /** In-process lock to reduce double-resume races within one process */
 const resumeLocks = new Set();
 
-export function tryAcquireResumeLock(jobId) {
+function lockPath(cfg, jobId) {
+  return path.join(dir(cfg), ".locks", `${String(jobId)}.lock`);
+}
+
+/**
+ * In-process + cross-process lock (exclusive lock file under checkpoints/.locks/).
+ * @returns {boolean|Promise<boolean>}
+ */
+export function tryAcquireResumeLock(jobId, cfg = null) {
   const id = String(jobId || "");
   if (!id || resumeLocks.has(id)) return false;
   resumeLocks.add(id);
-  return true;
+  if (!cfg) return true;
+  // Sync-ish via deasync-free path: return Promise when cfg provided
+  return acquireFileLock(cfg, id);
 }
 
-export function releaseResumeLock(jobId) {
-  resumeLocks.delete(String(jobId || ""));
+async function acquireFileLock(cfg, id) {
+  const fp = lockPath(cfg, id);
+  try {
+    await fs.mkdir(path.dirname(fp), { recursive: true });
+    const fh = await fs.open(fp, "wx"); // exclusive create
+    await fh.writeFile(
+      JSON.stringify({ pid: process.pid, at: new Date().toISOString() })
+    );
+    await fh.close();
+    return true;
+  } catch (err) {
+    if (err && (err.code === "EEXIST" || err.code === "EACCES")) {
+      // Stale lock: if older than 2h, steal
+      try {
+        const st = await fs.stat(fp);
+        if (Date.now() - st.mtimeMs > 2 * 60 * 60 * 1000) {
+          await fs.unlink(fp).catch(() => {});
+          return acquireFileLock(cfg, id);
+        }
+      } catch {
+        /* */
+      }
+      resumeLocks.delete(id);
+      return false;
+    }
+    resumeLocks.delete(id);
+    return false;
+  }
+}
+
+export async function releaseResumeLock(jobId, cfg = null) {
+  const id = String(jobId || "");
+  resumeLocks.delete(id);
+  if (!cfg) return;
+  try {
+    await fs.unlink(lockPath(cfg, id));
+  } catch {
+    /* */
+  }
 }
 
 /**
@@ -359,7 +406,7 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
     return { ...cp, resumed: false, note: "resume_in_progress" };
   }
 
-  const gotLock = tryAcquireResumeLock(jobId);
+  const gotLock = await tryAcquireResumeLock(jobId, cfg);
   if (!gotLock && !opts.force) {
     return {
       id: jobId,
@@ -427,6 +474,6 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
   }
   return job;
   } finally {
-    releaseResumeLock(jobId);
+    await releaseResumeLock(jobId, cfg);
   }
 }
