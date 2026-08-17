@@ -86,7 +86,28 @@ export async function loadConfig(opts = {}) {
     envProfile || user.profile || defaultProfile || "lab";
   let cfg = deepMerge(structuredClone(DEFAULT_CONFIG), { profile: profileName });
   cfg = applyProfile(cfg); // profile pack for profileName
-  cfg = deepMerge(cfg, user); // user file wins on keys present
+  cfg = deepMerge(cfg, user);
+  // soft-migrate computer.engine: first-run used to freeze bundle into user json
+  // even for lab profile. If profile is lab/dev and user still has stock bundle
+  // without explicit XCLAW_COMPUTER_ENGINE, prefer native.
+  {
+    const prof = cfg.profile || "lab";
+    const envEng = process.env.XCLAW_COMPUTER_ENGINE;
+    const userEng = user?.computer?.engine;
+    if (
+      !envEng &&
+      (prof === "lab" || prof === "dev") &&
+      (userEng === "bundle" || userEng === undefined) &&
+      user?.computer?.nativeServer !== true
+    ) {
+      cfg.computer = {
+        ...(cfg.computer || {}),
+        engine: "native",
+        nativeServer: true,
+      };
+    }
+  }
+ // user file wins on keys present
   // If env selected a different profile than user.profile, re-apply env pack
   // then re-merge user so explicit user keys still win — but profile name stays env.
   if (envProfile && envProfile !== (user.profile || defaultProfile)) {

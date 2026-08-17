@@ -4,7 +4,7 @@ Minimal path to run real goals with tools (lab profile).
 
 ## 1. Native computer (recommended)
 
-**lab** and **dev** profiles default `computer.engine=native` (thin). **prod** keeps bundle.
+**Default engine is native (thin).** lab/dev profiles and DEFAULT_CONFIG use native; **prod** profile still selects bundle. Soft-migrate upgrades older user configs that froze `engine:bundle` under lab.
 
 ```bash
 export XCLAW_COMPUTER_ENGINE=native

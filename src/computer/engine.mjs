@@ -13,7 +13,7 @@ import path from "node:path";
 import fs from "node:fs";
 
 /** Product default when no env/cfg override is set. */
-export const DEFAULT_COMPUTER_ENGINE = "bundle";
+export const DEFAULT_COMPUTER_ENGINE = "native";
 
 /**
  * @param {object} [cfg]
@@ -92,7 +92,7 @@ export function describeComputerEngine(cfg = {}, root = process.cwd()) {
     /** @deprecated bundle is default; true only if somehow treated as non-default */
     isFallbackBundle: engine === "bundle" && DEFAULT_COMPUTER_ENGINE !== "bundle",
     isDefaultBundle: engine === "bundle",
-    strategyPhase: "C4-bundle-default",
+    strategyPhase: "C5-native-default",
     policy: {
       defaultEngine: DEFAULT_COMPUTER_ENGINE,
       handEditBundle: false,
