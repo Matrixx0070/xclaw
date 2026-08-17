@@ -88,3 +88,16 @@ xclaw skills proposals
 xclaw skills install <file.md> --owner-approved   # prod
 xclaw skills reject <file.md> "not useful"
 ```
+
+
+## Approvals inbox
+
+```bash
+xclaw approvals list
+xclaw approvals approve <id>
+xclaw approvals deny <id> "reason"
+```
+
+Gateway: `GET /approvals`, `POST /approvals/approve`, `POST /approvals/deny` (also `/security/pending` + `/security/decide`).
+
+Unknown id → `APPROVAL_NOT_FOUND` (404).
