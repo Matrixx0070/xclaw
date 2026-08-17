@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Swarm isolate path fixes
+
+- **sandbox**: `allowPaths` honored without secondary `..` rejection
+- **lab profile**: `sandbox.allowPaths: ["/tmp"]`
+- **spawn**: child `planRoot` + `/tmp` allow when isolate under `/tmp`
+- **approvals / agent loop**: systemRunPlan cwd pinned to tool/`workingDir` (fixes spawn enforce cwd drift)
+- **Live verified**: swarm implement→verify writes `/tmp/xclaw-swarm-proof.txt` = `SWARM_LIVE_OK`, cwd drift 0
+
 ## Unreleased — Realtime buffer hardening
 
 - **`src/shared/bounded-queue.mjs`**: drop_oldest / drop_newest queues with metrics
