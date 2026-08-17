@@ -29,6 +29,7 @@ import { sendUtteranceToGateway } from "../gateway-bridge.mjs";
 import { recordUntilEndpoint } from "../vad.mjs";
 import { speakSentences } from "../sentence-tts.mjs";
 import { streamSpeakReply, shouldStreamVoiceReply } from "../stream-reply.mjs";
+import { recordVoiceMetric } from "../metrics.mjs";
 
 /**
  * @param {object} cfg
@@ -45,7 +46,33 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
     opts.commandSeconds ?? c.commandSeconds ?? cfg.voice?.wake?.commandSeconds ?? 4;
   const speakReplies = opts.speak !== false;
   const entente = createEntente();
-  const onEvent = opts.onEvent || ((ev) => console.log(JSON.stringify(ev)));
+  const onEvent = (ev) => {
+    try {
+      if (ev.type === "listen.wake") {
+        recordVoiceMetric("wake", { phrase: ev.phrase });
+      } else if (ev.type === "listen.utterance") {
+        recordVoiceMetric("utterance", {});
+      } else if (ev.type === "listen.vad") {
+        recordVoiceMetric("vad", {
+          durationMs: ev.durationMs,
+          speechMs: ev.speechMs,
+          reason: ev.reason,
+        });
+      } else if (ev.type === "listen.route" && ev.mode === "command") {
+        recordVoiceMetric("command", {});
+      } else if (ev.type === "listen.tts" || (ev.type === "listen.reply" && ev.firstAudioMs != null)) {
+        recordVoiceMetric(ev.streamed ? "reply_stream" : "reply_agent", {
+          firstAudioMs: ev.firstAudioMs,
+        });
+      } else if (ev.type === "listen.reply" && ev.via === "gateway") {
+        recordVoiceMetric("reply_agent", { firstAudioMs: ev.firstAudioMs });
+      }
+    } catch {
+      /* */
+    }
+    if (opts.onEvent) opts.onEvent(ev);
+    else console.log(JSON.stringify(ev));
+  };
 
   console.log("XClaw voice listen (W1) — say a wake phrase, then your command");
   console.log("Phrases:", c.phrases.join(" | "));
@@ -243,6 +270,7 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
     if (route.mode === "casual" && opts.agent !== true) {
       reply = casualReply(userText);
       console.log(`[casual] ${reply}`);
+      recordVoiceMetric("reply_casual", {});
     } else {
       const preferAgent =
         opts.agent !== false &&
