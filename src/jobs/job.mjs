@@ -143,6 +143,9 @@ export async function runJob(opts) {
       cfg: jobCfg,
       workingDir: workspace,
       signal: ac.signal,
+      systemNotes: opts.systemNotes || jobCfg.agent?.systemNotes,
+      sessionId: opts.sessionId || (opts.persistRun ? id : undefined),
+      persistRun: opts.persistRun,
       onEvent: (e) => {
         push(e);
         if (e.type === "tool" && e.phase === "end") {
