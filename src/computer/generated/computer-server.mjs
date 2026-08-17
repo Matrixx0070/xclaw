@@ -585,6 +585,49 @@ function buildToolEnv(cfg = {}, sourceEnv = process.env) {
 // src/computer/modules/bash-tool.mjs
 var DEFAULT_TIMEOUT_SECONDS = 30;
 var MAX_TIMEOUT_SECONDS = 120;
+var TERMINATE_GRACE_MS = 2e3;
+function signalChild(child, sig = "SIGTERM") {
+  if (!child?.pid) return false;
+  try {
+    process.kill(-child.pid, sig);
+    return true;
+  } catch {
+    try {
+      child.kill(sig);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+function terminateChild(child, { graceMs = TERMINATE_GRACE_MS, signal } = {}) {
+  return new Promise((resolve) => {
+    if (!child?.pid) {
+      resolve({ signal: "none", forced: false });
+      return;
+    }
+    let settled = false;
+    const done = (info) => {
+      if (settled) return;
+      settled = true;
+      resolve(info);
+    };
+    const onExit = () => done({ signal: "SIGTERM", forced: false });
+    child.once("exit", onExit);
+    signalChild(child, "SIGTERM");
+    const t = setTimeout(() => {
+      child.removeListener("exit", onExit);
+      signalChild(child, "SIGKILL");
+      done({ signal: "SIGKILL", forced: true });
+    }, Math.max(0, graceMs));
+    if (typeof t.unref === "function") t.unref();
+    if (child.exitCode != null || child.signalCode) {
+      clearTimeout(t);
+      child.removeListener("exit", onExit);
+      done({ signal: child.signalCode || "SIGTERM", forced: false });
+    }
+  });
+}
 function normalizeBashTimeoutSeconds(raw) {
   if (raw == null || raw === "") return DEFAULT_TIMEOUT_SECONDS;
   let n = Number(raw);
@@ -675,28 +718,33 @@ async function executeBash(input = {}, ctx = {}) {
       pid: child.pid,
       logFile,
       stdout: "",
-      stderr: "",
+      stderr: `Started in background (PID ${child.pid}). Log: ${logFile}`,
       timedOut: false,
       interrupted: false,
       spawnEnforced: Boolean(check.enforced),
       osSandboxed,
       netIsolated: Boolean(wrapped.netIsolated),
-      envPolicy: envPolicy.mode
+      envPolicy: envPolicy.mode,
+      code: "BASH_BG_STARTED"
     };
   }
   return new Promise((resolve) => {
     const child = spawn(spec.exe, spec.argv, {
       cwd: spec.cwd,
       env: spec.env,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true
     });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
     let interrupted = false;
+    let stopSignal = null;
+    let stopForced = false;
     let stdoutTruncated = false;
     let stderrTruncated = false;
     const max = 2e6;
+    let settled = false;
     child.stdout.on("data", (c) => {
       if (stdout.length >= max) {
         stdoutTruncated = true;
@@ -724,30 +772,65 @@ async function executeBash(input = {}, ctx = {}) {
       }
     });
     let timer = null;
+    let abortListener = null;
+    const graceMs = Number(ctx.cfg?.security?.bashTerminateGraceMs) >= 0 ? Number(ctx.cfg.security.bashTerminateGraceMs) : TERMINATE_GRACE_MS;
+    const beginStop = async (reason) => {
+      if (reason === "timeout") timedOut = true;
+      if (reason === "abort") interrupted = true;
+      const info = await terminateChild(child, { graceMs });
+      stopSignal = info.signal;
+      stopForced = info.forced;
+    };
     if (timeoutMs > 0) {
       timer = setTimeout(() => {
-        timedOut = true;
+        void beginStop("timeout");
+      }, timeoutMs);
+      if (typeof timer.unref === "function") timer.unref();
+    }
+    if (ctx.signal) {
+      abortListener = () => {
+        void beginStop("abort");
+      };
+      if (ctx.signal.aborted) abortListener();
+      else ctx.signal.addEventListener("abort", abortListener, { once: true });
+    }
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (ctx.signal && abortListener) {
         try {
-          child.kill("SIGKILL");
+          ctx.signal.removeEventListener("abort", abortListener);
         } catch {
         }
-      }, timeoutMs);
-    }
-    const onAbort = () => {
-      interrupted = true;
-      try {
-        child.kill("SIGKILL");
-      } catch {
       }
-    };
-    if (ctx.signal) {
-      if (ctx.signal.aborted) onAbort();
-      else ctx.signal.addEventListener("abort", onAbort, { once: true });
-    }
-    child.on("close", (code) => {
+      resolve({
+        ok: false,
+        stdout,
+        stderr: String(err?.message || err),
+        exitCode: 1,
+        timedOut: false,
+        interrupted: false,
+        outputTruncated: false,
+        spawnEnforced: Boolean(check.enforced),
+        osSandboxed,
+        netIsolated: Boolean(wrapped.netIsolated),
+        envPolicy: envPolicy.mode,
+        code: "BASH_SPAWN_FAILED"
+      });
+    });
+    child.on("close", (code, signal) => {
+      if (settled) return;
+      settled = true;
       if (timer) clearTimeout(timer);
-      const exitCode = code ?? 1;
-      const ok = !timedOut && !interrupted && exitCode === 0;
+      if (ctx.signal && abortListener) {
+        try {
+          ctx.signal.removeEventListener("abort", abortListener);
+        } catch {
+        }
+      }
+      const exitCode = code ?? (signal ? 128 : 1);
+      const ok = !timedOut && !interrupted && code === 0;
       const outputTruncated = stdoutTruncated || stderrTruncated;
       if (outputTruncated) {
         const note = `
@@ -757,7 +840,8 @@ async function executeBash(input = {}, ctx = {}) {
       let errCode;
       if (timedOut) errCode = "BASH_TIMEOUT";
       else if (interrupted) errCode = "BASH_ABORTED";
-      else if (exitCode !== 0) errCode = "BASH_EXIT_NONZERO";
+      else if (code !== 0 && code != null) errCode = "BASH_EXIT_NONZERO";
+      else if (code == null && signal) errCode = "BASH_SIGNAL";
       else if (outputTruncated) errCode = "BASH_OUTPUT_TRUNCATED";
       else errCode = "BASH_OK";
       resolve({
@@ -767,6 +851,8 @@ async function executeBash(input = {}, ctx = {}) {
         exitCode,
         timedOut,
         interrupted,
+        signal: signal || stopSignal || null,
+        stopForced,
         outputTruncated,
         truncated: { stdout: stdoutTruncated, stderr: stderrTruncated, maxChars: max },
         spawnEnforced: Boolean(check.enforced),
@@ -780,7 +866,7 @@ async function executeBash(input = {}, ctx = {}) {
 }
 var BashTool = {
   name: "xclaw_bash",
-  description: "Run a bash command in a fresh non-login shell at the session cwd. timeout is SECONDS (default 30, max 120) \u2014 never milliseconds. Prefer short commands; for long jobs use background=true and read the logFile.",
+  description: "Run a bash command in a fresh non-login shell at the session cwd. timeout is SECONDS (default 30, max 120) \u2014 never milliseconds. Long jobs: background=true \u2192 {pid, logFile, code:BASH_BG_STARTED}. Status example: kill -0 <pid> 2>/dev/null && echo ALIVE || echo DEAD; tail -n 40 <logFile>. Kill example: kill <pid> || kill -9 <pid>.",
   inputSchema: {
     type: "object",
     properties: {

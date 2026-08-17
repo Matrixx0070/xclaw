@@ -66,3 +66,7 @@ node scripts/cua-doctor.mjs       # CDP + desktop only
 - Desktop GUI act: off unless `XCLAW_DESKTOP_GUI=1`
 - No CDP → `computer_act` actuation codes (`CUA_ACT_REQUIRES_BUNDLE` / CDP_*)
 - Bash tool `timeout` is **seconds**, max 120 (not ms)
+
+## Bash tool codes
+
+See [BASH_CODES.md](./BASH_CODES.md) and [BASH_BACKGROUND.md](./BASH_BACKGROUND.md).
