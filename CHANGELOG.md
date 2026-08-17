@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.77.0 — Autonomy, fabric, prod gates (2026-08-17)
+
+Production-minded ops plane for long-lived agents:
+
+- **Autonomy levels** (`off|supervised|lab|full`) + heartbeat + channel delivery (Telegram/Discord/Slack)
+- **Prod hardening** — lab config cannot leak autoApprove into prod; `XCLAW_AUTONOMY_LEVEL` env wins
+- **Browser fabric** — tab leases, commit gates, role bind, durable profile default
+- **Hybrid observe** — set-of-marks + bbox; optional pixels
+- **Jobs / queue / swarm** — verify absolute paths, checkpoint resume, host-workspace mode
+- **Skills** — propose always; install owner-gated in prod (`xclaw skills install --owner-approved`)
+- **Doctor / status / info / self-test / CI** — posture checks end-to-end
+- **Docs** — AUTONOMY.md, FABRIC.md, MCP-PARITY.md, ROADMAP.md
+
+### Prior unreleased notes (merged)
+
 ## Unreleased — Autonomy levels
 
 - **enforceProdHardening**: prod forces autoApprove=false, clamps lab/full→supervised, swarm.autoMerge=false (break-glass: XCLAW_ALLOW_PROD_AUTO=1)
