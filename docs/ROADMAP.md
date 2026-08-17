@@ -16,8 +16,8 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 
 ## P0 — next product value
 
-1. **Channel-delivered heartbeat**  
-   Wire `autonomy.heartbeat.delivery` end-to-end for Telegram/Discord (owner notify on non-`HEARTBEAT_OK`).
+1. **Channel-delivered heartbeat** — **done**  
+   Fixed `deliverToChannel` arg order; silence skip; Telegram/Discord/Slack; docs in AUTONOMY.md.
 
 2. **OS sandbox default on prod** — **done**  
    Prod `osSandbox: auto`; `enforceProdHardening` forces `off`→`auto`; doctor probes `works=true|false`.
