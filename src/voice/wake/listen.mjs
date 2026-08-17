@@ -26,6 +26,7 @@ import fs from "node:fs/promises";
 import { playWav } from "../playback.mjs";
 import { routeVoiceUtterance, casualReply } from "../router.mjs";
 import { sendUtteranceToGateway } from "../gateway-bridge.mjs";
+import { recordUntilEndpoint } from "../vad.mjs";
 
 /**
  * @param {object} cfg
@@ -109,26 +110,46 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
       if (ack.ok) await playWav(ack.path, { speech: entente.speech });
     }
 
-    // Command window
-    const cmdRec = await recordClip({
-      seconds: commandSeconds,
-      sampleRate: c.sampleRate,
-    });
+    // Command window — VAD endpoint (silence) instead of fixed duration
+    const useVad = opts.vad !== false && cfg.voice?.vad?.enabled !== false;
+    let cmdRec;
+    if (useVad) {
+      cmdRec = await recordUntilEndpoint({
+        cfg,
+        sampleRate: c.sampleRate,
+        threshold: c.energyThreshold,
+        maxMs: (opts.commandSeconds || commandSeconds) * 1000,
+        silenceMs: opts.silenceMs || cfg.voice?.vad?.silenceMs || 450,
+        prerollMs: opts.prerollMs || cfg.voice?.vad?.prerollMs || 2500,
+      });
+      onEvent({
+        type: "listen.vad",
+        reason: cmdRec.reason,
+        durationMs: cmdRec.durationMs,
+        speechMs: cmdRec.speechMs,
+        energyPeak: cmdRec.energyPeak,
+      });
+      if (cmdRec.ok) {
+        console.log(
+          `[vad] endpoint reason=${cmdRec.reason} dur=${cmdRec.durationMs}ms speech=${cmdRec.speechMs}ms peak=${cmdRec.energyPeak}`
+        );
+      }
+    } else {
+      cmdRec = await recordClip({
+        seconds: commandSeconds,
+        sampleRate: c.sampleRate,
+      });
+    }
     if (stopped) break;
     if (!cmdRec.ok) {
-      console.error("[listen] command record failed:", cmdRec.error);
-      continue;
-    }
-
-    let energy = 0;
-    try {
-      energy = wavRmsEnergy(await fs.readFile(cmdRec.path));
-    } catch {
-      /* */
-    }
-    if (energy < c.energyThreshold * 0.5) {
-      onEvent({ type: "listen.command_silent", energy });
-      console.log("[listen] no speech after wake");
+      console.error(
+        "[listen] command record failed:",
+        cmdRec.error || cmdRec.reason
+      );
+      if (cmdRec.reason === "no_speech" || cmdRec.reason === "preroll_timeout") {
+        console.log("[listen] no speech after wake");
+        onEvent({ type: "listen.command_silent", reason: cmdRec.reason });
+      }
       continue;
     }
 
