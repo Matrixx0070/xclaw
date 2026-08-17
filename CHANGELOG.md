@@ -2,6 +2,8 @@
 
 ## Unreleased — Autonomy levels
 
+- **docs/FABRIC.md**: tab leases, commit gates, role bind, beforeNavigate order
+
 - **docs/AUTONOMY.md**: levels, heartbeat, jobs/queue/swarm pointers
 
 - **`src/config/autonomy-policy.mjs`**: levels `off | supervised | lab | full` → security + maxTurns + heartbeat defaults
