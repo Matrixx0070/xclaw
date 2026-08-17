@@ -151,3 +151,26 @@ Opt-in only (`XCLAW_DESKTOP_GUI=1`) on **Windows** with `pywinauto`:
 Helper: `scripts/desktop-uia-act.py` (mouse/keyboard + UIA invoke by name).
 
 Still prefer browser CDP for web UIs. macOS act remains unsupported.
+
+
+## macOS AX observe (M1)
+
+```bash
+# On macOS:
+pip install pyobjc-framework-ApplicationServices pyobjc-framework-Cocoa
+# Grant: System Settings → Privacy & Security → Accessibility (to Terminal/node)
+```
+
+```json
+{ "surface": "desktop", "action": "observe", "app": "Safari", "max": 40 }
+```
+
+Helper: `scripts/desktop-ax-observe.py` → `mode: "ax"`, refs `a1`…
+
+| Code | Meaning |
+|------|---------|
+| AX_NOT_INSTALLED | need pyobjc |
+| AX_TCC_REQUIRED | Accessibility permission missing |
+| AX_WALK_FAILED | tree walk error |
+
+**M2** (AXPress / CGEvent act) not implemented yet — act still `DESKTOP_GUI_UNSUPPORTED_OS` on darwin.

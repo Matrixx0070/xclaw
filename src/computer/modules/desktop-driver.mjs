@@ -69,6 +69,11 @@ function uiaActScriptPath() {
   return path.resolve(here, "../../../scripts/desktop-uia-act.py");
 }
 
+function axScriptPath() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(here, "../../../scripts/desktop-ax-observe.py");
+}
+
 /**
  * Run a Python desktop-observe helper; parse JSON stdout (or stderr exit payloads).
  */
@@ -143,9 +148,18 @@ export async function runDesktopObserve(input = {}, env = process.env) {
     });
   }
 
+  if (probe.platform === "darwin") {
+    return runPythonObserveHelper(axScriptPath(), input, env, {
+      empty: "AX_EMPTY",
+      badJson: "AX_BAD_JSON",
+      missing: "AX_HELPER_MISSING",
+      exec: "AX_EXEC_FAILED",
+    });
+  }
+
   return {
     ok: false,
-    error: `desktop observe not implemented for ${probe.platform} (macOS AX planned)`,
+    error: `desktop observe not implemented for ${probe.platform}`,
     code: "DESKTOP_OBSERVE_UNSUPPORTED_OS",
     platform: probe.platform,
   };
