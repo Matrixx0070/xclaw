@@ -11,6 +11,7 @@ import {
   probeLocalVoiceStack,
 } from "./providers/local.mjs";
 import { createSpeechPlane } from "./speech-plane.mjs";
+import { createEntente, voiceCommandsHelp } from "./entente.mjs";
 
 function playWav(path) {
   return new Promise((resolve) => {
@@ -39,6 +40,7 @@ function playWav(path) {
  */
 export async function runVoiceTui(cfg = {}, opts = {}) {
   const speech = createSpeechPlane();
+  const entente = createEntente({ speech });
   const probe = await probeLocalVoiceStack(cfg);
   console.log("XClaw voice TUI — local stack");
   console.log(JSON.stringify(probe, null, 2));
@@ -56,14 +58,22 @@ export async function runVoiceTui(cfg = {}, opts = {}) {
     const line = (await ask("you> ")).trim();
     if (!line) continue;
     if (line === "/quit" || line === "/exit") break;
-    if (line === "/mute") {
-      speech.stopTalking();
-      console.log("(speech muted)");
+    if (line === "/help" || line === "/voice-help" || line === "/commands") {
+      console.log(voiceCommandsHelp());
       continue;
     }
-    if (line === "/unmute") {
-      speech.allowTalking();
-      console.log("(speech allowed)");
+    // Shared voice commands (/mute /cancel /status …)
+    const classified = entente.onUserText(line);
+    if (classified.intent?.kind && classified.intent.kind !== "utterance" && classified.intent.kind !== "none") {
+      console.log("cmd>", classified.reply || classified.intent.kind);
+      if (classified.reply && !speech.isSuppressed()) {
+        const begin = speech.beginSpeak(classified.reply);
+        if (begin.ok) {
+          const spoken = await localSpeak(classified.reply, cfg);
+          if (spoken.ok) await playWav(spoken.path);
+          speech.endSpeak(begin.epoch);
+        }
+      }
       continue;
     }
 
