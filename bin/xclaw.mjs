@@ -347,16 +347,6 @@ Enable with seats.enabled: true in config`);
       process.exit(1);
       break;
     }
-    case "providers": {
-      const { runProvidersCli } = await import("../src/cli/providers-cli.mjs");
-      await runProvidersCli(args.slice(1), { root });
-      break;
-    }
-    case "channels": {
-      const { runChannelsCli } = await import("../src/cli/channels-cli.mjs");
-      await runChannelsCli(args.slice(1), { root });
-      break;
-    }
     case "models": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const cfg = await loadConfig();
@@ -871,157 +861,6 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
-    case "sweep-tmp": {
-      const { loadConfig } = await import("../src/config/load.mjs");
-      const { sweepStaleTmp } = await import("../src/ops/tmp-sweeper.mjs");
-      const cfg = await loadConfig();
-      let dryRun = false, maxAgeMs;
-      for (let i = 1; i < args.length; i++) {
-        if (args[i] === "--dry-run") dryRun = true;
-        else if (args[i] === "--max-age-h" && args[i + 1]) maxAgeMs = Number(args[++i]) * 3600 * 1000;
-      }
-      const r = await sweepStaleTmp(cfg, { dryRun, maxAgeMs });
-      console.log(JSON.stringify({
-        dryRun,
-        removed: r.removed.length,
-        keptFresh: r.kept,
-        skippedReferenced: r.skippedReferenced,
-        errors: r.errors,
-        sample: r.removed.slice(0, 10),
-      }, null, 2));
-      break;
-    }
-    case "browser": {
-      // Dedicated UI browser with singleton-lock self-healing (pm2-friendly:
-      // runs Chrome in the foreground; exits with its code).
-      const { launchDedicatedBrowser } = await import("../src/browser/dedicated.mjs");
-      const { loadConfig } = await import("../src/config/load.mjs");
-      const cfg = await loadConfig();
-      let port = 9224, profileDir = null, url = null, display = null, app = true, checkOnly = false, force = false, binary = null;
-      for (let i = 1; i < args.length; i++) {
-        if (args[i] === "--port" && args[i + 1]) port = Number(args[++i]);
-        else if (args[i] === "--profile" && args[i + 1]) profileDir = args[++i];
-        else if (args[i] === "--url" && args[i + 1]) url = args[++i];
-        else if (args[i] === "--display" && args[i + 1]) display = args[++i];
-        else if (args[i] === "--bin" && args[i + 1]) binary = args[++i];
-        else if (args[i] === "--no-app") app = false;
-        else if (args[i] === "--check") checkOnly = true;
-        else if (args[i] === "--force") force = true;
-      }
-      if (!url) {
-        const gwPort = cfg.gateway?.port || 18790;
-        url = `http://127.0.0.1:${gwPort}/control/`;
-      }
-      const r = await launchDedicatedBrowser({ port, profileDir, url, display, app, checkOnly, force, binary });
-      if (!r.ok) {
-        console.error(JSON.stringify(r, null, 2));
-        process.exit(1);
-      }
-      if (r.alreadyRunning || checkOnly) {
-        console.log(JSON.stringify(r, null, 2));
-        break;
-      }
-      if (r.healed?.length) console.error(`[xclaw:browser] healed stale locks: ${r.healed.join(", ")}`);
-      console.error(`[xclaw:browser] ${r.binary} pid=${r.pid} cdp=:${r.port} profile=${r.profileDir}`);
-      process.exit((await r.wait()) ?? 0);
-    }
-    case "lsp": {
-      // Language Server Protocol over stdio — editor-agnostic completions
-      // backed by the repo-aware completion service. Point any LSP client at
-      // `xclaw lsp` (see docs/COMPLETION.md).
-      const { runLspStdio } = await import("../src/completion/lsp.mjs");
-      runLspStdio();
-      // keep the process alive on stdin
-      return;
-    }
-    case "workers": {
-      const { loadConfig } = await import("../src/config/load.mjs");
-      const wcli = await import("../src/missions/workers-cli.mjs");
-      const cfg = await loadConfig();
-      const sub = args[1] || "list";
-      if (sub === "list") {
-        const workers = wcli.listWorkers(cfg);
-        const pings = await wcli.pingAllWorkers(cfg);
-        console.log(JSON.stringify(
-          workers.map((w) => ({ ...w, ping: pings.find((p) => p.name === w.name) || null })),
-          null, 2
-        ));
-        break;
-      }
-      if (sub === "add") {
-        const name = args[2];
-        const url = args[3];
-        let token = null, allowInsecure = false;
-        for (let i = 4; i < args.length; i++) {
-          if (args[i] === "--token" && args[i + 1]) token = args[++i];
-          else if (args[i] === "--allow-insecure") allowInsecure = true;
-        }
-        if (!name || !url) {
-          console.error("Usage: xclaw workers add <name> <url> [--token t] [--allow-insecure]");
-          process.exit(1);
-        }
-        const r = await wcli.addWorkerEntry(cfg, { name, url, token, allowInsecure });
-        console.log(JSON.stringify(r, null, 2));
-        process.exitCode = r.ok ? 0 : 1;
-        break;
-      }
-      if (sub === "remove") {
-        if (!args[2]) { console.error("Usage: xclaw workers remove <name>"); process.exit(1); }
-        console.log(JSON.stringify(await wcli.removeWorkerEntry(cfg, args[2]), null, 2));
-        break;
-      }
-      if (sub === "ping") {
-        const pings = await wcli.pingAllWorkers(cfg);
-        console.log(JSON.stringify(args[2] ? pings.filter((p) => p.name === args[2]) : pings, null, 2));
-        break;
-      }
-      if (sub === "token") {
-        const r = await wcli.ensureGatewayToken(cfg);
-        console.log(JSON.stringify(r, null, 2));
-        break;
-      }
-      if (sub === "join-command") {
-        let name = null, publicUrl = null;
-        for (let i = 2; i < args.length; i++) {
-          if (args[i] === "--name" && args[i + 1]) name = args[++i];
-          else if (args[i] === "--url" && args[i + 1]) publicUrl = args[++i];
-        }
-        const r = await wcli.buildJoinCommand(cfg, { name, publicUrl });
-        console.log(r.command);
-        if (r.note) console.error(`note: ${r.note}`);
-        if (r.tokenGenerated) console.error("note: gateway token was just generated — restart the gateway to enforce it");
-        break;
-      }
-      console.error("Usage: xclaw workers [list|add|remove|ping|token|join-command]");
-      process.exit(1);
-      break;
-    }
-    case "complete": {
-      // Repo-aware code completion: prefix on stdin → completion on stdout.
-      //   echo -n "function add(" | xclaw complete src/x.js --repo /path [--suffix ")"] [--lang js]
-      const { loadConfig } = await import("../src/config/load.mjs");
-      const { completeCode } = await import("../src/completion/service.mjs");
-      const cfg = await loadConfig();
-      let file = null, repoDir = null, suffix = "", language = null;
-      for (let i = 1; i < args.length; i++) {
-        if (args[i] === "--repo" && args[i + 1]) { repoDir = args[++i]; continue; }
-        if (args[i] === "--suffix" && args[i + 1]) { suffix = args[++i]; continue; }
-        if (args[i] === "--lang" && args[i + 1]) { language = args[++i]; continue; }
-        if (!file && !args[i].startsWith("--")) file = args[i];
-      }
-      const prefix = await new Promise((resolve) => {
-        let d = "";
-        process.stdin.on("data", (c) => (d += c));
-        process.stdin.on("end", () => resolve(d));
-      });
-      if (!prefix.trim()) {
-        console.error("Usage: echo -n '<code prefix>' | xclaw complete [file] [--repo dir] [--suffix code] [--lang js]");
-        process.exit(1);
-      }
-      const out = await completeCode(cfg, { prefix, suffix, file, repoDir, language });
-      process.stdout.write(out.completion + "\n");
-      break;
-    }
     case "doctor": {
       // Phase 7.4: prefer lightweight CLI doctor; fall back to gateway doctor
       const wantJson = args.includes("--json") || args.includes("-j");
@@ -1048,9 +887,9 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     }
     case "self-test": {
       const tests = [];
-      const check = (name, fn) => {
+      const check = async (name, fn) => {
         try {
-          const r = fn();
+          const r = await fn();
           tests.push({ name, ok: true, ...(r && typeof r === "object" ? r : {}) });
         } catch (err) {
           tests.push({ name, ok: false, error: err.message });
@@ -1063,37 +902,75 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       const { createLoopGuard } = await import("../src/agent/loop-guards.mjs");
       const { computeNextRun } = await import("../src/cron/schedule.mjs");
       const { buildSessionKey, parseSessionKey } = await import("../src/sessions/session-key.mjs");
-      check("front-matter", () => {
+      await check("front-matter", () => {
         const { meta } = parseFrontMatter("---\nname: t\npriority: 1\n---\nbody");
         if (meta.name !== "t") throw new Error("meta");
       });
-      check("rate-limit", () => {
+      await check("rate-limit", () => {
         const rl = createRateLimiter({ max: 1, windowMs: 5000 });
         if (!rl.allow("a").ok || rl.allow("a").ok) throw new Error("rl");
       });
-      check("pairing", () => {
+      await check("pairing", () => {
         const store = createPairingStore({ storePath: "/tmp/xclaw-selftest-pair.json" });
         const u = store.upsertPairingRequest({ channel: "telegram", id: "1" });
         if (!u.code) throw new Error("code");
       });
-      check("provider-route", () => {
+      await check("provider-route", () => {
         const r = resolveProviderRoute({}, { model: "grok-3" });
         if (r.provider !== "xai") throw new Error(r.provider);
       });
-      check("loop-guard", () => {
+      await check("loop-guard", () => {
         const g = createLoopGuard({ warningThreshold: 2, criticalThreshold: 5 });
         g.record("t", { x: 1 }, "a");
         g.record("t", { x: 1 }, "a");
         const d = g.detect("t", { x: 1 });
         if (!d.stuck) throw new Error("expected stuck");
       });
-      check("cron-schedule", () => {
+      await check("cron-schedule", () => {
         const n = computeNextRun({ kind: "every", everyMs: 1000 }, 0);
         if (n !== 1000) throw new Error(String(n));
       });
-      check("session-key", () => {
+      await check("session-key", () => {
         const k = buildSessionKey({ channel: "telegram", peerKind: "dm", peerId: "9" });
         if (parseSessionKey(k).peerId !== "9") throw new Error(k);
+      });
+      // Arc: autonomy / prod / sandbox / fabric
+      await check("autonomy-level", async () => {
+        const { resolveAutonomyLevel, applyAutonomyLevel } = await import("../src/config/autonomy-policy.mjs");
+        const prev = process.env.XCLAW_AUTONOMY_LEVEL;
+        delete process.env.XCLAW_AUTONOMY_LEVEL;
+        if (resolveAutonomyLevel({ profile: "prod" }) !== "supervised") throw new Error("prod infer");
+        const full = applyAutonomyLevel({ autonomy: { level: "full" } });
+        if (!full.autonomy.heartbeat?.enabled) throw new Error("full heartbeat");
+        if (prev != null) process.env.XCLAW_AUTONOMY_LEVEL = prev;
+        else delete process.env.XCLAW_AUTONOMY_LEVEL;
+      });
+      await check("prod-hardening", async () => {
+        const { enforceProdHardening } = await import("../src/config/load.mjs");
+        const prev = process.env.XCLAW_ALLOW_PROD_AUTO;
+        delete process.env.XCLAW_ALLOW_PROD_AUTO;
+        delete process.env.XCLAW_AUTONOMY_LEVEL;
+        const cfg = enforceProdHardening({
+          profile: "prod",
+          security: { autoApprove: true, approvalPolicy: "never" },
+          autonomy: { level: "full" },
+          swarm: { autoMerge: true },
+        });
+        if (cfg.security.autoApprove !== false) throw new Error("autoApprove");
+        if (cfg.swarm.autoMerge !== false) throw new Error("autoMerge");
+        if (cfg.autonomy.level !== "supervised") throw new Error("level");
+        if (prev != null) process.env.XCLAW_ALLOW_PROD_AUTO = prev;
+      });
+      await check("sandbox-tmp-allow", async () => {
+        const { getSandboxPolicy, resolveSandboxPath } = await import("../src/security/sandbox.mjs");
+        const policy = getSandboxPolicy({ sandbox: { enabled: true, allowPaths: ["/tmp"] } }, "/tmp/xclaw-sub-x");
+        const abs = resolveSandboxPath(policy, "/tmp/xclaw-swarm-proof.txt");
+        if (abs !== "/tmp/xclaw-swarm-proof.txt") throw new Error(abs);
+      });
+      await check("commit-sensitive", async () => {
+        const { isCommitSensitive } = await import("../src/browser/physics.mjs");
+        if (!isCommitSensitive("https://pay.example.com/checkout")) throw new Error("checkout");
+        if (isCommitSensitive("https://example.com/about")) throw new Error("about");
       });
       const failed = tests.filter((x) => !x.ok);
       console.log(JSON.stringify({ ok: failed.length === 0, tests }, null, 2));
@@ -1102,97 +979,8 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     }
 
     case "mcp": {
-      const rest = args.slice(1); // args[0] is "mcp" itself
-      const sub = rest[0];
-      // bare `xclaw mcp` / `xclaw mcp serve` = stdio MCP server (back-compat:
-      // external clients wire this as their server command).
-      if (!sub || sub === "serve") {
-        const { runMcpStdio } = await import("../src/mcp/stdio.mjs");
-        const { loadConfig } = await import("../src/config/load.mjs");
-        await runMcpStdio({ cfg: await loadConfig() });
-        break;
-      }
-      const { loadConfig } = await import("../src/config/load.mjs");
-      const cfg = await loadConfig();
-      const manage = await import("../src/mcp/manage.mjs");
-      const flag = (n) => {
-        const i = rest.indexOf(`--${n}`);
-        return i >= 0 ? rest[i + 1] : undefined;
-      };
-      if (sub === "list") {
-        console.log(JSON.stringify({ servers: manage.listMcpServers(cfg) }, null, 2));
-        break;
-      }
-      if (sub === "add") {
-        const name = rest[1];
-        const def = {
-          name,
-          url: flag("url"),
-          command: flag("command"),
-          args: flag("args") ? flag("args").split(" ") : undefined,
-          apiKey: flag("api-key"),
-          allowTools: flag("allow") ? flag("allow").split(",") : undefined,
-          denyTools: flag("deny") ? flag("deny").split(",") : undefined,
-        };
-        const out = await manage.addMcpServer(cfg, def, { replace: rest.includes("--replace") });
-        console.log(JSON.stringify(out, null, 2));
-        break;
-      }
-      if (sub === "remove") {
-        console.log(JSON.stringify(await manage.removeMcpServer(cfg, rest[1]), null, 2));
-        break;
-      }
-      if (sub === "test") {
-        const out = await manage.testMcpServer(cfg, rest[1]);
-        console.log(JSON.stringify(out, null, 2));
-        process.exitCode = out.ok ? 0 : 1;
-        break;
-      }
-      if (sub === "login") {
-        // OAuth runs through the gateway (it hosts the browser callback).
-        const name = rest[1];
-        const base = `http://${cfg.gateway?.host || "127.0.0.1"}:${cfg.gateway?.port || 8790}`;
-        const headers = {
-          "Content-Type": "application/json",
-          ...(cfg.gateway?.token ? { "x-xclaw-token": cfg.gateway.token } : {}),
-        };
-        const start = await fetch(`${base}/mcp/oauth/start`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ server: name }),
-        }).then((r) => r.json());
-        if (!start.ok) {
-          console.error("login start failed:", start.error);
-          process.exitCode = 1;
-          break;
-        }
-        console.log(`Open this URL, sign in, approve access:\n\n  ${start.authorizeUrl}\n`);
-        console.log("Waiting for the callback to land on the gateway…");
-        const until = Date.now() + 5 * 60_000;
-        let granted = false;
-        while (Date.now() < until) {
-          await new Promise((r) => setTimeout(r, 2000));
-          const st = await fetch(`${base}/mcp/oauth/status`, { headers })
-            .then((r) => r.json())
-            .catch(() => ({ grants: [] }));
-          if (st.grants?.some((g) => g.server === name)) {
-            granted = true;
-            break;
-          }
-        }
-        console.log(granted ? `authorized: ${name}` : "timed out waiting for authorization");
-        process.exitCode = granted ? 0 : 1;
-        break;
-      }
-      if (sub === "logout") {
-        const { dropMcpGrant } = await import("../src/mcp/oauth.mjs");
-        dropMcpGrant(cfg, rest[1]);
-        console.log(JSON.stringify({ ok: true }));
-        break;
-      }
-      console.log(
-        "usage: xclaw mcp [serve|list|add <name> --url <u>|--command <c> [--api-key k] [--allow a,b] [--deny x] [--replace]|remove <name>|test <name>|login <name>|logout <name>]"
-      );
+      const { runMcpStdio } = await import("../src/mcp/stdio.mjs");
+      await runMcpStdio({});
       break;
     }
 
@@ -1337,42 +1125,10 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       if (sub === "status") {
         const cfg = await loadConfig();
         const st = await getComputerStatus(cfg);
-        let engineResolved = cfg.computer?.engine;
-        try {
-          const { resolveComputerEngine } = await import("../src/computer/engine.mjs");
-          engineResolved = resolveComputerEngine(cfg);
-        } catch { /* */ }
-        let pool = null;
-        try {
-          const { computerClientCacheStats } = await import("../src/agent/computer-client.mjs");
-          pool = computerClientCacheStats();
-        } catch { /* */ }
-        let live = null;
-        try {
-          if (st.healthy && st.url) {
-            const r = await fetch(`${String(st.url).replace(/\/$/, "")}/health`);
-            live = await r.json();
-          }
-        } catch { /* */ }
-        const report = {
-          ...st,
-          engineConfig: cfg.computer?.engine || null,
-          engineResolved,
-          liveEngine: live?.engine || live?.status || null,
-          tools: live?.tools || null,
-          sessionPool: pool,
-        };
-        if (args.includes("--json")) console.log(JSON.stringify(report, null, 2));
+        if (args.includes("--json")) console.log(JSON.stringify(st, null, 2));
         else {
           console.log(`Computer: ${st.healthy ? "UP" : "DOWN"}  ${st.url}`);
-          console.log(`  engine: resolved=${engineResolved} config=${cfg.computer?.engine || "—"} live=${live?.engine || live?.status || "—"}`);
           console.log(`  pid: ${st.pid ?? "—"} alive=${st.pidAlive} inProcess=${st.inProcess}`);
-          if (Array.isArray(live?.tools)) {
-            console.log(`  tools: ${live.tools.length} (${live.tools.slice(0, 6).join(", ")}${live.tools.length > 6 ? ", …" : ""})`);
-          }
-          if (pool) {
-            console.log(`  sessionPool: sessions=${pool.sessions} toolsLists=${pool.toolsLists}`);
-          }
           console.log(`  log: ${st.logPath}`);
           if (st.meta?.startedAt) console.log(`  started: ${st.meta.startedAt}`);
           if (st.health?.error) console.log(`  probe: ${st.health.error}`);
@@ -1423,8 +1179,8 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         break;
       }
       if (sub === "add") {
-        // xclaw automations add --every 3600000 --name n [--goal [--max-ticks N]] -- prompt words...
-        let everyMs, cron, at, name, enabled = true, mode = "prompt", maxTicks;
+        // xclaw automations add --every 3600000 --name n -- prompt words...
+        let everyMs, cron, at, name, enabled = true;
         const rest = [];
         for (let i = 2; i < args.length; i++) {
           if (args[i] === "--every" && args[i+1]) { everyMs = Number(args[++i]); continue; }
@@ -1432,18 +1188,16 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
           if (args[i] === "--at" && args[i+1]) { at = args[++i]; continue; }
           if (args[i] === "--name" && args[i+1]) { name = args[++i]; continue; }
           if (args[i] === "--disabled") { enabled = false; continue; }
-          if (args[i] === "--goal") { mode = "goal"; continue; }
-          if (args[i] === "--max-ticks" && args[i+1]) { maxTicks = Number(args[++i]); continue; }
           if (args[i] === "--") { rest.push(...args.slice(i+1)); break; }
           rest.push(args[i]);
         }
         const prompt = rest.join(" ").trim();
         if (!prompt) {
-          console.error("Usage: xclaw automations add [--every ms|--cron expr|--at ISO] [--name n] [--goal [--max-ticks N]] <prompt-or-goal>");
+          console.error("Usage: xclaw automations add [--every ms|--cron expr|--at ISO] [--name n] <prompt>");
           process.exitCode = 1;
           break;
         }
-        const r = auto.createAutomation(cfg, { prompt, goal: mode === "goal" ? prompt : undefined, mode, maxTicks, everyMs, cron, at, name, enabled });
+        const r = auto.createAutomation(cfg, { prompt, everyMs, cron, at, name, enabled });
         console.log(JSON.stringify(r, null, 2));
         process.exitCode = r.ok ? 0 : 1;
         break;
@@ -1505,189 +1259,6 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
-    case "self-deploy": {
-      const { readIntent, runDeployOnce, runDeployWatch } = await import("../src/self/deploy.mjs");
-      const { loadConfig } = await import("../src/config/load.mjs");
-      const cfg = await loadConfig();
-      const sub = args[1] || "status";
-      if (sub === "status") {
-        const intent = await readIntent(cfg);
-        console.log(JSON.stringify(intent || { state: "none" }, null, 2));
-        break;
-      }
-      if (sub === "run-once") {
-        const out = await runDeployOnce(cfg);
-        console.log(out ? `resolved: ${out.state}` : "nothing pending");
-        break;
-      }
-      if (sub === "watch") {
-        console.log(`[xclaw] self-deploy watcher — intent file: ${(await import("../src/self/deploy.mjs")).deployIntentPath(cfg)}`);
-        await runDeployWatch(cfg, {});
-        break;
-      }
-      console.error("Usage: xclaw self-deploy status | run-once | watch");
-      process.exitCode = 1;
-      break;
-    }
-    case "timeline": {
-      const tl = await import("../src/git/timeline.mjs");
-      const { loadConfig } = await import("../src/config/load.mjs");
-      const cfg = await loadConfig();
-      const flag = (name, dflt = null) => {
-        const i = args.indexOf(`--${name}`);
-        return i >= 0 ? args[i + 1] : dflt;
-      };
-      const repo = flag("repo", process.cwd());
-      const sub = args[1] || "list";
-      if (sub === "list") {
-        const { ok, states, error } = await tl.listStates(repo);
-        if (!ok) {
-          console.error(`timeline: ${error}`);
-          process.exitCode = 1;
-          break;
-        }
-        if (!states.length) console.log("(no xclaw states — merges before v3.116 carry no refs)");
-        for (const s of states) {
-          const kind = s.missionId ? `mission ${s.missionId}` : `known-good ${s.knownGood}`;
-          console.log(`${s.date}  ${s.sha.slice(0, 10)}  ${kind}  ${s.subject}`);
-        }
-        break;
-      }
-      if (sub === "diff") {
-        const [a, b] = [args[2], args[3]];
-        if (!a || !b) {
-          console.error("Usage: xclaw timeline diff <refA> <refB> [--patch] [--repo dir]");
-          process.exitCode = 1;
-          break;
-        }
-        const out = await tl.diffStates(repo, a, b, { patch: args.includes("--patch") });
-        if (!out.ok) {
-          console.error(`timeline diff: ${out.error}`);
-          process.exitCode = 1;
-          break;
-        }
-        console.log(out.diff || "(no differences)");
-        break;
-      }
-      if (sub === "revert") {
-        const missionId = args[2];
-        if (!missionId) {
-          console.error("Usage: xclaw timeline revert <missionId> [--repo dir]");
-          process.exitCode = 1;
-          break;
-        }
-        const out = await tl.revertMission(repo, missionId);
-        if (!out.ok) {
-          console.error(`revert: ${out.error}`);
-          process.exitCode = 1;
-          break;
-        }
-        console.log(`reverted ${out.reverted.slice(0, 10)} → revert commit ${out.revertCommit.slice(0, 10)}`);
-        // honest scope: surface effects git cannot undo (ledger join)
-        try {
-          const { queryLedger } = await import("../src/ops/ledger.mjs");
-          const { events } = await queryLedger(cfg, { missionId, kind: "tool", since: "90d", limit: 1000 });
-          const outside = new Set();
-          for (const e of events) {
-            for (const eff of e.data?.effects || []) {
-              if (!["files", "repo", "workspace"].includes(eff)) outside.add(eff);
-            }
-          }
-          if (outside.size) {
-            console.log(`note: mission also had non-git effects git revert cannot undo: ${[...outside].join(", ")}`);
-          }
-        } catch {}
-        break;
-      }
-      if (sub === "known-good" || sub === "mark") {
-        const out = await tl.markKnownGood(repo, { sha: args[2] || "HEAD", note: flag("note", "") });
-        console.log(out.ok ? `marked ${out.sha.slice(0, 10)} known-good (${out.ref})` : `failed: ${out.error}`);
-        if (!out.ok) process.exitCode = 1;
-        break;
-      }
-      if (sub === "attribute" || sub === "who") {
-        const target = args[2];
-        if (!target) {
-          console.error("Usage: xclaw timeline attribute <path> [--repo dir]");
-          process.exitCode = 1;
-          break;
-        }
-        const out = await tl.attribute(repo, target);
-        for (const c of out.commits || []) {
-          console.log(`${c.date}  ${c.sha.slice(0, 10)}  ${c.missionId || "(no mission)"}  ${c.subject}`);
-        }
-        break;
-      }
-      console.error("Usage: xclaw timeline list | diff <a> <b> | revert <missionId> | known-good [sha] | attribute <path>  [--repo dir]");
-      process.exitCode = 1;
-      break;
-    }
-    case "ledger": {
-      const { queryLedger, ledgerStats, whoTouched, compactLedger } = await import("../src/ops/ledger.mjs");
-      const { loadConfig } = await import("../src/config/load.mjs");
-      const cfg = await loadConfig();
-      const sub = args[1] || "tail";
-      const flag = (name, dflt = null) => {
-        const i = args.indexOf(`--${name}`);
-        return i >= 0 ? args[i + 1] : dflt;
-      };
-      if (sub === "tail" || sub === "query") {
-        const filters = {
-          kind: flag("kind"),
-          since: flag("since", sub === "tail" ? "1d" : "7d"),
-          status: flag("status"),
-          artifact: flag("artifact"),
-          limit: Number(flag("limit", sub === "tail" ? 30 : 200)),
-          sessionId: flag("session"),
-          jobId: flag("job"),
-          missionId: flag("mission"),
-          swarmId: flag("swarm"),
-          runId: flag("run"),
-        };
-        for (const k of Object.keys(filters)) if (filters[k] == null) delete filters[k];
-        const { events, malformed } = await queryLedger(cfg, filters);
-        for (const e of events) {
-          const ids = Object.entries(e.ids || {}).map(([k, v]) => `${k}=${v}`).join(" ");
-          const d = e.data || {};
-          const summary =
-            e.kind === "tool"
-              ? `${d.name} ${d.status || ""} ${d.policy ? `[${d.policy.phase}:${d.policy.decision}]` : ""}`
-              : e.kind === "policy"
-                ? `${d.tool || ""} ${d.decision} (${d.mode})`
-                : e.kind === "verify"
-                  ? `${d.ok ? "PASS" : "FAIL"} attempt ${d.attempt}`
-                  : e.kind === "merge"
-                    ? `${(d.files || []).length} files`
-                    : JSON.stringify(d).slice(0, 100);
-          console.log(`${e.ts} ${e.kind.padEnd(8)} ${summary.trim()}  ${ids}`);
-        }
-        if (malformed) console.error(`(${malformed} malformed lines skipped)`);
-        break;
-      }
-      if (sub === "who-touched") {
-        const target = args[2];
-        if (!target) {
-          console.error("Usage: xclaw ledger who-touched <path> [--since 30d]");
-          process.exitCode = 1;
-          break;
-        }
-        const hits = await whoTouched(cfg, target, { since: flag("since", "30d") });
-        console.log(JSON.stringify({ path: target, hits }, null, 2));
-        break;
-      }
-      if (sub === "stats") {
-        console.log(JSON.stringify(await ledgerStats(cfg), null, 2));
-        break;
-      }
-      if (sub === "compact") {
-        const out = await compactLedger(cfg, { keepDays: flag("keep-days") });
-        console.log(JSON.stringify(out, null, 2));
-        break;
-      }
-      console.error("Usage: xclaw ledger tail|query [--kind k] [--since 2d] [--mission id] [--session id] [--status fail] | who-touched <path> | stats | compact [--keep-days N]");
-      process.exitCode = 1;
-      break;
-    }
     case "transcripts":
     case "transcript": {
       const { listTranscripts, loadTranscriptHistory, transcriptPath } = await import("../src/sessions/transcript.mjs");
@@ -1741,41 +1312,24 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     }
 
     case "agent": {
-      // xclaw agent [--session <id>] <message>
-      let sessionId = null;
-      const msgParts = [];
-      for (let i = 1; i < args.length; i++) {
-        if ((args[i] === "--session" || args[i] === "--session-id") && args[i + 1]) {
-          sessionId = args[++i];
-        } else {
-          msgParts.push(args[i]);
-        }
-      }
-      const message = msgParts.join(" ").trim();
+
+      const message = args.slice(1).join(" ").trim();
       if (!message) {
-        console.error("Usage: xclaw agent [--session <id>] <message>");
+        console.error("Usage: xclaw agent <message>");
         process.exit(1);
       }
       const { loadConfig } = await import("../src/config/load.mjs");
       const { isComputerRunning, startComputer } = await import("../src/computer/manager.mjs");
-      const { runAgent } = await import("../src/agent/run-agent.mjs");
+      const { runAgentLoop } = await import("../src/agent/loop.mjs");
       const cfg = await loadConfig();
       if (!(await isComputerRunning(cfg))) {
         console.log("[xclaw] Starting Computer…");
         await startComputer({ root, foreground: false });
       }
       console.log(`[xclaw] Agent model: ${cfg.agent?.model || "gpt-4o-mini"}`);
-      // Sticky cache: default a session id so multi-invocation CLIs can share
-      // via --session; auto-generate when unset (single-run still warms within loop).
-      if (!sessionId && cfg.tokens?.autoSession !== false) {
-        sessionId = `cli-${Date.now().toString(36)}`;
-      }
-      if (sessionId) console.log(`[xclaw] session: ${sessionId}`);
-      const result = await runAgent({
-        goal: message,
+      const result = await runAgentLoop({
+        userMessage: message,
         cfg,
-        channel: "cli",
-        chatSessionId: sessionId || null,
         onEvent: (e) => {
           if (e.type === "tool" && e.phase === "start") {
             console.log(`  → tool ${e.name}`, JSON.stringify(e.args || {}).slice(0, 100));
@@ -1785,8 +1339,6 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
             console.log(`  ! guard [${e.level}] ${e.message}`);
           } else if (e.type === "lifecycle" && e.phase === "start") {
             console.log("  … running");
-          } else if (e.type === "cache" && e.phase === "turn_hit_rate") {
-            console.log(`  · cache hit ${e.cacheHitRatePct}% (cached=${e.cachedTokens}/${e.promptTokens})`);
           }
         },
       });
@@ -1882,23 +1434,6 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       const cfg = await loadConfig();
       if (args.includes("--send")) console.log(JSON.stringify(await sendApprovalDigest(cfg), null, 2));
       else console.log(JSON.stringify(buildApprovalDigest(cfg), null, 2));
-      break;
-    }
-    case "cache": {
-      const { loadConfig } = await import("../src/config/load.mjs");
-      const { cacheHitMonitor, formatCacheHitReport } = await import("../src/tokens/usage-analytics.mjs");
-      const cfg = await loadConfig();
-      const flag = (name, dflt = null) => {
-        const i = args.indexOf(`--${name}`);
-        return i >= 0 ? args[i + 1] : dflt;
-      };
-      const mon = await cacheHitMonitor(cfg, {
-        days: flag("days", 7),
-        recent: flag("recent", 20),
-        warnBelowPct: flag("warn-below", 40),
-      });
-      if (args.includes("--json")) console.log(JSON.stringify(mon, null, 2));
-      else console.log(formatCacheHitReport(mon));
       break;
     }
     case "cost": {
@@ -2194,40 +1729,6 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         }, null, 2));
         break;
       }
-      if (sub === "lock" || sub === "verify") {
-        const { loadAllSkills } = await import("../src/skills/loader.mjs");
-        const integrity = await import("../src/skills/integrity.mjs");
-        // Raw discovery — integrity checking off so enforce mode can't hide
-        // drifted skills from the very command meant to report them.
-        const rawCfg = { ...cfg, skills: { ...(cfg.skills || {}), integrity: "off" } };
-        const skills = await loadAllSkills({
-          configDir: cfg.paths?.configDir,
-          cwd: process.cwd(),
-          cfg: rawCfg,
-        });
-        if (sub === "lock") {
-          const data = await integrity.buildLockData(skills);
-          const p = await integrity.writeLockfile(process.cwd(), data);
-          console.log(JSON.stringify({ ok: true, path: p, skills: Object.keys(data.skills).length }, null, 2));
-          break;
-        }
-        const { path: lockPath, data } = await integrity.readLockfile(process.cwd());
-        if (!data) {
-          console.error(`No valid ${integrity.LOCKFILE_NAME} at ${lockPath} — run: xclaw skills lock`);
-          process.exit(1);
-        }
-        const { evaluated, missing } = await integrity.evaluateSkills(skills, data);
-        const rows = evaluated.map(({ skill, status }) => ({
-          name: skill.name,
-          status: status === "unmanifested" ? "new" : status === "verified" ? "ok" : status,
-          path: skill.path,
-        }));
-        for (const name of missing) rows.push({ name, status: "missing", path: data.skills[name]?.path || null });
-        const drift = rows.filter((r) => r.status !== "ok");
-        console.log(JSON.stringify({ ok: drift.length === 0, lockfile: lockPath, drift: drift.length, skills: rows }, null, 2));
-        if (drift.length) process.exit(1);
-        break;
-      }
       if (sub === "proposals") {
         console.log(JSON.stringify(await listProposals(cfg), null, 2));
         break;
@@ -2245,7 +1746,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         console.log(JSON.stringify(await rejectProposal(cfg, file, args.slice(3).join(" ")), null, 2));
         break;
       }
-      console.error("Usage: xclaw skills [list|lock|verify|proposals|install|reject]");
+      console.error("Usage: xclaw skills [list|proposals|install|reject]");
       process.exit(1);
       break;
     }
@@ -2392,15 +1893,11 @@ Commands:
   run <message>        Stream via gateway (--ndjson, --resume)
   status [--json]      Gateway + computer + active sessions
   doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
+  self-test            Fast unit smoke (autonomy, sandbox, fabric, …)
   stop-all             Abort agent sessions + stop computer
   automations          list|add|pause|resume|run|results|delete
-  providers            list | setup (wizard) | set | oauth | use [X] [model]
-  channels             list | setup (wizard) | set | enable X | disable X
   sessions-active      List in-process agent sessions
   transcripts          list | show <sessionId>
-  ledger               tail | query | who-touched <path> | stats | compact
-  timeline             list | diff <a> <b> | revert <missionId> | known-good | attribute <path>
-  self-deploy          status | run-once | watch (external deploy executor)
   eval                 Eval suite (--tag, --mock, --json)
   job <goal>           Verified job in a temp workspace
   version              Print version
