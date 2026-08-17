@@ -101,3 +101,15 @@ xclaw approvals deny <id> "reason"
 Gateway: `GET /approvals`, `POST /approvals/approve`, `POST /approvals/deny` (also `/security/pending` + `/security/decide`).
 
 Unknown id → `APPROVAL_NOT_FOUND` (404).
+
+
+## Cost governor
+
+Hard daily / per-job USD caps (`cost.dailyHardUsd`, `cost.perJobUsd`, or `autonomy.maxUsdPerDay`).
+
+Over hard cap → agent/job **stops** with `BUDGET_EXCEEDED` (no further provider calls). Soft cap warns only.
+
+```bash
+xclaw cost
+xclaw doctor   # cost.governor check
+```
