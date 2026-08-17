@@ -1,8 +1,10 @@
 /**
- * Energy-based VAD endpointing for local mic capture.
+ * Energy-based Voice Activity Detection (VAD) for local mic capture.
  *
- * Streams arecord raw S16_LE mono → frame RMS → detect speech start/end.
- * Ends utterance after `silenceMs` of below-threshold frames once speech seen.
+ * - Streams arecord raw S16_LE mono
+ * - Per-frame RMS with open/close hysteresis
+ * - Endpoints after silenceMs once speech has been seen
+ * - Optional offline analyzePcmFrames() for tests / calibration
  */
 
 import { spawn } from "node:child_process";
@@ -35,13 +37,13 @@ export function pcmToWav(pcm, sampleRate = 16000) {
   buf.writeUInt32LE(36 + dataSize, 4);
   buf.write("WAVE", 8);
   buf.write("fmt ", 12);
-  buf.writeUInt32LE(16, 16); // pcm fmt chunk
-  buf.writeUInt16LE(1, 20); // audio format PCM
-  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20);
+  buf.writeUInt16LE(1, 22);
   buf.writeUInt32LE(sampleRate, 24);
-  buf.writeUInt32LE(sampleRate * 2, 28); // byte rate
-  buf.writeUInt16LE(2, 32); // block align
-  buf.writeUInt16LE(16, 34); // bits
+  buf.writeUInt32LE(sampleRate * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
   buf.write("data", 36);
   buf.writeUInt32LE(dataSize, 40);
   pcm.copy(buf, 44);
@@ -50,33 +52,117 @@ export function pcmToWav(pcm, sampleRate = 16000) {
 
 export function vadConfig(cfg = {}, opts = {}) {
   const v = cfg.voice?.vad || cfg.vad || {};
+  const baseThreshold = Number(
+    opts.threshold || v.threshold || cfg.voice?.wake?.energyThreshold || 500
+  );
+  // Hysteresis: higher to enter speech, lower to leave (reduces chatter)
+  const openThreshold = Number(
+    opts.openThreshold || v.openThreshold || baseThreshold
+  );
+  const closeThreshold = Number(
+    opts.closeThreshold ||
+      v.closeThreshold ||
+      Math.max(100, Math.floor(openThreshold * 0.65))
+  );
   return {
     sampleRate: Number(opts.sampleRate || v.sampleRate || 16000),
-    /** Frame length in ms for RMS */
     frameMs: Number(opts.frameMs || v.frameMs || 30),
-    /** RMS threshold for "speech" (S16 scale) */
-    threshold: Number(opts.threshold || v.threshold || cfg.voice?.wake?.energyThreshold || 500),
-    /** Silence duration after speech to endpoint */
+    threshold: baseThreshold,
+    openThreshold,
+    closeThreshold,
     silenceMs: Number(opts.silenceMs || v.silenceMs || 450),
-    /** Max utterance length */
     maxMs: Number(opts.maxMs || v.maxMs || 8000),
-    /** Wait this long for speech to start before giving up */
-    prerosMs: Number(opts.prerollMs || opts.prerosMs || v.prerollMs || 2500),
-    /** Minimum speech before allowing endpoint */
+    prerollMs: Number(opts.prerollMs || opts.prerosMs || v.prerollMs || 2500),
     minSpeechMs: Number(opts.minSpeechMs || v.minSpeechMs || 120),
+    /** Require this many consecutive speech frames to lock "in speech" */
+    hangoverFrames: Number(opts.hangoverFrames || v.hangoverFrames || 2),
+    enabled: v.enabled !== false && opts.enabled !== false,
+  };
+}
+
+/**
+ * Offline frame analysis (for tests / calibration).
+ * @param {Buffer} pcm
+ * @param {object} [c] vadConfig result
+ */
+export function analyzePcmFrames(pcm, c = vadConfig({})) {
+  const frameBytes = Math.floor((c.sampleRate * c.frameMs) / 1000) * 2;
+  const frames = [];
+  let inSpeech = false;
+  let speechRun = 0;
+  let silentRun = 0;
+  let seenSpeech = false;
+  let peak = 0;
+
+  for (let off = 0; off + frameBytes <= pcm.length; off += frameBytes) {
+    const frame = pcm.subarray(off, off + frameBytes);
+    const rms = pcmRms(frame);
+    if (rms > peak) peak = rms;
+
+    if (!inSpeech) {
+      if (rms >= c.openThreshold) {
+        speechRun += 1;
+        if (speechRun >= c.hangoverFrames) {
+          inSpeech = true;
+          seenSpeech = true;
+          silentRun = 0;
+        }
+      } else {
+        speechRun = 0;
+      }
+    } else {
+      if (rms < c.closeThreshold) {
+        silentRun += 1;
+      } else {
+        silentRun = 0;
+      }
+    }
+    frames.push({ rms, inSpeech, silentRun });
+  }
+
+  const silenceFrames = Math.max(1, Math.ceil(c.silenceMs / c.frameMs));
+  let endpointIndex = -1;
+  if (seenSpeech) {
+    let s = 0;
+    let locked = false;
+    speechRun = 0;
+    for (let i = 0; i < frames.length; i++) {
+      const rms = frames[i].rms;
+      if (!locked) {
+        if (rms >= c.openThreshold) {
+          speechRun++;
+          if (speechRun >= c.hangoverFrames) locked = true;
+        } else speechRun = 0;
+      } else if (rms < c.closeThreshold) {
+        s++;
+        if (s >= silenceFrames) {
+          endpointIndex = i;
+          break;
+        }
+      } else s = 0;
+    }
+  }
+
+  return {
+    frameCount: frames.length,
+    peak: Math.round(peak),
+    seenSpeech,
+    endpointIndex,
+    endpointMs: endpointIndex >= 0 ? endpointIndex * c.frameMs : null,
+    openThreshold: c.openThreshold,
+    closeThreshold: c.closeThreshold,
   };
 }
 
 /**
  * Record until VAD endpoint (or max/preroll timeout).
- * @returns {Promise<{ ok: boolean, path?: string, reason?: string, durationMs?: number, speechMs?: number, energyPeak?: number, error?: string }>}
  */
 export async function recordUntilEndpoint(opts = {}) {
   const c = vadConfig(opts.cfg || {}, opts);
   const frameBytes = Math.floor((c.sampleRate * c.frameMs) / 1000) * 2;
   const silenceFrames = Math.max(1, Math.ceil(c.silenceMs / c.frameMs));
   const maxFrames = Math.ceil(c.maxMs / c.frameMs);
-  const prerollFrames = Math.ceil(c.prerosMs / c.frameMs);
+  const prerollFrames = Math.ceil(c.prerollMs / c.frameMs);
   const minSpeechFrames = Math.ceil(c.minSpeechMs / c.frameMs);
 
   const outPath =
@@ -105,6 +191,8 @@ export async function recordUntilEndpoint(opts = {}) {
     let frames = 0;
     let speechFrames = 0;
     let silentRun = 0;
+    let speechRun = 0;
+    let inSpeech = false;
     let seenSpeech = false;
     let peak = 0;
     let done = false;
@@ -128,13 +216,14 @@ export async function recordUntilEndpoint(opts = {}) {
           durationMs,
           speechMs,
           energyPeak: Math.round(peak),
+          openThreshold: c.openThreshold,
+          closeThreshold: c.closeThreshold,
           error: seenSpeech ? undefined : "no speech detected",
         });
         return;
       }
       try {
-        const wav = pcmToWav(pcm, c.sampleRate);
-        await fs.writeFile(outPath, wav);
+        await fs.writeFile(outPath, pcmToWav(pcm, c.sampleRate));
         resolve({
           ok: true,
           path: outPath,
@@ -143,7 +232,8 @@ export async function recordUntilEndpoint(opts = {}) {
           speechMs,
           energyPeak: Math.round(peak),
           frames,
-          threshold: c.threshold,
+          openThreshold: c.openThreshold,
+          closeThreshold: c.closeThreshold,
           silenceMs: c.silenceMs,
         });
       } catch (e) {
@@ -176,21 +266,35 @@ export async function recordUntilEndpoint(opts = {}) {
         frames += 1;
         const rms = pcmRms(frame);
         if (rms > peak) peak = rms;
-        const isSpeech = rms >= c.threshold;
-        if (isSpeech) {
-          seenSpeech = true;
-          speechFrames += 1;
-          silentRun = 0;
-        } else if (seenSpeech) {
-          silentRun += 1;
-          if (
-            speechFrames >= minSpeechFrames &&
-            silentRun >= silenceFrames
-          ) {
-            void finish("silence");
-            return;
+
+        if (!inSpeech) {
+          if (rms >= c.openThreshold) {
+            speechRun += 1;
+            if (speechRun >= c.hangoverFrames) {
+              inSpeech = true;
+              seenSpeech = true;
+              silentRun = 0;
+              speechFrames += speechRun;
+            }
+          } else {
+            speechRun = 0;
+          }
+        } else {
+          if (rms >= c.closeThreshold) {
+            speechFrames += 1;
+            silentRun = 0;
+          } else {
+            silentRun += 1;
+            if (
+              speechFrames >= minSpeechFrames &&
+              silentRun >= silenceFrames
+            ) {
+              void finish("silence");
+              return;
+            }
           }
         }
+
         if (frames >= maxFrames) {
           void finish("max_duration");
           return;
@@ -202,7 +306,6 @@ export async function recordUntilEndpoint(opts = {}) {
       }
     });
 
-    // Safety timer
     const timer = setTimeout(() => void finish("max_duration"), c.maxMs + 500);
     if (timer.unref) timer.unref();
     child.on("close", () => {
@@ -212,9 +315,30 @@ export async function recordUntilEndpoint(opts = {}) {
   });
 }
 
+/**
+ * Doctor-style probe (no mic required for structure).
+ */
+export function probeVad(cfg = {}) {
+  const c = vadConfig(cfg);
+  return {
+    ok: true,
+    engine: "energy-rms-hysteresis",
+    frameMs: c.frameMs,
+    openThreshold: c.openThreshold,
+    closeThreshold: c.closeThreshold,
+    silenceMs: c.silenceMs,
+    maxMs: c.maxMs,
+    prerollMs: c.prerollMs,
+    hangoverFrames: c.hangoverFrames,
+    enabled: c.enabled,
+  };
+}
+
 export default {
   pcmRms,
   pcmToWav,
   vadConfig,
+  analyzePcmFrames,
   recordUntilEndpoint,
+  probeVad,
 };
