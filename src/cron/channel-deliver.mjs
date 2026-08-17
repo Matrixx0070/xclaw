@@ -65,5 +65,24 @@ export async function deliverToChannel(delivery, cfg = {}) {
     return { ok: true, channel, to, messageId: j.id };
   }
 
+  if (channel === "slack") {
+    const token =
+      cfg.channels?.slack?.botToken ||
+      process.env.SLACK_BOT_TOKEN ||
+      process.env.XCLAW_SLACK_BOT_TOKEN;
+    if (!token) return { ok: false, reason: "no_slack_token" };
+    const r = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ channel: to, text: truncate(text, 3900) }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!j.ok) return { ok: false, reason: j.error || r.status };
+    return { ok: true, channel, to, messageId: j.ts };
+  }
+
   return { ok: false, reason: `unsupported_channel:${channel}` };
 }
