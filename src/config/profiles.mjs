@@ -7,7 +7,6 @@ export const PROFILES = {
     gateway: { host: "127.0.0.1" },
     security: { autoApprove: true, approvalPolicy: "risky" },
     readiness: { requireComputer: false },
-    computer: { engine: "native", nativeServer: true },
     agent: {
       maxTurns: 15,
       loopGuard: {
@@ -25,35 +24,13 @@ export const PROFILES = {
     description: "Trusted lab sandbox — auto-approve tools for eval/autonomy (low-setup default)",
     gateway: { host: "127.0.0.1" },
     security: { autoApprove: true, approvalPolicy: "never" },
+    sandbox: { enabled: true, allowPaths: ["/tmp"] },
     readiness: { requireComputer: false },
-    // thin-native: maintained tools + computer_act; bundle remains prod default
-    computer: { engine: "native", nativeServer: true },
     jobs: {
       structuredClaimsOnTags: ["campaign", "long"],
     },
-    // Tight prompt budgets: live traffic showed ~9.5k input / ~$0.012 with
-    // only ~2% cache hits — most tokens were static skills/tools, not the ask.
-    skills: {
-      progressive: true,
-      maxChars: 1800,
-      inlineMaxChars: 600,
-    },
-    memory: {
-      maxChars: 1500,
-    },
-    tokens: {
-      restorePrefixEachTurn: true,
-      // Truncate verbose tool descriptions in the model schema payload
-      maxToolDescriptionChars: 160,
-    },
-    router: {
-      roleEffortEnabled: true,
-      roleEffort: { draft: "low", act: "low", verify: "high", strong: "high" },
-    },
     agent: {
       maxTurns: 20,
-      // Prefer pack name; allowTools still wins if set explicitly as array
-      toolPack: "act",
       // Repo/multi-step goals need headroom above 30 tool calls
       loopGuard: {
         enabled: true,
@@ -69,7 +46,6 @@ export const PROFILES = {
   prod: {
     description: "Production-ish — strict approvals, require gateway token, structured claims on long/campaign",
     gateway: { host: "127.0.0.1", requireAuth: true, publicUi: false },
-    computer: { engine: "bundle", nativeServer: false },
     jobs: {
       groundHard: true,
       claimsRequireEvidence: true,
@@ -84,8 +60,6 @@ export const PROFILES = {
       egress: { mode: "deny" },
       osSandbox: "auto",
       spawnEnforce: "check",
-      // Tool spawns see only a base env allowlist (+security.envAllow)
-      bashEnv: "allowlist",
       requireApproval: [
         "xclaw_bash",
         "bash",
