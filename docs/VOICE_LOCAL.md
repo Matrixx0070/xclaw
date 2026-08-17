@@ -178,3 +178,31 @@ Server → `ready` · `reply` · `event` · `error`
 3. Listeners notified (`killPathMs` on event)
 
 Target: kill path **&lt;50ms** synchronous; audio stops without waiting for `playWav` await.
+
+
+## VAD endpointing (command window)
+
+After wake, XClaw streams mic PCM and **stops on silence** instead of a fixed 4s clip.
+
+```json
+{
+  "voice": {
+    "vad": {
+      "enabled": true,
+      "silenceMs": 450,
+      "threshold": 500,
+      "maxMs": 8000,
+      "prerollMs": 2500
+    }
+  }
+}
+```
+
+| Knob | Default | Meaning |
+|------|---------|---------|
+| `silenceMs` | 450 | Quiet time after speech → end |
+| `threshold` | 500 | RMS speech gate (S16) |
+| `maxMs` | 8000 | Hard cap |
+| `prerollMs` | 2500 | Give up if no speech starts |
+
+Disable: `xclaw voice listen` with config `voice.vad.enabled: false` (falls back to fixed `arecord -d`).
