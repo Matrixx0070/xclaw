@@ -97,3 +97,17 @@ Set `"autoPromote": true` **and** `skills.allowInstall: true` only if you accept
 
 - `src/autonomy/self-evolve.mjs` — status + tick + overlay  
 - Heartbeat calls `runEvolutionTick` when `evolve.tickOnHeartbeat !== false`
+
+
+## Assign work while away (`xclaw goal`)
+
+Hands-free is not only resume — you **queue goals** before leaving:
+
+```bash
+xclaw goal "Refactor src/foo and run tests"
+xclaw goal list
+```
+
+Gateway or `xclaw evolve tick` starts the queue worker. Heartbeat evolution tick keeps the worker alive.
+
+Priority classes: interactive > batch > cron (see job queue).
