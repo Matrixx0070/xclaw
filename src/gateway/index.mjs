@@ -1067,6 +1067,10 @@ export async function startGateway({ root } = {}) {
         const { probeLocalVoiceStack } = await import("../voice/providers/local.mjs");
         return json(res, 200, await probeLocalVoiceStack(cfg));
       }
+      if (p === "/api/voice/metrics" && req.method === "GET") {
+        const { voiceMetricsSnapshot } = await import("../voice/metrics.mjs");
+        return json(res, 200, voiceMetricsSnapshot());
+      }
       if (p === "/api/voice/speak" && req.method === "POST") {
         const body = await readBody(req).catch(() => ({}));
         const { localSpeak } = await import("../voice/providers/local.mjs");
