@@ -842,6 +842,30 @@ export async function runDoctor(opts = {}) {
     push("channels.health", "warn", e.message || String(e));
   }
 
+
+  try {
+    const { resolveAutonomyLevel } = await import("../config/autonomy-policy.mjs");
+    const { principlesForLevel, PRINCIPLES_VERSION } = await import("../agent/principles.mjs");
+    const level = resolveAutonomyLevel(cfg);
+    const p = principlesForLevel(level);
+    push(
+      "harness.principles",
+      "ok",
+      `v${PRINCIPLES_VERSION} level=${level} groundHard=${p.groundHard} claims=${p.claimsRequireEvidence} checkpointEvery=${p.checkpointEveryTurns}`
+    );
+    const hevery =
+      cfg.harness?.checkpointEveryTurns ??
+      cfg.jobs?.checkpointEveryTurns ??
+      p.checkpointEveryTurns;
+    push(
+      "harness.checkpoints",
+      "ok",
+      `everyTurns=${hevery} dir=~/.xclaw/checkpoints`
+    );
+  } catch (e) {
+    push("harness.principles", "warn", e.message || String(e));
+  }
+
   // Telegram channel posture (feature 5 follow-up)
   try {
     const conf = cfg.channels?.telegram || {};
