@@ -1,0 +1,293 @@
+/**
+ * Self-evolution + hands-free operator loop.
+ *
+ * Not unconstrained AGI — a closed loop:
+ *   observe jobs → propose skills/preferences → score → optional promote
+ *   → resume interrupted work → alert owner only when blocked
+ *
+ * Hands-free profile (owner away from keyboard):
+ *   autonomy.level=full|lab + heartbeat + harness defaults + evolve.autoPromote (lab only)
+ *   prod: proposals stay review-only unless ownerApproved / skills.allowInstall
+ */
+
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { resolveAutonomyLevel } from "../config/autonomy-policy.mjs";
+import { principlesForLevel } from "../agent/principles.mjs";
+import {
+  listPendingApprovals,
+  getSharedApprovalGate,
+} from "../security/approvals.mjs";
+import { getCostGovernorStatus } from "../tokens/cost-governor.mjs";
+import { listCheckpoints, resumeJobFromCheckpoint } from "../jobs/checkpoint.mjs";
+import {
+  readSkillLoopMetrics,
+  promoteAndInstall,
+} from "../skills/loop.mjs";
+import { listProposals, canInstallSkills, installProposal } from "../skills/propose.mjs";
+
+function evolveDir(cfg) {
+  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
+  return path.join(base, "evolution");
+}
+
+async function appendEvolveLog(cfg, row) {
+  const d = evolveDir(cfg);
+  await fs.mkdir(d, { recursive: true });
+  const fp = path.join(d, "events.jsonl");
+  await fs.appendFile(
+    fp,
+    JSON.stringify({ at: new Date().toISOString(), ...row }) + "\n"
+  );
+  return fp;
+}
+
+/**
+ * Snapshot: what blocks hands-free operation right now?
+ */
+export async function handsFreeStatus(cfg) {
+  const level = resolveAutonomyLevel(cfg);
+  const principles = principlesForLevel(level);
+  const pendingApprovals = (() => {
+    try {
+      return listPendingApprovals(cfg);
+    } catch {
+      return [];
+    }
+  })();
+
+  let cost = null;
+  try {
+    cost = await getCostGovernorStatus(cfg);
+  } catch {
+    cost = { ok: true, spentUsd: 0 };
+  }
+
+  let checkpoints = [];
+  try {
+    checkpoints = await listCheckpoints(cfg, { limit: 20 });
+  } catch {
+    /* */
+  }
+  const interrupted = checkpoints.filter(
+    (c) => c.status === "running" || c.midRun || (c.status && c.status !== "succeeded" && !c.pass)
+  );
+
+  let proposals = [];
+  try {
+    proposals = await listProposals(cfg);
+  } catch {
+    proposals = [];
+  }
+  const pendingProposals = (proposals || []).filter(
+    (p) => p && (p.enabled === false || p.status === "proposed" || !p.installed)
+  );
+
+  const installGate = canInstallSkills(cfg, { ownerApproved: false });
+  const hb = cfg.autonomy?.heartbeat || {};
+  const evolve = cfg.evolve || cfg.autonomy?.evolve || {};
+
+  const blockers = [];
+  if (pendingApprovals.length) {
+    blockers.push({
+      kind: "approval",
+      count: pendingApprovals.length,
+      hint: "xclaw approvals list / approve",
+    });
+  }
+  if (cost && cost.ok === false) {
+    blockers.push({
+      kind: "budget",
+      message: cost.message,
+      code: cost.code || "BUDGET_EXCEEDED",
+    });
+  }
+  if (level === "off") {
+    blockers.push({ kind: "autonomy", message: "autonomy.level=off" });
+  }
+  if (hb.enabled !== true && (level === "full" || evolve.requireHeartbeat)) {
+    blockers.push({
+      kind: "heartbeat",
+      message: "heartbeat disabled — enable autonomy.heartbeat.enabled for unattended ticks",
+    });
+  }
+
+  return {
+    handsFree: blockers.length === 0 && (level === "lab" || level === "full" || level === "supervised"),
+    level,
+    principles: {
+      groundHard: principles.groundHard,
+      checkpointEveryTurns: principles.checkpointEveryTurns,
+    },
+    blockers,
+    pendingApprovals: pendingApprovals.length,
+    interruptedJobs: interrupted.slice(0, 10),
+    pendingSkillProposals: pendingProposals.length,
+    installGate,
+    cost,
+    heartbeatEnabled: hb.enabled === true,
+    evolve: {
+      autoResume: evolve.autoResume !== false,
+      autoPromote: evolve.autoPromote === true,
+      maxAutoResume: evolve.maxAutoResume ?? 2,
+    },
+  };
+}
+
+/**
+ * One evolution tick — safe to run from heartbeat or CLI.
+ * 1. Status / blockers
+ * 2. Optional auto-resume interrupted checkpoints (lab/full, policy on)
+ * 3. Optional auto-promote skill proposals when install gate allows
+ * 4. Log event
+ */
+export async function runEvolutionTick(cfg, opts = {}) {
+  const status = await handsFreeStatus(cfg);
+  const evolve = cfg.evolve || cfg.autonomy?.evolve || {};
+  const actions = [];
+  const level = status.level;
+
+  // Auto-resume interrupted mid-run jobs (hands-free recovery)
+  const autoResume =
+    opts.autoResume ?? evolve.autoResume !== false;
+  const maxResume = opts.maxAutoResume ?? evolve.maxAutoResume ?? 2;
+  if (
+    autoResume &&
+    (level === "lab" || level === "full") &&
+    status.blockers.every((b) => b.kind !== "budget" && b.kind !== "approval")
+  ) {
+    const candidates = (status.interruptedJobs || [])
+      .filter((c) => c.id && c.status === "running")
+      .slice(0, maxResume);
+    for (const c of candidates) {
+      if (opts.dryRun) {
+        actions.push({ type: "resume", dryRun: true, id: c.id });
+        continue;
+      }
+      try {
+        const job = await resumeJobFromCheckpoint(cfg, c.id, {
+          onEvent: opts.onEvent,
+        });
+        actions.push({
+          type: "resume",
+          id: c.id,
+          newId: job.id,
+          pass: job.pass,
+          recoveryKind: job.recoveryKind,
+        });
+      } catch (err) {
+        actions.push({
+          type: "resume_error",
+          id: c.id,
+          error: err?.message || String(err),
+        });
+      }
+    }
+  }
+
+  // Auto-promote skills only when explicitly enabled AND install gate open
+  const autoPromote =
+    opts.autoPromote === true ||
+    (evolve.autoPromote === true && (level === "lab" || level === "full"));
+  if (autoPromote && status.installGate?.ok) {
+    let proposals = [];
+    try {
+      proposals = await listProposals(cfg);
+    } catch {
+      proposals = [];
+    }
+    const toInstall = (proposals || [])
+      .filter((p) => p.path || p.id)
+      .slice(0, opts.maxPromote ?? evolve.maxPromote ?? 3);
+    for (const prop of toInstall) {
+      const propPath = prop.path || prop;
+      if (opts.dryRun) {
+        actions.push({ type: "promote", dryRun: true, path: propPath });
+        continue;
+      }
+      try {
+        const installed = await installProposal(cfg, propPath, {
+          force: true,
+          ownerApproved: opts.ownerApproved === true,
+        });
+        actions.push({ type: "promote", path: propPath, ...installed });
+      } catch (err) {
+        actions.push({
+          type: "promote_error",
+          path: propPath,
+          error: err?.message || String(err),
+        });
+      }
+    }
+  } else if (autoPromote && !status.installGate?.ok) {
+    actions.push({
+      type: "promote_blocked",
+      reason: status.installGate?.reason || "install_gate",
+      hint: status.installGate?.hint,
+    });
+  }
+
+  const metrics = await readSkillLoopMetrics(cfg, 20).catch(() => []);
+
+  const result = {
+    at: new Date().toISOString(),
+    status,
+    actions,
+    recentSkillMetrics: metrics.slice(0, 5),
+  };
+
+  if (!opts.dryRun) {
+    await appendEvolveLog(cfg, {
+      kind: "tick",
+      handsFree: status.handsFree,
+      level: status.level,
+      actions: actions.map((a) => a.type),
+      blockers: status.blockers.map((b) => b.kind),
+    }).catch(() => {});
+  }
+
+  return result;
+}
+
+/**
+ * Recommended config overlay for "owner hands-free" (still killable & inspectable).
+ * Does not write disk — caller merges.
+ */
+export function handsFreeConfigOverlay() {
+  return {
+    profile: "lab", // prod stays supervised unless operator elevates
+    autonomy: {
+      level: "full",
+      heartbeat: {
+        enabled: true,
+        everyMs: 30 * 60 * 1000,
+        prompt:
+          "Hands-free tick: check for interrupted jobs, skill proposals, and owner-assigned goals. Do not expand scope. Report blockers only.",
+      },
+      evolve: {
+        autoResume: true,
+        autoPromote: false, // require explicit enable — safer default
+        maxAutoResume: 2,
+      },
+    },
+    harness: {
+      groundHard: true,
+      checkpointEveryTurns: 2,
+      groundingRetry: 1,
+    },
+    jobs: { groundHard: true },
+    skills: {
+      proposeOnFail: true,
+      proposeOnSuccess: true,
+      allowInstall: false, // owner must enable for true self-install
+    },
+    memory: { preferenceWriteBack: true },
+  };
+}
+
+export default {
+  handsFreeStatus,
+  runEvolutionTick,
+  handsFreeConfigOverlay,
+};
