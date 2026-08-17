@@ -1741,6 +1741,54 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exit(1);
       break;
     }
+    case "channels": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "status";
+      if (sub === "status") {
+        const { createChannelManager } = await import("../src/channels/manager.mjs");
+        const m = createChannelManager(cfg);
+        console.log(JSON.stringify(m.status?.() || m, null, 2));
+        break;
+      }
+      if (sub === "telegram") {
+        const action = args[2] || "status";
+        const conf = cfg.channels?.telegram || {};
+        const token = conf.token || process.env.TELEGRAM_BOT_TOKEN || process.env.XCLAW_TELEGRAM_TOKEN;
+        if (action === "test") {
+          const to = args[3] || conf.testChatId || conf.ownerChatId || (conf.allowedChatIds || [])[0];
+          if (!token) {
+            console.error(JSON.stringify({ ok: false, code: "NO_TELEGRAM_TOKEN" }));
+            process.exitCode = 1;
+            break;
+          }
+          if (!to) {
+            console.error(JSON.stringify({ ok: false, code: "NO_CHAT_ID", message: "pass chat id: xclaw channels telegram test <chatId>" }));
+            process.exitCode = 1;
+            break;
+          }
+          const { deliverToChannel } = await import("../src/cron/channel-deliver.mjs");
+          const out = await deliverToChannel(
+            { mode: "announce", channel: "telegram", to: String(to), text: "XClaw telegram test ✅" },
+            cfg
+          );
+          console.log(JSON.stringify(out, null, 2));
+          process.exitCode = out.ok ? 0 : 1;
+          break;
+        }
+        console.log(JSON.stringify({
+          enabled: conf.enabled !== false && Boolean(token),
+          dmPolicy: conf.dmPolicy || "pairing",
+          hasToken: Boolean(token),
+          rateLimit: conf.rateLimit || cfg.channels?.rateLimit || null,
+          allowedChatIds: conf.allowedChatIds || conf.allowFrom || [],
+        }, null, 2));
+        break;
+      }
+      console.error("Usage: xclaw channels [status|telegram [status|test <chatId>]]");
+      process.exit(1);
+      break;
+    }
     case "approvals": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const {
