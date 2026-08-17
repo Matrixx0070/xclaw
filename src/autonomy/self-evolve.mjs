@@ -20,7 +20,7 @@ import {
   getSharedApprovalGate,
 } from "../security/approvals.mjs";
 import { getCostGovernorStatus } from "../tokens/cost-governor.mjs";
-import { listCheckpoints, resumeJobFromCheckpoint } from "../jobs/checkpoint.mjs";
+import { listCheckpoints, resumeJobFromCheckpoint, pruneCheckpoints } from "../jobs/checkpoint.mjs";
 import {
   readSkillLoopMetrics,
   promoteAndInstall,
@@ -251,6 +251,24 @@ export async function runEvolutionTick(cfg, opts = {}) {
       reason: status.installGate?.reason || "install_gate",
       hint: status.installGate?.hint,
     });
+  }
+
+  // Checkpoint eviction (terminal / over maxCount / maxAge)
+  try {
+    const cpc = cfg.checkpoints || {};
+    if (cpc.pruneOnTick !== false && !opts.dryRun) {
+      const pr = await pruneCheckpoints(cfg, {
+        dryRun: false,
+        maxCount: cpc.maxCount,
+        maxAgeMs: cpc.maxAgeMs,
+      });
+      if (pr.removed) actions.push({ type: "prune_checkpoints", ...pr });
+    } else if (opts.dryRun && cpc.pruneOnTick !== false) {
+      const pr = await pruneCheckpoints(cfg, { dryRun: true });
+      actions.push({ type: "prune_checkpoints", ...pr });
+    }
+  } catch (err) {
+    actions.push({ type: "prune_error", error: err?.message || String(err) });
   }
 
   const metrics = await readSkillLoopMetrics(cfg, 20).catch(() => []);
