@@ -24,6 +24,9 @@ const packs = [
   "test/approvals-inbox.test.mjs",
   "test/cost-governor.test.mjs",
   "test/long-harness.test.mjs",
+  "test/checkpoint-recovery.test.mjs",
+  "test/mid-run-checkpoint.test.mjs",
+  "test/principles.test.mjs",
   "test/bounded-queue.test.mjs",
   "test/sandbox-tmp-allow.test.mjs",
 ];
