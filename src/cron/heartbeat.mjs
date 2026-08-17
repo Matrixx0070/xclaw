@@ -101,7 +101,8 @@ export function ensureHeartbeat(cfg = {}) {
     schedule: { kind: "every", everyMs },
     payload: { prompt, message: prompt },
     delivery: {
-      mode: "announce",
+      // mode none: agent runs without auto-push; we deliver only on non-HEARTBEAT_OK / failure
+      mode: "none",
       channel: hb.delivery?.channel || null,
       to: hb.delivery?.to || null,
     },
@@ -140,14 +141,22 @@ export function ensureHeartbeat(cfg = {}) {
       // Optional owner notify on non-trivial results or failures
       if (j.delivery?.channel && j.delivery?.to && !silenceOk) {
         try {
-          await deliverToChannel(cfg, {
-            channel: j.delivery.channel,
-            to: j.delivery.to,
-            text: `⏱ Heartbeat\n${text.slice(0, 3500)}`,
-          });
+          const sent = await deliverToChannel(
+            {
+              mode: "announce",
+              channel: j.delivery.channel,
+              to: j.delivery.to,
+              text: `⏱ Heartbeat\n${text.slice(0, 3500)}`,
+            },
+            cfg
+          );
+          j._lastDelivery = sent;
+          if (!sent?.ok) lastError = sent?.reason || "delivery_failed";
         } catch (e) {
           lastError = e.message;
         }
+      } else if (silenceOk) {
+        j._lastDelivery = { ok: true, skipped: true, reason: "silence_ok" };
       }
 
       // Rough spend accounting if usage present
@@ -167,11 +176,15 @@ export function ensureHeartbeat(cfg = {}) {
     if (payload.ok === false && payload.job?.delivery?.channel && payload.job?.delivery?.to) {
       lastError = payload.error || "heartbeat failed";
       try {
-        await deliverToChannel(cfg, {
-          channel: payload.job.delivery.channel,
-          to: payload.job.delivery.to,
-          text: `⚠️ Heartbeat failed: ${lastError}`,
-        });
+        await deliverToChannel(
+          {
+            mode: "announce",
+            channel: payload.job.delivery.channel,
+            to: payload.job.delivery.to,
+            text: `⚠️ Heartbeat failed: ${lastError}`,
+          },
+          cfg
+        );
       } catch {
         /* */
       }
