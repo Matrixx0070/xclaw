@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Queue workspace + verify paths
+
+- **queue**: persist `workspace` on enqueue and pass through to `runJob`
+- **gateway POST /queue**: accept `workspace`, `timeoutMs`, `maxAttempts`
+- **verify**: resolve absolute check paths correctly via `resolveCheckPath`
+- **Live verified**: queue → worker → succeeded, `queued.txt` = QUEUE_OK
+
+
 ## Unreleased — Job status bugfix
 
 - **jobs/job.mjs**: replace undefined `options` with `opts` after verify/grounding (job was `failed` despite verify pass)
