@@ -14,10 +14,6 @@ Not a thin chat wrapper: agents **run tools**, can **verify work**, and can **pr
 git clone https://github.com/Matrixx0070/xclaw.git
 cd xclaw
 
-# 0) One-command install + onboard (creates ~/.xclaw, runs doctor)
-XAI_API_KEY=xai-... npm run install:local     # or: bash install/install.sh --yes
-# equivalently, just onboard:  npm run onboard -- --yes --profile lab
-
 # 1) Key (never commit this)
 export XAI_API_KEY=xai-...          # or other provider keys via config
 export XCLAW_PROFILE=lab            # convenient defaults
@@ -39,7 +35,7 @@ node bin/xclaw.mjs gateway
 |-------|--------|
 | `doctor` | Config loads; lab profile OK; warns if no API key |
 | `agent "…"` | Tool runs (lab auto-approves) or clear error |
-| Computer | **Bundle default** (16MB CDP on `:4243`); run `npm run fetch:bundle` + `verify:bundle` — thin: `XCLAW_COMPUTER_ENGINE=native` |
+| Computer | Thin native server on `:4243` (auto-start) |
 
 **Requirements:** Node.js **≥ 22**, network for model APIs.
 
@@ -49,43 +45,7 @@ More install detail: [INSTALL.md](./INSTALL.md)
 
 ---
 
-## Computer use (browser CDP + optional desktop)
-
-Default is **fail-closed**: agents prefer tools/APIs; GUI actuation needs explicit setup.
-
-### Browser CDP (recommended for web UI)
-
-```bash
-google-chrome-stable --headless=new --no-sandbox \
-  --remote-debugging-port=9222 --user-data-dir=/tmp/xclaw-cdp about:blank &
-export XCLAW_CDP_URL=http://127.0.0.1:9222
-node scripts/cdp-live-smoke.mjs    # screenshot + click + key
-node scripts/cua-doctor.mjs        # readiness report
-```
-
-Tools: `xclaw_browser_tab` (observe structure) → `xclaw_computer_act` (click/type when CDP is up).
-
-### Desktop OS GUI (lab only)
-
-| OS | Observe | Act (needs `XCLAW_DESKTOP_GUI=1`) |
-|----|---------|-----------------------------------|
-| Linux | AT-SPI (`python3-pyatspi`) | `xdotool` or `ydotool` |
-| Windows | `pip install pywinauto` | same + opt-in |
-| macOS | `pyobjc` AX + **Accessibility** TCC | CGEvent / AXPress + opt-in |
-
-```bash
-export XCLAW_DESKTOP_GUI=1   # only when you need OS-level input
-node scripts/cua-doctor.mjs
-```
-
-Full design: [docs/COMPUTER_USE_BACKEND.md](./docs/COMPUTER_USE_BACKEND.md)
-
----
-
 ## Secrets
-
-Full checklist: [docs/SECRETS.md](./docs/SECRETS.md)
-
 
 - **Never commit** API keys, OAuth tokens, or GitHub PATs.
 - Prefer env vars or local config outside the repo.
@@ -117,6 +77,8 @@ export XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
 
 Project memory injected into the agent: **[XCLAW.md](./XCLAW.md)** (edit this for repo-local rules).
 
+Autonomy levels (`off` · `supervised` · `lab` · `full`): **[docs/AUTONOMY.md](./docs/AUTONOMY.md)** — or `XCLAW_AUTONOMY_LEVEL=…` / `autonomy.level` in config.
+
 ---
 
 ## Strategy C (computer)
@@ -137,17 +99,6 @@ npm run build:computer
 Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
 
 ---
-
-## Docker (try-me)
-
-```bash
-cd deploy
-cp env.example .env   # set XAI_API_KEY
-docker compose up --build
-# → http://127.0.0.1:18790/chat/
-```
-
-Publishes **18790** (gateway / WebChat) and **4243** (computer). See [INSTALL.md](./INSTALL.md#docker-try-me).
 
 ## What you get
 
@@ -192,9 +143,7 @@ export XCLAW_PROFILE=prod
 export XCLAW_GATEWAY_TOKEN=long-random-secret
 # Linux: apt install bubblewrap   # OS sandbox for bash when usable
 
-# Docker
-cd deploy && cp env.example .env   # set token + key + PROFILE=prod
-docker compose up -d --build
+cd deploy && docker compose up -d --build   # if using compose
 ```
 
 See [OPS.md](./OPS.md) and `deploy/`.
@@ -223,7 +172,3 @@ Deep / historical design notes live under `docs/`—prefer this README + XCLAW.m
 ## License
 
 MIT — see [THIRD_PARTY.md](./THIRD_PARTY.md) for bundled components.
-
-## Live use
-
-See [docs/LIVE_RUNBOOK.md](docs/LIVE_RUNBOOK.md) for native computer + CDP agent runs.
