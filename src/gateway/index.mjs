@@ -2177,7 +2177,24 @@ export async function startGateway({ root } = {}) {
       }
       if (p === "/security/decide" && req.method === "POST") {
         const body = await readBody(req);
-        return json(res, 200, approvalGate.decide(body.id, Boolean(body.approved), body.note));
+        const out = approvalGate.decide(body.id, Boolean(body.approved), body.note);
+        const status = out.ok ? 200 : out.code === "APPROVAL_NOT_FOUND" ? 404 : 409;
+        return json(res, status, out);
+      }
+      if ((p === "/approvals" || p === "/approvals/pending") && req.method === "GET") {
+        return json(res, 200, { pending: approvalGate.listPending() });
+      }
+      if (p === "/approvals/approve" && req.method === "POST") {
+        const body = await readBody(req);
+        const out = approvalGate.decide(body.id, true, body.note || body.reason || "");
+        const status = out.ok ? 200 : out.code === "APPROVAL_NOT_FOUND" ? 404 : 409;
+        return json(res, status, out);
+      }
+      if (p === "/approvals/deny" && req.method === "POST") {
+        const body = await readBody(req);
+        const out = approvalGate.decide(body.id, false, body.note || body.reason || "Denied");
+        const status = out.ok ? 200 : out.code === "APPROVAL_NOT_FOUND" ? 404 : 409;
+        return json(res, status, out);
       }
       if (p === "/checkpoints" && req.method === "GET") {
         const { listCheckpoints, loadCheckpoint } = await import("../jobs/checkpoint.mjs");
