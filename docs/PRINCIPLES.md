@@ -32,3 +32,10 @@ XClaw treats the agent as a **long-lived subordinate**, not a chat demo.
 ```bash
 xclaw harness "your long goal" --exists out.txt
 ```
+
+
+## Path-binding (claims ↔ tools)
+
+Hard grounding also checks that **file paths named in claims** appear in tool evidence summaries (basename match allowed). Prevents “I wrote secrets/x.txt” after only touching other files.
+
+See `src/jobs/claims.mjs` (`extractClaimPaths` / path bind in `scoreClaimsAgainstEvidence`).
