@@ -1915,6 +1915,39 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       await evalMain(args.slice(1));
       break;
     }
+    case "evolve": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const {
+        handsFreeStatus,
+        runEvolutionTick,
+        handsFreeConfigOverlay,
+      } = await import("../src/autonomy/self-evolve.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "status";
+      if (sub === "status" || sub === "hands-free") {
+        console.log(JSON.stringify(await handsFreeStatus(cfg), null, 2));
+        break;
+      }
+      if (sub === "tick") {
+        const dryRun = args.includes("--dry-run");
+        const autoPromote = args.includes("--promote");
+        const r = await runEvolutionTick(cfg, {
+          dryRun,
+          autoPromote,
+          ownerApproved: args.includes("--owner-approved"),
+        });
+        console.log(JSON.stringify(r, null, 2));
+        process.exitCode = r.status?.blockers?.length ? 1 : 0;
+        break;
+      }
+      if (sub === "overlay") {
+        console.log(JSON.stringify(handsFreeConfigOverlay(), null, 2));
+        break;
+      }
+      console.error("Usage: xclaw evolve [status|tick|overlay] [--dry-run] [--promote] [--owner-approved]");
+      process.exit(1);
+      break;
+    }
     case "harness": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const { runLongHarness } = await import("../src/jobs/long-harness.mjs");
@@ -2119,6 +2152,7 @@ Commands:
   eval                 Eval suite (--tag, --mock, --json)
   job <goal>           Verified job in a temp workspace
   harness <goal>       Long-run grounded harness (anti-hallucination)
+  evolve               status|tick|overlay — self-evolution / hands-free
   skills               list|proposals|install|reject  (prod install needs --owner-approved)
   approvals            list|policy|approve <id>|deny <id>
   version              Print version
