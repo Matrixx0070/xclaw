@@ -44,6 +44,7 @@ import {
   sendTelegramVoiceNote,
   voiceOutOptions,
 } from "./voice-out.mjs";
+import { localTranscribe } from "../../voice/providers/local.mjs";
 import {
   gateGroupMessage,
   stripBotMention,
@@ -298,6 +299,22 @@ export function createTelegramChannel(cfg) {
         const d = await downloadTelegramFile(msg.voice.file_id, dest);
         media.push({ type: "voice", ...d });
         parts.push(`[Attached voice note saved to ${d.path}]`);
+        try {
+          const tr = await localTranscribe(d.path, cfg);
+          if (tr.ok && tr.text) {
+            media[media.length - 1].transcript = tr.text;
+            media[media.length - 1].sttProvider = tr.provider;
+            parts.push(`[Voice transcript (${tr.provider}): ${tr.text}]`);
+            // Use transcript as primary user text if no caption
+            if (!msg.caption && !msg.text) {
+              parts.unshift(tr.text);
+            }
+          } else if (tr.error) {
+            parts.push(`[Voice STT unavailable: ${tr.error}]`);
+          }
+        } catch (sttErr) {
+          parts.push(`[Voice STT error: ${sttErr.message || sttErr}]`);
+        }
       }
       if (msg.video) {
         const dest = path.join(mediaDir, `video_${stamp}.mp4`);
@@ -311,6 +328,16 @@ export function createTelegramChannel(cfg) {
         const d = await downloadTelegramFile(msg.audio.file_id, dest);
         media.push({ type: "audio", ...d });
         parts.push(`[Attached audio saved to ${d.path}]`);
+        try {
+          const tr = await localTranscribe(d.path, cfg);
+          if (tr.ok && tr.text) {
+            media[media.length - 1].transcript = tr.text;
+            parts.push(`[Audio transcript (${tr.provider}): ${tr.text}]`);
+            if (!msg.caption && !msg.text) parts.unshift(tr.text);
+          }
+        } catch {
+          /* */
+        }
       }
     } catch (err) {
       parts.push(`[Media download failed: ${err.message}]`);
