@@ -35,3 +35,17 @@ describe("computer_act (I2b)", () => {
     delete process.env.XCLAW_CDP_URL;
   });
 });
+
+import { cacheObserveResult, getCachedObserve } from "../src/computer/modules/computer-act-tool.mjs";
+
+describe("observe ref cache (I4)", () => {
+  it("stores and retrieves elements by tabId", () => {
+    cacheObserveResult("tab_1", {
+      url: "https://example.com",
+      elements: [{ ref: "e1", role: "link", name: "Docs" }],
+    });
+    const c = getCachedObserve("tab_1");
+    assert.equal(c.elements[0].ref, "e1");
+    assert.equal(c.elements[0].name, "Docs");
+  });
+});

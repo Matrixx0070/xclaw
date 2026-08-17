@@ -12,6 +12,95 @@
 import { createCdpClient } from "../../browser/cdp-client.mjs";
 import { planClick, planType, planScroll, executeSteps } from "../../browser/motor.mjs";
 
+/** @type {Map<string, { elements: object[], at: number, url?: string }>} */
+const observeCache = new Map();
+
+/**
+ * Cache observe results so computer_act can resolve ref → name → coords.
+ * Called by browser-tab observe or external callers.
+ */
+export function cacheObserveResult(tabId, payload = {}) {
+  if (!tabId) return;
+  observeCache.set(String(tabId), {
+    elements: Array.isArray(payload.elements) ? payload.elements : [],
+    at: Date.now(),
+    url: payload.url,
+  });
+  if (observeCache.size > 32) {
+    const first = observeCache.keys().next().value;
+    observeCache.delete(first);
+  }
+}
+
+export function getCachedObserve(tabId) {
+  return tabId ? observeCache.get(String(tabId)) || null : null;
+}
+
+/**
+ * Resolve click coordinates from explicit x,y or observe ref via CDP evaluate.
+ * @param {object} tab CDP attached page client
+ * @param {object} input
+ */
+async function resolveClickTarget(tab, input = {}) {
+  let x = Number(input.x);
+  let y = Number(input.y);
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    return { x, y, source: "explicit" };
+  }
+
+  const ref = input.ref ? String(input.ref) : "";
+  const nameHint = input.label || input.name || "";
+  let searchName = nameHint;
+
+  if (ref && input.tabId) {
+    const cached = getCachedObserve(input.tabId);
+    const el = cached?.elements?.find((e) => e.ref === ref);
+    if (el?.name) searchName = el.name;
+  }
+
+  if (!ref && !searchName) {
+    return null;
+  }
+
+  // CDP: find element by ref index eN or by accessible name / text
+  const expr = `(() => {
+    const ref = ${JSON.stringify(ref)};
+    const name = ${JSON.stringify(searchName)};
+    const candidates = [];
+    const push = (node, role) => {
+      if (!node) return;
+      const r = node.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      const label = (node.getAttribute('aria-label') || node.innerText || node.value || node.getAttribute('name') || node.getAttribute('placeholder') || '').trim().slice(0, 160);
+      candidates.push({ role, label, x: r.x + r.width/2, y: r.y + r.height/2, w: r.width, h: r.height });
+    };
+    document.querySelectorAll('a,button,input,textarea,select,[role="button"],[role="link"]').forEach((n) => {
+      const role = n.getAttribute('role') || n.tagName.toLowerCase();
+      push(n, role);
+    });
+    let hit = null;
+    if (ref && /^e\d+$/i.test(ref)) {
+      const idx = parseInt(ref.slice(1), 10) - 1;
+      if (idx >= 0 && idx < candidates.length) hit = candidates[idx];
+    }
+    if (!hit && name) {
+      const lower = name.toLowerCase();
+      hit = candidates.find((c) => c.label.toLowerCase().includes(lower)) || null;
+    }
+    return hit;
+  })()`;
+
+  try {
+    const hit = await tab.evaluate(expr);
+    if (hit && Number.isFinite(hit.x) && Number.isFinite(hit.y)) {
+      return { x: hit.x, y: hit.y, source: "cdp-ref", label: hit.label, role: hit.role };
+    }
+  } catch (e) {
+    return { error: e?.message || String(e) };
+  }
+  return null;
+}
+
 function parseCdpUrl(raw) {
   if (!raw) return null;
   try {
@@ -119,23 +208,27 @@ export async function runComputerAct(input = {}) {
 
     let plan;
     if (action === "click") {
-      const x = Number(input.x);
-      const y = Number(input.y);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      const target = await resolveClickTarget(tab, input);
+      if (!target || target.error) {
         return {
           ok: false,
-          error: "click requires numeric x,y (map from observe refs in a later step)",
+          error:
+            target?.error ||
+            "click requires x,y or resolvable ref/name (run observe, pass ref or label)",
           code: "CUA_ACT_NEED_COORDS",
           engine: "cdp-motor",
         };
       }
+      const x = target.x;
+      const y = target.y;
       plan = planClick({
         x,
         y,
         button: input.button || "left",
         clickCount: input.clickCount || 1,
-        label: input.ref || input.label,
+        label: target.label || input.ref || input.label,
       });
+      plan.meta = { ...plan.meta, coordSource: target.source };
     } else if (action === "type") {
       plan = planType({ text: input.text ?? "" });
     } else if (action === "scroll") {

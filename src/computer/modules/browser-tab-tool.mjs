@@ -16,6 +16,7 @@
  */
 
 import { safeFetch } from "../../security/ssrf.mjs";
+import { cacheObserveResult } from "./computer-act-tool.mjs";
 
 /** @type {Map<string, { id: string, url: string, title: string, text: string, links: object[], status: number, at: string }>} */
 const tabs = new Map();
@@ -234,7 +235,7 @@ export function observeFromTab(tab) {
         href: l.href,
         tag: "a",
       }));
-  return {
+  const payload = {
     ok: true,
     action: "observe",
     tabId: tab.id,
@@ -251,6 +252,12 @@ export function observeFromTab(tab) {
     notes:
       "Native observe is HTML-derived (not OS accessibility). For real AX tree + click/type use XCLAW_COMPUTER_ENGINE=bundle or CDP attach.",
   };
+  try {
+    cacheObserveResult(tab.id, payload);
+  } catch {
+    /* optional cache */
+  }
+  return payload;
 }
 
 function listTabs() {

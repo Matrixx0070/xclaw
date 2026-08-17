@@ -48,7 +48,7 @@ export XCLAW_CDP_URL=http://127.0.0.1:9222
 | scroll | deltaY (optional x,y) |
 | screenshot | — |
 
-`ref` from observe is label-only until ref→coords mapping lands.
+`ref` from observe: cached on observe; on CDP click, resolved via DOM getBoundingClientRect (ref eN index or name match). Explicit x,y still preferred when known.
 
 ## Roadmap
 
@@ -56,7 +56,8 @@ export XCLAW_CDP_URL=http://127.0.0.1:9222
 - **I2** stub — done (fail closed)
 - **I2b** CDP motor path — done (CLEAN); bundle BrowserService still BUNDLE_ONLY
 - **I3** planes serial — done
-- **I4–I5** DesktopDriver optional + observe ref→coords
+- **I4** observe ref→coords via CDP evaluate — done
+- **I5** DesktopDriver optional
 - **I6** long-horizon eval
 
 Do **not** hand-edit `xclaw-server.mjs`; extend modules and rebuild.
