@@ -861,6 +861,54 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       process.exitCode = code;
       break;
     }
+    case "voice": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const {
+        probeLocalVoiceStack,
+        localSpeak,
+        localTranscribe,
+        localThink,
+      } = await import("../src/voice/providers/local.mjs");
+      const cfg = await loadConfig();
+      const sub = args[1] || "probe";
+      if (sub === "probe" || sub === "status") {
+        console.log(JSON.stringify(await probeLocalVoiceStack(cfg), null, 2));
+        break;
+      }
+      if (sub === "speak") {
+        const text = args.slice(2).join(" ").trim() || "Hello from XClaw.";
+        const out = await localSpeak(text, cfg);
+        console.log(JSON.stringify(out, null, 2));
+        process.exitCode = out.ok ? 0 : 1;
+        break;
+      }
+      if (sub === "transcribe" || sub === "stt") {
+        const file = args[2];
+        if (!file) {
+          console.error("Usage: xclaw voice transcribe <audio.wav|ogg|mp3>");
+          process.exit(1);
+        }
+        const out = await localTranscribe(file, cfg);
+        console.log(JSON.stringify(out, null, 2));
+        process.exitCode = out.ok ? 0 : 1;
+        break;
+      }
+      if (sub === "once") {
+        const prompt = args.slice(2).join(" ").trim() || "Say a short greeting.";
+        const thought = await localThink(prompt, cfg, { history: [] });
+        const spoken = thought.text ? await localSpeak(thought.text, cfg) : { ok: false };
+        console.log(JSON.stringify({ thought, spoken }, null, 2));
+        break;
+      }
+      if (sub === "tui") {
+        const { runVoiceTui } = await import("../src/voice/tui-session.mjs");
+        await runVoiceTui(cfg, { args: args.slice(2) });
+        break;
+      }
+      console.error("Usage: xclaw voice probe|speak|transcribe|once|tui");
+      process.exit(1);
+      break;
+    }
     case "doctor": {
       // Phase 7.4: prefer lightweight CLI doctor; fall back to gateway doctor
       const wantJson = args.includes("--json") || args.includes("-j");
