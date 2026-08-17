@@ -54,6 +54,7 @@ export function wakeConfig(cfg = {}) {
     ),
     energyThreshold: Number(w.energyThreshold) > 0 ? Number(w.energyThreshold) : 500,
     recordSeconds: Number(w.recordSeconds) > 0 ? Number(w.recordSeconds) : 2,
+    commandSeconds: Number(w.commandSeconds) > 0 ? Number(w.commandSeconds) : 4,
     sampleRate: Number(w.sampleRate) > 0 ? Number(w.sampleRate) : 16000,
     enabled: w.enabled !== false,
   };
