@@ -4,41 +4,23 @@
  */
 import { createSpeechPlane } from "./speech-plane.mjs";
 import { createJobBus } from "./job-bus.mjs";
+import {
+  classifyVoiceIntent,
+  voiceCommandsHelp,
+  VOICE_COMMANDS,
+} from "./commands.mjs";
 
-/**
- * Classify user text for cancel vs mute vs new work (lightweight).
- */
-export function classifyVoiceIntent(text) {
-  const t = String(text || "").toLowerCase().trim();
-  if (!t) return { kind: "none" };
-  if (
-    /\b(stop talking|shut up|be quiet|silence)\b/.test(t)
-  ) {
-    return { kind: "stop_talking" };
-  }
-  if (
-    /\b(cancel( that| it| the)?( task| job| swarm| research)?|stop (the )?(task|job|swarm|agent|work)|abort)\b/.test(
-      t
-    )
-  ) {
-    return { kind: "cancel_job" };
-  }
-  if (/\b(keep going|continue|don't stop|carry on)\b/.test(t)) {
-    return { kind: "keep_going" };
-  }
-  return { kind: "utterance" };
-}
+export { classifyVoiceIntent, voiceCommandsHelp, VOICE_COMMANDS };
 
 export function createEntente(opts = {}) {
   const speech = createSpeechPlane(opts.speech);
   const jobs = createJobBus();
   const narrateProgress = opts.narrateProgress !== false;
+  let lastSpoken = "";
 
-  // Optional: soft status lines without blocking jobs
   if (narrateProgress) {
     jobs.on((ev) => {
       if (ev.type === "job.progress" && ev.progress?.message) {
-        // Only suggest speech — caller decides; never blocks job
         speech.beginSpeak(String(ev.progress.message).slice(0, 120));
       }
     });
@@ -48,42 +30,90 @@ export function createEntente(opts = {}) {
     speech,
     jobs,
 
-    /** Interrupt speech only */
+    getLastSpoken() {
+      return lastSpoken;
+    },
+
+    setLastSpoken(t) {
+      lastSpoken = String(t || "").slice(0, 2000);
+    },
+
     onBargeIn(meta) {
       return speech.bargeIn(meta);
     },
 
-    /** Handle a committed user transcript */
+    /**
+     * Handle a committed user transcript / slash command.
+     * @returns {{ intent, jobsCancelled?: number, reply?: string, active?: number }}
+     */
     onUserText(text) {
       const intent = classifyVoiceIntent(text);
-      if (intent.kind === "stop_talking") {
-        speech.stopTalking();
-        return { intent, jobsCancelled: 0 };
+
+      if (intent.kind === "stop_talking" || intent.kind === "barge_in") {
+        if (intent.kind === "stop_talking") speech.stopTalking();
+        else speech.bargeIn({ reason: "barge_in_command" });
+        return {
+          intent,
+          jobsCancelled: 0,
+          reply: intent.command?.reply || "Muted.",
+        };
       }
+
+      if (intent.kind === "allow_talking") {
+        speech.allowTalking();
+        return { intent, jobsCancelled: 0, reply: "Speech on." };
+      }
+
       if (intent.kind === "cancel_job") {
         const n = jobs.cancelAll("user_cancel");
         speech.allowTalking();
-        speech.beginSpeak(n ? "Cancelled." : "Nothing to cancel.");
-        return { intent, jobsCancelled: n };
+        const reply = n ? `Cancelled ${n} job(s).` : "Nothing to cancel.";
+        speech.beginSpeak(reply);
+        return { intent, jobsCancelled: n, reply };
       }
+
       if (intent.kind === "keep_going") {
         speech.allowTalking();
         const active = jobs.listActive();
-        speech.beginSpeak(
-          active.length
-            ? `Still working on ${active.length} job(s).`
-            : "Understood."
-        );
-        return { intent, jobsCancelled: 0, active: active.length };
+        const reply = active.length
+          ? `Still working on ${active.length} job(s).`
+          : "Understood — continuing.";
+        speech.beginSpeak(reply);
+        return { intent, jobsCancelled: 0, active: active.length, reply };
       }
+
+      if (intent.kind === "status") {
+        speech.allowTalking();
+        const active = jobs.listActive();
+        const reply = [
+          speech.isSuppressed() ? "Speech muted." : "Speech on.",
+          active.length ? `${active.length} active job(s).` : "No active jobs.",
+          `Epoch ${speech.getEpoch()}.`,
+        ].join(" ");
+        speech.beginSpeak(reply);
+        return { intent, jobsCancelled: 0, reply, active: active.length };
+      }
+
+      if (intent.kind === "help") {
+        speech.allowTalking();
+        const reply =
+          "Voice commands: stop talking, cancel, continue, status, repeat, unmute. " +
+          "Slash: /mute /unmute /cancel /status /repeat";
+        return { intent, jobsCancelled: 0, reply, help: voiceCommandsHelp() };
+      }
+
+      if (intent.kind === "repeat") {
+        speech.allowTalking();
+        const reply = lastSpoken || "Nothing to repeat yet.";
+        speech.beginSpeak(reply.slice(0, 400));
+        return { intent, jobsCancelled: 0, reply };
+      }
+
       // utterance: cognitive plane handles; speech must not cancel jobs
       speech.allowTalking();
       return { intent, jobsCancelled: 0 };
     },
 
-    /**
-     * Invariant check for tests / doctor
-     */
     assertBargeInDoesNotCancelJobs() {
       const before = jobs.listActive().map((j) => j.id);
       speech.bargeIn({ test: true });
