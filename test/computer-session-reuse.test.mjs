@@ -4,6 +4,7 @@ import {
   createComputerClient,
   clearComputerSessionPool,
   computerClientCacheStats,
+  pruneExpiredSessionPool,
 } from "../src/agent/computer-client.mjs";
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -55,6 +56,22 @@ describe("computer session reuse", () => {
     await c.destroySession(a);
     const c2 = await c.createSession(wd);
     assert.equal(c2, a); // still pooled after soft destroy
+  });
+
+  it("TTL prune removes stale pool entries", async () => {
+    clearComputerSessionPool();
+    process.env.XCLAW_COMPUTER_REUSE_SESSION = "1";
+    const cfg = {
+      computer: { host: "127.0.0.1", port: 4243, engine: "native", reuseSession: true },
+    };
+    const c = createComputerClient(cfg);
+    const wd = path.join(root, "tmp-live");
+    const sid = await c.createSession(wd);
+    assert.ok(sid);
+    // Force expire
+    const r = pruneExpiredSessionPool({ ttlMs: 0 });
+    assert.ok(r.expired >= 1);
+    assert.equal(computerClientCacheStats().sessions, 0);
   });
 
   it("caches tools/list per session", async () => {

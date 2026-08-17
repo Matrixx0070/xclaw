@@ -57,3 +57,5 @@ Agent computer client can **reuse** sessions for the same `workingDir` (default 
 - `XCLAW_COMPUTER_REUSE_HARD_DESTROY=1` forces HTTP destroy
 
 Avoids repeated create cost (bundle ~380 ms create was the main outlier in benches).
+
+- `XCLAW_COMPUTER_SESSION_TTL_MS` (default 30m) — pool/tools cache TTL; prune on createSession

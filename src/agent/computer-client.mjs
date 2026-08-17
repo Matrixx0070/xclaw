@@ -104,6 +104,44 @@ const sessionReusePool = new Map();
 /** @type {Map<string, { tools: any[], at: number }>} */
 const toolsListCache = new Map();
 
+
+function sessionTtlMs(cfg = {}) {
+  const raw =
+    process.env.XCLAW_COMPUTER_SESSION_TTL_MS ??
+    cfg.computer?.sessionTtlMs ??
+    30 * 60 * 1000; // 30m default
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 30 * 60 * 1000;
+  return n;
+}
+
+/**
+ * Drop stale pool entries (and tools cache). Optional HTTP destroy when request fn provided.
+ * @param {{ ttlMs?: number, request?: Function }} [opts]
+ */
+export function pruneExpiredSessionPool(opts = {}) {
+  const ttl = opts.ttlMs ?? sessionTtlMs();
+  const now = Date.now();
+  const expired = [];
+  for (const [k, v] of sessionReusePool.entries()) {
+    if (!v?.at || now - v.at >= ttl) {
+      expired.push({ key: k, sessionId: v?.sessionId });
+      sessionReusePool.delete(k);
+      if (v?.sessionId) {
+        toolsListCache.delete(v.sessionId);
+        if (typeof opts.request === "function") {
+          opts.request("POST", "/xclaw/sessions/destroy", { sessionId: v.sessionId }).catch(() => {});
+        }
+      }
+    }
+  }
+  // Also expire orphan tools caches older than ttl
+  for (const [sid, meta] of toolsListCache.entries()) {
+    if (!meta?.at || now - meta.at >= ttl) toolsListCache.delete(sid);
+  }
+  return { expired: expired.length, sessions: sessionReusePool.size, toolsLists: toolsListCache.size };
+}
+
 function reuseEnabled(cfg) {
   if (process.env.XCLAW_COMPUTER_REUSE_SESSION === "0") return false;
   if (process.env.XCLAW_COMPUTER_REUSE_SESSION === "1") return true;
@@ -152,6 +190,7 @@ export function createComputerClient(cfg) {
     async createSession(workingDir = process.cwd()) {
       const wd = String(workingDir || process.cwd());
       if (canReuse) {
+        pruneExpiredSessionPool({ ttlMs: sessionTtlMs(cfg), request });
         const key = poolKey(baseUrl, wd);
         const hit = sessionReusePool.get(key);
         if (hit?.sessionId) {
