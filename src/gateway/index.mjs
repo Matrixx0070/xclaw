@@ -1061,7 +1061,29 @@ export async function startGateway({ root } = {}) {
     }
 
     try {
-      
+      // Local voice stack (WebUI / TUI clients)
+      if (p === "/api/voice/probe" && req.method === "GET") {
+        const { probeLocalVoiceStack } = await import("../voice/providers/local.mjs");
+        return json(res, 200, await probeLocalVoiceStack(cfg));
+      }
+      if (p === "/api/voice/speak" && req.method === "POST") {
+        const body = await readBody(req).catch(() => ({}));
+        const { localSpeak } = await import("../voice/providers/local.mjs");
+        const text = String(body.text || body.message || "").slice(0, 500);
+        const out = await localSpeak(text, cfg);
+        if (!out.ok) return json(res, 503, out);
+        // Return path only (local); WebUI can fetch file if shared
+        return json(res, 200, out);
+      }
+      if (p === "/api/voice/transcribe" && req.method === "POST") {
+        const body = await readBody(req).catch(() => ({}));
+        const { localTranscribe } = await import("../voice/providers/local.mjs");
+        const file = body.path || body.file || body.audioPath;
+        if (!file) return json(res, 400, { error: "path required" });
+        const out = await localTranscribe(file, cfg);
+        return json(res, out.ok ? 200 : 503, out);
+      }
+
       // PagerDuty inbound webhooks — HMAC on raw body
       if (p === "/webhooks/pagerduty" && req.method === "POST") {
         let rawBuf;
