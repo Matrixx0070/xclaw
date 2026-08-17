@@ -102,3 +102,37 @@ Config: `harness.checkpointEveryTurns` or `jobs.checkpointEveryTurns` (set `0` t
 | `interrupted` | mid-run snapshot, no error | Continue from turn N without redo |
 
 Override: `resumeJobFromCheckpoint(cfg, id, { strategy: "grounding" })`.
+
+
+## Live smoke (API key required)
+
+```bash
+# Never paste keys into chat — env only
+export XAI_API_KEY=...
+export XCLAW_PROFILE=lab
+
+# Optional overrides
+# export HARNESS_WORKSPACE=/tmp/xclaw-live
+# export HARNESS_MAX_TURNS=12
+# export HARNESS_TIMEOUT_MS=180000
+
+npm run harness:live
+# or
+node scripts/live-harness-smoke.mjs
+```
+
+What it does:
+
+1. Checks for `XAI_API_KEY` / Anthropic / OpenAI  
+2. `ensureComputer` (starts computer server if needed)  
+3. `runLongHarness` with verify: create `notes/live_harness.txt` + marker string  
+4. Prints JSON summary; exit 0 only if verify + grounding pass  
+
+Manual equivalent:
+
+```bash
+xclaw harness "Create notes/hello.txt with HELLO. Re-read to confirm." \
+  --exists notes/hello.txt \
+  --contains notes/hello.txt:HELLO \
+  --max-turns 12
+```
