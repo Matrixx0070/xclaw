@@ -914,6 +914,19 @@ export async function runDoctor(opts = {}) {
   }
 
   try {
+    const { voiceMetricsSnapshot } = await import("../voice/metrics.mjs");
+    const m = voiceMetricsSnapshot();
+    const ttfa = m.latency?.ttfaMs?.p50;
+    push(
+      "voice.metrics",
+      "ok",
+      `events=${m.samples} wakes=${m.counters.wakeHits} ttfa_p50=${ttfa ?? "n/a"}`
+    );
+  } catch (e) {
+    push("voice.metrics", "warn", e.message || String(e));
+  }
+
+  try {
     const { probeVad } = await import("../voice/vad.mjs");
     const v = probeVad(cfg);
     push(
