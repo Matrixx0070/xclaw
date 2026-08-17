@@ -84,7 +84,7 @@ Autonomy levels (`off` · `supervised` · `lab` · `full`): **[docs/AUTONOMY.md]
 
 Browser fabric (tab leases + commit gates): **[docs/FABRIC.md](./docs/FABRIC.md)** — enable with `XCLAW_COMMIT_GATES=1` + `XCLAW_FABRIC_ENFORCE=1`.
 
-Roadmap: **[docs/ROADMAP.md](./docs/ROADMAP.md)** · MCP checklist: **[docs/MCP-PARITY.md](./docs/MCP-PARITY.md)**.
+Roadmap: **[docs/ROADMAP.md](./docs/ROADMAP.md)** · MCP: **[docs/MCP-PARITY.md](./docs/MCP-PARITY.md)** · Harness: **[docs/HARNESS.md](./docs/HARNESS.md)**.
 
 ---
 
