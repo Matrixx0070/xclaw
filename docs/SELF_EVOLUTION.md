@@ -105,8 +105,11 @@ Hands-free is not only resume — you **queue goals** before leaving:
 
 ```bash
 xclaw goal "Refactor src/foo and run tests"
+xclaw goal "Write notes/ok.txt with OK" --harness --exists notes/ok.txt --contains notes/ok.txt:OK
 xclaw goal list
 ```
+
+`--harness` (or any `--exists`/`--contains`/`--cmd`) runs the long-run grounded path when the queue worker picks up the item.
 
 Gateway or `xclaw evolve tick` starts the queue worker. Heartbeat evolution tick keeps the worker alive.
 
