@@ -1,0 +1,36 @@
+name: nightly-long-horizon
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # 06:00 UTC daily
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "test/long-horizon-fixtures.test.mjs"
+      - "src/jobs/**"
+      - "src/skills/**"
+
+jobs:
+  long-horizon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Long-horizon fixtures (no API key)
+        run: node --test test/long-horizon-fixtures.test.mjs test/skill-install-gate.test.mjs test/host-workspace.test.mjs
+      - name: Self-test smoke
+        run: node bin/xclaw.mjs self-test
+      # Optional live eval when secrets present
+      - name: Live eval subset
+        if: ${{ secrets.XAI_API_KEY != '' }}
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          EVAL_LIVE: "1"
+          XCLAW_PROFILE: lab
+        run: |
+          node scripts/eval-regression.mjs || true
+        continue-on-error: true
