@@ -86,3 +86,19 @@ ls ~/.xclaw/checkpoints/
 Events: `{ type: "job", phase: "checkpoint", turn, path }`.
 
 Config: `harness.checkpointEveryTurns` or `jobs.checkpointEveryTurns` (set `0` to disable).
+
+
+## Recovery strategies
+
+`resumeJobFromCheckpoint` / `xclaw resume <id>` classifies the failure and injects a tailored recovery prompt:
+
+| Kind | When | Strategy |
+|------|------|----------|
+| `transport` | ECONNREFUSED / computer down | Inspect workspace, finish missing steps |
+| `budget` | turns/time/cost | Minimal remaining work + slight turn boost |
+| `security` | deny / approval | Allowlisted tools only; no invented success |
+| `grounding` | claim/evidence fail | Hard ground + structured claims; may use harness |
+| `verify` | objective checks fail | Fix only failures; re-run checks |
+| `interrupted` | mid-run snapshot, no error | Continue from turn N without redo |
+
+Override: `resumeJobFromCheckpoint(cfg, id, { strategy: "grounding" })`.
