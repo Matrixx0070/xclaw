@@ -6,6 +6,7 @@ import {
   vadConfig,
   analyzePcmFrames,
   probeVad,
+  calibrateNoiseFloor,
 } from "../src/voice/vad.mjs";
 
 describe("VAD", () => {
@@ -52,5 +53,19 @@ describe("VAD", () => {
     const p = probeVad({});
     assert.equal(p.engine, "energy-rms-hysteresis");
     assert.ok(p.silenceMs > 0);
+  });
+
+  it("calibrateNoiseFloor from quiet leading frames", () => {
+    const frameBytes = Math.floor((16000 * 30) / 1000) * 2;
+    const frames = [];
+    for (let i = 0; i < 15; i++) {
+      const b = Buffer.alloc(frameBytes);
+      for (let j = 0; j < frameBytes / 2; j++) b.writeInt16LE(50, j * 2); // low noise
+      frames.push(b);
+    }
+    const cal = calibrateNoiseFloor(Buffer.concat(frames), vadConfig({}));
+    assert.equal(cal.ok, true);
+    assert.ok(cal.openThreshold > cal.noiseFloor);
+    assert.ok(cal.closeThreshold < cal.openThreshold);
   });
 });
