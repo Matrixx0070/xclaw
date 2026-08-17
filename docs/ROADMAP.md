@@ -57,7 +57,7 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 ## Open (post-3.79)
 
 - Live multi-hour soak of gateway + heartbeat + goal queue
-- Approval timeout clear on `decide` (timer hygiene)
+- Approval timeout clear on `decide` (timer hygiene) — **done**
 - Cross-process resume lock (file lock), not only in-process
 - Optional auto-resume of **failed** finals (`evolve.resumeFailed`)
 - Deeper computer-use native drivers (Win/mac) beyond current stubs
