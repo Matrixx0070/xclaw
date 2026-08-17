@@ -906,10 +906,18 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         break;
       }
       if (sub === "metrics") {
-        const { voiceMetricsSnapshot, resetVoiceMetrics } = await import("../src/voice/metrics.mjs");
+        const {
+          voiceMetricsSnapshot,
+          resetVoiceMetrics,
+          voiceMetricsReport,
+        } = await import("../src/voice/metrics.mjs");
         if (args[2] === "reset") {
           resetVoiceMetrics();
           console.log(JSON.stringify({ ok: true, reset: true }));
+          break;
+        }
+        if (args.includes("--chart") || args[2] === "chart") {
+          console.log(voiceMetricsReport());
           break;
         }
         console.log(JSON.stringify(voiceMetricsSnapshot(), null, 2));
