@@ -141,3 +141,22 @@ xclaw voice listen --no-agent   # localThink only
 Loop: short wake window → energy + STT + phrase → “Yes?” → longer command record → STT → voice commands or agent.
 
 Requires: `arecord`, local STT (whisper), optional `espeak-ng` for replies.
+
+
+## Gateway voice session (W1+)
+
+```text
+ws://127.0.0.1:18790/ws/voice
+```
+
+Client → server JSON:
+
+| type | body |
+|------|------|
+| `utterance` | `{ text, speak? }` committed STT → agent/commands |
+| `command` | force command classifier |
+| `wake` | notify wake (ack only) |
+| `barge_in` | mute speech plane |
+| `ping` | pong |
+
+Server → `ready` · `reply` · `event` · `error`
