@@ -139,3 +139,5 @@ xclaw channels telegram test <chatId>
 Config: `channels.telegram.token`, `dmPolicy` (`open|allowlist|pairing`), `allowedChatIds` / `allowFrom`, `rateLimit: { max, windowMs }`.
 
 Inbound over limit → `RATE_LIMITED` (no agent spawn). Strangers denied silently under allowlist.
+
+**Prod:** `dmPolicy=open` is forced to `allowlist` (when allowFrom set) or `pairing`. Break-glass: `XCLAW_TELEGRAM_DM_POLICY=open|allowlist|pairing`.
