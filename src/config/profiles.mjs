@@ -7,7 +7,7 @@ export const PROFILES = {
     gateway: { host: "127.0.0.1" },
     security: { autoApprove: true, approvalPolicy: "risky" },
     readiness: { requireComputer: false },
-    computer: { engine: "bundle", nativeServer: false },
+    computer: { engine: "native", nativeServer: true },
     agent: {
       maxTurns: 15,
       loopGuard: {
@@ -26,7 +26,8 @@ export const PROFILES = {
     gateway: { host: "127.0.0.1" },
     security: { autoApprove: true, approvalPolicy: "never" },
     readiness: { requireComputer: false },
-    computer: { engine: "bundle", nativeServer: false },
+    // thin-native: maintained tools + computer_act; bundle remains prod default
+    computer: { engine: "native", nativeServer: true },
     jobs: {
       structuredClaimsOnTags: ["campaign", "long"],
     },

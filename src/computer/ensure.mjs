@@ -8,6 +8,7 @@ import {
   startComputer,
   waitForHealthy,
 } from "./manager.mjs";
+import { resolveComputerEngine } from "./engine.mjs";
 
 const DEFAULT_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -28,25 +29,29 @@ export async function ensureComputer(cfg, opts = {}) {
   if (host === "0.0.0.0" || host === "::" || host === "[::]") host = "127.0.0.1";
   const port = cfg.computer?.port || 4243;
   const url = `http://${host}:${port}`;
+  const engine = resolveComputerEngine(cfg);
+  if (log) {
+    console.error(`[xclaw] ensureComputer engine=${engine} target=${url}`);
+  }
 
   for (let i = 0; i < attempts; i++) {
     if (await isComputerRunning(cfg)) {
-      return { ok: true, started: false, url };
+      return { ok: true, started: false, url, engine };
     }
     if (log) {
       console.error(
-        `[xclaw] computer not healthy at ${url} (attempt ${i + 1}/${attempts}) — starting…`
+        `[xclaw] computer not healthy at ${url} (attempt ${i + 1}/${attempts}) — starting ${engine}…`
       );
     }
     try {
       await startComputer({ root });
       if (await waitForHealthy(cfg, { timeoutMs: 25_000 })) {
-        return { ok: true, started: true, url };
+        return { ok: true, started: true, url, engine };
       }
     } catch (err) {
       if (log) console.error(`[xclaw] computer start failed: ${err.message}`);
       if (i === attempts - 1) {
-        return { ok: false, started: false, url, error: err.message };
+        return { ok: false, started: false, url, engine, error: err.message };
       }
       await new Promise((r) => setTimeout(r, 500 * (i + 1)));
     }
@@ -55,6 +60,7 @@ export async function ensureComputer(cfg, opts = {}) {
     ok: false,
     started: false,
     url,
+    engine,
     error: `Computer not healthy at ${url} after ${attempts} attempts`,
   };
 }

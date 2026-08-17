@@ -4,6 +4,8 @@ Minimal path to run real goals with tools (lab profile).
 
 ## 1. Native computer (recommended)
 
+**lab** and **dev** profiles default `computer.engine=native` (thin). **prod** keeps bundle.
+
 ```bash
 export XCLAW_COMPUTER_ENGINE=native
 export XCLAW_PROFILE=lab
