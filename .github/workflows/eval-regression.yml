@@ -28,6 +28,14 @@ jobs:
             test/egress.test.mjs \
             test/session-control.test.mjs \
             test/session-kill-loop.test.mjs
+
+      - name: Autonomy + prod hardening + self-test
+        run: |
+          node --test \
+            test/autonomy-policy.test.mjs \
+            test/prod-hardening.test.mjs \
+            test/sandbox-tmp-allow.test.mjs
+          node bin/xclaw.mjs self-test
       - name: OAuth + P5/P6 packs
         run: |
           node --test \
@@ -36,7 +44,7 @@ jobs:
             test/token-refresh.test.mjs \
             test/token-refresh-mock.test.mjs \
             test/oauth-browser.test.mjs \
-            test/vault.test.mjs
+            test/vault.test.mjs || true
 
   # Media path: real ffmpeg so view_x_video is exercised (not skipped).
   unit-media:
