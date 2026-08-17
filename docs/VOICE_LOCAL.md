@@ -242,3 +242,12 @@ Disable stream: `voice.listen.stream: false` or env-only path without API keys (
 ```
 
 Doctor: `voice.vad` shows open/close thresholds.
+
+
+### VAD engine details
+
+- **Energy RMS** per 30 ms frame (S16_LE mono @ 16 kHz)
+- **Hysteresis**: `openThreshold` to enter speech, `closeThreshold` (~65%) to leave
+- **Hangover**: require N consecutive open frames before locking speech
+- **Auto-calibrate**: first ~300 ms median noise floor × 3.5 → open threshold
+- CLI: `xclaw voice vad` · `xclaw voice vad once` (live endpoint test)
