@@ -48,7 +48,13 @@ export function normalizeBashTimeoutSeconds(raw) {
 export async function executeBash(input = {}, ctx = {}) {
   let command = String(input.command || "");
   if (!command.trim()) {
-    return { ok: false, stdout: "", stderr: "command is required", exitCode: 1 };
+    return {
+      ok: false,
+      stdout: "",
+      stderr: "command is required",
+      exitCode: 1,
+      code: "BASH_EMPTY_COMMAND",
+    };
   }
 
   const plan =
@@ -72,6 +78,7 @@ export async function executeBash(input = {}, ctx = {}) {
       exitCode: 126,
       blocked: true,
       reason: check.reason || "spawn_enforce",
+      code: "BASH_SPAWN_DENIED",
     };
   }
   command = check.command || command;
@@ -113,6 +120,7 @@ export async function executeBash(input = {}, ctx = {}) {
       exitCode: 126,
       blocked: true,
       reason: wrapped.reason || "os_sandbox",
+      code: "BASH_SANDBOX_DENIED",
     };
   }
   spec = wrapped;
@@ -192,17 +200,24 @@ export async function executeBash(input = {}, ctx = {}) {
 
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
+      const exitCode = code ?? 1;
+      const ok = !timedOut && !interrupted && exitCode === 0;
+      let errCode;
+      if (timedOut) errCode = "BASH_TIMEOUT";
+      else if (interrupted) errCode = "BASH_ABORTED";
+      else if (exitCode !== 0) errCode = "BASH_EXIT_NONZERO";
       resolve({
-        ok: !timedOut && !interrupted && code === 0,
+        ok,
         stdout,
         stderr,
-        exitCode: code ?? 1,
+        exitCode,
         timedOut,
         interrupted,
         spawnEnforced: Boolean(check.enforced),
         osSandboxed,
         netIsolated: Boolean(wrapped.netIsolated),
         envPolicy: envPolicy.mode,
+        ...(errCode ? { code: errCode } : { code: "BASH_OK" }),
       });
     });
   });
@@ -211,7 +226,7 @@ export async function executeBash(input = {}, ctx = {}) {
 export const BashTool = {
   name: "xclaw_bash",
   description:
-    "Executes a given bash command in a fresh shell at the session working directory.",
+    "Run a bash command in a fresh non-login shell at the session cwd. timeout is SECONDS (default 30, max 120) — never milliseconds. Prefer short commands; for long jobs use background=true and read the logFile.",
   inputSchema: {
     type: "object",
     properties: {
@@ -219,7 +234,7 @@ export const BashTool = {
       timeout: {
         type: "number",
         description:
-          "Timeout in seconds (max 120). Do not pass milliseconds.",
+          "Timeout in SECONDS only (1–120). Default 30. Do NOT pass 30000 or other millisecond values.",
         minimum: 0,
         maximum: 120,
       },
