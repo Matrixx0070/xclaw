@@ -884,6 +884,24 @@ export async function runDoctor(opts = {}) {
     push("checkpoints.store", "warn", e.message || String(e));
   }
 
+  try {
+    const { probeLocalVoiceStack } = await import("../voice/providers/local.mjs");
+    const v = await probeLocalVoiceStack(cfg);
+    const parts = [
+      v.tts?.ok ? `tts=${v.tts.provider || "ok"}` : "tts=missing",
+      v.stt?.ok ? `stt=${v.stt.bin || "ok"}` : "stt=optional-missing",
+      v.ollama?.ok ? `ollama=${v.ollama.hasModel ? "model-ok" : "no-model"}` : "ollama=down",
+    ];
+    push(
+      "voice.local",
+      v.tts?.ok ? "ok" : "warn",
+      parts.join(" ")
+    );
+  } catch (e) {
+    push("voice.local", "warn", e.message || String(e));
+  }
+
+
 
   try {
     const { handsFreeStatus } = await import("../autonomy/self-evolve.mjs");
