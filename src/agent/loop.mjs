@@ -26,6 +26,7 @@ import {
 import { createLoopGuard } from "./loop-guards.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
 import { checkCostBudget, checkJobCostBudget } from "../tokens/cost-governor.mjs";
+import { saveAgentRun } from "./run-store.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
   appendTranscript,
@@ -1401,7 +1402,26 @@ export async function runAgentLoop(options) {
     /* metrics optional */
   }
 
-  return {
+    // Feature 2 — durable snapshot for resume
+  try {
+    if (options.sessionId || options.persistRun) {
+      await saveAgentRun(cfg, {
+        sessionId: options.sessionId || options.runId || `run_${Date.now().toString(36)}`,
+        workingDir: options.workingDir || process.cwd(),
+        model: provider?.model || cfg.agent?.model,
+        streamId: options.streamId || null,
+        messages,
+        toolTrace,
+        turns,
+        status: aborted ? "aborted" : "completed",
+        meta: { goal: typeof userMessage === "string" ? userMessage.slice(0, 200) : null },
+      });
+    }
+  } catch (e) {
+    onEvent({ type: "session", phase: "persist_fail", error: e?.message || String(e) });
+  }
+
+return {
     text: finalText || "(no response)",
     turns,
     toolTrace,
