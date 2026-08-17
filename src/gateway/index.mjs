@@ -5,6 +5,7 @@
 import http from "node:http";
 import { createHttpServer } from "./tls.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
+import { attachVoiceWebSocket } from "./voice-ws.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { listArtifacts } from "../artifacts/browser.mjs";
@@ -2437,6 +2438,12 @@ export async function startGateway({ root } = {}) {
   // global broadcast for optional callers
   globalThis.__xclawWsBroadcast = wsBroadcast;
   console.log(`[xclaw] WebSocket: ${proto === "https" ? "wss" : "ws"}://${cfg.gateway.host}:${cfg.gateway.port}${wsHub.path}`);
+  const voiceWs = attachVoiceWebSocket(server, {
+    cfg,
+    path: "/ws/voice",
+    auth: gatewayAuth,
+  });
+  console.log(`[xclaw] Voice WS: ${proto === "https" ? "wss" : "ws"}://${cfg.gateway.host}:${cfg.gateway.port}${voiceWs.path}`);
   console.log(`[xclaw] Computer at http://${cfg.computer.host}:${cfg.computer.port}`);
   if (webchatEnabled) {
     console.log(`[xclaw] WebChat UI: http://${cfg.gateway.host}:${cfg.gateway.port}/chat/`);
