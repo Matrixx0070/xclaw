@@ -370,6 +370,14 @@ export async function runAgentLoop(options) {
   const systemContent = buildCacheableSystemPrompt({
     basePrompt: BASE_SYSTEM_PROMPT,
     contextSections,
+    dynamicNotes: [
+      ...(Array.isArray(cfg.agent?.systemNotes) ? cfg.agent.systemNotes : []),
+      ...(options.systemNotes
+        ? Array.isArray(options.systemNotes)
+          ? options.systemNotes
+          : [options.systemNotes]
+        : []),
+    ].filter(Boolean),
   });
 
   // Computer session
@@ -468,9 +476,18 @@ export async function runAgentLoop(options) {
   });
 
 
+  const harnessNotes = [
+    ...(Array.isArray(cfg.agent?.systemNotes) ? cfg.agent.systemNotes : []),
+    ...(options.systemNotes
+      ? Array.isArray(options.systemNotes)
+        ? options.systemNotes
+        : [options.systemNotes]
+      : []),
+  ].filter(Boolean);
   const sysBuilt = buildSystemMessageWithBreakpoints({
     basePrompt: BASE_SYSTEM_PROMPT,
     contextSections,
+    dynamicNotes: harnessNotes,
     cfg,
     model: provider.model,
     baseUrl: provider.baseUrl,
