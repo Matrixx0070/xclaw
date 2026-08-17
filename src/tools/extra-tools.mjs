@@ -5,7 +5,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { safeFetch } from "../security/ssrf.mjs";
+import { fetchWithRetry } from "../utils/fetch-retry.mjs";
 
 function textResult(text, extra = {}) {
   return {
@@ -214,7 +214,7 @@ export function createGrepTool({ workingDir }) {
   };
 }
 
-export function createWebFetchTool({ cfg } = {}) {
+export function createWebFetchTool() {
   return {
     name: "web_fetch",
     description:
@@ -242,9 +242,7 @@ export function createWebFetchTool({ cfg } = {}) {
           Accept: "text/html,application/xhtml+xml,application/json,text/plain,*/*",
           ...(args.headers || {}),
         };
-        // SSRF-safe: validates the URL and every redirect hop (metadata /
-        // loopback / private ranges blocked unless security.ssrf.allowPrivate)
-        const res = await safeFetch(url, { headers, signal: ctrl.signal }, cfg || {});
+        const res = await fetchWithRetry(url, { headers, signal: ctrl.signal, redirect: "follow" });
         clearTimeout(timer);
         const ct = res.headers.get("content-type") || "";
         let body = await res.text();
@@ -294,7 +292,7 @@ export function createWebSearchTool() {
         u.searchParams.set("format", "json");
         u.searchParams.set("no_html", "1");
         u.searchParams.set("skip_disambig", "1");
-        const res = await fetch(u.toString(), {
+        const res = await fetchWithRetry(u.toString(), {
           headers: { "User-Agent": "XClaw/2.5" },
           signal: AbortSignal.timeout(12_000),
         });
@@ -328,7 +326,7 @@ export function createWebSearchTool() {
       if (results.length < 3) {
         try {
           const u = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-          const res = await fetch(u, {
+          const res = await fetchWithRetry(u, {
             headers: {
               "User-Agent": "Mozilla/5.0 (compatible; XClaw/2.5)",
               Accept: "text/html",
@@ -381,7 +379,7 @@ export function createExtraTools({ workingDir, cfg } = {}) {
   return [
     createGlobTool({ workingDir: wd }),
     createGrepTool({ workingDir: wd }),
-    createWebFetchTool({ cfg }),
+    createWebFetchTool(),
     createWebSearchTool(),
   ];
 }
