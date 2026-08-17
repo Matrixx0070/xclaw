@@ -165,6 +165,19 @@ async function runComputerActImpl(input = {}) {
     return runDesktopAct(input);
   }
 
+  // Early validate navigate args (before CDP attach) for clear NEED_URL
+  if (action === "navigate") {
+    const url = String(input.url || input.href || "").trim();
+    if (!url) {
+      return {
+        ok: false,
+        error: "navigate requires url",
+        code: "CUA_ACT_NEED_URL",
+        engine: "native",
+      };
+    }
+  }
+
   const engine = process.env.XCLAW_COMPUTER_ENGINE || "native";
   const cdpEp = resolveCdpEndpoint();
   const canAct = Boolean(cdpEp) || engine === "bundle" || engine === "generated";
@@ -222,6 +235,40 @@ async function runComputerActImpl(input = {}) {
   }
 
   try {
+    if (action === "navigate") {
+      const url = String(input.url || input.href || "").trim();
+      if (!url) {
+        return {
+          ok: false,
+          error: "navigate requires url",
+          code: "CUA_ACT_NEED_URL",
+          engine: "cdp-motor",
+        };
+      }
+      await tab.navigate(url);
+      // brief settle for SPA/document load
+      try {
+        await tab.send("Page.enable");
+        await new Promise((r) => setTimeout(r, Number(input.waitMs) || 400));
+      } catch {
+        /* ignore */
+      }
+      let pageUrl = null;
+      try {
+        pageUrl = await tab.evaluate("location.href");
+      } catch {
+        pageUrl = url;
+      }
+      return {
+        ok: true,
+        action: "navigate",
+        engine: "cdp-motor",
+        url,
+        pageUrl,
+        cuaPolicy: "tools_first_then_observe_then_gui",
+      };
+    }
+
     if (action === "screenshot") {
       const buf = await tab.screenshot();
       const b64 = buf.toString("base64");
@@ -341,15 +388,16 @@ async function runComputerActImpl(input = {}) {
 export const ComputerActTool = {
   name: "xclaw_computer_act",
   description:
-    "CUA GUI actuation via CDP (click/type/key/scroll/screenshot) when XCLAW_CDP_URL is set. Prefer connectors/tools and xclaw_browser_tab observe first. Native without CDP fails closed.",
+    "CUA GUI actuation via CDP (navigate/click/type/key/scroll/screenshot) when XCLAW_CDP_URL is set. Prefer connectors/tools and xclaw_browser_tab observe first. Supports navigate when CDP is attached. Native without CDP fails closed.",
   inputSchema: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        description: "click | type | key | scroll | screenshot",
+        description: "navigate | click | type | key | scroll | screenshot",
       },
       tabId: { type: "string" },
+      url: { type: "string", description: "Target URL for action=navigate" },
       urlMatch: { type: "string", description: "Pick CDP page by URL substring" },
       ref: { type: "string", description: "Element ref from observe (label only until ref→coords)" },
       x: { type: "number" },

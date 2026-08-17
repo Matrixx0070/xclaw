@@ -34,8 +34,14 @@ if (version.status !== 200) {
   process.exit(2);
 }
 
-await req("PUT", "/json/new?" + encodeURIComponent("https://example.com/"));
-await new Promise((r) => setTimeout(r, 2000));
+const nav = await runComputerAct({ action: "navigate", url: "https://example.com/" });
+if (!nav.ok) {
+  // fallback to CDP HTTP new tab
+  await req("PUT", "/json/new?" + encodeURIComponent("https://example.com/"));
+  await new Promise((r) => setTimeout(r, 2000));
+} else {
+  await new Promise((r) => setTimeout(r, 500));
+}
 
 const list = JSON.parse((await req("GET", "/json/list")).body);
 const pages = list.filter((t) => t.type === "page").map((t) => t.url);
@@ -49,11 +55,12 @@ const report = {
   cdp: endpoint,
   pages,
   results: {
+    navigate: { ok: !!nav?.ok, pageUrl: nav?.pageUrl, engine: nav?.engine },
     screenshot: { ok: !!screenshot.ok, pageUrl: screenshot.pageUrl, engine: screenshot.engine, bytes: screenshot.bytes },
     click: { ok: !!click.ok, pageUrl: click.pageUrl, engine: click.engine },
     key: { ok: !!key.ok, engine: key.engine },
   },
-  livePass: !!(screenshot.ok && click.ok && key.ok),
+  livePass: !!( (nav?.ok !== false) && screenshot.ok && click.ok && key.ok),
 };
 
 const outDir = path.join(process.cwd(), "reports/autonomy");

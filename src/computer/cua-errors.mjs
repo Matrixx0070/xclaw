@@ -35,6 +35,11 @@ export const CUA_ERROR_CATALOG = {
     surface: "cdp",
     recovery: "Provide x,y or a valid observe ref (eN) with tabId after observe.",
   },
+  CUA_ACT_NEED_URL: {
+    severity: "error",
+    surface: "cdp",
+    recovery: "Pass url (https://…) for action=navigate.",
+  },
   CUA_ACT_NEED_KEY: {
     severity: "error",
     surface: "cdp",
@@ -43,7 +48,7 @@ export const CUA_ERROR_CATALOG = {
   CUA_ACT_UNKNOWN: {
     severity: "error",
     surface: "cdp",
-    recovery: "Supported actions: click, type, key, scroll, screenshot (observe via browser_tab).",
+    recovery: "Supported actions: navigate, click, type, key, scroll, screenshot (observe via browser_tab).",
   },
   CUA_ACT_EXEC_FAILED: {
     severity: "error",
