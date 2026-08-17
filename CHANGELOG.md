@@ -2,6 +2,9 @@
 
 ## Unreleased — Autonomy levels
 
+- **enforceProdHardening**: prod forces autoApprove=false, clamps lab/full→supervised, swarm.autoMerge=false (break-glass: XCLAW_ALLOW_PROD_AUTO=1)
+- **XCLAW_AUTONOMY_LEVEL** env wins over user config file
+
 - **docs/FABRIC.md**: tab leases, commit gates, role bind, beforeNavigate order
 
 - **docs/AUTONOMY.md**: levels, heartbeat, jobs/queue/swarm pointers
