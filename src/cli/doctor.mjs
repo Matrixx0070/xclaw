@@ -866,6 +866,27 @@ export async function runDoctor(opts = {}) {
     push("harness.principles", "warn", e.message || String(e));
   }
 
+  try {
+    const { handsFreeStatus } = await import("../autonomy/self-evolve.mjs");
+    const st = await handsFreeStatus(cfg);
+    if (st.blockers?.length) {
+      push(
+        "evolve.handsFree",
+        "warn",
+        `blocked: ${st.blockers.map((b) => b.kind).join(",")} level=${st.level}`
+      );
+    } else {
+      push(
+        "evolve.handsFree",
+        "ok",
+        `level=${st.level} hb=${st.heartbeatEnabled} proposals=${st.pendingSkillProposals} interrupted=${st.interruptedJobs?.length || 0}`
+      );
+    }
+  } catch (e) {
+    push("evolve.handsFree", "warn", e.message || String(e));
+  }
+
+
   // Telegram channel posture (feature 5 follow-up)
   try {
     const conf = cfg.channels?.telegram || {};
