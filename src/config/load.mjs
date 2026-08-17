@@ -3,6 +3,7 @@ import path from "path";
 import os from "os";
 import { DEFAULT_CONFIG, CONFIG_DIR_NAME, CONFIG_FILE_NAME } from "./defaults.mjs";
 import { applyProfile } from "./profiles.mjs";
+import { applyAutonomyLevel } from "./autonomy-policy.mjs";
 
 export function getConfigDir() {
   return path.join(os.homedir(), CONFIG_DIR_NAME);
@@ -23,14 +24,8 @@ async function ensureDirsAndFile() {
   try {
     await fs.access(file);
   } catch {
-    // Minimal seed only — do NOT freeze full DEFAULT_CONFIG onto disk.
-    // Runtime merges DEFAULT → profile → user → env; baking the whole tree
-    // caused profile packs (e.g. lab native engine) to be overridden forever.
-    const seed = {
-      version: DEFAULT_CONFIG.version || 1,
-      profile: DEFAULT_CONFIG.profile || "lab",
-    };
-    await fs.writeFile(file, JSON.stringify(seed, null, 2) + "\n", "utf8");
+    const cfg = structuredClone(DEFAULT_CONFIG);
+    await fs.writeFile(file, JSON.stringify(cfg, null, 2) + "\n", "utf8");
     console.log(`[xclaw] Created config at ${file}`);
     if (process.env.XCLAW_QUIET !== "1") {
       console.log(
@@ -40,37 +35,11 @@ async function ensureDirsAndFile() {
   }
 }
 
-/**
- * Deep-merge a patch into the ON-DISK user config and write it atomically.
- * Only the raw user file is touched (never the profile/env-merged runtime cfg),
- * so writing back never bakes derived defaults into the file. Shared by the CLI
- * (`xclaw providers …`) and the gateway providers routes so both persist the
- * same way. Returns the merged object written.
- */
-export async function saveConfigPatch(patch) {
-  const file = getConfigPath();
-  let user = {};
-  try {
-    user = JSON.parse(await fs.readFile(file, "utf8"));
-  } catch {
-    user = {};
-  }
-  const next = deepMerge(user, patch || {});
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  const tmp = file + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(next, null, 2) + "\n", "utf8");
-  await fs.rename(tmp, file);
-  return next;
-}
-
 function deepMerge(base, over) {
   if (!over || typeof over !== "object") return base;
   const out = { ...base };
   for (const [k, v] of Object.entries(over)) {
-    if (v === null) {
-      // explicit null clears the key (e.g. reset a per-provider baseUrl)
-      out[k] = null;
-    } else if (v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object" && !Array.isArray(base[k])) {
+    if (v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object" && !Array.isArray(base[k])) {
       out[k] = deepMerge(base[k], v);
     } else if (v !== undefined) {
       out[k] = v;
@@ -92,43 +61,7 @@ export async function loadConfig(opts = {}) {
     envProfile || user.profile || defaultProfile || "lab";
   let cfg = deepMerge(structuredClone(DEFAULT_CONFIG), { profile: profileName });
   cfg = applyProfile(cfg); // profile pack for profileName
-  cfg = deepMerge(cfg, user);
-  // soft-migrate computer.engine: first-run used to freeze bundle into user json
-  // even for lab profile. If profile is lab/dev and user still has stock bundle
-  // without explicit XCLAW_COMPUTER_ENGINE, prefer native.
-  {
-    const prof = cfg.profile || "lab";
-    const envEng = process.env.XCLAW_COMPUTER_ENGINE;
-    const userEng = user?.computer?.engine;
-    if (
-      !envEng &&
-      (prof === "lab" || prof === "dev") &&
-      (userEng === "bundle" || userEng === undefined) &&
-      user?.computer?.nativeServer !== true
-    ) {
-      cfg.computer = {
-        ...(cfg.computer || {}),
-        engine: "native",
-        nativeServer: true,
-      };
-      // Persist so disk matches runtime (doctor, next process)
-      if (userEng === "bundle") {
-        try {
-          await saveConfigPatch({
-            computer: { engine: "native", nativeServer: true },
-          });
-          if (process.env.XCLAW_QUIET !== "1") {
-            console.error(
-              "[xclaw] migrated computer.engine bundle → native (lab/dev); set engine=bundle explicitly to keep the 16MB server"
-            );
-          }
-        } catch {
-          /* non-fatal */
-        }
-      }
-    }
-  }
- // user file wins on keys present
+  cfg = deepMerge(cfg, user); // user file wins on keys present
   // If env selected a different profile than user.profile, re-apply env pack
   // then re-merge user so explicit user keys still win — but profile name stays env.
   if (envProfile && envProfile !== (user.profile || defaultProfile)) {
@@ -144,6 +77,8 @@ export async function loadConfig(opts = {}) {
     workspaces: path.join(getConfigDir(), "workspaces"),
     logs: path.join(getConfigDir(), "logs"),
   };
+  // Autonomy level fills missing security/agent/heartbeat knobs
+  cfg = applyAutonomyLevel(cfg);
   // Env overrides (do not write back to disk)
   const envKey = process.env.XCLAW_API_KEY || process.env.XAI_API_KEY || process.env.OPENAI_API_KEY;
   if (envKey && !cfg.agent.apiKey) cfg.agent.apiKey = envKey;
@@ -272,38 +207,6 @@ export async function loadConfig(opts = {}) {
     cfg.computer = cfg.computer || {};
     cfg.computer.remoteUrl = process.env.XCLAW_COMPUTER_URL;
   }
-
-  // Docker / public bind: profiles default gateway.host=127.0.0.1 which breaks
-  // published container ports. Env wins last so compose can force 0.0.0.0.
-  if (process.env.XCLAW_GATEWAY_HOST) {
-    cfg.gateway = cfg.gateway || {};
-    const h = String(process.env.XCLAW_GATEWAY_HOST).trim();
-    if (h) cfg.gateway.host = h;
-  }
-  if (process.env.XCLAW_GATEWAY_PORT) {
-    const n = Number(process.env.XCLAW_GATEWAY_PORT);
-    if (Number.isFinite(n) && n >= 1 && n <= 65535) {
-      cfg.gateway = cfg.gateway || {};
-      cfg.gateway.port = Math.floor(n);
-    }
-  }
-  if (process.env.XCLAW_GATEWAY_TOKEN) {
-    cfg.gateway = cfg.gateway || {};
-    if (!cfg.gateway.token) cfg.gateway.token = process.env.XCLAW_GATEWAY_TOKEN;
-  }
-  if (process.env.XCLAW_COMPUTER_HOST) {
-    cfg.computer = cfg.computer || {};
-    const h = String(process.env.XCLAW_COMPUTER_HOST).trim();
-    if (h) cfg.computer.host = h;
-  }
-  if (process.env.XCLAW_COMPUTER_PORT || process.env.XCLAW_SERVER_PORT) {
-    const n = Number(process.env.XCLAW_COMPUTER_PORT || process.env.XCLAW_SERVER_PORT);
-    if (Number.isFinite(n) && n >= 1 && n <= 65535) {
-      cfg.computer = cfg.computer || {};
-      cfg.computer.port = Math.floor(n);
-    }
-  }
-
   return cfg;
 }
 
