@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { runJob } from "./job.mjs";
+import { withBackoff } from "../utils/backoff.mjs";
 
 /** Structured resume / lock error codes */
 export const RESUME_CODES = {
@@ -377,8 +378,9 @@ export function tryAcquireResumeLock(jobId, cfg = null) {
   return acquireFileLock(cfg, id);
 }
 
-async function acquireFileLock(cfg, id) {
+async function acquireFileLock(cfg, id, attempt = 0) {
   const fp = lockPath(cfg, id);
+  const maxLockAttempts = 3;
   try {
     await fs.mkdir(path.dirname(fp), { recursive: true });
     const fh = await fs.open(fp, "wx"); // exclusive create
@@ -394,13 +396,22 @@ async function acquireFileLock(cfg, id) {
         const st = await fs.stat(fp);
         if (Date.now() - st.mtimeMs > 2 * 60 * 60 * 1000) {
           await fs.unlink(fp).catch(() => {});
-          return acquireFileLock(cfg, id);
+          return acquireFileLock(cfg, id, attempt);
         }
       } catch {
         /* */
       }
       resumeLocks.delete(id);
       return false;
+    }
+    // Transient FS errors: brief retry
+    if (
+      attempt < maxLockAttempts - 1 &&
+      err &&
+      (err.code === "ENOENT" || err.code === "EMFILE" || err.code === "EAGAIN")
+    ) {
+      await new Promise((r) => setTimeout(r, 25 * (attempt + 1)));
+      return acquireFileLock(cfg, id, attempt + 1);
     }
     resumeLocks.delete(id);
     return false;
@@ -504,8 +515,21 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
     persistRun: true,
   };
 
-  let job;
-  try {
+  const resumeRetries =
+    opts.retries ??
+    cfg?.checkpoints?.resumeRetries ??
+    (kind === "transport" ? 2 : 0);
+
+  function isTransientResumeFailure(jobOrErr) {
+    const msg = String(
+      jobOrErr?.error || jobOrErr?.message || jobOrErr || ""
+    );
+    return /ECONNREFUSED|not healthy|not available|ETIMEDOUT|fetch failed|network|ECONNRESET|socket hang up|429|503|UND_ERR/i.test(
+      msg
+    );
+  }
+
+  async function runAgentOnce() {
     if (
       opts.useHarness === true ||
       (opts.useHarness !== false &&
@@ -514,13 +538,14 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
     ) {
       try {
         const { runLongHarness } = await import("./long-harness.mjs");
-        job = await runLongHarness(jobOpts);
+        return await runLongHarness(jobOpts);
       } catch (harnessErr) {
         try {
-          job = await runJob(jobOpts);
-          job.harnessFallback = harnessErr?.message || String(harnessErr);
+          const j = await runJob(jobOpts);
+          j.harnessFallback = harnessErr?.message || String(harnessErr);
+          return j;
         } catch (jobErr) {
-          return {
+          const fail = {
             id: jobOpts.id,
             resumedFrom: cp.id,
             resumed: true,
@@ -532,23 +557,91 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
             error: jobErr?.message || String(jobErr),
             harnessError: harnessErr?.message || String(harnessErr),
           };
+          if (isTransientResumeFailure(jobErr) || isTransientResumeFailure(harnessErr)) {
+            const e = new Error(fail.error);
+            e.code = "TRANSIENT_RESUME";
+            e.job = fail;
+            throw e;
+          }
+          return fail;
         }
       }
+    }
+    try {
+      return await runJob(jobOpts);
+    } catch (err) {
+      const fail = {
+        id: jobOpts.id,
+        resumedFrom: cp.id,
+        resumed: true,
+        pass: false,
+        status: "failed",
+        code: RESUME_CODES.AGENT_FAILED,
+        recoveryKind: kind,
+        recoveryStrategy: plan.strategy,
+        error: err?.message || String(err),
+      };
+      if (isTransientResumeFailure(err)) {
+        const e = new Error(fail.error);
+        e.code = "TRANSIENT_RESUME";
+        e.job = fail;
+        throw e;
+      }
+      return fail;
+    }
+  }
+
+  let job;
+  const retryLog = [];
+  try {
+    if (resumeRetries > 0) {
+      job = await withBackoff(
+        async () => {
+          const j = await runAgentOnce();
+          // Soft-fail job object: retry if transport-like
+          if (j && j.pass === false && isTransientResumeFailure(j)) {
+            const e = new Error(j.error || "transient resume failure");
+            e.code = "TRANSIENT_RESUME";
+            e.job = j;
+            throw e;
+          }
+          return j;
+        },
+        {
+          retries: resumeRetries,
+          baseMs: opts.retryBaseMs ?? cfg?.checkpoints?.retryBaseMs ?? 400,
+          maxDelayMs: opts.retryMaxDelayMs ?? 8_000,
+          strategy: "full",
+          shouldRetry: (err) =>
+            err?.code === "TRANSIENT_RESUME" || isTransientResumeFailure(err),
+          onRetry: (info) => {
+            retryLog.push({
+              attempt: info.attempt,
+              delayMs: info.delayMs,
+              error: info.error?.message || String(info.error),
+            });
+          },
+        }
+      );
+      if (job && retryLog.length) job.resumeRetries = retryLog;
     } else {
-      job = await runJob(jobOpts);
+      job = await runAgentOnce();
     }
   } catch (err) {
-    return {
-      id: jobOpts.id,
-      resumedFrom: cp.id,
-      resumed: true,
-      pass: false,
-      status: "failed",
-      code: RESUME_CODES.AGENT_FAILED,
-      recoveryKind: kind,
-      recoveryStrategy: plan.strategy,
-      error: err?.message || String(err),
-    };
+    job =
+      err?.job ||
+      {
+        id: jobOpts.id,
+        resumedFrom: cp.id,
+        resumed: true,
+        pass: false,
+        status: "failed",
+        code: RESUME_CODES.AGENT_FAILED,
+        recoveryKind: kind,
+        recoveryStrategy: plan.strategy,
+        error: err?.message || String(err),
+        resumeRetries: retryLog,
+      };
   }
 
   job.resumedFrom = cp.id;
