@@ -191,28 +191,97 @@ export async function localSpeak(text, cfg = {}) {
 }
 
 /**
- * STT via whisper CLI if present. audioPath = wav/flac.
+ * Ensure audio is wav for whisper (ogg/mp3/m4a via ffmpeg).
+ */
+async function ensureWav(audioPath) {
+  const lower = String(audioPath || "").toLowerCase();
+  if (lower.endsWith(".wav") || lower.endsWith(".flac")) {
+    return audioPath;
+  }
+  const out = path.join(
+    os.tmpdir(),
+    `xclaw-stt-${Date.now()}.wav`
+  );
+  const r = await run("ffmpeg", ["-y", "-i", audioPath, "-ar", "16000", "-ac", "1", out]);
+  if (r.code !== 0) {
+    return null;
+  }
+  try {
+    await fs.access(out);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * STT via whisper.cpp CLI, faster-whisper, or whisper binary.
+ * Accepts wav/flac or converts ogg/mp3 via ffmpeg.
  */
 export async function localTranscribe(audioPath, cfg = {}) {
   const c = localConfig(cfg);
-  const r = await run(c.whisperBin, [
-    "-m",
-    c.whisperModel,
-    "-f",
-    audioPath,
-    "-nt",
-  ]);
-  if (r.code !== 0) {
+  if (!audioPath) {
+    return { ok: false, text: "", error: "audioPath required" };
+  }
+  let pathIn = audioPath;
+  try {
+    await fs.access(pathIn);
+  } catch {
+    return { ok: false, text: "", error: `audio not found: ${audioPath}` };
+  }
+
+  const wav = await ensureWav(pathIn);
+  if (!wav) {
     return {
       ok: false,
       text: "",
-      error:
-        r.stderr ||
-        "whisper CLI failed — install whisper.cpp or faster-whisper",
+      error: "ffmpeg failed converting audio to wav (needed for ogg/mp3 voice notes)",
     };
   }
-  const text = r.stdout.toString("utf8").trim();
-  return { ok: true, text, provider: "whisper-local" };
+
+  // 1) whisper.cpp style: whisper-cli -m model -f file -nt
+  const attempts = [
+    {
+      bin: c.whisperBin,
+      args: ["-m", c.whisperModel, "-f", wav, "-nt"],
+      provider: "whisper.cpp",
+    },
+    {
+      bin: "whisper-cpp",
+      args: ["-m", c.whisperModel, "-f", wav, "-nt"],
+      provider: "whisper-cpp",
+    },
+    // faster-whisper CLI sometimes: whisper audio --model base --language en
+    {
+      bin: "whisper",
+      args: [wav, "--model", c.whisperModel, "--language", "en", "--output_format", "txt"],
+      provider: "openai-whisper-cli",
+    },
+  ];
+
+  for (const a of attempts) {
+    const r = await run(a.bin, a.args);
+    if (r.code === 0) {
+      let text = r.stdout.toString("utf8").trim();
+      // strip [timestamps] from whisper.cpp
+      text = text
+        .split("\n")
+        .map((line) => line.replace(/^\[[^\]]*\]\s*/, "").trim())
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      if (text) {
+        return { ok: true, text, provider: a.provider, wav };
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    text: "",
+    error:
+      "No working local STT. Install whisper.cpp (whisper-cli) or openai-whisper CLI; ensure ffmpeg for ogg.",
+  };
 }
 
 /**
