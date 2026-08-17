@@ -14,6 +14,8 @@ describe("barge-in handling", () => {
     assert.equal(r.jobsCancelled, false);
     assert.equal(s.isPlaying(), false);
     assert.equal(s.getEpoch(), begin.epoch + 1);
+    assert.ok(typeof r.killPathMs === "number");
+    assert.ok(r.killPathMs < 50, "kill path should be sub-50ms sync");
   });
 
   it("stopTalking suppresses further speak", () => {
