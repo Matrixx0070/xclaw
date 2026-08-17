@@ -43,7 +43,9 @@ export function resolveReach(cfg = {}, live = {}) {
   const screenshot =
     String(engine) === "bundle" || Boolean(cdpAttach);
   const browserObserve = true; // native HTML structure observe always available
-  const desktopGui = false; // no DesktopDriver yet — honesty over claim
+  const desktopGuiOptIn =
+    process.env.XCLAW_DESKTOP_GUI === "1" || process.env.XCLAW_DESKTOP_GUI === "true";
+  const desktopGui = Boolean(desktopGuiOptIn); // I5 driver exists; still opt-in only
   const cuaPolicy = "tools_first_then_observe_then_gui";
 
   return {
@@ -57,6 +59,7 @@ export function resolveReach(cfg = {}, live = {}) {
     browserObserve,
     screenshot,
     desktopGui,
+    desktopGuiOptIn,
     cuaPolicy,
     cdpUrl: cdpUrl || null,
     /** true when we can drive a browser beyond native fetch tabs */

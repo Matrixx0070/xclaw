@@ -57,7 +57,29 @@ export XCLAW_CDP_URL=http://127.0.0.1:9222
 - **I2b** CDP motor path — done (CLEAN); bundle BrowserService still BUNDLE_ONLY
 - **I3** planes serial — done
 - **I4** observe ref→coords via CDP evaluate — done
-- **I5** DesktopDriver optional
+- **I5** DesktopDriver — done (opt-in, Linux xdotool/ydotool; fail closed)
 - **I6** long-horizon eval
 
 Do **not** hand-edit `xclaw-server.mjs`; extend modules and rebuild.
+
+
+## DesktopDriver (I5)
+
+OS GUI **outside** the browser. **Opt-in only.**
+
+```bash
+export XCLAW_DESKTOP_GUI=1   # required
+# Linux: install xdotool (or ydotool)
+```
+
+```json
+{ "name": "xclaw_computer_act", "arguments": { "surface": "desktop", "action": "click", "x": 100, "y": 200 } }
+```
+
+| Code | Meaning |
+|------|---------|
+| DESKTOP_GUI_DISABLED | default — not opted in |
+| DESKTOP_GUI_NO_BACKEND | no xdotool/ydotool |
+| DESKTOP_GUI_UNSUPPORTED_OS | win/mac stubs |
+
+Prefer **browser CDP** for web UIs. Desktop is last resort.

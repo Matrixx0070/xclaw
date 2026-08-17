@@ -11,6 +11,7 @@
 
 import { createCdpClient } from "../../browser/cdp-client.mjs";
 import { planClick, planType, planScroll, executeSteps } from "../../browser/motor.mjs";
+import { runDesktopAct, probeDesktopDriver } from "./desktop-driver.mjs";
 
 /** @type {Map<string, { elements: object[], at: number, url?: string }>} */
 const observeCache = new Map();
@@ -143,6 +144,11 @@ export async function runComputerAct(input = {}) {
       code: "USE_BROWSER_OBSERVE",
       engine: process.env.XCLAW_COMPUTER_ENGINE || "native",
     };
+  }
+
+  // Desktop surface (opt-in) — last resort after tools/browser
+  if (input.surface === "desktop" || input.desktop === true) {
+    return runDesktopAct(input);
   }
 
   const engine = process.env.XCLAW_COMPUTER_ENGINE || "native";
