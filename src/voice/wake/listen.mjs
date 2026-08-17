@@ -27,6 +27,7 @@ import { playWav } from "../playback.mjs";
 import { routeVoiceUtterance, casualReply } from "../router.mjs";
 import { sendUtteranceToGateway } from "../gateway-bridge.mjs";
 import { recordUntilEndpoint } from "../vad.mjs";
+import { speakSentences } from "../sentence-tts.mjs";
 
 /**
  * @param {object} cfg
@@ -173,16 +174,9 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
       const reply = classified.reply || classified.intent?.kind || "ok";
       console.log(`[cmd] ${reply}`);
       if (speakReplies && reply && !entente.speech.isSuppressed()) {
-        const begin = entente.speech.beginSpeak(reply);
-        if (begin.ok) {
-          const sp = await localSpeak(String(reply).slice(0, 400), cfg);
-          if (sp.ok) {
-            await playWav(sp.path, { speech: entente.speech, epoch: begin.epoch });
-          } else {
-            entente.speech.endSpeak(begin.epoch);
-          }
-          entente.setLastSpoken(reply);
-        }
+        const r = await speakSentences(reply, cfg, { speech: entente.speech });
+        onEvent({ type: "listen.tts", firstAudioMs: r.firstAudioMs, sentences: r.sentences });
+        entente.setLastSpoken(reply);
       }
       continue;
     }
@@ -198,12 +192,8 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
         onEvent({ type: "listen.reply", text: String(g.reply).slice(0, 500), via: "gateway" });
         entente.setLastSpoken(g.reply);
         if (speakReplies && !entente.speech.isSuppressed()) {
-          const begin = entente.speech.beginSpeak(g.reply);
-          if (begin.ok) {
-            const sp = await localSpeak(String(g.reply).slice(0, 400), cfg);
-            if (sp.ok) await playWav(sp.path, { speech: entente.speech, epoch: begin.epoch });
-            else entente.speech.endSpeak(begin.epoch);
-          }
+          const r = await speakSentences(g.reply, cfg, { speech: entente.speech });
+          onEvent({ type: "listen.tts", firstAudioMs: r.firstAudioMs, via: "gateway" });
         }
         continue;
       }
@@ -246,15 +236,8 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
     entente.setLastSpoken(reply);
 
     if (speakReplies && reply && !entente.speech.isSuppressed()) {
-      const begin = entente.speech.beginSpeak(reply);
-      if (begin.ok) {
-        const sp = await localSpeak(reply.slice(0, 400), cfg);
-        if (sp.ok) {
-          await playWav(sp.path, { speech: entente.speech, epoch: begin.epoch });
-        } else {
-          entente.speech.endSpeak(begin.epoch);
-        }
-      }
+      const r = await speakSentences(reply, cfg, { speech: entente.speech });
+      onEvent({ type: "listen.tts", firstAudioMs: r.firstAudioMs, sentences: r.sentences });
     }
   }
 
