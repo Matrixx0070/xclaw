@@ -1,3 +1,4 @@
+import { fetchWithRetry } from "../utils/fetch-retry.mjs";
 /**
  * Finance quotes — Polygon + CoinGecko (env keys, fail-soft).
  */
@@ -42,7 +43,7 @@ export function createFinanceQuoteTool() {
             const sym = symbol.toUpperCase();
             const base = process.env.POLYGON_API_BASE_URL || "https://api.polygon.io";
             const url = `${base}/v2/aggs/ticker/${encodeURIComponent(sym)}/prev?adjusted=true&apiKey=${encodeURIComponent(key)}`;
-            const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+            const res = await fetchWithRetry(url, { signal: AbortSignal.timeout(15_000) });
             const j = await res.json();
             if (!res.ok) return errorResult(j.error || j.message || `HTTP ${res.status}`);
             const bar = j.results?.[0];
@@ -71,11 +72,11 @@ export function createFinanceQuoteTool() {
         }
         // try simple price by id
         let url = `${base}/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
-        let res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
+        let res = await fetchWithRetry(url, { headers, signal: AbortSignal.timeout(15_000) });
         let j = await res.json();
         if (!j[id]) {
           // search
-          const s = await fetch(`${base}/search?query=${encodeURIComponent(symbol)}`, {
+          const s = await fetchWithRetry(`${base}/search?query=${encodeURIComponent(symbol)}`, {
             headers,
             signal: AbortSignal.timeout(15_000),
           });
@@ -83,7 +84,7 @@ export function createFinanceQuoteTool() {
           const coin = sj.coins?.[0];
           if (!coin) return errorResult(`No crypto match for ${symbol}`);
           url = `${base}/simple/price?ids=${encodeURIComponent(coin.id)}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
-          res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
+          res = await fetchWithRetry(url, { headers, signal: AbortSignal.timeout(15_000) });
           j = await res.json();
           const row = j[coin.id];
           if (!row) return errorResult(`No price for ${coin.id}`);
