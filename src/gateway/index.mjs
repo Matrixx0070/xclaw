@@ -2196,6 +2196,15 @@ export async function startGateway({ root } = {}) {
         const status = out.ok ? 200 : out.code === "APPROVAL_NOT_FOUND" ? 404 : 409;
         return json(res, status, out);
       }
+      if (p === "/agent-runs" && req.method === "GET") {
+        const { listAgentRuns, loadAgentRun } = await import("../agent/run-store.mjs");
+        const id = url.searchParams.get("id");
+        if (id) {
+          const out = await loadAgentRun(cfg, id);
+          return json(res, out.ok ? 200 : out.code === "SESSION_NOT_FOUND" ? 404 : 400, out);
+        }
+        return json(res, 200, { runs: await listAgentRuns(cfg, { limit: Number(url.searchParams.get("limit") || 30) }) });
+      }
       if (p === "/checkpoints" && req.method === "GET") {
         const { listCheckpoints, loadCheckpoint } = await import("../jobs/checkpoint.mjs");
         const id = url.searchParams.get("id");
