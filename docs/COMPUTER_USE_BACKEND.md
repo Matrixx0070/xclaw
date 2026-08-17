@@ -135,3 +135,19 @@ Helper: `scripts/desktop-uia-observe.py` → `mode: "uia"`, refs `w1`…
 | DESKTOP_OBSERVE_UNSUPPORTED_OS | not win32 (helper self-check) |
 
 Act on Windows still stub (`DESKTOP_GUI_UNSUPPORTED_OS`) until W2.
+
+
+## Windows UIA act (W2)
+
+Opt-in only (`XCLAW_DESKTOP_GUI=1`) on **Windows** with `pywinauto`:
+
+```json
+{ "surface": "desktop", "action": "click", "x": 100, "y": 200 }
+{ "surface": "desktop", "action": "type", "text": "hello" }
+{ "surface": "desktop", "action": "key", "key": "enter" }
+{ "surface": "desktop", "action": "invoke", "title": "Untitled", "name": "Save" }
+```
+
+Helper: `scripts/desktop-uia-act.py` (mouse/keyboard + UIA invoke by name).
+
+Still prefer browser CDP for web UIs. macOS act remains unsupported.

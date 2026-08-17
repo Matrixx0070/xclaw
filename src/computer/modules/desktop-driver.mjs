@@ -64,6 +64,11 @@ function uiaScriptPath() {
   return path.resolve(here, "../../../scripts/desktop-uia-observe.py");
 }
 
+function uiaActScriptPath() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(here, "../../../scripts/desktop-uia-act.py");
+}
+
 /**
  * Run a Python desktop-observe helper; parse JSON stdout (or stderr exit payloads).
  */
@@ -162,10 +167,62 @@ export async function runDesktopAct(input = {}, env = process.env) {
     };
   }
 
+  const action = String(input.action || "click").toLowerCase();
+
+  // Windows UIA / pywinauto path (W2)
+  if (probe.platform === "win32") {
+    const script = uiaActScriptPath();
+    const args = [script, action];
+    if (action === "click") {
+      if (!Number.isFinite(Number(input.x)) || !Number.isFinite(Number(input.y))) {
+        return { ok: false, error: "desktop click requires x,y", code: "DESKTOP_NEED_COORDS" };
+      }
+      args.push("--x", String(input.x), "--y", String(input.y));
+      if (input.button) args.push("--button", String(input.button));
+    } else if (action === "type") {
+      args.push("--text", String(input.text ?? ""));
+    } else if (action === "key") {
+      if (!input.key) return { ok: false, error: "key required", code: "DESKTOP_NEED_KEY" };
+      args.push("--key", String(input.key));
+    } else if (action === "invoke") {
+      if (input.title) args.push("--title", String(input.title));
+      if (input.name || input.ref) args.push("--name", String(input.name || input.ref));
+      else return { ok: false, error: "invoke requires name", code: "DESKTOP_NEED_NAME" };
+    } else {
+      return { ok: false, error: `unsupported desktop action: ${action}`, code: "DESKTOP_ACT_UNKNOWN" };
+    }
+    try {
+      const { stdout } = await execFileAsync("python3", args, {
+        timeout: 15000,
+        env: { ...process.env, ...env },
+        maxBuffer: 2 * 1024 * 1024,
+      });
+      const raw = String(stdout || "").trim();
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return { ok: false, error: "invalid JSON from UIA act helper", code: "UIA_BAD_JSON", raw: raw.slice(0, 200) };
+      }
+    } catch (e) {
+      if (e?.stdout) {
+        try {
+          return JSON.parse(String(e.stdout));
+        } catch {
+          /* fall through */
+        }
+      }
+      return {
+        ok: false,
+        error: e?.message || String(e),
+        code: "UIA_ACT_FAILED",
+      };
+    }
+  }
+
   if (probe.platform !== "linux") {
     return {
       ok: false,
-      error: `DesktopDriver not implemented for ${probe.platform} yet (Windows UIA / macOS AXAPI planned). Use browser CDP for GUI.`,
+      error: `DesktopDriver act not implemented for ${probe.platform} yet (macOS AXAPI planned). Use browser CDP for GUI.`,
       code: "DESKTOP_GUI_UNSUPPORTED_OS",
       platform: probe.platform,
     };
@@ -185,7 +242,6 @@ export async function runDesktopAct(input = {}, env = process.env) {
     };
   }
 
-  const action = String(input.action || "click").toLowerCase();
   const bin = backend === "ydotool" ? tools.ydotool : tools.xdotool;
 
   try {
