@@ -39,6 +39,8 @@ export function resolveSandboxPath(policy, userPath) {
     if (!allowed) {
       throw new Error(`sandbox: path escapes workspace: ${userPath}`);
     }
+    // Explicit allowPath: do not apply workspace-relative ".." checks
+    return norm;
   }
   if (relToWs.split(path.sep).includes("..")) {
     throw new Error(`sandbox: path escapes workspace: ${userPath}`);
