@@ -122,6 +122,21 @@ export function ensureHeartbeat(cfg = {}) {
       }
       lastSkipReason = null;
 
+      // Self-evolution tick (resume interrupted / optional promote) before LLM heartbeat
+      try {
+        const ev = cfg.evolve || cfg.autonomy?.evolve || {};
+        if (ev.enabled !== false && ev.tickOnHeartbeat !== false) {
+          const { runEvolutionTick } = await import("../autonomy/self-evolve.mjs");
+          j._lastEvolve = await runEvolutionTick(cfg, {
+            dryRun: ev.dryRun === true,
+            autoPromote: ev.autoPromote === true,
+            autoResume: ev.autoResume !== false,
+          });
+        }
+      } catch (e) {
+        j._lastEvolve = { error: e.message || String(e) };
+      }
+
       const { announceCronJob } = await import("./announce.mjs");
       const ann = await announceCronJob(
         {
