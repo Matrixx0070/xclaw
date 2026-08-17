@@ -913,6 +913,19 @@ export async function runDoctor(opts = {}) {
     push("voice.wake", "warn", e.message || String(e));
   }
 
+  try {
+    const { probeVad } = await import("../voice/vad.mjs");
+    const v = probeVad(cfg);
+    push(
+      "voice.vad",
+      "ok",
+      `energy hysteresis open=${v.openThreshold} close=${v.closeThreshold} silence=${v.silenceMs}ms`
+    );
+  } catch (e) {
+    push("voice.vad", "warn", e.message || String(e));
+  }
+
+
 
 
 
