@@ -1671,8 +1671,31 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         console.log(JSON.stringify(out, null, 2));
         break;
       }
-      const job = await resumeJobFromCheckpoint(cfg, args[1]);
-      console.log(JSON.stringify({ id: job.id, status: job.status, pass: job.pass, turns: job.turns, resumedFrom: job.resumedFrom }, null, 2));
+      const jobId = args[1];
+      const stratIdx = args.indexOf("--strategy");
+      const strategy = stratIdx >= 0 ? args[stratIdx + 1] : undefined;
+      const maxIdx = args.indexOf("--max-turns");
+      const maxTurns = maxIdx >= 0 ? Number(args[maxIdx + 1]) : undefined;
+      const useHarness =
+        args.includes("--harness") ? true :
+        args.includes("--no-harness") ? false :
+        undefined;
+      const job = await resumeJobFromCheckpoint(cfg, jobId, {
+        strategy,
+        maxTurns,
+        useHarness,
+        force: args.includes("--force"),
+      });
+      console.log(JSON.stringify({
+        id: job.id,
+        status: job.status,
+        pass: job.pass,
+        turns: job.turns,
+        resumedFrom: job.resumedFrom,
+        recoveryKind: job.recoveryKind,
+        recoveryStrategy: job.recoveryStrategy,
+        note: job.note,
+      }, null, 2));
       process.exitCode = job.pass ? 0 : 1;
       break;
     }
