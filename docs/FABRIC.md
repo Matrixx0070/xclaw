@@ -89,3 +89,14 @@ Look for:
 - `src/browser/physics.mjs` — leases, gates, roles  
 - `src/browser/hooks.mjs` — driver enforcement plane  
 - `src/browser/role-binding.mjs` — session role registry  
+
+
+## Durable browser profile
+
+Default user-data-dir: `~/.xclaw/browser-profiles/default` (cookies / localStorage survive restarts).
+
+| Env | Effect |
+|-----|--------|
+| `XCLAW_BROWSER_PROFILE_DIR` | Override vault path |
+| `XCLAW_BROWSER_PROFILE_DIR=tmp` or `ephemeral` | Ephemeral mkdtemp |
+| `XCLAW_BROWSER_EPHEMERAL=1` | Force ephemeral |
