@@ -173,4 +173,13 @@ Helper: `scripts/desktop-ax-observe.py` → `mode: "ax"`, refs `a1`…
 | AX_TCC_REQUIRED | Accessibility permission missing |
 | AX_WALK_FAILED | tree walk error |
 
-**M2** (AXPress / CGEvent act) not implemented yet — act still `DESKTOP_GUI_UNSUPPORTED_OS` on darwin.
+**M2 done** — act under `XCLAW_DESKTOP_GUI=1`:
+
+```json
+{ "surface": "desktop", "action": "click", "x": 100, "y": 200 }
+{ "surface": "desktop", "action": "type", "text": "hello" }
+{ "surface": "desktop", "action": "key", "key": "cmd+s" }
+{ "surface": "desktop", "action": "invoke", "name": "Save", "app": "TextEdit" }
+```
+
+Helper: `scripts/desktop-ax-act.py` (CGEvent + AXPress with CGEvent fallback).
