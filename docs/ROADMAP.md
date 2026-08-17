@@ -41,7 +41,7 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 
 - WildClaw-style long-horizon suite (subset) as optional nightly workflow.
 - MCP skill surface parity checklist vs OpenClaw-class tools.
-- Self-evolution: skill learning already partial — needs owner-gated writeback policy in prod.
+- Self-evolution: skill learning already partial — needs owner-gated writeback policy in prod. — **done** (`canInstallSkills`, prod blocks install unless ownerApproved / allowInstall / env)
 
 ## How to pick “next”
 
