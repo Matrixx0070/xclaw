@@ -1935,13 +1935,57 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         console.log(JSON.stringify({ queue: await listQueue(cfg) }, null, 2));
         break;
       }
-      const goal = (sub === "add" ? args.slice(2) : args.slice(1)).join(" ").trim();
-      if (!goal || goal === "add") {
-        console.error('Usage: xclaw goal "do this while I am away" | xclaw goal list | xclaw goal add "..."');
+      const rest = sub === "add" ? args.slice(2) : args.slice(1);
+      const goalParts = [];
+      const verify = [];
+      let harness = false;
+      let maxTurns;
+      for (let i = 0; i < rest.length; i++) {
+        const a = rest[i];
+        if (a === "--harness") { harness = true; continue; }
+        if (a === "--max-turns" && rest[i + 1]) { maxTurns = Number(rest[++i]); continue; }
+        if (a === "--exists" && rest[i + 1]) {
+          verify.push({ type: "file_exists", path: rest[++i] });
+          continue;
+        }
+        if (a === "--contains" && rest[i + 1]) {
+          const pathText = rest[++i];
+          const sp = pathText.split(":");
+          if (sp.length >= 2) {
+            verify.push({ type: "file_contains", path: sp[0], text: sp.slice(1).join(":") });
+          }
+          continue;
+        }
+        if (a === "--cmd" && rest[i + 1]) {
+          verify.push({ type: "command", cmd: rest[++i], exitCode: 0 });
+          continue;
+        }
+        if (a.startsWith("-")) continue;
+        goalParts.push(a);
+      }
+      const goal = goalParts.join(" ").trim();
+      if (!goal) {
+        console.error('Usage: xclaw goal "…" [--harness] [--exists path] [--contains path:text] [--cmd "…"] [--max-turns N]');
         process.exit(1);
       }
-      const item = await enqueueJob(cfg, { goal, class: "batch" });
-      console.log(JSON.stringify({ enqueued: true, id: item.id, goal: item.goal }, null, 2));
+      if (verify.length) harness = true;
+      const item = await enqueueJob(cfg, {
+        goal,
+        class: "batch",
+        harness,
+        verify,
+        maxTurns,
+        groundHard: harness ? true : undefined,
+        claimsRequireEvidence: harness ? true : undefined,
+        requireStructuredClaims: harness ? true : undefined,
+      });
+      console.log(JSON.stringify({
+        enqueued: true,
+        id: item.id,
+        goal: item.goal,
+        harness: item.harness,
+        verify: item.verify,
+      }, null, 2));
       break;
     }
     case "evolve": {
