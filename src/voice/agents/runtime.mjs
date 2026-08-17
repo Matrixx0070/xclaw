@@ -83,19 +83,28 @@ export function createVoiceAgent(opts = {}) {
     const intent = classifyVoiceIntent(text);
     const classified = entente.onUserText(text);
 
-    if (intent.kind === "stop_talking") {
-      return { ok: true, intent, spoke: false };
-    }
-    if (intent.kind === "cancel_job") {
-      await speak(
-        classified.jobsCancelled
-          ? "Cancelled background work."
-          : "Nothing active to cancel."
-      );
-      return { ok: true, intent, jobsCancelled: classified.jobsCancelled };
-    }
-    if (intent.kind === "keep_going") {
-      return { ok: true, intent };
+    // Structured voice commands — do not treat as goals
+    if (
+      intent.kind &&
+      intent.kind !== "utterance" &&
+      intent.kind !== "none"
+    ) {
+      const reply =
+        classified.reply ||
+        intent.command?.reply ||
+        (intent.kind === "help" ? classified.help : null);
+      if (reply) {
+        await speak(String(reply).slice(0, 400));
+        entente.setLastSpoken?.(reply);
+      }
+      return {
+        ok: true,
+        intent,
+        spoke: Boolean(reply),
+        jobsCancelled: classified.jobsCancelled || 0,
+        reply: reply || null,
+        command: true,
+      };
     }
 
     history.push({ role: "user", content: text, at: Date.now() });
