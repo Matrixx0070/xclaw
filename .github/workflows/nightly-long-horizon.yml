@@ -24,6 +24,8 @@ jobs:
         run: node --test test/long-horizon-fixtures.test.mjs test/skill-install-gate.test.mjs test/host-workspace.test.mjs
       - name: Self-test smoke
         run: node bin/xclaw.mjs self-test
+      - name: Arc offline smoke pack
+        run: node scripts/smoke-arc.mjs
       # Optional live eval when secrets present
       - name: Live eval subset
         if: ${{ secrets.XAI_API_KEY != '' }}
