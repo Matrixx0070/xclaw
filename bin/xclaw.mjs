@@ -1337,10 +1337,42 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       if (sub === "status") {
         const cfg = await loadConfig();
         const st = await getComputerStatus(cfg);
-        if (args.includes("--json")) console.log(JSON.stringify(st, null, 2));
+        let engineResolved = cfg.computer?.engine;
+        try {
+          const { resolveComputerEngine } = await import("../src/computer/engine.mjs");
+          engineResolved = resolveComputerEngine(cfg);
+        } catch { /* */ }
+        let pool = null;
+        try {
+          const { computerClientCacheStats } = await import("../src/agent/computer-client.mjs");
+          pool = computerClientCacheStats();
+        } catch { /* */ }
+        let live = null;
+        try {
+          if (st.healthy && st.url) {
+            const r = await fetch(`${String(st.url).replace(/\/$/, "")}/health`);
+            live = await r.json();
+          }
+        } catch { /* */ }
+        const report = {
+          ...st,
+          engineConfig: cfg.computer?.engine || null,
+          engineResolved,
+          liveEngine: live?.engine || live?.status || null,
+          tools: live?.tools || null,
+          sessionPool: pool,
+        };
+        if (args.includes("--json")) console.log(JSON.stringify(report, null, 2));
         else {
           console.log(`Computer: ${st.healthy ? "UP" : "DOWN"}  ${st.url}`);
+          console.log(`  engine: resolved=${engineResolved} config=${cfg.computer?.engine || "—"} live=${live?.engine || live?.status || "—"}`);
           console.log(`  pid: ${st.pid ?? "—"} alive=${st.pidAlive} inProcess=${st.inProcess}`);
+          if (Array.isArray(live?.tools)) {
+            console.log(`  tools: ${live.tools.length} (${live.tools.slice(0, 6).join(", ")}${live.tools.length > 6 ? ", …" : ""})`);
+          }
+          if (pool) {
+            console.log(`  sessionPool: sessions=${pool.sessions} toolsLists=${pool.toolsLists}`);
+          }
           console.log(`  log: ${st.logPath}`);
           if (st.meta?.startedAt) console.log(`  started: ${st.meta.startedAt}`);
           if (st.health?.error) console.log(`  probe: ${st.health.error}`);
