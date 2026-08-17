@@ -215,3 +215,16 @@ Long replies are split on `.?!` and spoken **one sentence at a time** so the fir
 - `speakSentences(text, cfg, { speech })` — batch flush
 - `createSentenceStreamSpeaker` — push token deltas, flush on boundaries
 - Barge-in still kills the current player via speech plane stoppers
+
+
+## Streaming spoken replies
+
+For short Q&A (not tool goals), listen uses **token stream → sentence-flush TTS**:
+
+```text
+chatStream onDelta → createSentenceStreamSpeaker → first sentence audio ASAP
+```
+
+Tool-like phrases (`run`, `write file`, `browse`, …) still use full `runJob` then sentence TTS.
+
+Disable stream: `voice.listen.stream: false` or env-only path without API keys (localThink).
