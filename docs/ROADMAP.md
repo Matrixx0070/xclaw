@@ -39,8 +39,8 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 
 ## P2 — research / stretch
 
-- WildClaw-style long-horizon suite (subset) as optional nightly workflow.
-- MCP skill surface parity checklist vs OpenClaw-class tools.
+- WildClaw-style long-horizon suite (subset) as optional nightly workflow. — **done** (`.github/workflows/nightly-long-horizon.yml`)
+- MCP skill surface parity checklist vs OpenClaw-class tools. — **done** (`docs/MCP-PARITY.md`)
 - Self-evolution: skill learning already partial — needs owner-gated writeback policy in prod. — **done** (`canInstallSkills`, prod blocks install unless ownerApproved / allowInstall / env)
 
 ## How to pick “next”
