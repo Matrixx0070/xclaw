@@ -25,6 +25,7 @@ import {
 } from "./turn-state.mjs";
 import { createLoopGuard } from "./loop-guards.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
+import { checkCostBudget, checkJobCostBudget } from "../tokens/cost-governor.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
   appendTranscript,
@@ -586,6 +587,39 @@ export async function runAgentLoop(options) {
   try {
     for (turns = 0; turns < maxTurns; turns++) {
       if (signal?.aborted) throw new Error("aborted");
+
+      // Feature 3 — cost governor hard stop (no provider call when over budget)
+      try {
+        const budget = await checkCostBudget(cfg);
+        if (!budget.ok) {
+          const msg = budget.message || "BUDGET_EXCEEDED";
+          onEvent({
+            type: "cost",
+            phase: "blocked",
+            code: budget.code || "BUDGET_EXCEEDED",
+            ...budget,
+          });
+          finalText = finalText || msg;
+          aborted = true;
+          break;
+        }
+        if (budget.soft) {
+          onEvent({ type: "cost", phase: "soft_warn", ...budget });
+        }
+        if (options.jobSpentUsd != null) {
+          const jobB = checkJobCostBudget(cfg, options.jobSpentUsd);
+          if (!jobB.ok) {
+            onEvent({ type: "cost", phase: "blocked", ...jobB });
+            finalText = finalText || jobB.message;
+            aborted = true;
+            break;
+          }
+        }
+      } catch (e) {
+        onEvent({ type: "cost", phase: "check_error", error: e?.message || String(e) });
+        // fail open on ledger errors unless strict
+        if (cfg?.cost?.strict) throw e;
+      }
 
       onEvent({ type: "model", phase: "request", turn: turns + 1 });
       const stab = assertPrefixStable(messages, prefixHash, tools);
