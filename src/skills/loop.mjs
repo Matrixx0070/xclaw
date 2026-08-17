@@ -5,7 +5,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { proposeSkillFromFailure, installProposal } from "./propose.mjs";
+import { proposeSkillFromFailure, installProposal, canInstallSkills } from "./propose.mjs";
 import { loadCases, runEvalSuite } from "../eval/runner.mjs";
 
 function metricsPath(cfg) {
@@ -57,7 +57,7 @@ export function computeSkillDelta(before, after) {
   };
 }
 
-export async function promoteAndInstall(cfg, scored, job, { install = false } = {}) {
+export async function promoteAndInstall(cfg, scored, job, { install = false, ownerApproved = false } = {}) {
   const prop = await proposeSkillFromFailure(cfg, {
     caseId: scored.id || job?.id,
     goal: job?.goal,
@@ -67,7 +67,15 @@ export async function promoteAndInstall(cfg, scored, job, { install = false } = 
   });
   let installed = null;
   if (install) {
-    installed = await installProposal(cfg, prop.path, { force: true });
+    const gate = canInstallSkills(cfg, { ownerApproved });
+    if (!gate.ok) {
+      installed = { ok: false, installed: false, ...gate };
+    } else {
+      installed = await installProposal(cfg, prop.path, {
+        force: true,
+        ownerApproved,
+      });
+    }
   }
   return { proposal: prop, installed };
 }
