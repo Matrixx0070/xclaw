@@ -200,7 +200,7 @@ export function createApprovalGate(cfg = {}) {
     const slaAction = security.approvalSlaAction || "deny"; // deny | approve
     ensureSlaTimer({ security });
     const wait = new Promise((resolve) => {
-      pending.set(id, {
+      const entry = {
         id,
         tool: name,
         args,
@@ -210,8 +210,9 @@ export function createApprovalGate(cfg = {}) {
         deadline: Date.now() + slaMs,
         slaAction,
         resolve,
-      });
-      setTimeout(() => {
+        timeoutHandle: null,
+      };
+      entry.timeoutHandle = setTimeout(() => {
         if (pending.has(id)) {
           pending.delete(id);
           resolve({
@@ -222,6 +223,8 @@ export function createApprovalGate(cfg = {}) {
           });
         }
       }, timeoutMs);
+      if (entry.timeoutHandle?.unref) entry.timeoutHandle.unref();
+      pending.set(id, entry);
     });
 
     onPending?.({
@@ -249,19 +252,22 @@ export function createApprovalGate(cfg = {}) {
     }
     const id = `apr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const wait = new Promise((resolve) => {
-      pending.set(id, {
+      const entry = {
         id,
         tool: name,
         args,
         at: new Date().toISOString(),
         resolve,
-      });
-      setTimeout(() => {
+        timeoutHandle: null,
+      };
+      entry.timeoutHandle = setTimeout(() => {
         if (pending.has(id)) {
           pending.delete(id);
           resolve({ ok: false, reason: "timeout", message: "Approval timed out." });
         }
       }, opts.timeoutMs ?? 120_000);
+      if (entry.timeoutHandle?.unref) entry.timeoutHandle.unref();
+      pending.set(id, entry);
     });
     return { ok: false, pending: true, pendingId: id, wait };
   }
@@ -277,6 +283,14 @@ export function createApprovalGate(cfg = {}) {
       };
     }
     pending.delete(pendingId);
+    if (item.timeoutHandle) {
+      try {
+        clearTimeout(item.timeoutHandle);
+      } catch {
+        /* */
+      }
+      item.timeoutHandle = null;
+    }
 
     if (approved && item.plan && revalidateOnDecide) {
       const check = revalidatePlan(item.plan);
