@@ -16,6 +16,8 @@
 import path from "node:path";
 import os from "node:os";
 import { runJob } from "./job.mjs";
+import { applyPrinciplesToHarnessOpts, AUTONOMOUS_PRINCIPLES } from "../agent/principles.mjs";
+import { resolveAutonomyLevel } from "../config/autonomy-policy.mjs";
 
 export const HARNESS_SYSTEM_NOTES = `
 ## Long-run harness (anti-hallucination)
@@ -68,14 +70,30 @@ export async function runLongHarness(opts) {
     opts.workspace ||
     path.join(os.tmpdir(), "xclaw-harness", `h_${Date.now().toString(36)}`);
 
-  const systemNotes = [
-    HARNESS_SYSTEM_NOTES,
-    ...(opts.systemNotes
-      ? Array.isArray(opts.systemNotes)
-        ? opts.systemNotes
-        : [opts.systemNotes]
-      : []),
-  ];
+  const level = resolveAutonomyLevel(cfg);
+  const withPrinciples = applyPrinciplesToHarnessOpts(
+    {
+      ...opts,
+      groundHard,
+      claimsRequireEvidence,
+      requireStructuredClaims,
+      groundingRetry,
+      checkpointEveryTurns:
+        opts.checkpointEveryTurns ?? h.checkpointEveryTurns ?? undefined,
+      systemNotes: [
+        HARNESS_SYSTEM_NOTES,
+        AUTONOMOUS_PRINCIPLES,
+        ...(opts.systemNotes
+          ? Array.isArray(opts.systemNotes)
+            ? opts.systemNotes
+            : [opts.systemNotes]
+          : []),
+      ],
+    },
+    level
+  );
+
+  const systemNotes = withPrinciples.systemNotes;
 
   const base = {
     ...opts,
@@ -94,12 +112,14 @@ export async function runLongHarness(opts) {
     workspace,
     maxTurns,
     timeoutMs,
-    groundHard,
-    claimsRequireEvidence,
-    requireStructuredClaims,
+    groundHard: withPrinciples.groundHard,
+    claimsRequireEvidence: withPrinciples.claimsRequireEvidence,
+    requireStructuredClaims: withPrinciples.requireStructuredClaims,
     systemNotes,
     persistRun,
-    checkpointEveryTurns,
+    checkpointEveryTurns:
+      withPrinciples.checkpointEveryTurns ?? checkpointEveryTurns,
+    groundingRetry: withPrinciples.groundingRetry ?? groundingRetry,
     sessionId: opts.sessionId || opts.id,
   };
 
@@ -107,9 +127,12 @@ export async function runLongHarness(opts) {
   onEvent({
     type: "harness",
     phase: "start",
-    groundHard,
-    claimsRequireEvidence,
-    requireStructuredClaims,
+    groundHard: withPrinciples.groundHard,
+    claimsRequireEvidence: withPrinciples.claimsRequireEvidence,
+    requireStructuredClaims: withPrinciples.requireStructuredClaims,
+    checkpointEveryTurns: withPrinciples.checkpointEveryTurns ?? checkpointEveryTurns,
+    autonomyLevel: level,
+    principlesVersion: 1,
     maxTurns,
     timeoutMs,
     workspace,
@@ -119,9 +142,10 @@ export async function runLongHarness(opts) {
 
   // One corrective attempt if grounding failed (hallucinated claims) but we still have budget
   let attempts = 1;
+  const retryLimit = withPrinciples.groundingRetry ?? groundingRetry;
   while (
     job.groundingFailed &&
-    attempts <= groundingRetry &&
+    attempts <= retryLimit &&
     !job.costBlocked
   ) {
     attempts += 1;
@@ -153,9 +177,11 @@ export async function runLongHarness(opts) {
   job.harness = {
     mode: "long",
     attempts,
-    groundHard,
-    claimsRequireEvidence,
-    requireStructuredClaims,
+    groundHard: withPrinciples.groundHard,
+    claimsRequireEvidence: withPrinciples.claimsRequireEvidence,
+    requireStructuredClaims: withPrinciples.requireStructuredClaims,
+    autonomyLevel: level,
+    principlesVersion: 1,
   };
 
   onEvent({
