@@ -48,6 +48,56 @@ function deepMerge(base, over) {
   return out;
 }
 
+
+/**
+ * Prod must never inherit lab autoApprove from a shared ~/.xclaw/xclaw.json.
+ * Opt-out: XCLAW_ALLOW_PROD_AUTO=1 (explicit break-glass).
+ */
+export function enforceProdHardening(cfg = {}) {
+  const profile = String(cfg.profile || process.env.XCLAW_PROFILE || "").toLowerCase();
+  if (profile !== "prod") return cfg;
+  const allow =
+    process.env.XCLAW_ALLOW_PROD_AUTO === "1" ||
+    process.env.XCLAW_ALLOW_PROD_AUTO === "true";
+  const out = {
+    ...cfg,
+    security: { ...(cfg.security || {}) },
+    autonomy: { ...(cfg.autonomy || {}) },
+    swarm: { ...(cfg.swarm || {}) },
+  };
+  out._prodHardening = out._prodHardening || [];
+  if (!allow && out.security.autoApprove === true) {
+    out.security.autoApprove = false;
+    out._prodHardening.push("forced security.autoApprove=false");
+  }
+  if (!allow && out.security.approvalPolicy === "never") {
+    out.security.approvalPolicy = "risky";
+    out._prodHardening.push("forced approvalPolicy=risky");
+  }
+  // Prod default autonomy: supervised. Env XCLAW_AUTONOMY_LEVEL can raise/lower explicitly.
+  if (!process.env.XCLAW_AUTONOMY_LEVEL) {
+    if (!out.autonomy.level || out.autonomy.level === "lab" || out.autonomy.level === "full") {
+      out.autonomy.level = "supervised";
+      out._prodHardening.push("forced autonomy.level=supervised");
+    }
+  } else {
+    out.autonomy.level = String(process.env.XCLAW_AUTONOMY_LEVEL).toLowerCase();
+    out._prodHardening.push(`env autonomy.level=${out.autonomy.level}`);
+  }
+  if (out.autonomy.heartbeat?.enabled && !process.env.XCLAW_AUTONOMY_HEARTBEAT) {
+    // keep heartbeat if user enabled, but ensure level is not full-auto tools
+  }
+  if (out.swarm?.autoMerge === true) {
+    out.swarm.autoMerge = false;
+    out._prodHardening.push("forced swarm.autoMerge=false");
+  }
+  if (out.gateway && out.gateway.requireAuth !== true && process.env.XCLAW_GATEWAY_TOKEN) {
+    out.gateway = { ...out.gateway, requireAuth: true };
+  }
+  return out;
+}
+
+
 export async function loadConfig(opts = {}) {
   await ensureDirsAndFile();
   const raw = await fs.readFile(getConfigPath(), "utf8");
@@ -79,6 +129,7 @@ export async function loadConfig(opts = {}) {
   };
   // Autonomy level fills missing security/agent/heartbeat knobs
   cfg = applyAutonomyLevel(cfg);
+  cfg = enforceProdHardening(cfg);
   // Env overrides (do not write back to disk)
   const envKey = process.env.XCLAW_API_KEY || process.env.XAI_API_KEY || process.env.OPENAI_API_KEY;
   if (envKey && !cfg.agent.apiKey) cfg.agent.apiKey = envKey;
