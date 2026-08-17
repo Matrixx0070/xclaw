@@ -128,3 +128,16 @@ xclaw voice wake-probe once --force-stt
 Phrases (config `voice.wake.phrases`): default `hey xclaw`, `okay xclaw`, `hi xclaw`, `xclaw`.
 
 W0 is **probe only**. Continuous listen loop is **W1**.
+
+
+## W1 — Continuous listen
+
+```bash
+xclaw voice listen              # wake → command → agent/TTS
+xclaw voice listen --no-speak   # no TTS
+xclaw voice listen --no-agent   # localThink only
+```
+
+Loop: short wake window → energy + STT + phrase → “Yes?” → longer command record → STT → voice commands or agent.
+
+Requires: `arecord`, local STT (whisper), optional `espeak-ng` for replies.
