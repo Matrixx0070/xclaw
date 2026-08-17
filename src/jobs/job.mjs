@@ -11,7 +11,7 @@ import { runVerifyChecks } from "./verify.mjs";
 import { recordJob } from "./history.mjs";
 import { rememberJob } from "../memory/durable.mjs";
 import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
-import { saveCheckpoint } from "./checkpoint.mjs";
+import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
 import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
 import { checkSeatBudget, recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
 
@@ -121,6 +121,7 @@ export async function runJob(opts) {
   let agentResult = null;
   let verifyResult = null;
   let error = null;
+  const midToolTrace = [];
 
   const ac = new AbortController();
   const onAbort = () => ac.abort();
@@ -153,6 +154,49 @@ export async function runJob(opts) {
             source: "tool",
             summary: `${e.name}: ${e.preview || ""}`,
           });
+          midToolTrace.push({
+            name: e.name,
+            preview: e.preview,
+            at: new Date().toISOString(),
+          });
+        }
+        // Mid-run checkpoint every N model turns
+        if (e.type === "model" && e.phase === "request" && cfg && e.turn) {
+          const every = Number(
+            opts.checkpointEveryTurns ??
+              cfg.harness?.checkpointEveryTurns ??
+              cfg.jobs?.checkpointEveryTurns ??
+              3
+          );
+          if (every > 0 && e.turn > 1 && (e.turn - 1) % every === 0) {
+            const turnDone = e.turn - 1;
+            saveMidRunCheckpoint(cfg, {
+              id,
+              goal,
+              workspace,
+              turns: turnDone,
+              maxTurns,
+              toolTrace: midToolTrace.slice(-20),
+              evidence: evidence.snapshot(),
+              text: "",
+              status: "running",
+            })
+              .then((fp) => {
+                push({
+                  type: "job",
+                  phase: "checkpoint",
+                  turn: turnDone,
+                  path: fp,
+                });
+              })
+              .catch((err) => {
+                push({
+                  type: "job",
+                  phase: "checkpoint_error",
+                  error: err?.message || String(err),
+                });
+              });
+          }
         }
       },
     });
