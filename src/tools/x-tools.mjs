@@ -1,3 +1,4 @@
+import { fetchWithRetry } from "../utils/fetch-retry.mjs";
 /**
  * X (Twitter) tools — uses xAI API if it proxies X search, else public nitter-less fail-soft
  * Prefer XAI or official bearer when set.
@@ -43,7 +44,7 @@ export function createXKeywordSearchTool() {
           u.searchParams.set("query", query);
           u.searchParams.set("max_results", String(Math.max(10, Math.min(limit, 100))));
           u.searchParams.set("tweet.fields", "created_at,public_metrics,author_id,lang");
-          const res = await fetch(u.toString(), {
+          const res = await fetchWithRetry(u.toString(), {
             headers: { Authorization: `Bearer ${bearer}` },
             signal: AbortSignal.timeout(20_000),
           });
@@ -64,7 +65,7 @@ export function createXKeywordSearchTool() {
       // Soft fallback: DuckDuckGo site:x.com
       try {
         const u = `https://html.duckduckgo.com/html/?q=${encodeURIComponent("site:x.com " + query)}`;
-        const res = await fetch(u, {
+        const res = await fetchWithRetry(u, {
           headers: { "User-Agent": "XClaw/2.6" },
           signal: AbortSignal.timeout(15_000),
         });
@@ -116,7 +117,7 @@ export function createXUserSearchTool() {
         const u = new URL("https://api.twitter.com/2/users/by");
         // usernames endpoint needs exact; use search recent as weak fallback not available
         const url = `https://api.twitter.com/2/users/by/username/${encodeURIComponent(q.replace(/^@/, ""))}?user.fields=description,public_metrics,verified`;
-        const res = await fetch(url, {
+        const res = await fetchWithRetry(url, {
           headers: { Authorization: `Bearer ${bearer}` },
           signal: AbortSignal.timeout(15_000),
         });
@@ -150,7 +151,7 @@ export function createXThreadFetchTool() {
       const id = String(args.post_id || "").trim();
       try {
         const url = `https://api.twitter.com/2/tweets/${encodeURIComponent(id)}?tweet.fields=created_at,public_metrics,conversation_id,author_id,text&expansions=author_id`;
-        const res = await fetch(url, {
+        const res = await fetchWithRetry(url, {
           headers: { Authorization: `Bearer ${bearer}` },
           signal: AbortSignal.timeout(15_000),
         });
@@ -195,7 +196,7 @@ export function createXSemanticSearchTool() {
       const key = process.env.XAI_API_KEY || process.env.XCLAW_API_KEY;
       if (key && text.length > 20) {
         try {
-          const res = await fetch("https://api.x.ai/v1/chat/completions", {
+          const res = await fetchWithRetry("https://api.x.ai/v1/chat/completions", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${key}`,
