@@ -901,6 +901,19 @@ export async function runDoctor(opts = {}) {
     push("voice.local", "warn", e.message || String(e));
   }
 
+  try {
+    const { probeWakeStack } = await import("../voice/wake/index.mjs");
+    const w = await probeWakeStack(cfg);
+    push(
+      "voice.wake",
+      w.readyForW1 ? "ok" : "warn",
+      `phrases=${(w.phrases||[]).length} arecord=${w.arecord?.ok} stt=${w.stt?.ok} oww=${w.openWakeWord?.ok}`
+    );
+  } catch (e) {
+    push("voice.wake", "warn", e.message || String(e));
+  }
+
+
 
 
   try {
