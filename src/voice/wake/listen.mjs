@@ -1,0 +1,235 @@
+/**
+ * W1 — Continuous local listen loop.
+ *
+ * Cycle:
+ *   1. Short record (wake window)
+ *   2. Energy gate → STT → wake phrase?
+ *   3. On hit: record command window (longer)
+ *   4. STT → voice commands / agent / optional TTS
+ *
+ * Ctrl+C to stop. Requires arecord + local STT for full path.
+ */
+
+import {
+  wakeConfig,
+  recordClip,
+  probeWakeOnce,
+  matchWakePhrase,
+  wavRmsEnergy,
+} from "./index.mjs";
+import {
+  localTranscribe,
+  localSpeak,
+} from "../providers/local.mjs";
+import { createEntente, voiceCommandsHelp } from "../entente.mjs";
+import fs from "node:fs/promises";
+import { spawn } from "node:child_process";
+
+function playWav(filePath) {
+  return new Promise((resolve) => {
+    const tryBins = [
+      ["ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", filePath]],
+      ["aplay", [filePath]],
+      ["paplay", [filePath]],
+    ];
+    (async () => {
+      for (const [bin, args] of tryBins) {
+        const ok = await new Promise((res) => {
+          const c = spawn(bin, args, { stdio: "ignore" });
+          c.on("error", () => res(false));
+          c.on("close", (code) => res(code === 0));
+        });
+        if (ok) return resolve({ ok: true, player: bin });
+      }
+      resolve({ ok: false });
+    })();
+  });
+}
+
+/**
+ * @param {object} cfg
+ * @param {object} [opts]
+ * @param {boolean} [opts.agent] use full agent when keys present
+ * @param {boolean} [opts.speak] TTS replies
+ * @param {number} [opts.commandSeconds] post-wake record length
+ * @param {(ev: object) => void} [opts.onEvent]
+ * @param {AbortSignal} [opts.signal]
+ */
+export async function runVoiceListen(cfg = {}, opts = {}) {
+  const c = wakeConfig(cfg);
+  const commandSeconds =
+    opts.commandSeconds ?? c.commandSeconds ?? cfg.voice?.wake?.commandSeconds ?? 4;
+  const speakReplies = opts.speak !== false;
+  const entente = createEntente();
+  const onEvent = opts.onEvent || ((ev) => console.log(JSON.stringify(ev)));
+
+  console.log("XClaw voice listen (W1) — say a wake phrase, then your command");
+  console.log("Phrases:", c.phrases.join(" | "));
+  console.log("Ctrl+C to stop · /commands for help in post-wake speech\n");
+
+  let cycles = 0;
+  let hits = 0;
+  let stopped = false;
+
+  const stop = () => {
+    stopped = true;
+  };
+  if (opts.signal) {
+    if (opts.signal.aborted) return { cycles, hits, stopped: true };
+    opts.signal.addEventListener("abort", stop, { once: true });
+  }
+  process.once("SIGINT", stop);
+
+  while (!stopped) {
+    cycles += 1;
+    onEvent({ type: "listen.cycle", cycles, hits });
+
+    const wake = await probeWakeOnce(cfg, {
+      seconds: c.recordSeconds,
+      energyThreshold: c.energyThreshold,
+    });
+
+    if (stopped) break;
+
+    if (!wake.ok && wake.stage === "record") {
+      onEvent({ type: "listen.record_error", error: wake.error });
+      console.error("[listen] record failed:", wake.error);
+      await sleep(1500);
+      continue;
+    }
+
+    if (!wake.aboveThreshold) {
+      // quiet room — brief pause
+      await sleep(200);
+      continue;
+    }
+
+    if (!wake.hit) {
+      onEvent({
+        type: "listen.no_wake",
+        energy: wake.energy,
+        transcript: wake.transcript,
+      });
+      continue;
+    }
+
+    hits += 1;
+    onEvent({
+      type: "listen.wake",
+      phrase: wake.phrase,
+      transcript: wake.transcript,
+      energy: wake.energy,
+    });
+    console.log(`[wake] ${wake.phrase} ← "${wake.transcript}"`);
+
+    // Acknowledge wake lightly
+    if (speakReplies && !entente.speech.isSuppressed()) {
+      const ack = await localSpeak("Yes?", cfg);
+      if (ack.ok) await playWav(ack.path);
+    }
+
+    // Command window
+    const cmdRec = await recordClip({
+      seconds: commandSeconds,
+      sampleRate: c.sampleRate,
+    });
+    if (stopped) break;
+    if (!cmdRec.ok) {
+      console.error("[listen] command record failed:", cmdRec.error);
+      continue;
+    }
+
+    let energy = 0;
+    try {
+      energy = wavRmsEnergy(await fs.readFile(cmdRec.path));
+    } catch {
+      /* */
+    }
+    if (energy < c.energyThreshold * 0.5) {
+      onEvent({ type: "listen.command_silent", energy });
+      console.log("[listen] no speech after wake");
+      continue;
+    }
+
+    const tr = await localTranscribe(cmdRec.path, cfg);
+    if (!tr.ok || !tr.text) {
+      onEvent({ type: "listen.stt_fail", error: tr.error });
+      console.log("[listen] STT failed:", tr.error || "empty");
+      continue;
+    }
+
+    const userText = tr.text.trim();
+    console.log(`[you] ${userText}`);
+    onEvent({ type: "listen.utterance", text: userText });
+
+    // Voice commands first
+    const classified = entente.onUserText(userText);
+    if (
+      classified.intent?.kind &&
+      classified.intent.kind !== "utterance" &&
+      classified.intent.kind !== "none"
+    ) {
+      const reply = classified.reply || classified.intent.kind;
+      console.log(`[cmd] ${reply}`);
+      if (speakReplies && reply && !entente.speech.isSuppressed()) {
+        const begin = entente.speech.beginSpeak(reply);
+        if (begin.ok) {
+          const sp = await localSpeak(String(reply).slice(0, 400), cfg);
+          if (sp.ok) await playWav(sp.path);
+          entente.speech.endSpeak(begin.epoch);
+          entente.setLastSpoken(reply);
+        }
+      }
+      continue;
+    }
+
+    // Full utterance → agent or local think
+    let reply = "";
+    const preferAgent =
+      opts.agent !== false &&
+      (process.env.XAI_API_KEY ||
+        process.env.OPENAI_API_KEY ||
+        cfg.agent?.model);
+    try {
+      if (preferAgent) {
+        const { runJob } = await import("../../jobs/job.mjs");
+        const job = await runJob({
+          goal: userText,
+          cfg,
+          maxTurns: opts.maxTurns || 8,
+          timeoutMs: opts.timeoutMs || 120_000,
+          autoApprove: cfg.security?.autoApprove ?? true,
+        });
+        reply = String(job.text || job.error || "").slice(0, 2000);
+      } else {
+        const { localThink } = await import("../providers/local.mjs");
+        const thought = await localThink(userText, cfg, { history: [] });
+        reply = thought.text || "(no reply)";
+      }
+    } catch (e) {
+      reply = `Error: ${e.message || e}`;
+    }
+
+    console.log(`[xclaw] ${reply.slice(0, 500)}`);
+    onEvent({ type: "listen.reply", text: reply.slice(0, 500) });
+    entente.setLastSpoken(reply);
+
+    if (speakReplies && reply && !entente.speech.isSuppressed()) {
+      const begin = entente.speech.beginSpeak(reply);
+      if (begin.ok) {
+        const sp = await localSpeak(reply.slice(0, 400), cfg);
+        if (sp.ok) await playWav(sp.path);
+        entente.speech.endSpeak(begin.epoch);
+      }
+    }
+  }
+
+  console.log(`\n[listen] stopped · cycles=${cycles} wakes=${hits}`);
+  return { cycles, hits, stopped: true };
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+export default { runVoiceListen };
