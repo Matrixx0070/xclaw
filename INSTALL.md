@@ -1,67 +1,38 @@
 # XClaw install guide
 
-## One-command install (recommended)
+## Requirements
+
+- **Node.js ≥ 22** (22 LTS or 24+)
+- API key for live agent runs:
+  - `XAI_API_KEY` and/or provider keys in `~/.xclaw/xclaw.json`
+- Optional: Git for swarm worktree flows
+
+## Install from GitHub
 
 ```bash
 git clone https://github.com/Matrixx0070/xclaw.git
 cd xclaw
-export XAI_API_KEY=xai-...          # optional but recommended
-bash install/install.sh --yes
-```
+git checkout v3.77.1   # or main
 
-That single script:
+# core is pure ESM; install only if you need optional deps / scripts
+npm install   # safe to run
 
-1. Checks **Node ≥ 22**
-2. Runs **`init`** (config + profile + optional API key)
-3. Runs **`doctor`**
-4. Prints WebChat URL
-
-Start the gateway:
-
-```bash
-node bin/xclaw.mjs gateway
-# → http://127.0.0.1:18790/chat/
-```
-
-Or install **and** start in one go:
-
-```bash
-bash install/install.sh --yes --start-gateway
-```
-
-Prove the full path (CI uses this):
-
-```bash
-npm run prove:install
-# or: node scripts/prove-install-e2e.mjs
-```
-
-> **Note:** OpenClaw-style `curl | bash` from a public URL needs a public install host or public repo. While XClaw is private, the supported one-liner is **clone + `bash install/install.sh`**.
-
-## Docker try-me
-
-```bash
-cd deploy
-cp env.example .env   # set XAI_API_KEY
-docker compose up --build
-# → http://127.0.0.1:18790/chat/
-```
-
-## Manual steps
-
-```bash
 export XAI_API_KEY=xai-...
 export XCLAW_PROFILE=lab
-node src/cli/init.mjs --yes
+export XCLAW_MODEL=xai/grok-4.5
+
 node bin/xclaw.mjs doctor
+node bin/xclaw.mjs self-test
 node bin/xclaw.mjs gateway
 ```
+
+Docs: [SECURITY.md](./SECURITY.md) · [docs/AUTONOMY.md](./docs/AUTONOMY.md) · [docs/FABRIC.md](./docs/FABRIC.md) · [CHANGELOG.md](./CHANGELOG.md)
 
 | URL | Purpose |
 |-----|---------|
 | http://127.0.0.1:18790/chat/ | WebChat |
 | http://127.0.0.1:18790/control/ | Control UI |
-| http://127.0.0.1:4243/health | Computer |
+| http://127.0.0.1:4243/health | Computer (auto-start) |
 
 Config is created at **`~/.xclaw/xclaw.json`** on first load. Default profile **lab** auto-approves tools.
 
@@ -74,44 +45,6 @@ bash install/install.sh
 # Windows PowerShell
 .\install\install.ps1
 ```
-
-## Docker (try-me)
-
-All-in-one image publishes **gateway (WebChat)** and computer:
-
-```bash
-cd deploy
-cp env.example .env
-# edit .env — set at least XAI_API_KEY
-
-docker compose up --build
-```
-
-Then open **http://127.0.0.1:18790/chat/**
-
-| Host port | Service |
-|-----------|---------|
-| **18790** | Gateway / WebChat / Control |
-| 4243 | Computer (optional direct access) |
-
-Notes:
-
-- Compose sets `XCLAW_GATEWAY_HOST=0.0.0.0` so published ports reach the process (profiles otherwise bind `127.0.0.1`).
-- Default profile is **lab**. For stricter mode:
-  ```bash
-  # in .env
-  XCLAW_PROFILE=prod
-  XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
-  ```
-- Sidecar layout (separate computer container):  
-  `docker compose -f docker-compose.sidecar.yml up --build`
-
-Image choices:
-
-| Dockerfile | Use |
-|------------|-----|
-| `deploy/Dockerfile` | Production-slim (compose default) |
-| root `Dockerfile` | Lab image with office/OCR tooling |
 
 ## One-shot agent
 
@@ -155,12 +88,18 @@ node scripts/soak-agent.mjs 3
 
 ```bash
 export XCLAW_PROFILE=prod
+export XCLAW_AUTONOMY_LEVEL=supervised   # optional; prod hardens to supervised anyway
 export XCLAW_GATEWAY_TOKEN="$(openssl rand -hex 32)"
-bash install/install.sh --yes --profile prod
+# Optional multi-agent browser safety:
+# export XCLAW_COMMIT_GATES=1
+# export XCLAW_FABRIC_ENFORCE=1
+node bin/xclaw.mjs doctor   # expect skills.install gated, autoApprove false
 node bin/xclaw.mjs gateway
 ```
 
-Docker prod sketch: set `XCLAW_PROFILE=prod` and `XCLAW_GATEWAY_TOKEN` in `deploy/.env`, then `docker compose up -d --build`.
+Load-time prod hardening prevents lab `autoApprove` from leaking via a shared config file. See [SECURITY.md](./SECURITY.md).
+
+Docker: `cd deploy && docker compose up -d --build`
 
 ## Swarm data dirs
 
@@ -184,14 +123,9 @@ See **OPS.md** and **docs/MITM_SCRIPTING.md**.
 
 | Symptom | Try |
 |---------|-----|
-| Node too old | Install Node 22+ from nodejs.org |
-| No API key | `export XAI_API_KEY=...` then re-run install |
-| Prove script fails | `XCLAW_E2E_PORT=18791 npm run prove:install` |
 | Computer not healthy | `node bin/xclaw.mjs computer` / check port **4243** |
 | Tools blocked | `XCLAW_PROFILE=lab` or approval settings |
 | Generated engine missing | `npm run build:computer` |
 | Bundle vs thin confusion | Read STRATEGY_C — modules are source; 16MB is runtime |
-| Docker WebChat unreachable | Confirm port **18790** published; host must be `0.0.0.0` inside container |
-| Docker health failing | `curl -fsS http://127.0.0.1:18790/ready` inside container |
 
 More: **OPS.md**, **docs/API.md**, **README.md**.
