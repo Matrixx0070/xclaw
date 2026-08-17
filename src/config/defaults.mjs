@@ -40,10 +40,8 @@ export const DEFAULT_CONFIG = {
   },
   computer: {
     /**
-     * Engine: "native" (DEFAULT — thin-server maintained tools + computer_act)
-     *         "bundle" (16MB CDP xclaw-server.mjs — prod profile default)
-     *         "generated"
-     * Env: XCLAW_COMPUTER_ENGINE=bundle|native|generated
+     * Engine: "native" (default thin server) | "bundle" (16MB xclaw-server.mjs)
+     * Env: XCLAW_COMPUTER_ENGINE=native|bundle  or  XCLAW_COMPUTER_NATIVE=0 for bundle
      */
     engine: "native",
     nativeServer: true,
@@ -57,8 +55,6 @@ export const DEFAULT_CONFIG = {
     entry: "src/computer/xclaw-server.mjs",
     autoStart: true,
     startTimeoutMs: 45_000,
-    /** Attach to user Chromium: env XCLAW_CDP_URL wins */
-    cdpUrl: null,
     env: {},
     watchdog: {
       enabled: true,
@@ -99,20 +95,6 @@ export const DEFAULT_CONFIG = {
     model: "grok-4.3",
     apiKey: null,
     baseUrl: null,
-    /**
-     * Reasoning effort (xAI grok-4.5/4.6 and peers).
-     * effort: "low" | "medium" | "high" | "xhigh"
-     *   - xhigh: grok-4.6 / multi-agent; on grok-4.5 coerced to high by default
-     *   - omit / enabled-only → provider default (high on 4.5)
-     * coerceXhigh: true (default) maps xhigh→high when model lacks xhigh (e.g. 4.5)
-     * coerceXhighFor45: alias of coerceXhigh (compat)
-     */
-    reasoning: {
-      enabled: false,
-      effort: null,
-      coerceXhigh: true,
-      coerceXhighFor45: true,
-    },
     /** Post-turn follow-up chips */
   suggestions: {
     enabled: true,
@@ -177,16 +159,6 @@ export const DEFAULT_CONFIG = {
     dailyHardUsd: 15,
     perJobUsd: 1,
     pauseQueueOnHard: true,
-  },
-  // B1 persistent repo intelligence — incremental per-repo index + brief
-  intel: {
-    tool: true, // register xclaw_repo_intel in every agent run
-  },
-  // A1 operational ledger — the durable black box (docs/LEDGER.md)
-  ledger: {
-    enabled: true,
-    retentionDays: 90,
-    maxPerMin: 0, // 0 = no sampling; >0 caps ok-read tool entries per minute
   },
   tokens: {
     enabled: true,
@@ -379,14 +351,8 @@ export const DEFAULT_CONFIG = {
   },
   /** R4 proactive autonomy */
   autonomy: {
-    /** A1 — in-loop agent behavior (all channels) */
-    agent: {
-      toolFirst: true,
-      maxHandoffs: 1,
-      requireVerifyHint: true,
-      /** One forced continuation if model handoffs with zero tools */
-      handoffRetry: true,
-    },
+    /** off | supervised | lab | full — see autonomy-policy.mjs */
+    level: "lab",
     heartbeat: {
       enabled: false,
       everyMs: 1_800_000, // 30m
@@ -538,19 +504,6 @@ export const DEFAULT_CONFIG = {
   },
   mcp: {
     servers: [],
-  },
-  /** Lifecycle hook system (docs/HOOKS.md) */
-  hooks: {
-    enabled: true,
-    /** per-category kill switches, e.g. { pre_process: false } */
-    categories: {},
-    /** per-hook execution budget */
-    timeoutMs: 2000,
-    /** log hook executions to stdout */
-    log: true,
-    /** ESM modules exporting register(manager); tier is OPERATOR-assigned:
-     *  [{ path: "/abs/my-hooks.mjs", tier: "trusted" }] (default tier: user) */
-    modules: [],
   },
   providers: {
     routes: {
