@@ -54,3 +54,23 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 | Sticky logins | P0.5 browser profile |
 
 Say **P0.1** … **P0.5** (or another target) to execute.
+
+## Release cut
+
+**Stable tag: [v3.77.2](https://github.com/Matrixx0070/xclaw/releases/tag/v3.77.2)**
+
+Offline verification:
+
+```bash
+git checkout v3.77.2
+npm run smoke:arc
+node bin/xclaw.mjs doctor
+```
+
+`main` may be a few commits ahead (smoke scripts, INSTALL, SECURITY) — merge into the next minor when needed.
+
+### Operator before production
+
+1. Rotate any secrets that appeared in chat
+2. `XCLAW_PROFILE=prod` + `XCLAW_GATEWAY_TOKEN`
+3. Read [SECURITY.md](../SECURITY.md)
