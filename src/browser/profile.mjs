@@ -3,8 +3,8 @@
  *
  * Prefer a persistent user-data-dir so cookies, localStorage, IndexedDB,
  * and service-worker state survive across agent sessions (human-like
- * "returning user" behaviour). Falls back to mkdtemp when no vault is
- * configured.
+ * "returning user" behaviour). Default vault: ~/.xclaw/browser-profiles/default.
+ * Opt-out: XCLAW_BROWSER_EPHEMERAL=1 or PROFILE_DIR=tmp|ephemeral.
  *
  * Env / config:
  *   XCLAW_BROWSER_PROFILE_DIR   absolute path to durable vault root
