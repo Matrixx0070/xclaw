@@ -95,7 +95,57 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
     count: sessCount,
   });
 
-  // pairing
+  
+  // Telegram deep posture
+  try {
+    const conf = cfg.channels?.telegram || {};
+    const token = conf.token || process.env.TELEGRAM_BOT_TOKEN || process.env.XCLAW_TELEGRAM_TOKEN;
+    const tgLive = (Array.isArray(chStatus) ? chStatus : []).find((c) => c.name === "telegram");
+    const allow = conf.allowedChatIds || conf.allowFrom || [];
+    const dmPolicy = conf.dmPolicy || "pairing";
+    const profile = String(cfg.profile || process.env.XCLAW_PROFILE || "lab").toLowerCase();
+    if (conf.enabled === true && !token) {
+      push("telegram.token", false, { summary: "NO_TELEGRAM_TOKEN", severity: "error" });
+    } else if (token) {
+      push("telegram.token", true, { summary: "configured" });
+    }
+    if (token || conf.enabled) {
+      let polOk = true;
+      let polSummary = `dmPolicy=${dmPolicy} allowFrom=${Array.isArray(allow) ? allow.length : 0}`;
+      let sev = "ok";
+      if (profile === "prod" && dmPolicy === "open") {
+        polOk = false;
+        sev = "error";
+        polSummary = "prod dmPolicy=open is unsafe";
+      } else if (dmPolicy === "open") {
+        sev = "warn";
+        polSummary = "dmPolicy=open";
+      }
+      push("telegram.policy", polOk || sev === "warn", {
+        summary: polSummary,
+        severity: sev === "ok" ? undefined : sev,
+        dmPolicy,
+        allowFromCount: Array.isArray(allow) ? allow.length : 0,
+      });
+      if (tgLive?.lastError) {
+        push("telegram.lastError", true, {
+          summary: String(tgLive.lastError).slice(0, 200),
+          severity: "warn",
+          lastError: tgLive.lastError,
+          running: tgLive.running,
+        });
+      } else if (tgLive) {
+        push("telegram.runtime", true, {
+          summary: `running=${Boolean(tgLive.running)} lock=${Boolean(tgLive.writerLock)} @${tgLive.username || "?"}`,
+          ...tgLive,
+        });
+      }
+    }
+  } catch (err) {
+    push("telegram.channel", true, { summary: err.message || String(err), severity: "warn" });
+  }
+
+// pairing
   const pairing = createPairingStore({});
   const tgP = pairing.listPending("telegram").length;
   const tgA = pairing.listApproved("telegram").length;
