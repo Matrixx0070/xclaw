@@ -7,6 +7,18 @@ import path from "node:path";
 import os from "node:os";
 import { runJob } from "./job.mjs";
 
+/** Structured resume / lock error codes */
+export const RESUME_CODES = {
+  NOT_FOUND: "CHECKPOINT_NOT_FOUND",
+  CORRUPT: "CHECKPOINT_CORRUPT",
+  ALREADY_PASSED: "CHECKPOINT_ALREADY_PASSED",
+  ALREADY_RESUMED: "CHECKPOINT_ALREADY_RESUMED",
+  RESUME_IN_PROGRESS: "CHECKPOINT_RESUME_IN_PROGRESS",
+  LOCKED: "CHECKPOINT_RESUME_LOCKED",
+  LOCK_IO: "CHECKPOINT_LOCK_IO",
+  AGENT_FAILED: "CHECKPOINT_RESUME_AGENT_FAILED",
+};
+
 function dir(cfg) {
   return path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "checkpoints");
 }
@@ -55,9 +67,29 @@ export async function saveMidRunCheckpoint(cfg, partial) {
 }
 
 export async function loadCheckpoint(cfg, jobId) {
+  if (!jobId) {
+    const err = new Error("checkpoint id required");
+    err.code = RESUME_CODES.NOT_FOUND;
+    throw err;
+  }
   const fp = path.join(dir(cfg), `${jobId}.json`);
-  const raw = await fs.readFile(fp, "utf8");
-  return JSON.parse(raw);
+  let raw;
+  try {
+    raw = await fs.readFile(fp, "utf8");
+  } catch (e) {
+    const err = new Error(`checkpoint not found: ${jobId}`);
+    err.code = RESUME_CODES.NOT_FOUND;
+    err.cause = e;
+    throw err;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    const err = new Error(`checkpoint corrupt: ${jobId}`);
+    err.code = RESUME_CODES.CORRUPT;
+    err.cause = e;
+    throw err;
+  }
 }
 
 export async function listCheckpoints(cfg, { limit = 20 } = {}) {
@@ -390,20 +422,44 @@ export async function releaseResumeLock(jobId, cfg = null) {
  * Resume: classify failure → strategy → re-run with tailored recovery prompt.
  */
 export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
-  const cp = await loadCheckpoint(cfg, jobId);
+  let cp;
+  try {
+    cp = await loadCheckpoint(cfg, jobId);
+  } catch (e) {
+    return {
+      id: jobId,
+      resumed: false,
+      pass: false,
+      status: "error",
+      note: e.code === RESUME_CODES.CORRUPT ? "corrupt" : "not_found",
+      code: e.code || RESUME_CODES.NOT_FOUND,
+      error: e.message || String(e),
+    };
+  }
   if (cp.pass) {
-    return { ...cp, resumed: false, note: "already passed" };
+    return {
+      ...cp,
+      resumed: false,
+      note: "already passed",
+      code: RESUME_CODES.ALREADY_PASSED,
+    };
   }
   if (cp.status === "resumed" && cp.resumedBy && !opts.force) {
     return {
       ...cp,
       resumed: false,
       note: "already_resumed",
+      code: RESUME_CODES.ALREADY_RESUMED,
       resumedBy: cp.resumedBy,
     };
   }
   if (cp.status === "resuming" && !opts.force) {
-    return { ...cp, resumed: false, note: "resume_in_progress" };
+    return {
+      ...cp,
+      resumed: false,
+      note: "resume_in_progress",
+      code: RESUME_CODES.RESUME_IN_PROGRESS,
+    };
   }
 
   const gotLock = await tryAcquireResumeLock(jobId, cfg);
@@ -412,8 +468,10 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
       id: jobId,
       resumed: false,
       note: "resume_locked",
+      code: RESUME_CODES.LOCKED,
       pass: false,
       status: "running",
+      error: "another process holds the resume lock",
     };
   }
 
@@ -447,20 +505,50 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
   };
 
   let job;
-  if (
-    opts.useHarness === true ||
-    (opts.useHarness !== false &&
-      (kind === "grounding" || kind === "verify") &&
-      cfg.harness)
-  ) {
-    try {
-      const { runLongHarness } = await import("./long-harness.mjs");
-      job = await runLongHarness(jobOpts);
-    } catch {
+  try {
+    if (
+      opts.useHarness === true ||
+      (opts.useHarness !== false &&
+        (kind === "grounding" || kind === "verify") &&
+        cfg.harness)
+    ) {
+      try {
+        const { runLongHarness } = await import("./long-harness.mjs");
+        job = await runLongHarness(jobOpts);
+      } catch (harnessErr) {
+        try {
+          job = await runJob(jobOpts);
+          job.harnessFallback = harnessErr?.message || String(harnessErr);
+        } catch (jobErr) {
+          return {
+            id: jobOpts.id,
+            resumedFrom: cp.id,
+            resumed: true,
+            pass: false,
+            status: "failed",
+            code: RESUME_CODES.AGENT_FAILED,
+            recoveryKind: kind,
+            recoveryStrategy: plan.strategy,
+            error: jobErr?.message || String(jobErr),
+            harnessError: harnessErr?.message || String(harnessErr),
+          };
+        }
+      }
+    } else {
       job = await runJob(jobOpts);
     }
-  } else {
-    job = await runJob(jobOpts);
+  } catch (err) {
+    return {
+      id: jobOpts.id,
+      resumedFrom: cp.id,
+      resumed: true,
+      pass: false,
+      status: "failed",
+      code: RESUME_CODES.AGENT_FAILED,
+      recoveryKind: kind,
+      recoveryStrategy: plan.strategy,
+      error: err?.message || String(err),
+    };
   }
 
   job.resumedFrom = cp.id;
@@ -469,8 +557,8 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
 
   try {
     await markCheckpointResumed(cfg, jobId, { resumedBy: job.id, status: "resumed" });
-  } catch {
-    /* */
+  } catch (markErr) {
+    job.markResumedError = markErr?.message || String(markErr);
   }
   return job;
   } finally {
