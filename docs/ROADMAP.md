@@ -13,6 +13,7 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 | Prod safety | `enforceProdHardening` (no lab autoApprove leak), egress deny |
 | Browser fabric | Tab leases, commit gates, role bind, `beforeNavigate` order |
 | Docs / UX | `AUTONOMY.md`, `FABRIC.md`, status/info/doctor/CI/self-test |
+| Hands-free 3.79 | Evolve tick, resume locks, CP prune, path-bind grounding, `goal --harness`, HB handler refresh, offline fixtures, `SELF_EVOLUTION.md` |
 
 ## P0 — next product value
 
@@ -47,27 +48,32 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 
 | If you want… | Start with |
 |--------------|------------|
-| Owner pings while agent idles | P0.1 heartbeat delivery |
-| Stronger prod bash isolation | P0.2 bwrap default |
-| CI catches agent regressions | P0.3 eval fixtures |
-| Better GUI agents | P0.4 computer-use |
-| Sticky logins | P0.5 browser profile |
+| Unattended goals + recovery | [SELF_EVOLUTION.md](./SELF_EVOLUTION.md) · `xclaw goal` · `evolve tick` |
+| Long grounded runs | [HARNESS.md](./HARNESS.md) · path-binding claims |
+| Channel alerts while idle | Heartbeat delivery (done) + `autonomy.heartbeat.delivery` |
+| Stronger prod bash isolation | OS sandbox / bwrap (done) |
+| GUI / computer-use depth | Hybrid observe (done) · deeper native drivers still open |
 
-Say **P0.1** … **P0.5** (or another target) to execute.
+## Open (post-3.79)
+
+- Live multi-hour soak of gateway + heartbeat + goal queue
+- Approval timeout clear on `decide` (timer hygiene)
+- Cross-process resume lock (file lock), not only in-process
+- Optional auto-resume of **failed** finals (`evolve.resumeFailed`)
+- Deeper computer-use native drivers (Win/mac) beyond current stubs
 
 ## Release cut
 
-**Stable tag: [v3.77.2](https://github.com/Matrixx0070/xclaw/releases/tag/v3.77.2)**
-
-Offline verification:
+**Stable tag: [v3.79.0](https://github.com/Matrixx0070/xclaw/releases/tag/v3.79.0)** (hands-free evolve)
 
 ```bash
-git checkout v3.77.2
+git checkout v3.79.0
 npm run smoke:arc
 node bin/xclaw.mjs doctor
+node --test test/self-evolve.test.mjs
 ```
 
-`main` may be a few commits ahead (smoke scripts, INSTALL, SECURITY) — merge into the next minor when needed.
+`main` may include post-tag fixes (e.g. heartbeat `cron:after` once-only bind).
 
 ### Operator before production
 
