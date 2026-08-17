@@ -177,9 +177,11 @@ export function formatA11ySnapshot(nodes, opts = {}) {
     const depth = Number(n.depth) || 0;
     const pad = "  ".repeat(Math.min(depth, 8));
     const focus = n.focusable || n.focused ? "*" : " ";
-    let line = `${pad}${focus}[${role}]`;
+    const mark = n.mark != null ? `@${n.mark} ` : "";
+    let line = `${pad}${mark}${focus}[${role}]`;
     if (name) line += ` ${String(name).slice(0, 80)}`;
     if (val) line += ` = ${String(val).slice(0, 40)}`;
+    if (n.bbox && (n.bbox.cx != null)) line += ` (${n.bbox.cx},${n.bbox.cy})`;
     if (n.backendDOMNodeId) line += ` #${n.backendDOMNodeId}`;
     lines.push(line);
   }
@@ -207,7 +209,23 @@ export const STRUCTURE_SNAPSHOT_JS = `
       ""
     );
     const value = el.value != null ? String(el.value).slice(0, 60) : "";
+    let bbox = null;
+    try {
+      const r = el.getBoundingClientRect();
+      if (r && (r.width > 0 || r.height > 0)) {
+        bbox = {
+          x: Math.round(r.x),
+          y: Math.round(r.y),
+          w: Math.round(r.width),
+          h: Math.round(r.height),
+          cx: Math.round(r.x + r.width / 2),
+          cy: Math.round(r.y + r.height / 2),
+        };
+      }
+    } catch (_) {}
+    const mark = nodes.length + 1;
     nodes.push({
+      mark,
       tag,
       role: role || el.getAttribute("role") || tag,
       name,
@@ -216,12 +234,18 @@ export const STRUCTURE_SNAPSHOT_JS = `
       focusable: typeof el.tabIndex === "number" && el.tabIndex >= 0,
       href: el.href || undefined,
       type: el.type || undefined,
+      bbox,
     });
   };
   const interesting = "a,button,input,select,textarea,summary,[role],[contenteditable],h1,h2,h3,h4,nav,main,header,footer,form,label";
   const all = document.querySelectorAll(interesting);
   for (const el of all) {
     if (nodes.length >= max) break;
+    // skip invisible
+    try {
+      const st = window.getComputedStyle(el);
+      if (st && (st.visibility === "hidden" || st.display === "none")) continue;
+    } catch (_) {}
     let depth = 0;
     let p = el.parentElement;
     while (p && depth < 12) { depth++; p = p.parentElement; }
@@ -232,11 +256,13 @@ export const STRUCTURE_SNAPSHOT_JS = `
     title: document.title || "",
     url: location.href || "",
     readyState: document.readyState,
+    viewport: { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio || 1 },
     nodeCount: nodes.length,
     nodes,
   };
 })()
 `.trim();
+
 
 /**
  * Outcome assertion against network delta.
