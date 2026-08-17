@@ -625,6 +625,7 @@ export function createTelegramChannel(cfg) {
           "Send a message — computer tools available.",
           "/job /queue /approve /pending /resume — job mode",
           "/status — health · /session — session key",
+          "Voice: /voice /mute /unmute /cancel · say stop talking / cancel that",
         ].join("\n"),
         msg.message_id
       );
