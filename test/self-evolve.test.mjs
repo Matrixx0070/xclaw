@@ -177,4 +177,40 @@ describe("self-evolution offline fixtures", () => {
     pendingPromise.catch(() => {});
     await new Promise((r) => setTimeout(r, 250));
   });
+
+  it("budget hard stop skips resume", async () => {
+    await fs.writeFile(
+      path.join(dir, "cost-governor.json"),
+      JSON.stringify({
+        day: new Date().toISOString().slice(0, 10),
+        spentUsd: 99,
+        jobs: 5,
+        paused: true,
+        events: [],
+      })
+    );
+    await saveMidRunCheckpoint(cfg, {
+      id: "job_fx_budget_1",
+      goal: "budget",
+      workspace: path.join(dir, "ws"),
+      turns: 1,
+      maxTurns: 8,
+    });
+    const r = await runEvolutionTick(
+      {
+        ...cfg,
+        cost: { dailyHardUsd: 1, pauseQueueOnHard: true },
+      },
+      { dryRun: true, autoResume: true }
+    );
+    assert.ok(
+      r.status.blockers.some((b) => b.kind === "budget"),
+      `expected budget blocker, got ${JSON.stringify(r.status.blockers)}`
+    );
+    assert.equal(
+      r.actions.filter((a) => a.type === "resume" && a.id === "job_fx_budget_1")
+        .length,
+      0
+    );
+  });
 });
