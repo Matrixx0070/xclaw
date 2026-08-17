@@ -105,6 +105,21 @@ export async function loadConfig(opts = {}) {
         engine: "native",
         nativeServer: true,
       };
+      // Persist so disk matches runtime (doctor, next process)
+      if (userEng === "bundle") {
+        try {
+          await saveConfigPatch({
+            computer: { engine: "native", nativeServer: true },
+          });
+          if (process.env.XCLAW_QUIET !== "1") {
+            console.error(
+              "[xclaw] migrated computer.engine bundle → native (lab/dev); set engine=bundle explicitly to keep the 16MB server"
+            );
+          }
+        } catch {
+          /* non-fatal */
+        }
+      }
     }
   }
  // user file wins on keys present
