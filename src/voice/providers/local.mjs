@@ -332,5 +332,12 @@ export async function probeLocalVoiceStack(cfg = {}) {
       ? { ok: true, bin: c.whisperBin }
       : { ok: false, error: "whisper CLI not found (optional for file STT)" };
 
+  try {
+    const { probeWakeStack } = await import("../wake/index.mjs");
+    out.wake = await probeWakeStack(cfg);
+  } catch (e) {
+    out.wake = { ok: false, error: e.message || String(e) };
+  }
+
   return out;
 }
