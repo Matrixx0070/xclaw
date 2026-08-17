@@ -113,3 +113,25 @@ node --test test/cua-i6.test.mjs
 Cases in `eval/cases/cua-i6.json`. Report: `reports/autonomy/cua-i6.json`.
 
 Validates: observe structure, act fail-closed, ref cache, desktop disabled, AT-SPI honest errors, reach policy, serial planes, multi-step observe→no silent click chain.
+
+
+## Windows UIA observe (W1)
+
+```bash
+# On Windows host with pywinauto:
+pip install pywinauto
+```
+
+```json
+{ "name": "xclaw_computer_act", "arguments": { "surface": "desktop", "action": "observe", "app": "Notepad", "max": 40 } }
+```
+
+Helper: `scripts/desktop-uia-observe.py` → `mode: "uia"`, refs `w1`…
+
+| Code | Meaning |
+|------|---------|
+| UIA_NOT_INSTALLED | need pywinauto |
+| UIA_DESKTOP_FAILED / UIA_WALK_FAILED | COM/UIA error |
+| DESKTOP_OBSERVE_UNSUPPORTED_OS | not win32 (helper self-check) |
+
+Act on Windows still stub (`DESKTOP_GUI_UNSUPPORTED_OS`) until W2.

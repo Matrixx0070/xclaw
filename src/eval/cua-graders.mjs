@@ -96,6 +96,13 @@ export async function runCuaI6Suite() {
       "ATSPI_EXEC_FAILED",
       "ATSPI_BAD_JSON",
       "DESKTOP_OBSERVE_UNSUPPORTED_OS",
+      "UIA_NOT_INSTALLED",
+      "UIA_DESKTOP_FAILED",
+      "UIA_WALK_FAILED",
+      "UIA_HELPER_MISSING",
+      "UIA_EXEC_FAILED",
+      "UIA_EMPTY",
+      "UIA_BAD_JSON",
     ]);
     const pass = r.ok === true || okCodes.has(r.code);
     rows.push({ id, pass, detail: r.ok ? `els=${r.elementCount}` : r.code });

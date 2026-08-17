@@ -59,39 +59,35 @@ function atspiScriptPath() {
  * Linux AT-SPI accessibility snapshot (structured observe).
  * Does not require XCLAW_DESKTOP_GUI (read-only tree).
  */
-export async function runDesktopObserve(input = {}, env = process.env) {
-  const probe = probeDesktopDriver(env);
-  if (probe.platform !== "linux") {
-    return {
-      ok: false,
-      error: `desktop observe (AT-SPI) only on Linux (got ${probe.platform})`,
-      code: "DESKTOP_OBSERVE_UNSUPPORTED_OS",
-      platform: probe.platform,
-    };
-  }
+function uiaScriptPath() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(here, "../../../scripts/desktop-uia-observe.py");
+}
 
-  const script = atspiScriptPath();
-  const args = [script];
+/**
+ * Run a Python desktop-observe helper; parse JSON stdout (or stderr exit payloads).
+ */
+async function runPythonObserveHelper(scriptPath, input = {}, env = process.env, codes = {}) {
+  const args = [scriptPath];
   if (input.app) args.push("--app", String(input.app));
   if (input.max) args.push("--max", String(Number(input.max) || 40));
-
   try {
     const { stdout, stderr } = await execFileAsync("python3", args, {
-      timeout: 12000,
+      timeout: 15000,
       env: { ...process.env, ...env },
       maxBuffer: 4 * 1024 * 1024,
     });
     const raw = String(stdout || "").trim();
     if (!raw) {
-      return { ok: false, error: stderr || "empty AT-SPI output", code: "ATSPI_EMPTY" };
+      return { ok: false, error: stderr || "empty observe output", code: codes.empty || "OBSERVE_EMPTY" };
     }
     try {
       return JSON.parse(raw);
     } catch {
       return {
         ok: false,
-        error: "invalid JSON from AT-SPI helper",
-        code: "ATSPI_BAD_JSON",
+        error: "invalid JSON from observe helper",
+        code: codes.badJson || "OBSERVE_BAD_JSON",
         raw: raw.slice(0, 200),
       };
     }
@@ -107,12 +103,47 @@ export async function runDesktopObserve(input = {}, env = process.env) {
     if (/No such file|ENOENT/i.test(msg)) {
       return {
         ok: false,
-        error: "python3 or AT-SPI helper missing",
-        code: "ATSPI_HELPER_MISSING",
+        error: "python3 or observe helper missing",
+        code: codes.missing || "OBSERVE_HELPER_MISSING",
       };
     }
-    return { ok: false, error: msg, code: "ATSPI_EXEC_FAILED" };
+    return { ok: false, error: msg, code: codes.exec || "OBSERVE_EXEC_FAILED" };
   }
+}
+
+/**
+ * Desktop accessibility snapshot:
+ *   linux  → AT-SPI
+ *   win32  → UI Automation (pywinauto)
+ *   darwin → not implemented yet (honest code)
+ */
+export async function runDesktopObserve(input = {}, env = process.env) {
+  const probe = probeDesktopDriver(env);
+
+  if (probe.platform === "linux") {
+    return runPythonObserveHelper(atspiScriptPath(), input, env, {
+      empty: "ATSPI_EMPTY",
+      badJson: "ATSPI_BAD_JSON",
+      missing: "ATSPI_HELPER_MISSING",
+      exec: "ATSPI_EXEC_FAILED",
+    });
+  }
+
+  if (probe.platform === "win32") {
+    return runPythonObserveHelper(uiaScriptPath(), input, env, {
+      empty: "UIA_EMPTY",
+      badJson: "UIA_BAD_JSON",
+      missing: "UIA_HELPER_MISSING",
+      exec: "UIA_EXEC_FAILED",
+    });
+  }
+
+  return {
+    ok: false,
+    error: `desktop observe not implemented for ${probe.platform} (macOS AX planned)`,
+    code: "DESKTOP_OBSERVE_UNSUPPORTED_OS",
+    platform: probe.platform,
+  };
 }
 
 /**
