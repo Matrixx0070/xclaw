@@ -55,7 +55,6 @@ export function findBwrap() {
 export function resetBwrapCache() {
   _bwrapPath = undefined;
   _bwrapWorks = undefined;
-  _bwrapNetnsWorks = undefined;
 }
 
 let _bwrapWorks = undefined; // undefined=unprobed, true/false
@@ -120,63 +119,20 @@ export function getOsSandboxMode(cfg = {}) {
     cfg?.security?.osSandbox || cfg?.osSandbox || ""
   ).toLowerCase();
   if (m === "off" || m === "bwrap" || m === "auto") return m;
-  // prod → prefer bwrap when present; lab → auto (use if present)
+  // Default auto: use bwrap when installed + probeBwrapWorks(); else pass-through.
+  // Prod profile sets security.osSandbox=auto explicitly; enforceProdHardening
+  // upgrades off→auto so lab config files cannot disable isolation on prod.
   return "auto";
 }
 
-let _bwrapNetnsWorks = undefined; // undefined=unprobed, true/false
-
-/**
- * Can this host create a network namespace via bwrap? Some CI hosts
- * (GitHub Actions) reject loopback setup (RTM_NEWADDR) in a fresh netns.
- */
-export function probeBwrapNetns() {
-  if (_bwrapNetnsWorks !== undefined) return _bwrapNetnsWorks;
-  const bwrap = findBwrap();
-  if (!bwrap || !probeBwrapWorks()) {
-    _bwrapNetnsWorks = false;
-    return false;
-  }
-  const cwd = process.cwd();
-  try {
-    const r = spawnSync(
-      bwrap,
-      [
-        "--die-with-parent",
-        "--unshare-net",
-        "--ro-bind",
-        "/usr",
-        "/usr",
-        "--bind",
-        cwd,
-        cwd,
-        "--chdir",
-        cwd,
-        "--",
-        "/bin/true",
-      ],
-      { encoding: "utf8", timeout: 5000 }
-    );
-    _bwrapNetnsWorks = r.status === 0;
-    if (!_bwrapNetnsWorks) {
-      probeBwrapNetns.lastError = String(r.stderr || r.stdout || r.error || "bwrap netns probe failed");
-    }
-  } catch (e) {
-    _bwrapNetnsWorks = false;
-    probeBwrapNetns.lastError = String(e?.message || e);
-  }
-  return _bwrapNetnsWorks;
-}
-
 function shouldUnshareNet(cfg) {
-  // Explicit config/env wins; otherwise the egress policy decides:
-  // deny/allowlist means the netns is the enforcement boundary (the regex
-  // command screen in egress.mjs is only a fast pre-check).
+  // Explicit only. Auto-unshare from egress is off by default because some
+  // hosts (GitHub Actions) reject RTM_NEWADDR when creating loopback in a new netns.
   if (cfg?.security?.osSandboxUnshareNet === false) return false;
   if (cfg?.security?.osSandboxUnshareNet === true) return true;
   if (process.env.XCLAW_OS_SANDBOX_NET === "allow") return false;
   if (process.env.XCLAW_OS_SANDBOX_NET === "deny") return true;
-  return getEgressPolicy(cfg).mode !== "allow";
+  return false;
 }
 
 /**
@@ -264,32 +220,14 @@ export function buildBwrapArgv({
 
   argv.push("--chdir", runCwd);
 
-  let netIsolated = false;
-  let netnsDegraded = false;
   if (shouldUnshareNet(cfg)) {
-    if (probeBwrapNetns()) {
-      argv.push("--unshare-net");
-      netIsolated = true;
-    } else {
-      // Host cannot create a netns — sandbox still applies, but the network
-      // boundary is degraded to the egress command screen. Surfaced so
-      // callers/doctor can report honestly instead of claiming isolation.
-      netnsDegraded = true;
-    }
+    argv.push("--unshare-net");
   }
 
   // Drop ambient capabilities as much as bwrap allows by default in user ns
   argv.push("--unshare-pid");
 
-  return {
-    ok: true,
-    bwrap,
-    argvPrefix: argv,
-    workspace: ws,
-    cwd: runCwd,
-    netIsolated,
-    netnsDegraded,
-  };
+  return { ok: true, bwrap, argvPrefix: argv, workspace: ws, cwd: runCwd };
 }
 
 /**
@@ -353,8 +291,6 @@ export function wrapSpawnWithOsSandbox(spec, { cfg, workspace } = {}) {
     cwd: spec.cwd, // bwrap --chdir handles inside
     env: spec.env,
     sandboxed: true,
-    netIsolated: Boolean(built.netIsolated),
-    netnsDegraded: Boolean(built.netnsDegraded),
     reason: "bwrap",
   };
 }
@@ -363,7 +299,6 @@ export default {
   findBwrap,
   resetBwrapCache,
   probeBwrapWorks,
-  probeBwrapNetns,
   getOsSandboxMode,
   buildBwrapArgv,
   wrapSpawnWithOsSandbox,
