@@ -206,3 +206,12 @@ After wake, XClaw streams mic PCM and **stops on silence** instead of a fixed 4s
 | `prerollMs` | 2500 | Give up if no speech starts |
 
 Disable: `xclaw voice listen` with config `voice.vad.enabled: false` (falls back to fixed `arecord -d`).
+
+
+## Sentence-flush TTS
+
+Long replies are split on `.?!` and spoken **one sentence at a time** so the first audio starts sooner.
+
+- `speakSentences(text, cfg, { speech })` — batch flush
+- `createSentenceStreamSpeaker` — push token deltas, flush on boundaries
+- Barge-in still kills the current player via speech plane stoppers
