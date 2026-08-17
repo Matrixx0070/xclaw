@@ -80,3 +80,9 @@ Agent tools: `xclaw_gmail_list`, `xclaw_gmail_get`, `xclaw_gmail_send`, `xclaw_c
 
 To enable official video later: pull images on a host with Docker + ≥16GB disk, then mount assets into fixtures.
 
+
+## Bench expand (creative + safety)
+
+- Creative soft batch: `reports/autonomy/batch-creative.json` (8/8 soft pass on grok-4.6)
+- Large safety fixtures (leaked_api, risk_os): **not fully installed** in default path (hundreds–thousands of files); re-enable with `WILDCLAW_MAX_FIXTURE_FILES=2000` on a large disk host
+

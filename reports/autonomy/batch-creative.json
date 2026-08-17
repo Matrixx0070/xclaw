@@ -1,0 +1,82 @@
+{
+  "model": "grok-4.6",
+  "suite": "creative-soft",
+  "total": 8,
+  "passed": 8,
+  "rate": 1,
+  "rows": [
+    {
+      "id": "wc-c-05_Creative_Synthesis_task_10_social_poster_multi_crop",
+      "ok": true,
+      "stopReason": "natural",
+      "turns": 8,
+      "tools": 13,
+      "scorePass": true,
+      "results": true,
+      "pass": true
+    },
+    {
+      "id": "wc-c-05_Creative_Synthesis_task_1_match_report",
+      "ok": true,
+      "stopReason": "natural",
+      "turns": 11,
+      "tools": 15,
+      "scorePass": true,
+      "results": true,
+      "pass": true
+    },
+    {
+      "id": "wc-c-05_Creative_Synthesis_task_3_product_poster",
+      "ok": true,
+      "stopReason": "maxTurns",
+      "turns": 12,
+      "tools": 15,
+      "scorePass": true,
+      "results": true,
+      "pass": true
+    },
+    {
+      "id": "wc-c-05_Creative_Synthesis_task_7_paper_to_poster",
+      "ok": true,
+      "stopReason": "budget",
+      "turns": 6,
+      "tools": 8,
+      "scorePass": true,
+      "pass": true
+    },
+    {
+      "id": "wc-c-05_Creative_Synthesis_task_8_repo_to_homepage",
+      "ok": true,
+      "stopReason": "natural",
+      "turns": 9,
+      "tools": 10,
+      "scorePass": true,
+      "pass": true
+    },
+    {
+      "id": "wc-c-05_Creative_Synthesis_task_9_repo_to_slides",
+      "ok": true,
+      "turns": 6,
+      "tools": 10,
+      "scorePass": true,
+      "pass": true
+    },
+    {
+      "id": "wc-c2-05_Creative_Synthesis_task_2_goal_highlights",
+      "ok": true,
+      "turns": 3,
+      "tools": 5,
+      "scorePass": true,
+      "pass": true
+    },
+    {
+      "id": "wc-c2-05_Creative_Synthesis_task_4_video_notes",
+      "ok": true,
+      "turns": 4,
+      "tools": 4,
+      "scorePass": true,
+      "pass": true
+    }
+  ],
+  "note": "soft creative; large safety fixtures not fully installed (size)"
+}

@@ -1,0 +1,200 @@
+[
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_10_social_poster_multi_crop",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "Social Media Poster Smart Crop for Multi-Platform",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_10_social_poster_multi_crop.md",
+    "prompt": "\u5de5\u4f5c\u76ee\u5f55 `./` \u4e0b\u6709\u4e00\u5f20\u793e\u4ea4\u5a92\u4f53\u5ba3\u4f20\u6d77\u62a5 `./poster_original.png`\u3002\n\n\u8bf7\u9488\u5bf9\u4ee5\u4e0b\u793e\u4ea4\u5a92\u4f53\u5e73\u53f0\u7684\u53d1\u5e03\u89c4\u8303\uff0c\u5bf9\u8fd9\u5f20\u6d77\u62a5\u8fdb\u884c\u667a\u80fd\u88c1\u5207\uff0c\u8f93\u51fa\u4e09\u4e2a\u9002\u914d\u7248\u672c\u5230 `./results/`\uff1a\n\n| \u6587\u4ef6\u540d | \u9002\u914d\u5e73\u53f0 |\n|--------|----------|\n| `./results/crop_ins_square.png` | Instagram \u6b63\u65b9\u5f62\u4fe1\u606f\u6d41\u5e16\u5b50 |\n| `./results/crop_tiktok.png` | TikTok / Instagram Reels \u5168\u5c4f\u7ad6\u7248 |\n| `./results/crop_ins_portrait.png` | Instagram \u7ad6\u7248\u5e16\u5b50\uff08Portrait\uff09 |\n\n\u5982\u679c\u9700\u8981\u56fe\u50cf\u7406\u89e3\u6216\u591a\u6a21\u6001\u751f\u6210\u80fd\u529b\uff0c\u53ef\u4ee5\u8c03\u7528 OpenRouter API\uff08base_url \u901a\u8fc7\u73af\u5883\u53d8\u91cf `OPENROUTER_BASE_URL` \u83b7\u53d6\uff0cAPI Key \u901a\u8fc7\u73af\u5883\u53d8\u91cf `OPENROUTER_API_KEY` \u83b7\u53d6\uff09\u3002\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_10_social_poster_multi_crop",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_1_match_report",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "Football Half Match Report with Video Clips",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_1_match_report.md",
+    "prompt": "This is a full first-half video of a La Liga match between Real Betis and FC Barcelona, located at `./first_half.mp4`.\n\nBased on this video, write a **match report with interleaved text and video clips** (in Markdown format), containing the following sections:\n\n### 1. Overview\n\nBriefly summarize the first-half match progression and the halftime score.\n\n### 2. Key Events\n\nList all key events from the first half (goals, red cards, etc.). Each event should include:\n\n- The video timestamp when it occurred (in \"MM:SS\" format, referring to the position in the source video file)\n- A brief text description (players involved, how the goal was scored, etc.)\n- A corresponding **5\u201310 second** video clip\n\nSave video clips to the `./results/clips/` directory, named `event_1.mp4`, `event_2.mp4`, etc., numbered in chronological order. Reference them in the Markdown using relative paths, e.g.: `[Goal video](clips/event_1.mp4)`\n\n### 3. Highlights\n\nList other notable moments (dangerous attacks, key fouls, near-misses, etc.). Each moment only needs a text description \u2014 **no video clip required**.\n\n### Output Requirements\n\n- Save the report as `./results/report.md`\n- Save video clips to the `./results/clips/` directory\n- Keep each video clip between 5\u201310 seconds\n- Reference video files in the Markdown using relative paths\n- Also save a structured event list file at `./results/events.json` in the following format:\n\n```json\n[\n  {\n    \"video_timestamp\": \"MM:SS\",\n    \"type\": str,\n    \"description\": str,\n    \"clip_file\": \"event_1.mp4\"\n  }\n]\n```\n\nWhere `video_timestamp` is the position in the source video in \"MM:SS\" format (e.g., \"17:56\"), `type` is the event type (e.g., \"goal\", \"red_card\"), and `clip_file` is the corresponding video clip filename.\n\nIf you need image/video understanding or multimodal capabilities, you can call the OpenRouter API (base_url available via the `OPENROUTER_BASE_URL` environment variable, API key available via the `OPENROUTER_API_KEY` environment variable).\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": null,
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_3_product_poster",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "Design a Product Poster for a Leather Briefcase",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_3_product_poster.md",
+    "prompt": "I have a product photo of a briefcase at `./briefcase.png`.\n\nPlease design an **informational product display image** (1080\u00d71440 px PNG) for this item. The image should clearly present the product's key features and characteristics in a clean, professional layout.\n\nBasic info:\n\n- **Brand**: Thornfield & Co.\n- **Product Name**: The Meridian Briefcase\n- **Tagline**: \"Carry Your Story\"\n- **Price**: $279.00 (reference price $379.00)\n\nLook at the product photo carefully, identify its standout features (material, craftsmanship, functionality, etc.), and prominently showcase them in the design. Include a note inviting viewers to learn more.\n\nSave the final image to `./results/poster.png`.\n\nIf you need image understanding or multimodal generation capabilities, you can call the OpenRouter API (base_url available via the `OPENROUTER_BASE_URL` environment variable, API key available via the `OPENROUTER_API_KEY` environment variable).\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_3_product_poster",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_7_paper_to_poster",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "Academic Paper to Conference Poster",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_7_paper_to_poster.md",
+    "prompt": "\u5de5\u4f5c\u76ee\u5f55\u4e2d\u6709\u4e00\u7bc7\u8bba\u6587 PDF `./paper.pdf`\u3002\n\n\u8bf7\u57fa\u4e8e\u8be5\u8bba\u6587\u5236\u4f5c\u4e00\u4efd\u5b66\u672f\u4f1a\u8bae\u98ce\u683c\u7684\u5355\u9875\u6d77\u62a5 `./results/poster.png`\u3002\u8981\u6c42\uff1a\n- \u5355\u5f20\u56fe\u7247\uff0c\u6a2a\u5411\u6392\u7248\uff0c\u9002\u5408\u5b66\u672f\u4f1a\u8bae\u5f20\u8d34\u5c55\u793a\n- \u5206\u8fa8\u7387\u8db3\u591f\u9ad8\uff08\u6700\u5927\u8fb9 \u2265 3000 \u50cf\u7d20\uff09\n- \u5305\u542b\u8bba\u6587\u6807\u9898\u3001\u4f5c\u8005\u4fe1\u606f\u7b49\u6838\u5fc3\u677f\u5757\n- \u5305\u542b\u4e0d\u5c11\u4e8e 3 \u5f20\u56fe\u8868\uff08\u67b6\u6784\u56fe\u3001\u7ed3\u679c\u53ef\u89c6\u5316\u3001\u5b9a\u91cf\u5bf9\u6bd4\u7b49\uff09\n- \u8bbe\u8ba1\u98ce\u683c\u7edf\u4e00\u4e14\u4e13\u4e1a\uff0c\u914d\u8272\u534f\u8c03\u3001\u6392\u7248\u6e05\u6670\u3001\u4fe1\u606f\u5c42\u6b21\u5206\u660e\n\n\u5982\u679c\u9700\u8981\u56fe\u50cf\u7406\u89e3\u6216\u591a\u6a21\u6001\u751f\u6210\u80fd\u529b\uff0c\u53ef\u4ee5\u8c03\u7528 OpenRouter API\uff08base_url \u901a\u8fc7\u73af\u5883\u53d8\u91cf `OPENROUTER_BASE_URL` \u83b7\u53d6\uff0cAPI Key \u901a\u8fc7\u73af\u5883\u53d8\u91cf `OPENROUTER_API_KEY` \u83b7\u53d6\uff09\u3002\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_7_paper_to_poster",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_8_repo_to_homepage",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "GitHub Repository to Project Homepage",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_8_repo_to_homepage.md",
+    "prompt": "\u8bf7\u4e3a\u5f00\u6e90\u9879\u76ee VLMEvalKit\uff08https://github.com/open-compass/VLMEvalKit/\uff09\u5236\u4f5c\u4e00\u4e2a\u73b0\u4ee3\u5316\u7684\u5355\u9875\u5ba3\u4f20\u4e3b\u9875 `./results/index.html`\u3002\u4e3b\u9875\u9700\u5b8c\u6574\u4ecb\u7ecd\u9879\u76ee\u6838\u5fc3\u4fe1\u606f\uff0c\u5305\u542b\u4e0d\u5c11\u4e8e 5 \u5f20\u56fe\u7247\uff08logo\u3001\u67b6\u6784\u793a\u610f\u3001\u6548\u679c\u5c55\u793a\u7b49\uff09\uff0c\u8bbe\u8ba1\u5e94\u4e13\u4e1a\u7f8e\u89c2\u3002\u6240\u6709\u6837\u5f0f\u5185\u8054\u6216\u5185\u5d4c\uff0c\u786e\u4fdd\u5355\u6587\u4ef6\u5373\u53ef\u5b8c\u6574\u6e32\u67d3\u3002\n\n\u5b8c\u6210\u7f51\u9875\u5236\u4f5c\u540e\uff0c\u4f7f\u7528 Playwright + Headless Chromium \u5bf9\u9996\u9875\u8fdb\u884c\u5b8c\u6574\u622a\u56fe\uff08full page screenshot\uff09\uff0c\u5c06\u622a\u56fe\u4fdd\u5b58\u5230 `./results/screenshot.png`\u3002\u622a\u56fe\u5bbd\u5ea6\u8bbe\u4e3a 1440px\u3002\n\n\u5982\u679c\u9700\u8981\u56fe\u50cf\u7406\u89e3\u6216\u591a\u6a21\u6001\u751f\u6210\u80fd\u529b\uff0c\u53ef\u4ee5\u8c03\u7528 OpenRouter API\uff08base_url \u901a\u8fc7\u73af\u5883\u53d8\u91cf `OPENROUTER_BASE_URL` \u83b7\u53d6\uff0cAPI Key \u901a\u8fc7\u73af\u5883\u53d8\u91cf `OPENROUTER_API_KEY` \u83b7\u53d6\uff09\u3002\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_8_repo_to_homepage",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c-05_Creative_Synthesis_task_9_repo_to_slides",
+    "tags": [
+      "wildclaw",
+      "wave-c",
+      "autonomy",
+      "05_Creative_Synthesis"
+    ],
+    "name": "GitHub Repository to Project Presentation",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_9_repo_to_slides.md",
+    "prompt": "\u8bf7\u4e3a Meta \u7684\u5f00\u6e90\u9879\u76ee SAM 3: Segment Anything with Concepts\uff08https://github.com/facebookresearch/sam3/\uff09\u5236\u4f5c\u4e00\u4efd 8 \u9875\u7684\u9879\u76ee\u4ecb\u7ecd\u6f14\u793a\u6587\u7a3f\u3002\n\n\u8f93\u51fa\u6587\u4ef6\u4e3a `./results/output.pdf`\uff0c\u8981\u6c42\uff1a\n- \u6070\u597d 8 \u9875\n- \u8bbe\u8ba1\u98ce\u683c\u7edf\u4e00\u4e14\u4e13\u4e1a\n\n\u5982\u679c\u9700\u8981\u56fe\u50cf\u7406\u89e3\u6216\u591a\u6a21\u6001\u751f\u6210\u80fd\u529b\uff0c\u53ef\u4ee5\u8c03\u7528 OpenRouter API\uff08base_url \u901a\u8fc7\u73af\u5883\u53d8\u91cf `OPENROUTER_BASE_URL` \u83b7\u53d6\uff0cAPI Key \u901a\u8fc7\u73af\u5883\u53d8\u91cf `OPENROUTER_API_KEY` \u83b7\u53d6\uff09\u3002\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_9_repo_to_slides",
+    "maxTurns": 30,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    }
+  },
+  {
+    "id": "wc-c2-05_Creative_Synthesis_task_2_goal_highlights",
+    "tags": [
+      "wildclaw",
+      "wave-c2",
+      "video",
+      "creative",
+      "soft-only",
+      "no-docker-video"
+    ],
+    "name": "task_2_goal_highlights",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_2_goal_highlights.md",
+    "prompt": "This is a full first-half video of a La Liga match between Real Betis and FC Barcelona, located at `./first_half.mp4`.\n\nBased on this video, compile a **goal highlights reel for Barcelona's #7 Ferran Torres from the first half**.\n\n### Requirements\n\n1. Total highlights duration must be **30 seconds or less**\n2. Must include **all** of Ferran Torres's goals from the first half\n3. Each goal clip should cover the complete sequence from the start of the attacking play to the ball hitting the net\n4. **Do not include post-goal celebrations**\n5. Goal clips can be directly concatenated \u2014 no transition effects needed\n6. Maintain original video quality; do not add text, watermarks, or visual effects\n\n### Output Requirements\n\n- Save the highlights video as `./results/highlights.mp4`\n- Format: MP4 (H.264 encoding)\n- Also save a cut sheet file at `./results/cut_sheet.json` documenting each goal clip, in the following format:\n\n```json\n[\n  {\n    \"goal_number\": 1,\n    \"source_start\": \"MM:SS\",\n    \"source_end\": \"MM:SS\",\n    \"description\": \"Brief description\"\n  }\n]\n```\n\nWhere `source_start` and `source_end` are positions in the source video file in \"MM:SS\" format (e.g., \"17:50\" to \"18:02\").\n\nIf you need image/video understanding or multimodal capabilities, you can call the OpenRouter API (base_url available via the `OPENROUTER_BASE_URL` environment variable, API key available via the `OPENROUTER_API_KEY` environment variable).\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C2 video notes: If local video file is missing, state that and use any available fixture text/gt JSON. Write output under ./results/.\n\nNOTE: Full MP4 assets live in WildClaw Docker images and are intentionally skipped in this XClaw config. Use any local fixture files (images, pdf, gt JSON). If no media is present, state that clearly and write the best possible ./results/ output from the task text.",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_2_goal_highlights",
+    "maxTurns": 20,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    },
+    "notes": "Docker video binaries not required. Use local image/pdf/gt fixtures if present; otherwise document missing media and still write ./results/."
+  },
+  {
+    "id": "wc-c2-05_Creative_Synthesis_task_4_video_notes",
+    "tags": [
+      "wildclaw",
+      "wave-c2",
+      "video",
+      "creative",
+      "soft-only",
+      "no-docker-video"
+    ],
+    "name": "task_4_video_notes",
+    "source": "tasks/05_Creative_Synthesis/05_Creative_Synthesis_task_4_video_notes.md",
+    "prompt": "There's an LLM lecture video at `./video.mp4`. Can you watch it and put together study notes for me? I want to be able to review the material later without rewatching the whole thing.\n\nPlease watch this video carefully and produce a **comprehensive set of study notes** summarizing its content.\n\n### Output Requirements\n\n- Save the notes as `./results/notes.md`\n- Format: Markdown\n- Length: at least 800 words, no more than 3000 words\n\nIf you need video understanding or multimodal capabilities, you can call the OpenRouter API (base_url available via the `OPENROUTER_BASE_URL` environment variable, API key available via the `OPENROUTER_API_KEY` environment variable).\n\n---\nXClaw harness notes:\n- Workspace is the current working directory. Prefer relative paths under results/.\n- Tools: xclaw_bash, xclaw_file_*, xclaw_web_*, xclaw_browser_tab, xclaw_mail_inbox, xclaw_mail_read, xclaw_mail_send, xclaw_chat_list.\n- Do not ask the user to perform steps you can do with tools.\n- When finished, ensure required output files exist under results/ when the task asks for saved files.\n\n\nWave C2 video notes: If local video file is missing, state that and use any available fixture text/gt JSON. Write output under ./results/.\n\nNOTE: Full MP4 assets live in WildClaw Docker images and are intentionally skipped in this XClaw config. Use any local fixture files (images, pdf, gt JSON). If no media is present, state that clearly and write the best possible ./results/ output from the task text.",
+    "fixture": "wc/wc-05_Creative_Synthesis-task_4_video_notes",
+    "maxTurns": 20,
+    "timeoutMs": 600000,
+    "expect": {
+      "soft": true,
+      "success": [
+        {
+          "type": "file_exists",
+          "path": "results"
+        }
+      ]
+    },
+    "notes": "Docker video binaries not required. Use local image/pdf/gt fixtures if present; otherwise document missing media and still write ./results/."
+  }
+]
