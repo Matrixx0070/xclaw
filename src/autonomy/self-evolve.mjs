@@ -161,17 +161,22 @@ export async function handsFreeStatus(cfg) {
  */
 export async function runEvolutionTick(cfg, opts = {}) {
   // Ensure background queue worker runs even without full gateway
-  try {
-    if ((cfg.evolve || cfg.autonomy?.evolve || {}).queueWorker !== false) {
-      startQueueWorker(cfg);
-    }
-  } catch {
-    /* */
-  }
   const status = await handsFreeStatus(cfg);
   const evolve = cfg.evolve || cfg.autonomy?.evolve || {};
   const actions = [];
   const level = status.level;
+
+  try {
+    if (evolve.queueWorker !== false) {
+      startQueueWorker(cfg);
+    }
+  } catch (err) {
+    actions.push({
+      type: "queue_worker_error",
+      code: "QUEUE_WORKER_START_FAILED",
+      error: err?.message || String(err),
+    });
+  }
 
   // Auto-resume interrupted mid-run jobs (hands-free recovery)
   const autoResume =
@@ -194,17 +199,41 @@ export async function runEvolutionTick(cfg, opts = {}) {
         const job = await resumeJobFromCheckpoint(cfg, c.id, {
           onEvent: opts.onEvent,
         });
-        actions.push({
-          type: "resume",
-          id: c.id,
-          newId: job.id,
-          pass: job.pass,
-          recoveryKind: job.recoveryKind,
-        });
+        if (job.note && !job.resumed && job.resumed !== undefined) {
+          actions.push({
+            type: "resume_skipped",
+            id: c.id,
+            note: job.note,
+            code: job.code || null,
+            error: job.error || null,
+          });
+        } else if (job.code && job.pass === false && !job.recoveryKind && job.note) {
+          actions.push({
+            type: "resume_skipped",
+            id: c.id,
+            note: job.note,
+            code: job.code,
+            error: job.error || null,
+          });
+        } else {
+          actions.push({
+            type: job.pass === false && job.code === "CHECKPOINT_RESUME_AGENT_FAILED"
+              ? "resume_error"
+              : "resume",
+            id: c.id,
+            newId: job.id,
+            pass: job.pass,
+            recoveryKind: job.recoveryKind || null,
+            code: job.code || null,
+            error: job.error || null,
+            note: job.note || null,
+          });
+        }
       } catch (err) {
         actions.push({
           type: "resume_error",
           id: c.id,
+          code: err?.code || "RESUME_EXCEPTION",
           error: err?.message || String(err),
         });
       }
