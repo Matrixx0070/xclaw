@@ -21,9 +21,10 @@ const LEVELS = new Set(["off", "supervised", "lab", "full"]);
  * @returns {AutonomyLevel}
  */
 export function resolveAutonomyLevel(cfg = {}) {
+  // Env wins (ops override), same pattern as XCLAW_PROFILE
   const raw = String(
-    cfg.autonomy?.level ||
-      process.env.XCLAW_AUTONOMY_LEVEL ||
+    process.env.XCLAW_AUTONOMY_LEVEL ||
+      cfg.autonomy?.level ||
       ""
   )
     .toLowerCase()
