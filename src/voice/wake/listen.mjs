@@ -68,10 +68,48 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
     cycles += 1;
     onEvent({ type: "listen.cycle", cycles, hits });
 
-    const wake = await probeWakeOnce(cfg, {
-      seconds: c.recordSeconds,
-      energyThreshold: c.energyThreshold,
-    });
+    // Optional VAD-based wake capture (voice.vad.wake === true)
+    let wake;
+    const wakeVad = cfg.voice?.vad?.wake === true || opts.wakeVad === true;
+    if (wakeVad) {
+      const cap = await recordUntilEndpoint({
+        cfg,
+        sampleRate: c.sampleRate,
+        threshold: c.energyThreshold,
+        maxMs: (c.recordSeconds || 2) * 1000 + 1500,
+        silenceMs: cfg.voice?.vad?.wakeSilenceMs || 350,
+        prerollMs: cfg.voice?.vad?.wakePrerollMs || 3000,
+      });
+      if (cap.ok && cap.path) {
+        const { localTranscribe } = await import("../providers/local.mjs");
+        const { matchWakePhrase } = await import("./index.mjs");
+        const tr = await localTranscribe(cap.path, cfg);
+        const match = matchWakePhrase(tr.text || "", c.phrases);
+        wake = {
+          ok: true,
+          aboveThreshold: true,
+          hit: match.hit,
+          phrase: match.phrase,
+          transcript: match.transcript || tr.text,
+          energy: cap.energyPeak,
+          path: cap.path,
+          stage: "vad_wake",
+        };
+      } else {
+        wake = {
+          ok: true,
+          aboveThreshold: false,
+          hit: false,
+          reason: cap.reason || "no_speech",
+          energy: cap.energyPeak || 0,
+        };
+      }
+    } else {
+      wake = await probeWakeOnce(cfg, {
+        seconds: c.recordSeconds,
+        energyThreshold: c.energyThreshold,
+      });
+    }
 
     if (stopped) break;
 
