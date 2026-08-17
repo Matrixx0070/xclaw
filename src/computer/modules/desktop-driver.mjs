@@ -1,36 +1,33 @@
 /**
- * I5 — DesktopDriver (OS GUI outside the browser).
+ * I5 / I5b — DesktopDriver (OS GUI outside the browser).
  *
- * Integrates with the computer plane; does NOT replace browser CDP path.
- * Default: fail closed. Opt-in via XCLAW_DESKTOP_GUI=1.
+ * Observe: Linux AT-SPI → structured elements (ref, role, name, bbox, cx, cy)
+ * Act:     Linux xdotool/ydotool when XCLAW_DESKTOP_GUI=1
  *
- * Linux: xdotool / ydotool when installed
- * Windows / macOS: stubs until native bindings land
- *
+ * Default fail-closed. Prefer browser CDP for web UIs.
  * Policy: tools → browser observe/act → desktop GUI (last resort)
  */
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 
 /**
- * @returns {{ platform: string, enabled: boolean, backend: string|null, tools: object }}
+ * @returns {{ platform: string, enabled: boolean, backend: string|null, tools: object, cuaOrder: string }}
  */
 export function probeDesktopDriver(env = process.env) {
-  const platform = os.platform(); // linux | win32 | darwin
+  const platform = os.platform();
   const enabled = env.XCLAW_DESKTOP_GUI === "1" || env.XCLAW_DESKTOP_GUI === "true";
   const forced = env.XCLAW_DESKTOP_BACKEND || null;
   return {
     platform,
     enabled,
     backend: forced,
-    tools: {
-      xdotool: null, // filled async by whichDesktopTools
-      ydotool: null,
-    },
+    tools: { xdotool: null, ydotool: null },
     cuaOrder: "tools_first_then_browser_then_desktop",
   };
 }
@@ -53,13 +50,73 @@ export async function whichDesktopTools() {
   return { xdotool, ydotool };
 }
 
+function atspiScriptPath() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(here, "../../../scripts/desktop-atspi-observe.py");
+}
+
 /**
- * @param {object} input
- * @param {string} [input.action] click|type|key|mousemove
- * @param {number} [input.x]
- * @param {number} [input.y]
- * @param {string} [input.text]
- * @param {string} [input.key]
+ * Linux AT-SPI accessibility snapshot (structured observe).
+ * Does not require XCLAW_DESKTOP_GUI (read-only tree).
+ */
+export async function runDesktopObserve(input = {}, env = process.env) {
+  const probe = probeDesktopDriver(env);
+  if (probe.platform !== "linux") {
+    return {
+      ok: false,
+      error: `desktop observe (AT-SPI) only on Linux (got ${probe.platform})`,
+      code: "DESKTOP_OBSERVE_UNSUPPORTED_OS",
+      platform: probe.platform,
+    };
+  }
+
+  const script = atspiScriptPath();
+  const args = [script];
+  if (input.app) args.push("--app", String(input.app));
+  if (input.max) args.push("--max", String(Number(input.max) || 40));
+
+  try {
+    const { stdout, stderr } = await execFileAsync("python3", args, {
+      timeout: 12000,
+      env: { ...process.env, ...env },
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    const raw = String(stdout || "").trim();
+    if (!raw) {
+      return { ok: false, error: stderr || "empty AT-SPI output", code: "ATSPI_EMPTY" };
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {
+        ok: false,
+        error: "invalid JSON from AT-SPI helper",
+        code: "ATSPI_BAD_JSON",
+        raw: raw.slice(0, 200),
+      };
+    }
+  } catch (e) {
+    const msg = e?.message || String(e);
+    if (e?.stdout) {
+      try {
+        return JSON.parse(String(e.stdout));
+      } catch {
+        /* fall through */
+      }
+    }
+    if (/No such file|ENOENT/i.test(msg)) {
+      return {
+        ok: false,
+        error: "python3 or AT-SPI helper missing",
+        code: "ATSPI_HELPER_MISSING",
+      };
+    }
+    return { ok: false, error: msg, code: "ATSPI_EXEC_FAILED" };
+  }
+}
+
+/**
+ * Opt-in OS input injection (Linux xdotool/ydotool).
  */
 export async function runDesktopAct(input = {}, env = process.env) {
   const probe = probeDesktopDriver(env);
@@ -74,11 +131,6 @@ export async function runDesktopAct(input = {}, env = process.env) {
     };
   }
 
-  const tools = await whichDesktopTools();
-  const backend =
-    probe.backend ||
-    (tools.xdotool ? "xdotool" : tools.ydotool ? "ydotool" : null);
-
   if (probe.platform !== "linux") {
     return {
       ok: false,
@@ -87,6 +139,10 @@ export async function runDesktopAct(input = {}, env = process.env) {
       platform: probe.platform,
     };
   }
+
+  const tools = await whichDesktopTools();
+  const backend =
+    probe.backend || (tools.xdotool ? "xdotool" : tools.ydotool ? "ydotool" : null);
 
   if (!backend) {
     return {
@@ -109,14 +165,17 @@ export async function runDesktopAct(input = {}, env = process.env) {
         return { ok: false, error: "desktop click requires x,y", code: "DESKTOP_NEED_COORDS" };
       }
       if (backend === "xdotool") {
-        await execFileAsync(bin, ["mousemove", String(Math.round(x)), String(Math.round(y)), "click", "1"], {
-          timeout: 5000,
-        });
+        await execFileAsync(
+          bin,
+          ["mousemove", String(Math.round(x)), String(Math.round(y)), "click", "1"],
+          { timeout: 5000 }
+        );
       } else {
-        // ydotool: mousemove absolute then click
-        await execFileAsync(bin, ["mousemove", "--absolute", "-x", String(Math.round(x)), "-y", String(Math.round(y))], {
-          timeout: 5000,
-        });
+        await execFileAsync(
+          bin,
+          ["mousemove", "--absolute", "-x", String(Math.round(x)), "-y", String(Math.round(y))],
+          { timeout: 5000 }
+        );
         await execFileAsync(bin, ["click", "0xC0"], { timeout: 3000 });
       }
       return { ok: true, action: "click", backend, x, y, engine: "desktop-driver" };
@@ -135,11 +194,7 @@ export async function runDesktopAct(input = {}, env = process.env) {
     if (action === "key") {
       const key = String(input.key || "");
       if (!key) return { ok: false, error: "key required", code: "DESKTOP_NEED_KEY" };
-      if (backend === "xdotool") {
-        await execFileAsync(bin, ["key", key], { timeout: 5000 });
-      } else {
-        await execFileAsync(bin, ["key", key], { timeout: 5000 });
-      }
+      await execFileAsync(bin, ["key", key], { timeout: 5000 });
       return { ok: true, action: "key", key, backend, engine: "desktop-driver" };
     }
 
@@ -162,4 +217,5 @@ export default {
   probeDesktopDriver,
   whichDesktopTools,
   runDesktopAct,
+  runDesktopObserve,
 };

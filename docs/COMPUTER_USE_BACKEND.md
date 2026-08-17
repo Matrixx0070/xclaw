@@ -83,3 +83,18 @@ export XCLAW_DESKTOP_GUI=1   # required
 | DESKTOP_GUI_UNSUPPORTED_OS | win/mac stubs |
 
 Prefer **browser CDP** for web UIs. Desktop is last resort.
+
+
+## Desktop observe — AT-SPI (I5b)
+
+Linux accessibility tree → same shape as browser observe:
+
+```json
+{ "name": "xclaw_computer_act", "arguments": { "surface": "desktop", "action": "observe", "app": "Firefox", "max": 40 } }
+```
+
+Returns `elements[]` with `ref` (`d1`…), `role`, `name`, `bbox`, `cx`, `cy`.
+
+Requires `python3` + `pyatspi` (or `gir1.2-atspi-2.0`). Helper: `scripts/desktop-atspi-observe.py`.
+
+Not PyAutoGUI — structured a11y, not pixels. Act still needs `XCLAW_DESKTOP_GUI=1` + xdotool.

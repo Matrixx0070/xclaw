@@ -11,7 +11,7 @@
 
 import { createCdpClient } from "../../browser/cdp-client.mjs";
 import { planClick, planType, planScroll, executeSteps } from "../../browser/motor.mjs";
-import { runDesktopAct, probeDesktopDriver } from "./desktop-driver.mjs";
+import { runDesktopAct, runDesktopObserve, probeDesktopDriver } from "./desktop-driver.mjs";
 
 /** @type {Map<string, { elements: object[], at: number, url?: string }>} */
 const observeCache = new Map();
@@ -146,8 +146,20 @@ export async function runComputerAct(input = {}) {
     };
   }
 
-  // Desktop surface (opt-in) — last resort after tools/browser
+  // Desktop surface — observe (AT-SPI) or act (opt-in xdotool)
   if (input.surface === "desktop" || input.desktop === true) {
+    const a = String(input.action || "click").toLowerCase();
+    if (a === "observe") {
+      const obs = await runDesktopObserve(input);
+      if (obs?.ok && obs.elements) {
+        try {
+          cacheObserveResult(input.tabId || "desktop", obs);
+        } catch {
+          /* ignore */
+        }
+      }
+      return obs;
+    }
     return runDesktopAct(input);
   }
 
