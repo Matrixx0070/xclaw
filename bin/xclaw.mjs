@@ -905,6 +905,20 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         await runVoiceTui(cfg, { args: args.slice(2) });
         break;
       }
+      if (sub === "vad") {
+        const { probeVad, recordUntilEndpoint } = await import("../src/voice/vad.mjs");
+        if (args[2] === "once") {
+          const out = await recordUntilEndpoint({
+            cfg,
+            maxMs: Number(args[3]) || 5000,
+          });
+          console.log(JSON.stringify(out, null, 2));
+          process.exitCode = out.ok ? 0 : 1;
+          break;
+        }
+        console.log(JSON.stringify(probeVad(cfg), null, 2));
+        break;
+      }
       if (sub === "listen") {
         const { runVoiceListen } = await import("../src/voice/wake/listen.mjs");
         const noSpeak = args.includes("--no-speak");
@@ -937,7 +951,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         console.log(JSON.stringify(stack, null, 2));
         break;
       }
-      console.error("Usage: xclaw voice probe|speak|transcribe|once|tui|listen|wake-probe");
+      console.error("Usage: xclaw voice probe|speak|transcribe|once|tui|listen|wake-probe|vad");
       process.exit(1);
       break;
     }
