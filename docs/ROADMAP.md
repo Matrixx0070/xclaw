@@ -22,8 +22,8 @@ Honest scope: competitive production agent gateway. Not “one year ahead of the
 2. **OS sandbox default on prod** — **done**  
    Prod `osSandbox: auto`; `enforceProdHardening` forces `off`→`auto`; doctor probes `works=true|false`.
 
-3. **Eval regression as release gate**  
-   Expand `scripts/eval-regression.mjs` with 1–2 long-horizon job fixtures (verify + checkpoint) so CI fails on agent-loop regressions, not only unit packs.
+3. **Eval regression as release gate** — **done**  
+   `test/long-horizon-fixtures.test.mjs` (hello workspace + abs verify + checkpoint) in eval-regression + CI.
 
 4. **Computer-use depth**  
    Hybrid observe (screenshot + a11y/DOM where available); reduce pure-coordinate fragility on dynamic UIs.
