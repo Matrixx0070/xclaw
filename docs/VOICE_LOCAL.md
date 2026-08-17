@@ -251,3 +251,16 @@ Doctor: `voice.vad` shows open/close thresholds.
 - **Hangover**: require N consecutive open frames before locking speech
 - **Auto-calibrate**: first ~300 ms median noise floor × 3.5 → open threshold
 - CLI: `xclaw voice vad` · `xclaw voice vad once` (live endpoint test)
+
+
+## Binary PCM on `/ws/voice`
+
+```text
+→ { "type": "pcm_start", "sampleRate": 16000, "channels": 1 }
+→ (binary frames: S16_LE mono PCM chunks)
+→ { "type": "pcm_end" }
+← { "type": "event", "event": "transcript", "text": "..." }
+← { "type": "reply", "text": "..." }
+```
+
+Max buffer ~30s. Gateway runs local STT then the same utterance/agent path as JSON text.
