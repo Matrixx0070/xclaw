@@ -50,3 +50,21 @@ List jobs: `GET /cron/jobs`
 - **Swarm** — `POST /swarm/run/stream` DAG with implement → verify
 
 Doctor reports `autonomy.level` and `autonomy.heartbeat`.
+
+
+## Prod hardening
+
+When `profile=prod` (or `XCLAW_PROFILE=prod`), load-time **enforceProdHardening** prevents a shared lab config file from disabling safety:
+
+| Setting | Forced on prod |
+|---------|----------------|
+| `security.autoApprove` | `false` |
+| `approvalPolicy: never` | → `risky` |
+| `autonomy.level` `lab`/`full` | → `supervised` (unless `XCLAW_AUTONOMY_LEVEL` set) |
+| `swarm.autoMerge` | `false` |
+
+Break-glass: `XCLAW_ALLOW_PROD_AUTO=1`.
+
+`XCLAW_AUTONOMY_LEVEL` **overrides** `autonomy.level` in the config file (same idea as `XCLAW_PROFILE`).
+
+Doctor reports `prod.hardening` when actions were applied.
