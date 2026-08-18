@@ -1,0 +1,26 @@
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
+ import path from "node:path";
+ import fs from "node:fs/promises";
+ import { fileURLToPath } from "node:url";
++import { ensureColdStartReport } from "../src/ops/ensure-cold-start.mjs";
+ 
+ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+ const args = process.argv.slice(2);
+@@ -166,6 +167,14 @@ await step("bundle-markers", async () => {
+   return { code: 0, detail: markers };
+ }, { required: false });
+ 
++if (strict) {
++  await step("ensure-cold-start", async () => {
++    const ensured = ensureColdStartReport({}, { root });
++    console.log(JSON.stringify({ wrote: ensured.wrote, reason: ensured.reason, path: ensured.path }, null, 2));
++    return { code: ensured.report ? 0 : 1, detail: ensured };
++  }, { required: true });
++}
++
+ if (live) {
+   await step("live-enforcement", async () => {
+     const r = await run(
