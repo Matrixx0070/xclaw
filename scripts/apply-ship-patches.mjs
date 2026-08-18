@@ -106,6 +106,13 @@ const SHIP_PATCHES = [
       return t.includes("createLiveStreamWriter");
     },
   },
+  {
+    file: "record-job-cost-attribution.patch",
+    isApplied: (rootDir) => {
+      const t = read(rootDir, "src/tokens/cost-governor.mjs");
+      return t.includes("stampJobCostEvent");
+    },
+  },
 ];
 
 function read(rootDir, rel) {
