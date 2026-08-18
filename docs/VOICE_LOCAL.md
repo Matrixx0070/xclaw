@@ -264,3 +264,21 @@ Doctor: `voice.vad` shows open/close thresholds.
 ```
 
 Max buffer ~30s. Gateway runs local STT then the same utterance/agent path as JSON text.
+
+
+## Opus on `/ws/voice` (O1)
+
+```text
+→ { "type": "opus_start", "sampleRate": 16000, "container": "packets" }
+→ binary Opus packets (one packet per frame)
+→ { "type": "opus_end" }
+```
+
+`container: "ogg"` — binary frames are Ogg/Opus bytes (ffmpeg decode).
+
+Decoders (first hit wins): `opusscript` → `@discordjs/opus` → `ffmpeg` (ogg).
+
+```bash
+xclaw voice opus    # probe backends
+npm i opusscript    # optional packet decoder
+```
