@@ -1,0 +1,17 @@
+diff --git a/src/cli/doctor.mjs b/src/cli/doctor.mjs
+--- a/src/cli/doctor.mjs
++++ b/src/cli/doctor.mjs
+@@ -177,6 +177,13 @@
+     push("security.killSwitch", "warn", e.message || String(e));
+   }
+ 
++  try {
++    const { pushPerfChecks } = await import("./doctor-perf-checks.mjs");
++    pushPerfChecks(push, cfg);
++  } catch (e) {
++    push("ops.perf", "warn", e.message || String(e));
++  }
++
+   // F — prod honesty (defaults must match the label)
+   try {
+     const { prodHonestyChecks } = await import("./doctor-prod-honesty.mjs");
