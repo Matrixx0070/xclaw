@@ -100,7 +100,7 @@ export async function runClaimsGateWithSoftRetry(ctx = {}) {
         });
       }
     } catch (retryErr) {
-      evidence?.add?({
+      evidence?.add?.({
         source: "system",
         summary: `claims soft retry error: ${retryErr?.message || retryErr}`,
       });
