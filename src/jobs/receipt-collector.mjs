@@ -16,6 +16,7 @@ export function createReceiptCollector(seed = {}) {
       remaining: seed.claimsSoftRetry?.remaining ?? 0,
       attempts: seed.claimsSoftRetry?.attempts || [],
     },
+    quotaHardCircuit: seed.quotaHardCircuit || null,
   };
 }
 
@@ -23,6 +24,9 @@ export function copyCollectorOntoJob(job, collector) {
   if (!job || !collector) return job;
   if (collector.quotaEscalate) job.quotaEscalate = collector.quotaEscalate;
   if (collector.claimsSoftRetry) job.claimsSoftRetry = collector.claimsSoftRetry;
+  if (collector.quotaHardCircuit || job.quotaHardCircuit) {
+    job.quotaHardCircuit = job.quotaHardCircuit || collector.quotaHardCircuit;
+  }
   return job;
 }
 
