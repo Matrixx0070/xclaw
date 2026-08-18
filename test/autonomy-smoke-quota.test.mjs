@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { summarizeQuotaEscalate } from "../src/eval/autonomy-smoke-quota.mjs";
+import { summarizeQuotaEscalate, emptyQuotaEscalate } from "../src/eval/autonomy-smoke-quota.mjs";
 import { writeAutonomySmokeArtifact } from "../src/eval/autonomy-smoke-artifact.mjs";
 
 describe("smoke quotaEscalate", () => {
@@ -23,6 +23,13 @@ describe("smoke quotaEscalate", () => {
       quotaEscalate: { jobs: 2, hardBlocks: 1, hardBlockRate: 0.5 },
     });
     assert.equal(payload.quotaEscalate.hardBlockRate, 0.5);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("always stamps zeroed quotaEscalate offline", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-sqz-"));
+    const { payload } = writeAutonomySmokeArtifact(root, { status: 0 });
+    assert.deepEqual(payload.quotaEscalate, emptyQuotaEscalate());
     fs.rmSync(root, { recursive: true, force: true });
   });
 });
