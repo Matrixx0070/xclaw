@@ -37,6 +37,13 @@ export async function pushDoctorOpsBundle(push, cfg = {}, opts = {}) {
   }
 
   try {
+    const { pushStopAuthChecks } = await import("./doctor-stop-auth.mjs");
+    pushStopAuthChecks(push, cfg);
+  } catch (e) {
+    push("gateway.stopAuth", "warn", e.message || String(e));
+  }
+
+  try {
     const { pushSmokeCompareChecks } = await import("./doctor-smoke-compare.mjs");
     pushSmokeCompareChecks(push, opts.root || process.cwd());
   } catch (e) {
