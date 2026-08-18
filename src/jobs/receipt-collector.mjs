@@ -30,4 +30,41 @@ export function copyCollectorOntoJob(job, collector) {
   return job;
 }
 
-export default { createReceiptCollector, copyCollectorOntoJob };
+/**
+ * Ensure hard-circuit survives mid-loop abort / force-stop history writes.
+ * Sources: job, collector, receiptMetrics, agentResult.
+ */
+export function ensureQuotaHardCircuitOnJob(job) {
+  if (!job || typeof job !== "object") return job;
+  const sources = [
+    job.quotaHardCircuit,
+    job.receiptCollector?.quotaHardCircuit,
+    job.collector?.quotaHardCircuit,
+    job.receiptMetrics?.quotaHardCircuit,
+    job.agentResult?.quotaHardCircuit,
+  ].filter(Boolean);
+  const trip = sources.find((s) => s && s.tripped);
+  if (trip) job.quotaHardCircuit = { ...trip, tripped: true };
+  else if (sources[0]) job.quotaHardCircuit = sources[0];
+  if (!job.quotaHardCircuit?.tripped) {
+    const q = job.quotaEscalate || job.receiptCollector?.quotaEscalate || {};
+    const hard = Number(q.hardBlocks) || 0;
+    const limit = Number(job.quotaHardCircuit?.limit || q.limit || 3);
+    if (hard >= limit && hard > 0) {
+      job.quotaHardCircuit = {
+        tripped: true,
+        hardBlocks: hard,
+        limit,
+        at: new Date().toISOString(),
+        synthesized: true,
+      };
+    }
+  }
+  return job;
+}
+
+export default {
+  createReceiptCollector,
+  copyCollectorOntoJob,
+  ensureQuotaHardCircuitOnJob,
+};
