@@ -23,14 +23,24 @@ diff --git a/bin/xclaw.mjs b/bin/xclaw.mjs
      case "stop-all":
      case "kill-all": {
        const { loadConfig } = await import("../src/config/load.mjs");
-@@ -2875,6 +2890,7 @@ Commands:
+@@ -2875,6 +2890,8 @@ Commands:
    status [--json]      Gateway + computer + active sessions
    doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
    self-test            Fast unit smoke (autonomy, sandbox, fabric, …)
-+  stop                Kill-switch help / --sign / --dry-run
++  stop [--sign]        Kill-switch help / sign / dry-run (see xclaw stop --help)
++  stop-sign            Alias for stop --sign
    stop-all             Abort agent sessions + stop computer
    automations          list|add|pause|resume|run|results|delete
    providers            list | setup (wizard) | set | oauth | use [X] [model]
+@@ -2903,6 +2920,8 @@ Examples:
+   xclaw gateway
+   # open http://127.0.0.1:18790/chat/
+ 
++  xclaw stop --help
++  xclaw stop --sign --dry-run
+   xclaw stop-all
+   xclaw run --ndjson "List files in /tmp"
+ 
 diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
 --- a/scripts/release-gate.mjs
 +++ b/scripts/release-gate.mjs
