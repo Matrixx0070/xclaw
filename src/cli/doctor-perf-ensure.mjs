@@ -15,5 +15,14 @@ export async function pushPerfChecksEnsured(push, cfg = {}) {
   pushPerfChecks(push, cfg);
 }
 
+export async function collectDoctorPerfChecks(cfg = {}) {
+  const checks = [];
+  await pushPerfChecksEnsured(
+    (id, status, message) => checks.push({ id, status, message }),
+    cfg
+  );
+  return { checks, coldStart: checks.find((c) => c.id === "ops.cold_start") || null };
+}
+
 export { lastColdStartPath };
-export default { pushPerfChecksEnsured };
+export default { pushPerfChecksEnsured, collectDoctorPerfChecks };
