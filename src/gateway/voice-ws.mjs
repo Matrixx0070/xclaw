@@ -25,7 +25,7 @@
  */
 
 import crypto from "node:crypto";
-import { encodeTextFrame, createFrameParser } from "./ws-hub.mjs";
+import { encodeTextFrame, encodeBinaryFrame, createFrameParser } from "./ws-hub.mjs";
 import { createEntente } from "../voice/entente.mjs";
 import { localSpeak } from "../voice/providers/local.mjs";
 
@@ -99,6 +99,7 @@ export function attachVoiceWebSocket(server, opts = {}) {
       busy: false,
       pcm: null, // { sampleRate, channels, chunks: Buffer[], bytes }
       opus: null, // { sampleRate, channels, container, packets: Buffer[], bytes }
+      preferOpusReply: false,
     };
     sessions.set(sessionId, state);
 
@@ -108,6 +109,7 @@ export function attachVoiceWebSocket(server, opts = {}) {
       path,
       pcm: { codec: "s16le", sampleRate: 16000, channels: 1 },
       opus: { codecs: ["opus"], containers: ["packets", "ogg"], sampleRate: 16000 },
+      opusReply: true,
       at: new Date().toISOString(),
     });
 
@@ -145,6 +147,75 @@ export function attachVoiceWebSocket(server, opts = {}) {
     sessions,
     clientCount: () => sessions.size,
   };
+}
+
+/**
+ * Speak text, optionally encode TTS WAV→Opus and push binary packets after reply JSON.
+ */
+async function sendReplyWithOptionalOpus(state, cfg, payload) {
+  const { socket } = state;
+  const text = payload.text || "";
+  let tts = payload.tts || null;
+  let opusReply = null;
+
+  if (payload.speak !== false && text && !tts) {
+    tts = await localSpeak(String(text).slice(0, 400), cfg);
+  }
+
+  if (
+    state.preferOpusReply &&
+    tts?.ok &&
+    tts.path
+  ) {
+    try {
+      const fs = await import("node:fs/promises");
+      const { wavToPcm, encodePcmToOpusPackets } = await import(
+        "../voice/opus-encode.mjs"
+      );
+      const wav = await fs.readFile(tts.path);
+      const pcm = wavToPcm(wav);
+      const enc = await encodePcmToOpusPackets(pcm, { sampleRate: 16000 });
+      if (enc.ok && enc.packets?.length) {
+        opusReply = {
+          ok: true,
+          provider: enc.provider,
+          packets: enc.packets.length,
+          frameMs: enc.frameMs || 20,
+        };
+        sendJson(socket, {
+          type: "reply",
+          ...payload,
+          text,
+          tts: tts?.ok ? { path: tts.path, provider: tts.provider } : null,
+          opus: opusReply,
+        });
+        sendJson(socket, {
+          type: "event",
+          event: "opus_reply_start",
+          packets: enc.packets.length,
+        });
+        for (const pkt of enc.packets) {
+          try {
+            socket.write(encodeBinaryFrame(pkt));
+          } catch {
+            break;
+          }
+        }
+        sendJson(socket, { type: "event", event: "opus_reply_end" });
+        return;
+      }
+    } catch {
+      /* fall through to plain reply */
+    }
+  }
+
+  sendJson(socket, {
+    type: "reply",
+    ...payload,
+    text,
+    tts: tts?.ok ? { path: tts.path, provider: tts.provider } : null,
+    opus: null,
+  });
 }
 
 async function handleClientMessage(state, body, cfg) {
@@ -193,16 +264,11 @@ async function handleClientMessage(state, body, cfg) {
       ) {
         const reply = classified.reply || classified.intent.kind;
         entente.setLastSpoken(reply);
-        let tts = null;
-        if (body.speak !== false) {
-          tts = await localSpeak(String(reply).slice(0, 400), cfg);
-        }
-        sendJson(socket, {
-          type: "reply",
+        await sendReplyWithOptionalOpus(state, cfg, {
           command: true,
           intent: classified.intent.kind,
           text: reply,
-          tts: tts?.ok ? { path: tts.path, provider: tts.provider } : null,
+          speak: body.speak,
           sessionId,
         });
         return;
@@ -224,15 +290,10 @@ async function handleClientMessage(state, body, cfg) {
         reply = `Error: ${e.message || e}`;
       }
       entente.setLastSpoken(reply);
-      let tts = null;
-      if (body.speak !== false && reply) {
-        tts = await localSpeak(reply.slice(0, 400), cfg);
-      }
-      sendJson(socket, {
-        type: "reply",
+      await sendReplyWithOptionalOpus(state, cfg, {
         command: false,
         text: reply,
-        tts: tts?.ok ? { path: tts.path, provider: tts.provider } : null,
+        speak: body.speak,
         sessionId,
       });
     } finally {
