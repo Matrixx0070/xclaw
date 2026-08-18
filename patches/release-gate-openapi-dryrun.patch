@@ -1,0 +1,17 @@
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -140,6 +140,16 @@ await step("a-enforcement", async () => {
+     return { code: r.code };
+   }, { required: true });
+ 
++  await step("openapi-stop-dryrun", async () => {
++    const { checkOpenapiStopContract } = await import("../src/ci/openapi-stop-contract.mjs");
++    const r = checkOpenapiStopContract(root);
++    if (!r.ok) {
++      console.error("[release-gate] OpenAPI /stop missing", (r.missing || []).join(",") || r.error);
++    }
++    return { code: r.ok ? 0 : 1 };
++  }, { required: Boolean(strict) });
++
+   await step("bundle-markers", async () => {
