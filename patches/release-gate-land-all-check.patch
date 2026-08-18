@@ -1,0 +1,27 @@
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -14,6 +14,7 @@
+ import { spawn } from "node:child_process";
+ import path from "node:path";
+ import fs from "node:fs/promises";
++import fsSync from "node:fs";
+ import { fileURLToPath } from "node:url";
+ import { ensureColdStartReport } from "../src/ops/ensure-cold-start.mjs";
+ 
+@@ -177,6 +178,15 @@ if (strict) {
+     );
+     return { code: ensured.report ? 0 : 1, detail: ensured };
+   }, { required: true });
++
++  await step("land-all-check", async () => {
++    const script = fsSync.existsSync(path.join(root, "scripts/land-all.mjs"))
++      ? "scripts/land-all.mjs"
++      : "scripts/land-batch5.mjs";
++    const r = await run(process.execPath, [script, "--check"], { quiet: true });
++    console.log((r.out + r.err).slice(-500));
++    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
++  }, { required: true });
+ }
+ 
+ if (live) {
