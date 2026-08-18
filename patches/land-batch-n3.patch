@@ -1,0 +1,309 @@
+diff --git a/bin/xclaw.mjs b/bin/xclaw.mjs
+--- a/bin/xclaw.mjs
++++ b/bin/xclaw.mjs
+@@ -1669,6 +1669,21 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
+       break;
+     }
+ 
++    case "stop":
++    case "stop-sign": {
++      const { printStopHelp } = await import("../src/cli/stop-help.mjs");
++      if (args.includes("--help") || args.includes("-h") || (cmd === "stop" && args.length === 0)) {
++        printStopHelp();
++        break;
++      }
++      if (cmd === "stop-sign" || args.includes("--sign")) {
++        const { stopSignMain } = await import("../src/cli/stop-sign.mjs");
++        await stopSignMain(args);
++        break;
++      }
++      printStopHelp();
++      break;
++    }
+     case "stop-all":
+     case "kill-all": {
+       const { loadConfig } = await import("../src/config/load.mjs");
+@@ -2875,6 +2890,8 @@ Commands:
+   status [--json]      Gateway + computer + active sessions
+   doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
+   self-test            Fast unit smoke (autonomy, sandbox, fabric, …)
++  stop [--sign]        Kill-switch help / sign / dry-run (see xclaw stop --help)
++  stop-sign            Alias for stop --sign
+   stop-all             Abort agent sessions + stop computer
+   automations          list|add|pause|resume|run|results|delete
+   providers            list | setup (wizard) | set | oauth | use [X] [model]
+diff --git a/docs/openapi-stop.yaml b/docs/openapi-stop.yaml
+--- a/docs/openapi-stop.yaml
++++ b/docs/openapi-stop.yaml
+@@ -5,6 +5,8 @@ info:
+   description: |
+     Kill-switch contract. Operators: `xclaw stop --sign [--dry-run] [--print-curl]`.
+     CI: `node scripts/stop-fire-drill.mjs`.
++    Live dry-run: `xclaw stop --sign --dry-run --post`.
++    SSE/WS control share auth; lastDrain.channel is http|ws|sse.
+ paths:
+   /health:
+     get:
+@@ -115,3 +117,10 @@ components:
+       type: apiKey
+       in: header
+       name: X-XClaw-Stop-Sig
++
++x-stop-channels:
++  description: lastDrain.channel enum
++  enum: [http, ws, sse]
++x-operator-cli:
++  - xclaw stop --sign --dry-run --post
++  - xclaw stop --sign --dry-run --post --url http://127.0.0.1:18790
+diff --git a/scripts/ci-ship-pack.mjs b/scripts/ci-ship-pack.mjs
+--- a/scripts/ci-ship-pack.mjs
++++ b/scripts/ci-ship-pack.mjs
+@@ -213,5 +213,25 @@ if (strict) {
+   log("strict: doctor clean");
+ }
+ 
++
++if (fs.existsSync(path.join(root, "scripts/land-batch-n1.mjs"))) {
++  log("land-batch-n1 --check");
++  const n1 = await run(process.execPath, ["scripts/land-batch-n1.mjs", "--check"]);
++  if (n1.code !== 0) {
++    log("land-batch-n1 NEED");
++    process.exit(n1.code || 1);
++  }
++  log("land-batch-n1 OK");
++}
++if (fs.existsSync(path.join(root, "scripts/land-batch-n2.mjs"))) {
++  log("land-batch-n2 --check");
++  const n2 = await run(process.execPath, ["scripts/land-batch-n2.mjs", "--check"]);
++  if (n2.code !== 0) {
++    log("land-batch-n2 NEED");
++    process.exit(n2.code || 1);
++  }
++  log("land-batch-n2 OK");
++}
++
+ log("SHIP PACK OK");
+ process.exit(0);
+diff --git a/scripts/land-kill-switch-wires.mjs b/scripts/land-kill-switch-wires.mjs
+--- a/scripts/land-kill-switch-wires.mjs
++++ b/scripts/land-kill-switch-wires.mjs
+@@ -27,6 +27,8 @@ const NEEDLES = [
+   ["src/jobs/job.mjs", "attachReceiptCollectorToJob"],
+   ["bin/xclaw.mjs", "printStopHelp"],
+   ["scripts/release-gate.mjs", "openapi-stop-dryrun"],
++  ["src/jobs/job.mjs", "ensureJobReceiptCollector"],
++  ["scripts/release-gate.mjs", "land-batch-n1-check"],
+ ];
+ 
+ const PATCHES = [
+@@ -47,6 +49,8 @@ const PATCHES = [
+   "patches/release-gate-stop-fire-drill.patch",
+   "patches/land-batch-n1.patch",
+   "patches/land-batch-n2.patch",
++  "patches/job-ensure-collector.patch",
++  "patches/release-gate-land-n1-n2.patch",
+ ];
+ 
+ function needList() {
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -141,6 +141,15 @@ await step("a-enforcement", async () => {
+   return { code: r.code, detail: (r.out + r.err).split("\n").slice(-5).join(" | ") };
+ }, { required: false });
+ 
++await step("openapi-stop-dryrun", async () => {
++    const { checkOpenapiStopContract } = await import("../src/ci/openapi-stop-contract.mjs");
++    const r = checkOpenapiStopContract(root);
++    if (!r.ok) {
++      console.error("[release-gate] OpenAPI /stop missing", (r.missing || []).join(",") || r.error);
++    }
++    return { code: r.ok ? 0 : 1 };
++  }, { required: Boolean(strict) });
++
+ await step("bundle-markers", async () => {
+   const bundlePath = path.join(root, "src/computer/xclaw-server.mjs");
+   let text = "";
+@@ -187,6 +196,28 @@ if (strict) {
+     console.log((r.out + r.err).slice(-500));
+     return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
+   }, { required: true });
++
++  await step("land-batch-n1-check", async () => {
++    const script = path.join(root, "scripts/land-batch-n1.mjs");
++    if (!fsSync.existsSync(script)) {
++      console.error("[release-gate] land-batch-n1.mjs missing");
++      return { code: 1, detail: "missing land-batch-n1.mjs" };
++    }
++    const r = await run(process.execPath, [script, "--check"], { quiet: true });
++    console.log((r.out + r.err).slice(-500));
++    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
++  }, { required: true });
++
++  await step("land-batch-n2-check", async () => {
++    const script = path.join(root, "scripts/land-batch-n2.mjs");
++    if (!fsSync.existsSync(script)) {
++      console.error("[release-gate] land-batch-n2.mjs missing");
++      return { code: 1, detail: "missing land-batch-n2.mjs" };
++    }
++    const r = await run(process.execPath, [script, "--check"], { quiet: true });
++    console.log((r.out + r.err).slice(-500));
++    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
++  }, { required: true });
+ }
+ 
+ if (live) {
+@@ -208,8 +239,19 @@ if (live) {
+   }, { required: Boolean(strict) });
+ }
+ 
++let stopSurface = null;
++try {
++  const { computeStopSurfaceVersion } = await import("../src/ci/stop-surface-version.mjs");
++  stopSurface = computeStopSurfaceVersion(root);
++  console.log("[release-gate] stopSurface", stopSurface.version);
++} catch (e) {
++  console.error("[release-gate] stopSurface stamp failed", e.message || e);
++}
++
+ const report = {
+   at: new Date().toISOString(),
++  stopSurface,
++
+   quick,
+   strict,
+   live,
+diff --git a/src/agent/loop.mjs b/src/agent/loop.mjs
+--- a/src/agent/loop.mjs
++++ b/src/agent/loop.mjs
+@@ -1220,6 +1220,25 @@ export async function runAgentLoop(options) {
+           onEvent({ type: "guard", ...verdict });
+         }
+ 
++        // Quota hard-block circuit: refuse further tools after N hard denies.
++        try {
++          const { guardToolAgainstHardCircuit } = await import("./quota-hard-circuit.mjs");
++          const circ = guardToolAgainstHardCircuit(options.job || options.receiptCollector);
++          if (circ && circ.ok === false) {
++            onEvent({ type: "security", phase: "quota_hard_circuit", reason: circ.reason });
++            messages.push(
++              makeToolMessage({
++                tool_call_id: call.id,
++                content: circ.message || "QUOTA_HARD_CIRCUIT",
++                source: "quota_circuit",
++              })
++            );
++            return "stop";
++          }
++        } catch {
++          /* circuit optional */
++        }
++
+         // Security: allowlist + optional human approval.
+         // Bind the plan against this run's workingDir — the shared gate's
+         // planRoot is the gateway's process.cwd(), and a plan pinned there
+@@ -1230,6 +1249,7 @@ export async function runAgentLoop(options) {
+             : args;
+         const auth = await approvalGate.authorize(name, authArgs, {
+           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
++          job: options.job || options.receiptCollector || null,
+           // risk scope must resolve against THIS run's workspace (session dir
+           // or mission worktree), not the gateway's cwd — without this, file
+           // tools' targets scoped against the wrong root (live blind spot)
+diff --git a/src/ci/release-gate-strict-extras.mjs b/src/ci/release-gate-strict-extras.mjs
+--- a/src/ci/release-gate-strict-extras.mjs
++++ b/src/ci/release-gate-strict-extras.mjs
+@@ -71,6 +71,15 @@ export const RELEASE_GATE_STRICT_EXTRA_TESTS = [
+   "test/openapi-stop-contract.test.mjs",
+   "test/stop-help.test.mjs",
+   "test/land-batch-n2.test.mjs",
++  "test/doctor-channel.test.mjs",
++  "test/job-ensure-collector.test.mjs",
++  "test/stop-sign-post.test.mjs",
++  "test/stop-sign-offline.test.mjs",
++  "test/release-gate-land-n1.test.mjs",
++  "test/stop-docs-lockstep.test.mjs",
++  "test/stop-help-list.test.mjs",
++  "test/stop-channel-assert.test.mjs",
++  "test/stop-surface-version.test.mjs",
+ ];
+ 
+ export function listStrictExtraTests(root) {
+diff --git a/src/cli/stop-sign.mjs b/src/cli/stop-sign.mjs
+--- a/src/cli/stop-sign.mjs
++++ b/src/cli/stop-sign.mjs
+@@ -105,9 +105,14 @@ export async function postStopSigned(signed, opts = {}) {
+       killedSessions: json?.killedSessions || [],
+     };
+   } catch (e) {
++    const msg = e.name === "AbortError" ? "timeout" : e.message || String(e);
++    const offline =
++      /ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|fetch failed|network/i.test(msg) ||
++      msg === "timeout";
+     return {
+       ok: false,
+-      error: e.name === "AbortError" ? "timeout" : e.message || String(e),
++      error: offline ? (msg === "timeout" ? "timeout" : "gateway_offline") : msg,
++      code: offline ? (msg === "timeout" ? "STOP_POST_TIMEOUT" : "GATEWAY_OFFLINE") : "STOP_POST_FAILED",
+     };
+   } finally {
+     clearTimeout(timer);
+@@ -164,9 +169,14 @@ export async function stopSignMain(args = [], loadConfigFn) {
+     r.post = live;
+     if (!live.ok) {
+       r.ok = false;
+-      process.exitCode = 1;
++      // 2 = offline/timeout, 1 = auth/protocol failure
++      process.exitCode = live.code === "GATEWAY_OFFLINE" || live.code === "STOP_POST_TIMEOUT" ? 2 : 1;
++      if (live.code === "GATEWAY_OFFLINE") {
++        console.error("[xclaw] stop --post: gateway offline (ECONNREFUSED / unreachable)");
++      } else if (live.code === "STOP_POST_TIMEOUT") {
++        console.error("[xclaw] stop --post: gateway timeout");
++      }
+     } else if (dryRun && live.dryRun !== true) {
+-      // Prefer explicit dryRun response when requesting dry-run
+       r.ok = false;
+       process.exitCode = 1;
+       r.postError = "expected dryRun:true in gateway response";
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -11,6 +11,7 @@ import { runVerifyChecks } from "./verify.mjs";
+ import { recordJob } from "./history.mjs";
+ import { stampJobToolHash } from "./stamp-tool-hash.mjs";
+ import { rememberJob } from "../memory/durable.mjs";
++import { attachReceiptCollectorToJob, ensureJobReceiptCollector } from "./finalize-receipt.mjs";
+ import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
+ import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
+ import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
+@@ -124,6 +125,10 @@ export async function runJob(opts) {
+   let verifyResult = null;
+   let error = null;
+   const midToolTrace = [];
++  const receiptCollector = ensureJobReceiptCollector(
++    { id },
++    opts.receiptCollector || opts.collector || {}
++  );
+ 
+   const ac = new AbortController();
+   const onAbort = () => ac.abort();
+@@ -142,6 +147,8 @@ export async function runJob(opts) {
+ 
+   try {
+     agentResult = await runAgentLoop({
++      receiptCollector,
++      job: { id, receiptCollector },
+       userMessage: goal,
+       cfg: jobCfg,
+       workingDir: workspace,
+@@ -301,6 +308,11 @@ export async function runJob(opts) {
+     events: events.filter((e) => e.type === "job" || e.type === "guard" || e.type === "retry"),
+   };
+   stampJobToolHash(job);
++  job.receiptCollector = job.receiptCollector || receiptCollector;
++  attachReceiptCollectorToJob(job, {
++    agentResult,
++    collector: receiptCollector,
++  });
+ 
+   push({ type: "job", phase: "end", id, status, pass: job.pass, wallMs: job.wallMs });
