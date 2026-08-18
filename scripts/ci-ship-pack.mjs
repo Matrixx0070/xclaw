@@ -7,6 +7,7 @@
  *   1) core unit tests (security, gateway proxy, cost, stream, skills)
  *   2) eval offline smoke (+ last-mock.json when available)
  *   3) xclaw doctor --json (must produce a report; may warn without keys)
+ *   4) autonomy offline harness smoke
  *
  * Usage:
  *   node scripts/ci-ship-pack.mjs
@@ -52,6 +53,8 @@ const UNIT_TESTS = [
   "test/provider-livecheck-circuit.test.mjs",
   "test/eval-ci-smoke-offline.test.mjs",
   "test/eval-baseline-mock-artifact.test.mjs",
+  "test/autonomy-harness-offline.test.mjs",
+  "test/autonomy-metrics-a4.test.mjs",
   "test/retry-after-jitter.test.mjs",
   "test/apply-ship-patches.test.mjs",
   ...SHIP_PACK_EXTRA_UNIT_TESTS,
@@ -142,6 +145,15 @@ fs.writeFileSync(
   JSON.stringify(report, null, 2)
 );
 log("wrote eval/baselines/last-doctor.json");
+
+if (fs.existsSync(path.join(root, "scripts/autonomy-smoke-offline.mjs"))) {
+  log("autonomy-smoke-offline");
+  const au = await run(process.execPath, ["scripts/autonomy-smoke-offline.mjs"]);
+  if (au.code !== 0) {
+    log("autonomy-smoke-offline FAILED");
+    process.exit(au.code);
+  }
+}
 
 if (strict) {
   log("strict: apply-ship-patches --check");
