@@ -1,7 +1,7 @@
 diff --git a/src/gateway/ws-hub.mjs b/src/gateway/ws-hub.mjs
 --- a/src/gateway/ws-hub.mjs
 +++ b/src/gateway/ws-hub.mjs
-@@ -630,4 +630,36 @@ export function wsOutboundStats() {
+@@ -628,6 +628,38 @@ export function wsOutboundStats() {
    return { ...outboundStats, clients: clients.size };
  }
  
