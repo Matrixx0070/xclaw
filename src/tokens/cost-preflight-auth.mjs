@@ -5,19 +5,22 @@
 
 const DEFAULT_APPS = ["xai", "grok"];
 
-/**
- * @param {object} cfg
- * @param {object} [opts]
- * @param {string[]} [opts.apps]
- * @param {boolean} [opts.force]
- * @param {(cfg: object, appId: string, opts?: object) => Promise<object>} [opts.ensureFresh]
- */
 export async function refreshAuthBeforeCostPreflight(cfg = {}, opts = {}) {
   if (cfg?.cost?.refreshAuthBeforeBudget === false) {
-    return { ok: true, skipped: true, reason: "disabled" };
+    const skipped = { ok: true, skipped: true, reason: "disabled", results: [] };
+    try {
+      const { recordAuthRefreshStatus } = await import("./auth-refresh-status.mjs");
+      await recordAuthRefreshStatus(cfg, skipped);
+    } catch { /* */ }
+    return skipped;
   }
   if (process.env.XCLAW_SKIP_AUTH_BEFORE_COST === "1") {
-    return { ok: true, skipped: true, reason: "env_skip" };
+    const skipped = { ok: true, skipped: true, reason: "env_skip", results: [] };
+    try {
+      const { recordAuthRefreshStatus } = await import("./auth-refresh-status.mjs");
+      await recordAuthRefreshStatus(cfg, skipped);
+    } catch { /* */ }
+    return skipped;
   }
 
   const apps = Array.isArray(opts.apps)
@@ -64,7 +67,7 @@ export async function refreshAuthBeforeCostPreflight(cfg = {}, opts = {}) {
   const anyOk = results.length === 0 || results.some((r) => r.ok);
   const hardFail = opts.requireAuth === true && results.length > 0 && results.every((r) => !r.ok);
 
-  return {
+  const out = {
     ok: !hardFail,
     soft: !anyOk && !hardFail,
     results,
@@ -72,11 +75,15 @@ export async function refreshAuthBeforeCostPreflight(cfg = {}, opts = {}) {
       ? "auth refresh failed before cost preflight — re-login required"
       : undefined,
   };
+  try {
+    const { recordAuthRefreshStatus } = await import("./auth-refresh-status.mjs");
+    await recordAuthRefreshStatus(cfg, out);
+  } catch {
+    /* non-fatal */
+  }
+  return out;
 }
 
-/**
- * checkCostBudget after optional auth refresh.
- */
 export async function checkCostBudgetWithAuthRefresh(cfg, opts = {}) {
   const auth = await refreshAuthBeforeCostPreflight(cfg, opts);
   if (auth.ok === false && opts.requireAuth) {
