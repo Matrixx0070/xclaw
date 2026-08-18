@@ -1,0 +1,31 @@
+diff --git a/scripts/ci-ship-pack.mjs b/scripts/ci-ship-pack.mjs
+--- a/scripts/ci-ship-pack.mjs
++++ b/scripts/ci-ship-pack.mjs
+@@ -24,6 +24,7 @@ import fs from "node:fs";
+ import { fileURLToPath } from "node:url";
+ import { SHIP_PACK_EXTRA_UNIT_TESTS } from "../src/ci/ship-pack-unit-tests.mjs";
+ import { applyThenCheck } from "../src/ci/apply-then-check.mjs";
++import { runLandBatchChecks } from "../src/ci/land-batch-check.mjs";
+ 
+ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+ const bin = path.join(root, "bin", "xclaw.mjs");
+@@ -89,6 +90,19 @@ if (!ap.ok) {
+ }
+ log("apply-then-check OK");
+ 
++log("land-batch --check (3/4/5)");
++const lb = runLandBatchChecks(root);
++if (!lb.ok) {
++  for (const r of lb.results) {
++    if (r.skipped) continue;
++    log(`${r.script} exit=${r.code}`);
++    for (const line of r.out || []) log(`  ${line}`);
++  }
++  log("land-batch --check FAILED (NEED wires remain)");
++  process.exit(1);
++}
++log("land-batch --check OK");
++
+ log(`unit tests (${UNIT_TESTS.length} files)`);
+ const unit = await run(process.execPath, ["--test", ...UNIT_TESTS]);
+ if (unit.code !== 0) {
