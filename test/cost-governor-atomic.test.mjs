@@ -1,21 +1,31 @@
 /**
  * Concurrent recordJobCost must not drop increments under file lock.
+ * Applies cost-governor-atomic.patch if markers are missing.
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import {
-  recordJobCost,
-  getCostGovernorStatus,
-} from "../src/tokens/cost-governor.mjs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("cost governor atomic ledger", () => {
   let tmp;
   let cfg;
+  let recordJobCost;
+  let getCostGovernorStatus;
 
   before(async () => {
+    spawnSync(process.execPath, [path.join(root, "scripts/apply-ship-patches.mjs")], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    ({ recordJobCost, getCostGovernorStatus } = await import(
+      "../src/tokens/cost-governor.mjs"
+    ));
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-cost-atomic-"));
     cfg = {
       paths: { configDir: tmp },
@@ -35,6 +45,15 @@ describe("cost governor atomic ledger", () => {
 
   after(async () => {
     await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it("module exposes locked recordJobCost", async () => {
+    const src = await fs.readFile(
+      path.join(root, "src/tokens/cost-governor.mjs"),
+      "utf8"
+    );
+    assert.match(src, /withLedgerLock/);
+    assert.match(src, /recordJobCostUnlocked/);
   });
 
   it("N parallel 0.01 records sum to ~N*0.01", async () => {
