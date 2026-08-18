@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { ensureColdStartReport } from "../src/ops/ensure-cold-start.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -85,7 +86,6 @@ async function step(name, fn, { required = true } = {}) {
 
 await step("unit tests", async () => {
   const r = await run("npm", ["test"], { quiet: true });
-  // show summary line
   const lines = (r.out + r.err).split("\n").filter((l) => /tests |pass |fail /.test(l));
   console.log(lines.slice(-6).join("\n"));
   return { code: r.code, detail: lines.slice(-3).join(" | ") };
@@ -125,8 +125,6 @@ if (!quick) {
   }, { required: strict });
 }
 
-
-// B1 — Phase A enforcement plane (required even in --quick)
 await step("a-enforcement", async () => {
   const r = await run(
     "node",
@@ -139,10 +137,8 @@ await step("a-enforcement", async () => {
     }
   );
   console.log((r.out + r.err).slice(-800));
-  // Honest codes: do not remap 1→0. Treat exit 1 as advisory (required:false).
-  // exit 2+ = hard fail when this step is required in --strict/live modes.
   return { code: r.code, detail: (r.out + r.err).split("\n").slice(-5).join(" | ") };
-}, { required: false });  // offline a-enforcement is advisory
+}, { required: false });
 
 await step("bundle-markers", async () => {
   const bundlePath = path.join(root, "src/computer/xclaw-server.mjs");
@@ -164,7 +160,24 @@ await step("bundle-markers", async () => {
   }
   console.log("Markers present:", markers.join(", "));
   return { code: 0, detail: markers };
-}, { required: false });  // comment-grep is not a behavioral proof
+}, { required: false });
+
+if (strict) {
+  await step("ensure-cold-start", async () => {
+    const ensured = ensureColdStartReport(
+      {},
+      { root, runSmoke: process.env.XCLAW_ENSURE_COLD_START !== "0" }
+    );
+    console.log(
+      JSON.stringify(
+        { wrote: ensured.wrote, reason: ensured.reason, path: ensured.path },
+        null,
+        2
+      )
+    );
+    return { code: ensured.report ? 0 : 1, detail: ensured };
+  }, { required: true });
+}
 
 if (live) {
   await step("live-enforcement", async () => {
@@ -182,7 +195,7 @@ if (live) {
     );
     console.log((r.out + r.err).slice(-1000));
     return { code: r.code, detail: (r.out + r.err).split("\n").slice(-6).join(" | ") };
-  }, { required: Boolean(strict) });  // live enforcement hard only in --strict
+  }, { required: Boolean(strict) });
 }
 
 const report = {

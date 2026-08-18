@@ -35,7 +35,7 @@ export const EXTRA_SHIP_PATCHES = [
   },
   {
     file: "release-gate-ensure-cold-start.patch",
-    files: ["src/eval/release-gate.mjs"],
+    files: ["scripts/release-gate.mjs"],
     needles: ["ensureColdStartReport"],
   },
   {

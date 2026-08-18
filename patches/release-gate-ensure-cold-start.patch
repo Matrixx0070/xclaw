@@ -9,14 +9,23 @@ diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
  
  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
  const args = process.argv.slice(2);
-@@ -166,6 +167,14 @@ await step("bundle-markers", async () => {
+@@ -166,6 +167,23 @@ await step("bundle-markers", async () => {
    return { code: 0, detail: markers };
- }, { required: false });
+ }, { required: false });  // comment-grep is not a behavioral proof
  
 +if (strict) {
 +  await step("ensure-cold-start", async () => {
-+    const ensured = ensureColdStartReport({}, { root });
-+    console.log(JSON.stringify({ wrote: ensured.wrote, reason: ensured.reason, path: ensured.path }, null, 2));
++    const ensured = ensureColdStartReport(
++      {},
++      { root, runSmoke: process.env.XCLAW_ENSURE_COLD_START !== "0" }
++    );
++    console.log(
++      JSON.stringify(
++        { wrote: ensured.wrote, reason: ensured.reason, path: ensured.path },
++        null,
++        2
++      )
++    );
 +    return { code: ensured.report ? 0 : 1, detail: ensured };
 +  }, { required: true });
 +}
