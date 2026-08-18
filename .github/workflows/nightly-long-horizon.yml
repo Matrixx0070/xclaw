@@ -15,6 +15,8 @@ jobs:
   long-horizon:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,11 +28,11 @@ jobs:
         run: node bin/xclaw.mjs self-test
       - name: Arc offline smoke pack
         run: node scripts/smoke-arc.mjs
-      # Optional live eval when secrets present
+      # Optional live eval when secrets present (secrets context is not
+      # allowed in step-level `if` — gate on the mapped env var instead)
       - name: Live eval subset
-        if: ${{ secrets.XAI_API_KEY != '' }}
+        if: ${{ env.XAI_API_KEY != '' }}
         env:
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           EVAL_LIVE: "1"
           XCLAW_PROFILE: lab
         run: |
