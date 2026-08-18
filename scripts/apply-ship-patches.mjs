@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { extraShipEntries } from "../src/ci/ship-patches-extra.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const patchesDir = path.join(root, "patches");
@@ -161,7 +162,7 @@ if (!fs.existsSync(patchesDir)) {
   process.exit(0);
 }
 
-const results = SHIP_PATCHES.map(applyOne);
+const results = [...SHIP_PATCHES, ...extraShipEntries(read)].map(applyOne);
 if (checkOnly) {
   process.exit(results.includes("need") ? 1 : 0);
 }
