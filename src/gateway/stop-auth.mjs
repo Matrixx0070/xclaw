@@ -3,6 +3,33 @@
  */
 import crypto from "node:crypto";
 
+export function signStopBody(secret, body = "") {
+  return crypto.createHmac("sha256", String(secret || "")).update(String(body || "")).digest("hex");
+}
+
+function hmacEqual(got, expected) {
+  const a = Buffer.from(String(got || ""), "hex");
+  const b = Buffer.from(String(expected || ""), "hex");
+  if (a.length !== 32 || b.length !== 32) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+export function verifyStopSignature(req, cfg = {}, bodyRaw = "") {
+  const secret = cfg.gateway?.stopHmacSecret || process.env.XCLAW_STOP_HMAC_SECRET || "";
+  const required = cfg.gateway?.stopHmac === true || process.env.XCLAW_STOP_HMAC === "1";
+  if (!secret) {
+    if (required) return { ok: false, code: "STOP_HMAC_REQUIRED", message: "stop HMAC secret not configured" };
+    return { ok: true, skipped: true };
+  }
+  const h = req.headers || {};
+  const sig = String(h["x-xclaw-stop-sig"] || h["X-XClaw-Stop-Sig"] || "");
+  const expected = signStopBody(secret, bodyRaw);
+  if (!hmacEqual(sig, expected)) {
+    return { ok: false, code: "STOP_HMAC_INVALID", message: "invalid X-XClaw-Stop-Sig" };
+  }
+  return { ok: true };
+}
+
 function tokenEqual(got, expected) {
   const a = crypto.createHash("sha256").update(String(got || "")).digest();
   const b = crypto.createHash("sha256").update(String(expected || "")).digest();
@@ -47,7 +74,15 @@ export function authorizeStop(req, cfg = {}) {
   if (!tokenEqual(got, expected)) {
     return { ok: false, code: "STOP_UNAUTHORIZED", message: "invalid stop token" };
   }
+  let raw = "";
+  try {
+    raw = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
+  } catch {
+    raw = "";
+  }
+  const hmac = verifyStopSignature(req, cfg, raw);
+  if (!hmac.ok) return hmac;
   return { ok: true };
 }
 
-export default { authorizeStop, extractStopToken, stopAuthToken };
+export default { authorizeStop, extractStopToken, stopAuthToken, signStopBody, verifyStopSignature };
