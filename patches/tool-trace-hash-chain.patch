@@ -1,0 +1,22 @@
+diff --git a/src/agent/tool-trace.mjs b/src/agent/tool-trace.mjs
+--- a/src/agent/tool-trace.mjs
++++ b/src/agent/tool-trace.mjs
+@@ -1,3 +1,5 @@
++import { stampToolEntryHash, GENESIS_HASH } from "./tool-hash-chain.mjs";
++
+ /**
+  * Normalized toolTrace entries for grounded suggestions, metrics, audit.
+  * Backward compatible: keeps legacy `result` string + `blocked` boolean.
+@@ -631,6 +633,13 @@ export function finalizeToolTraceEntry(partial, opts = {}) {
+   entry.resultView = structuredResult;
+   entry.result = structuredResult.text; // legacy string
+ 
++  // Optional hash-chain stamp for receipt/replay (opts.prevHash or GENESIS)
++  if (opts.hashChain !== false) {
++    const prev = opts.prevHash || opts.chainTip || GENESIS_HASH;
++    const stamped = stampToolEntryHash(entry, prev);
++    return stamped.entry;
++  }
+   return entry;
+ }
+ 
