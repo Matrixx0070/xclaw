@@ -99,6 +99,13 @@ const SHIP_PATCHES = [
       return t.includes("pushPerfChecks");
     },
   },
+  {
+    file: "init-live-sse-streams.patch",
+    isApplied: (rootDir) => {
+      const t = read(rootDir, "src/gateway/index.mjs");
+      return t.includes("createLiveStreamWriter");
+    },
+  },
 ];
 
 function read(rootDir, rel) {
