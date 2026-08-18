@@ -6,7 +6,7 @@ import {
   estimateWriteDelta,
   preflightWriteQuota,
 } from "./workspace-quota.mjs";
-import { maybeEmitQuotaSoft } from "./quota-soft-warn.mjs";
+import { maybeEmitQuotaSoft, maybeEmitQuotaHard } from "./quota-soft-warn.mjs";
 
 export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
   if (!isWriteTool(name)) {
@@ -25,11 +25,13 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
   const delta = estimateWriteDelta(name, args);
   const r = await preflightWriteQuota(root, cfg, delta);
   if (!r.ok) {
+    const hard = maybeEmitQuotaHard(r, { tool: name, root }, ctx.hubs || {});
     return {
       ok: false,
       reason: r.code || "WORKSPACE_QUOTA_EXCEEDED",
       message: r.message || "workspace quota exceeded",
       quota: r,
+      hard,
     };
   }
   const warn = maybeEmitQuotaSoft(r, { tool: name, root }, ctx.hubs || {});
