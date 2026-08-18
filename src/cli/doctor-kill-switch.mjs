@@ -29,11 +29,12 @@ export async function pushKillSwitchChecks(push) {
     { activeSessions: n, closeWs: wsOk, closeSse: sseOk, lastDrain }
   );
   if (lastDrain) {
+    const method = lastDrain.authMethod || lastDrain.drain?.authMethod || "unknown";
     push(
       "security.killSwitch.lastDrain",
       "ok",
-      `last stop drain sessions=${lastDrain.sessionsKilled} ws=${lastDrain.wsClosed} sse=${lastDrain.sseClosed}`,
-      lastDrain
+      `last stop drain authMethod=${method} sessions=${lastDrain.sessionsKilled} ws=${lastDrain.wsClosed} sse=${lastDrain.sseClosed}`,
+      { ...lastDrain, authMethod: method }
     );
   }
   return { ready, wsOk, sseOk, n, lastDrain };
