@@ -12,7 +12,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { localTranscribe } from "../providers/local.mjs";
+import { localTranscribe, localConfig, looksLikeWhisperCli } from "../providers/local.mjs";
 
 export const DEFAULT_WAKE_PHRASES = [
   "hey xclaw",
@@ -33,14 +33,17 @@ function run(cmd, args, opts = {}) {
       stdout = Buffer.concat([stdout, d]);
     });
     child.stderr?.on("data", (d) => (stderr += d));
-    // spawnError distinguishes "binary missing" from "binary ran and failed" —
-    // an ENOENT message contains the binary name and would otherwise satisfy
-    // the name-matching probes below, reporting an absent tool as available.
     child.on("error", (err) =>
-      resolve({ code: 1, stdout, stderr: err.message, spawnError: err })
+      resolve({
+        code: err.code === "ENOENT" ? 127 : 1,
+        stdout,
+        stderr: err.message,
+        spawnError: err,
+        errorCode: err.code || null,
+      })
     );
     child.on("close", (code) =>
-      resolve({ code: code ?? 1, stdout, stderr })
+      resolve({ code: code ?? 1, stdout, stderr, errorCode: null })
     );
     if (opts.input != null) {
       child.stdin.write(opts.input);
@@ -63,9 +66,6 @@ export function wakeConfig(cfg = {}) {
   };
 }
 
-/**
- * Normalize transcript and test against wake phrases.
- */
 export function matchWakePhrase(transcript, phrases = DEFAULT_WAKE_PHRASES) {
   const t = String(transcript || "")
     .toLowerCase()
@@ -79,16 +79,12 @@ export function matchWakePhrase(transcript, phrases = DEFAULT_WAKE_PHRASES) {
       return { hit: true, phrase: p, transcript: t };
     }
   }
-  // fuzzy: "hey claw" / "a claw"
   if (/\b(hey|ok|okay|hi|yo)\s+(x?\s*)?claw\b/.test(t) || /\bxclaw\b/.test(t)) {
     return { hit: true, phrase: "fuzzy-xclaw", transcript: t };
   }
   return { hit: false, phrase: null, transcript: t };
 }
 
-/**
- * RMS energy of a 16-bit LE mono wav (skip 44-byte header if present).
- */
 export function wavRmsEnergy(buf) {
   if (!buf || buf.length < 100) return 0;
   let offset = 0;
@@ -103,9 +99,6 @@ export function wavRmsEnergy(buf) {
   return Math.sqrt(sum / samples);
 }
 
-/**
- * Record a short clip via arecord (ALSA).
- */
 export async function recordClip(opts = {}) {
   const seconds = opts.seconds ?? 2;
   const rate = opts.sampleRate ?? 16000;
@@ -138,9 +131,6 @@ export async function recordClip(opts = {}) {
   }
 }
 
-/**
- * One-shot energy gate: record → RMS → optional STT → phrase match.
- */
 export async function probeWakeOnce(cfg = {}, opts = {}) {
   const c = wakeConfig(cfg);
   const rec = await recordClip({
@@ -200,9 +190,6 @@ export async function probeWakeOnce(cfg = {}, opts = {}) {
   return result;
 }
 
-/**
- * Doctor / CLI probe of wake prerequisites (no mic loop).
- */
 export async function probeWakeStack(cfg = {}) {
   const c = wakeConfig(cfg);
   const out = {
@@ -221,9 +208,6 @@ export async function probeWakeStack(cfg = {}) {
   if (!arInstalled) {
     out.arecord = { ok: false, error: "arecord not found (alsa-utils)" };
   } else {
-    // Having the binary is not having a microphone: `arecord -l` exits 0 on a
-    // headless host and prints "no soundcards found". Wake capture needs a
-    // real device, so report on the device, not the tool.
     const devs = await run("arecord", ["-l"]);
     const listing = devs.stdout.toString() + devs.stderr;
     out.arecord = /^card \d+/m.test(listing)
@@ -231,7 +215,6 @@ export async function probeWakeStack(cfg = {}) {
       : { ok: false, installed: true, error: "no capture device (no soundcards found)" };
   }
 
-  // Optional: python -c "import openwakeword"
   const py = await run("python3", [
     "-c",
     "import openwakeword; print('ok')",
@@ -244,21 +227,19 @@ export async function probeWakeStack(cfg = {}) {
           error: "openwakeword not installed (optional for W1+)",
         };
 
-  // STT availability: probe the whisper CLI directly. Never call
-  // probeLocalVoiceStack from here — it calls probeWakeStack back and the
-  // mutual recursion never terminates (hung doctor + wake tests).
+  // STT: looksLikeWhisperCli — never call probeLocalVoiceStack from here (recursion).
   try {
-    // Single source of truth for voice paths — reading cfg by hand here once
-    // diverged from localConfig() and reported a different binary than the one
-    // transcription actually used.
-    const { localConfig } = await import("../providers/local.mjs");
     const whisperBin = localConfig(cfg).whisperBin;
     const wh = await run(whisperBin, ["--help"]);
-    out.stt =
-      !wh.spawnError &&
-      (wh.code === 0 || /whisper/i.test(wh.stderr + wh.stdout.toString()))
-        ? { ok: true, bin: whisperBin }
-        : { ok: false, error: "no whisper CLI" };
+    out.stt = looksLikeWhisperCli(wh)
+      ? { ok: true, bin: whisperBin }
+      : {
+          ok: false,
+          error:
+            wh.errorCode === "ENOENT" || wh.code === 127 || wh.spawnError
+              ? "whisper CLI not found (ENOENT)"
+              : "no whisper CLI",
+        };
   } catch (e) {
     out.stt = { ok: false, error: e.message };
   }
@@ -269,10 +250,6 @@ export async function probeWakeStack(cfg = {}) {
   return out;
 }
 
-/**
- * Optional openWakeWord single-frame helper (Python one-liner stub).
- * Real streaming loop is W1.
- */
 export async function probeOpenWakeWordOnce() {
   const script = `
 try:
