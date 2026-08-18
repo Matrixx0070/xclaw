@@ -1,5 +1,6 @@
 /**
  * Extra ship-pack entries (history hash, memory redact, digest cron, …).
+ * Includes import-landing markers so re-apply is a no-op when already inlined.
  */
 export const EXTRA_SHIP_PATCHES = [
   {
@@ -31,6 +32,21 @@ export const EXTRA_SHIP_PATCHES = [
     file: "release-gate-ensure-cold-start.patch",
     files: ["src/eval/release-gate.mjs"],
     needles: ["ensureColdStartReport"],
+  },
+  {
+    file: "ship-patches-extra.patch",
+    files: ["scripts/apply-ship-patches.mjs"],
+    needles: ["extraShipEntries"],
+  },
+  {
+    file: "ci-ship-pack-extra-tests.patch",
+    files: ["scripts/ci-ship-pack.mjs"],
+    needles: ["SHIP_PACK_EXTRA_UNIT_TESTS"],
+  },
+  {
+    file: "ci-ship-pack-apply-then-check.patch",
+    files: ["scripts/ci-ship-pack.mjs"],
+    needles: ["applyThenCheck"],
   },
 ];
 
