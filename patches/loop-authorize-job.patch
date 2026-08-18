@@ -1,0 +1,11 @@
+diff --git a/src/agent/loop.mjs b/src/agent/loop.mjs
+--- a/src/agent/loop.mjs
++++ b/src/agent/loop.mjs
+@@ -1229,6 +1229,7 @@ export async function runAgentLoop(options) {
+             ? { ...args, cwd: workingDir }
+             : args;
+         const auth = await approvalGate.authorize(name, authArgs, {
++          job: options.job || options.receiptCollector || null,
+           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
+           // risk scope must resolve against THIS run's workspace (session dir
+           // or mission worktree), not the gateway's cwd — without this, file
