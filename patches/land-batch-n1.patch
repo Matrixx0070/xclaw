@@ -1,0 +1,92 @@
+diff --git a/scripts/ci-ship-pack.mjs b/scripts/ci-ship-pack.mjs
+--- a/scripts/ci-ship-pack.mjs
++++ b/scripts/ci-ship-pack.mjs
+@@ -104,6 +104,16 @@ if (fs.existsSync(path.join(root, "scripts/land-all.mjs"))) {
+   log("land-all SKIP (script missing)");
+ }
+ 
++if (fs.existsSync(path.join(root, "scripts/land-kill-switch-wires.mjs"))) {
++  log("land-kill-switch-wires --check");
++  const ks = await run(process.execPath, ["scripts/land-kill-switch-wires.mjs", "--check"]);
++  if (ks.code !== 0) {
++    log("land-kill-switch-wires NEED");
++    process.exit(ks.code || 1);
++  }
++  log("land-kill-switch-wires OK");
++}
++
+ log("land-batch --check (3/4/5)");
+ const lb = runLandBatchChecks(root);
+ if (!lb.ok) {
+@@ -213,5 +223,18 @@ if (strict) {
+   log("strict: doctor clean");
+ }
+ 
++if (fs.existsSync(path.join(root, "scripts/stop-fire-drill.mjs"))) {
++  log("stop-fire-drill");
++  const fd = await run(process.execPath, ["scripts/stop-fire-drill.mjs"]);
++  if (fd.code !== 0) {
++    log("stop-fire-drill FAILED");
++    process.exit(fd.code || 1);
++  }
++  log("stop-fire-drill OK");
++} else if (strict) {
++  log("STRICT FAIL: stop-fire-drill script missing");
++  process.exit(2);
++}
++
+ log("SHIP PACK OK");
+ process.exit(0);
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -118,6 +118,12 @@ if (!quick) {
+     return { code: r.code };
+   }, { required: true });
+ 
++  await step("stop-fire-drill", async () => {
++    const r = await run(process.execPath, ["scripts/stop-fire-drill.mjs"], { quiet: true });
++    console.log((r.out + r.err).slice(-500));
++    return { code: r.code };
++  }, { required: true });
++
+   await step("evidence", async () => {
+     const env = strict ? { REQUIRE_SOAK: "1", XCLAW_RELEASE_STRICT: "1" } : {};
+     const r = await run("npm", ["run", "evidence"], { env, quiet: true });
+diff --git a/src/gateway/stop-route.mjs b/src/gateway/stop-route.mjs
+--- a/src/gateway/stop-route.mjs
++++ b/src/gateway/stop-route.mjs
+@@ -35,6 +35,33 @@ export async function handleStopAll(req, res, { cfg } = {}) {
+     return payload;
+   }
+   const before = listActiveSessions();
++  const dryRun = body.dryRun === true || body.dry_run === true;
++  if (dryRun) {
++    const drain = {
++      sessionsKilled: 0,
++      sessionsBefore: before.length,
++      wsClosed: 0,
++      sseClosed: 0,
++      wsOk: true,
++      sseOk: true,
++      authMethod: auth.authMethod || (auth.skipped ? "lab" : "token"),
++      dryRun: true,
++    };
++    const payload = {
++      ok: true,
++      dryRun: true,
++      killedSessions: [],
++      before: before.length,
++      drain,
++      authMethod: drain.authMethod,
++      message: "dry-run: auth ok, no sessions aborted",
++    };
++    if (res && typeof res.writeHead === "function") {
++      res.writeHead(200, { "content-type": "application/json" });
++      res.end(JSON.stringify(payload));
++    }
++    return payload;
++  }
+   const r = await killAll({
+     cfg,
+     stopComputer: body.keepComputer === true ? false : body.stopComputer !== false,
