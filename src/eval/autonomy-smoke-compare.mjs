@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { smokeArtifactPath } from "./autonomy-smoke-artifact.mjs";
+import { hardBlockRateCeilingVerdict } from "./autonomy-metrics.mjs";
 
 export function previousSmokePath(root) {
   return path.join(root, "reports", "autonomy", "prev-smoke.json");
@@ -28,14 +29,19 @@ export function hardBlockRateJump(previous, current, opts = {}) {
   return { regressed: delta > maxDelta, delta, maxDelta, prev, cur };
 }
 
-/** Absolute ceiling on hardBlockRate (not just delta vs previous). */
+/** Absolute ceiling — delegates to A4 attachCeiling helper. */
 export function hardBlockRateCeiling(current, opts = {}) {
-  const cur = Number(current?.quotaEscalate?.hardBlockRate);
-  if (!Number.isFinite(cur)) return { exceeded: false, skipped: true };
-  const max = Number(
-    opts.maxHardBlockRate ?? process.env.XCLAW_MAX_HARD_BLOCK_RATE ?? 0.25
+  const v = hardBlockRateCeilingVerdict(
+    { hardBlockRate: current?.quotaEscalate?.hardBlockRate },
+    opts
   );
-  return { exceeded: cur > max, cur, max };
+  return {
+    exceeded: v.exceeded,
+    skipped: v.skipped,
+    cur: v.hardBlockRate,
+    max: v.max,
+    reason: v.reason,
+  };
 }
 
 export function compareAutonomySmoke(root, opts = {}) {
