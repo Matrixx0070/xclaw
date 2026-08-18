@@ -1,11 +1,19 @@
 diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
 --- a/src/jobs/job.mjs
 +++ b/src/jobs/job.mjs
+@@ -15,6 +15,7 @@ import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/prop
+ import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
+ import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
+ import { checkSeatBudget, recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
++import { createReceiptCollector, copyCollectorOntoJob } from "./receipt-collector.mjs";
+ 
+ /** @typedef {"pending"|"running"|"succeeded"|"failed"|"cancelled"|"budget_exceeded"} JobStatus */
+ 
 @@ -140,11 +140,14 @@ export async function runJob(opts) {
      },
    };
  
-+  const receiptCollector = { quotaEscalate: { softWarns: 0, hardBlocks: 0, escalatedFromSoft: 0, lastCode: null } };
++  const receiptCollector = createReceiptCollector();
    try {
      agentResult = await runAgentLoop({
        userMessage: goal,
@@ -16,13 +24,11 @@ diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
        signal: ac.signal,
        ledgerIds: { jobId: id },
        systemNotes: opts.systemNotes || jobCfg.agent?.systemNotes,
-@@ -300,6 +303,9 @@ export async function runJob(opts) {
+@@ -300,6 +303,7 @@ export async function runJob(opts) {
      maxTurns,
      events: events.filter((e) => e.type === "job" || e.type === "guard" || e.type === "retry"),
    };
-+  if (typeof receiptCollector !== "undefined" && receiptCollector.quotaEscalate) {
-+    job.quotaEscalate = receiptCollector.quotaEscalate;
-+  }
++  copyCollectorOntoJob(job, receiptCollector);
    stampJobToolHash(job);
  
    push({ type: "job", phase: "end", id, status, pass: job.pass, wallMs: job.wallMs });
