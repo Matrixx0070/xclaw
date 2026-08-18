@@ -141,6 +141,14 @@ function applyOne(entry) {
     log(`NEED ${entry.file}`);
     return "need";
   }
+  const chk = spawnSync("git", ["apply", "--check", "--whitespace=nowarn", patchPath], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (chk.status !== 0 && entry.isApplied(root)) {
+    log(`OK already applied (markers; patch does not apply cleanly): ${entry.file}`);
+    return "already";
+  }
   const r = spawnSync("git", ["apply", "--whitespace=nowarn", patchPath], {
     cwd: root,
     encoding: "utf8",
@@ -153,7 +161,12 @@ function applyOne(entry) {
     log(`OK applied (marker present after non-zero git apply): ${entry.file}`);
     return "already";
   }
-  log(`FAIL ${entry.file}: ${(r.stderr || r.stdout || "").slice(0, 240)}`);
+  const err = (r.stderr || r.stdout || chk.stderr || "").slice(0, 240);
+  if (/corrupt patch|already applied|patch does not apply/i.test(err) && entry.isApplied(root)) {
+    log(`OK already applied (idempotent soft): ${entry.file}`);
+    return "already";
+  }
+  log(`FAIL ${entry.file}: ${err}`);
   return "fail";
 }
 
