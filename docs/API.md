@@ -10,8 +10,10 @@ curl -s http://127.0.0.1:18790/routes | jq
 ## Ops (stable)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Liveness |
-| GET | `/ready` | Readiness (computer + queue) |
+| GET | `/health` | Liveness + `stop` auth/HMAC readiness |
+| GET | `/ready` | Readiness (computer + queue + prod `stop.ready`) |
+| POST | `/stop` | Kill-switch: abort sessions, drain WS/SSE |
+| POST | `/sessions/stop-all` | Alias of `/stop` |
 | GET | `/metrics` | Prometheus (optional auth if `protectMetrics`) |
 | GET | `/version` | Version + uptime |
 | GET | `/routes` | This map |
