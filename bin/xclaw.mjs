@@ -923,6 +923,11 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         console.log(JSON.stringify(voiceMetricsSnapshot(), null, 2));
         break;
       }
+      if (sub === "webrtc") {
+        const { probeWebRtc } = await import("../src/voice/webrtc-session.mjs");
+        console.log(JSON.stringify(await probeWebRtc(), null, 2));
+        break;
+      }
       if (sub === "opus") {
         const { probeOpusDecode } = await import("../src/voice/opus-decode.mjs");
         const { probeOpusEncode } = await import("../src/voice/opus-encode.mjs");
@@ -978,7 +983,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         console.log(JSON.stringify(stack, null, 2));
         break;
       }
-      console.error("Usage: xclaw voice probe|speak|transcribe|once|tui|listen|wake-probe|vad|metrics|opus");
+      console.error("Usage: xclaw voice probe|speak|transcribe|once|tui|listen|wake-probe|vad|metrics|opus|webrtc");
       process.exit(1);
       break;
     }
