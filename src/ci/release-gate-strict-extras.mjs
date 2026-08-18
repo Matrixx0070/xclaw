@@ -46,6 +46,13 @@ export const RELEASE_GATE_STRICT_EXTRA_TESTS = [
   "test/ship-pack-land-all-preflight.test.mjs",
   "test/doctor-quota-hard-circuit.test.mjs",
   "test/land-remaining-wires.test.mjs",
+  "test/readiness-stop.test.mjs",
+  "test/doctor-hmac-missing-prod.test.mjs",
+  "test/doctor-last-drain-auth.test.mjs",
+  "test/openapi-stop.test.mjs",
+  "test/land-kill-switch-wires.test.mjs",
+  "test/quota-hard-circuit-collector.test.mjs",
+  "test/routes-stop.test.mjs",
 ];
 
 export function listStrictExtraTests(root) {
