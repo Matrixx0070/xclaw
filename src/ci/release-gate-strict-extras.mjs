@@ -31,6 +31,13 @@ export const RELEASE_GATE_STRICT_EXTRA_TESTS = [
   "test/autonomy-metrics-a4.test.mjs",
   "test/ship-pack-land-batch-wire.test.mjs",
   "test/land-all.test.mjs",
+  "test/quota-hard-circuit.test.mjs",
+  "test/quota-hard-circuit-wire.test.mjs",
+  "test/stop-control-auth.test.mjs",
+  "test/ws-stop-control.test.mjs",
+  "test/tls-stop-parity.test.mjs",
+  "test/doctor-auth-refresh-prod.test.mjs",
+  "test/release-gate-land-all-applied.test.mjs",
 ];
 
 export function listStrictExtraTests(root) {
