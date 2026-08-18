@@ -1,15 +1,15 @@
 diff --git a/src/security/approvals.mjs b/src/security/approvals.mjs
 --- a/src/security/approvals.mjs
 +++ b/src/security/approvals.mjs
-@@ -22,6 +22,7 @@
+@@ -22,6 +22,7 @@ import {
    EXEC_TOOLS,
    isExecTool,
  } from "./system-run-plan.mjs";
 +import { authorizeQuotaPreflight } from "./authorize-quota.mjs";
  
- const pending = new Map();
+ const pending = new Map(); // id -> { tool, args, plan, resolve, at, deadline }
  let slaTimer = null;
-@@ -284,6 +285,18 @@
+@@ -284,6 +285,18 @@ export function createApprovalGate(cfg = {}) {
          message: `Command for ${name} is not on the exec allowlist.`,
        };
      }
@@ -25,4 +25,6 @@ diff --git a/src/security/approvals.mjs b/src/security/approvals.mjs
 +        quota: quotaCheck.quota,
 +      };
 +    }
-     // A2: deterministic risk assessment for every action.
+     // A2: deterministic risk assessment for every action. Never throws —
+     // assessment failure degrades to null (pre-A2 behavior), not to a block.
+     let risk = null;
