@@ -1,0 +1,30 @@
+diff --git a/src/agent/loop.mjs b/src/agent/loop.mjs
+--- a/src/agent/loop.mjs
++++ b/src/agent/loop.mjs
+@@ -30,7 +30,7 @@ import {
+ } from "./turn-state.mjs";
+ import { createLoopGuard } from "./loop-guards.mjs";
+ import { getSharedApprovalGate } from "../security/approvals.mjs";
+-import { checkCostBudget, checkJobCostBudget } from "../tokens/cost-governor.mjs";
++import { checkLoopCostBudget, checkJobCostBudget } from "../tokens/loop-cost-check.mjs";
+ import { saveAgentRun } from "./run-store.mjs";
+ import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
+ import {
+@@ -445,7 +445,7 @@ export async function runAgentLoop(options) {
+ 
+   // Cost governor pre-check — refuse before computer/session when hard-capped
+   try {
+-    const { checkCostBudget } = await import("../tokens/cost-governor.mjs");
++    const { checkLoopCostBudget: checkCostBudget } = await import("../tokens/loop-cost-check.mjs");
+     const budget = await checkCostBudget(cfg);
+     if (!budget.ok) {
+       onEvent({
+@@ -855,7 +855,7 @@ export async function runAgentLoop(options) {
+ 
+       // Feature 3 — cost governor hard stop (no provider call when over budget)
+       try {
+-        const budget = await checkCostBudget(cfg);
++        const budget = await checkLoopCostBudget(cfg);
+         if (!budget.ok) {
+           const msg = budget.message || "BUDGET_EXCEEDED";
+           onEvent({
