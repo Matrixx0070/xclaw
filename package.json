@@ -79,6 +79,7 @@
     "gateway"
   ],
   "optionalDependencies": {
-    "opusscript": "^0.0.8"
+    "opusscript": "^0.0.8",
+    "werift": "^0.22.2"
   }
 }
