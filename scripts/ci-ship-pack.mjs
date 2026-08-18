@@ -3,7 +3,7 @@
  * CI ship pack — offline one-liner for production readiness smoke.
  *
  * Runs:
- *   0) apply ship patches (idempotent)
+ *   0) apply ship patches + --check (idempotent)
  *   1) core unit tests (security, gateway proxy, cost, stream, skills)
  *   2) eval offline smoke (+ last-mock.json when available)
  *   3) xclaw doctor --json (must produce a report; may warn without keys)
@@ -22,6 +22,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { SHIP_PACK_EXTRA_UNIT_TESTS } from "../src/ci/ship-pack-unit-tests.mjs";
+import { applyThenCheck } from "../src/ci/apply-then-check.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bin = path.join(root, "bin", "xclaw.mjs");
@@ -77,12 +78,13 @@ function log(msg) {
   console.error(`[ship-pack] ${msg}`);
 }
 
-log("apply ship patches");
-const ap = await run(process.execPath, ["scripts/apply-ship-patches.mjs"]);
-if (ap.code !== 0) {
-  log("apply-ship-patches FAILED");
-  process.exit(ap.code);
+log("apply ship patches + --check");
+const ap = applyThenCheck({ root });
+if (!ap.ok) {
+  log(`apply-then-check FAILED phase=${ap.phase} code=${ap.code}`);
+  process.exit(ap.code || 1);
 }
+log("apply-then-check OK");
 
 log(`unit tests (${UNIT_TESTS.length} files)`);
 const unit = await run(process.execPath, ["--test", ...UNIT_TESTS]);
