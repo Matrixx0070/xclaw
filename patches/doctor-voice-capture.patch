@@ -1,0 +1,22 @@
+diff --git a/src/cli/doctor.mjs b/src/cli/doctor.mjs
+index 76dfc2c..5bd2d4d 100644
+--- a/src/cli/doctor.mjs
++++ b/src/cli/doctor.mjs
+@@ -970,14 +970,10 @@ export async function runDoctor(opts = {}) {
+   }
+ 
+   try {
+-    const { probeWakeStack } = await import("../voice/wake/index.mjs");
+-    const w = await probeWakeStack(cfg);
+-    push(
+-      "voice.wake",
+-      w.readyForW1 ? "ok" : "warn",
+-      `phrases=${(w.phrases||[]).length} arecord=${w.arecord?.ok} stt=${w.stt?.ok} oww=${w.openWakeWord?.ok}`
+-    );
++    const { pushVoiceWakeAndCapture } = await import("./doctor-voice-checks.mjs");
++    await pushVoiceWakeAndCapture(push, cfg);
+   } catch (e) {
++    push("voice.capture", "warn", e.message || String(e));
+     push("voice.wake", "warn", e.message || String(e));
+   }
+ 
