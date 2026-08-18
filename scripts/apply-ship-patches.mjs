@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Apply durable ship patches (doctor integrity, createHttpServer cfg, …).
+ * Apply durable ship patches (doctor integrity, createHttpServer cfg, cost lock, …).
  * Idempotent via content markers; --check exits 1 if any unapplied.
  *
  * Usage:
@@ -38,6 +38,13 @@ const SHIP_PATCHES = [
     isApplied: (rootDir) => {
       const t = read(rootDir, "src/cli/doctor.mjs");
       return /doctor-voice|pushVoiceWakeAndCapture|voice\.capture/.test(t);
+    },
+  },
+  {
+    file: "cost-governor-atomic.patch",
+    isApplied: (rootDir) => {
+      const text = read(rootDir, "src/tokens/cost-governor.mjs");
+      return text.includes("withLedgerLock") && text.includes("recordJobCostUnlocked");
     },
   },
   {
