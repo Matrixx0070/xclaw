@@ -58,6 +58,14 @@ export const RELEASE_GATE_STRICT_EXTRA_TESTS = [
   "test/ship-pack-land-ks.test.mjs",
   "test/land-batch-apply-remaining.test.mjs",
   "test/doctor-stop-summary.test.mjs",
+  "test/stop-dry-run.test.mjs",
+  "test/stop-hmac-canonical.test.mjs",
+  "test/ws-stop-last-drain.test.mjs",
+  "test/quota-hard-circuit-history.test.mjs",
+  "test/openapi-stop-runbook.test.mjs",
+  "test/land-batch-n1.test.mjs",
+  "test/doctor-stop-fire-drill.test.mjs",
+  "test/ship-pack-stop-fire-drill.test.mjs",
 ];
 
 export function listStrictExtraTests(root) {
