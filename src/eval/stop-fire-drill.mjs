@@ -9,7 +9,7 @@ import { handleWsStopControl } from "../gateway/ws-stop-control.mjs";
 import { buildStopControlMessage } from "../gateway/stop-control-auth.mjs";
 import { recordLastDrain, getLastDrain } from "../gateway/last-drain.mjs";
 import { tryHandleGatewayStop } from "../gateway/stop-proxy.mjs";
-import { isStopPath } from "../gateway/stop-route.mjs";
+import { isStopPath, handleStopAll } from "../gateway/stop-route.mjs";
 
 export function fireDrillHttpToken() {
   const cfg = { gateway: { token: "drill-token" } };
@@ -112,6 +112,24 @@ export async function fireDrillNonPost405() {
   };
 }
 
+export async function fireDrillDryRun() {
+  const r = await handleStopAll(
+    { headers: {}, body: { type: "stop", dryRun: true } },
+    null,
+    { cfg: {} }
+  );
+  return {
+    name: "http_dry_run",
+    ok:
+      r?.ok === true &&
+      r?.dryRun === true &&
+      Array.isArray(r?.killedSessions) &&
+      r.killedSessions.length === 0,
+    dryRun: r?.dryRun,
+    authMethod: r?.authMethod,
+  };
+}
+
 export function fireDrillDrainAuthMethod() {
   recordLastDrain({
     sessionsKilled: 0,
@@ -139,6 +157,7 @@ export async function runStopFireDrill(opts = {}) {
     fireDrillTlsParity(root),
     fireDrillPaths(),
     await fireDrillNonPost405(),
+    await fireDrillDryRun(),
     fireDrillDrainAuthMethod(),
   ];
   const failed = steps.filter((s) => !s.ok);
