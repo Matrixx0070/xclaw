@@ -73,7 +73,8 @@
     "verify:bundle": "node scripts/verify-computer-bundle.mjs",
     "verify:bundle:strict": "node scripts/verify-computer-bundle.mjs --require-sigstore",
     "smoke:arc": "node scripts/smoke-arc.mjs",
-    "harness:live": "node scripts/live-harness-smoke.mjs"
+    "harness:live": "node scripts/live-harness-smoke.mjs",
+    "ship:pack": "node scripts/ci-ship-pack.mjs"
   },
   "files": [
     "bin/",
