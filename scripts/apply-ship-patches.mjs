@@ -7,7 +7,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { extraShipEntries } from "../src/ci/ship-patches-extra.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const patchesDir = path.join(root, "patches");
@@ -175,7 +174,21 @@ if (!fs.existsSync(patchesDir)) {
   process.exit(0);
 }
 
-const results = [...SHIP_PATCHES, ...extraShipEntries(read)].map(applyOne);
+async function loadExtraEntries() {
+  try {
+    const mod = await import("../src/ci/ship-patches-extra.mjs");
+    if (typeof mod.extraShipEntries !== "function") {
+      throw new Error("extraShipEntries export missing");
+    }
+    return mod.extraShipEntries(read);
+  } catch (err) {
+    log(`FAIL extraShipEntries import: ${err.message || String(err)}`);
+    process.exit(1);
+  }
+}
+
+const extraEntries = await loadExtraEntries();
+const results = [...SHIP_PATCHES, ...extraEntries].map(applyOne);
 if (checkOnly) {
   process.exit(results.includes("need") ? 1 : 0);
 }
