@@ -93,10 +93,21 @@ export function attachVoiceWebSocket(server, opts = {}) {
     if (head?.length) socket.unshift(head);
 
     const sessionId = crypto.randomUUID();
+    // Conversation continuity: a client may pass ?conversation=<id> to resume
+    // its own thread across reconnects (a dropped socket should not amnesia the
+    // user); otherwise the connection itself is the conversation.
+    const conversationId =
+      url.searchParams.get("conversation") ||
+      url.searchParams.get("conversationId") ||
+      `voice_${sessionId}`;
+    const workingDir =
+      cfg.voice?.workingDir || cfg.paths?.workspaces || process.cwd();
     const entente = createEntente();
     const parser = createFrameParser();
     const state = {
       sessionId,
+      conversationId,
+      workingDir,
       entente,
       socket,
       busy: false,
@@ -110,6 +121,8 @@ export function attachVoiceWebSocket(server, opts = {}) {
     sendJson(socket, {
       type: "ready",
       sessionId,
+      conversationId,
+      workingDir,
       path,
       pcm: { codec: "s16le", sampleRate: 16000, channels: 1 },
       opus: { codecs: ["opus"], containers: ["packets", "ogg"], sampleRate: 16000 },
@@ -567,18 +580,35 @@ async function runVoiceTurn(state, cfg, body = {}) {
     return;
   }
 
-  // Agent path
+  // Agent path — a voice session is a CONVERSATION, so it runs the same
+  // channel-invariant agent webchat uses, keyed by a stable conversation id.
+  // (It used to spawn a fresh runJob per utterance: every turn started with no
+  // history, in an empty /tmp job workspace, so "now do the same for X" and
+  // "read my config" could never work.)
   let reply = "";
   try {
-    const { runJob } = await import("../jobs/job.mjs");
-    const job = await runJob({
+    const { runAgent } = await import("../agent/run-agent.mjs");
+    const out = await runAgent({
       goal: text,
       cfg,
-      maxTurns: body.maxTurns || 8,
-      timeoutMs: body.timeoutMs || 120_000,
-      autoApprove: cfg.security?.autoApprove ?? true,
+      channel: "voice",
+      chatSessionId: state.conversationId,
+      workingDir: state.workingDir,
+      onEvent: (e) => {
+        // Surface tool activity so a client can show/announce progress while
+        // the turn is still running.
+        if (e?.type === "tool" && (e.phase === "start" || e.phase === "end")) {
+          sendJson(socket, {
+            type: "event",
+            event: "tool",
+            phase: e.phase,
+            name: e.name,
+            sessionId,
+          });
+        }
+      },
     });
-    reply = String(job.text || job.error || "").slice(0, 2000);
+    reply = String(out.text || out.error || "").slice(0, 2000);
   } catch (e) {
     reply = `Error: ${e.message || e}`;
   }

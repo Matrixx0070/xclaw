@@ -1201,8 +1201,34 @@ export async function startGateway({ root } = {}) {
       if (p === "/api/voice/transcribe" && req.method === "POST") {
         const body = await readBody(req).catch(() => ({}));
         const { localTranscribe } = await import("../voice/providers/local.mjs");
+        // Browsers hold audio bytes, not server paths — accept an upload so the
+        // WebChat mic can use the local STT instead of a cloud speech API.
+        const audioB64 = body.audioBase64 || body.audio || null;
+        if (audioB64) {
+          const fsp = await import("node:fs/promises");
+          const os = await import("node:os");
+          const nodePath = await import("node:path");
+          const ext = /webm/i.test(body.mime || "")
+            ? "webm"
+            : /ogg|opus/i.test(body.mime || "")
+              ? "ogg"
+              : /mp4|m4a|aac/i.test(body.mime || "")
+                ? "m4a"
+                : "wav";
+          const tmp = nodePath.join(
+            os.tmpdir(),
+            `xclaw-upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+          );
+          try {
+            await fsp.writeFile(tmp, Buffer.from(String(audioB64), "base64"));
+            const out = await localTranscribe(tmp, cfg);
+            return json(res, out.ok ? 200 : 503, out);
+          } finally {
+            await fsp.unlink(tmp).catch(() => {});
+          }
+        }
         const file = body.path || body.file || body.audioPath;
-        if (!file) return json(res, 400, { error: "path required" });
+        if (!file) return json(res, 400, { error: "path or audioBase64 required" });
         const out = await localTranscribe(file, cfg);
         return json(res, out.ok ? 200 : 503, out);
       }

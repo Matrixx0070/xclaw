@@ -138,3 +138,65 @@ describe("wake readiness reflects hardware, not just tooling", () => {
     assert.match(src, /card \\d\+/);
   });
 });
+
+describe("a voice session is a conversation, not a series of jobs", () => {
+  it("voice turns run the channel-invariant agent with a conversation id", async () => {
+    const src = await fs.readFile(
+      new URL("../src/gateway/voice-ws.mjs", import.meta.url),
+      "utf8"
+    );
+    // Each utterance used to spawn runJob(): no history, and an empty
+    // /tmp/xclaw-jobs workspace, so follow-ups and file access could not work.
+    assert.ok(
+      !/runJob\(\{\s*\n?\s*goal: text/.test(src),
+      "voice turns must not spawn a fresh job per utterance"
+    );
+    assert.match(src, /runAgent\(\{/);
+    assert.match(src, /chatSessionId: state\.conversationId/);
+    assert.match(src, /workingDir: state\.workingDir/);
+  });
+
+  it("a conversation id is stable per session and resumable via query param", async () => {
+    const src = await fs.readFile(
+      new URL("../src/gateway/voice-ws.mjs", import.meta.url),
+      "utf8"
+    );
+    assert.match(src, /searchParams\.get\("conversation"\)/);
+    assert.match(src, /`voice_\$\{sessionId\}`/);
+    // The handshake tells the client what thread and workspace it is in.
+    assert.match(src, /type: "ready"[\s\S]{0,200}conversationId/);
+  });
+
+  it("tool activity is surfaced to the client mid-turn", async () => {
+    const src = await fs.readFile(
+      new URL("../src/gateway/voice-ws.mjs", import.meta.url),
+      "utf8"
+    );
+    assert.match(src, /event: "tool"/);
+  });
+});
+
+describe("webchat mic can use local STT", () => {
+  it("transcribe endpoint accepts uploaded audio, not just server paths", async () => {
+    const src = await fs.readFile(
+      new URL("../src/gateway/index.mjs", import.meta.url),
+      "utf8"
+    );
+    // A browser has bytes, not a path — path-only meant the mic had to fall
+    // back to a cloud speech API.
+    assert.match(src, /audioBase64/);
+    assert.match(src, /path or audioBase64 required/);
+  });
+
+  it("the mic records to the server when local STT is ready", async () => {
+    const app = await fs.readFile(
+      new URL("../ui/webchat/app.js", import.meta.url),
+      "utf8"
+    );
+    assert.match(app, /MediaRecorder/);
+    assert.match(app, /\/api\/voice\/transcribe/);
+    assert.match(app, /serverSttReady/);
+    // Browser speech stays as a fallback, not the primary path.
+    assert.match(app, /webkitSpeechRecognition/);
+  });
+});

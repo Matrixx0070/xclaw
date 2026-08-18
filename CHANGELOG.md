@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 3.132.0 — voice is a conversation (2026-08-18)
+
+Live testing answered "does voice actually work during a conversation?" with:
+tools yes, conversation no. Each `/ws/voice` utterance spawned a fresh
+`runJob()` — no history, and an empty `/tmp/xclaw-jobs/...` workspace. Proven
+before: turn 1 ran `hostname` and answered `srv1474168`; turn 2 asked what it
+had just reported and answered *"This is the first message in the
+conversation."*
+
+- **Voice turns now run the channel-invariant agent** (the same path WebChat
+  uses) keyed by a stable conversation id, in a real workspace. Same two turns
+  now: `srv1474168`, then `srv1474168` from memory with no command re-run.
+- **Resumable threads**: `/ws/voice?conversation=<id>` continues an existing
+  conversation, so a dropped socket no longer means amnesia. Proven across two
+  separate connections.
+- **Files work**: a voice turn reads and writes in the session workspace
+  instead of an empty throwaway job directory.
+- **Tool activity streams mid-turn** (`event: "tool"`), so a client can show or
+  announce progress while the agent is still working.
+- **WebChat mic uses local STT**: `/api/voice/transcribe` now accepts uploaded
+  audio (`audioBase64`), and the mic records via MediaRecorder and transcribes
+  on the gateway. Works in any browser with a microphone and keeps the audio on
+  your own machine; browser SpeechRecognition remains a fallback.
+
 ## 3.131.2 — live verification: the shipped voice stack now actually works (2026-08-18)
 
 Every capability from the 3.77–3.80 line was exercised against the running

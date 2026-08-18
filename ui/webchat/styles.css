@@ -418,3 +418,18 @@ body {
   flex: 0 0 auto;
 }
 .point-btn:hover { border-color: var(--accent, #ff5470); }
+
+/* Mic is live — recording is otherwise invisible, and a hot mic you cannot
+   see is worth a clear signal. */
+#btn-mic.recording {
+  border-color: var(--accent, #ff5470);
+  color: var(--accent, #ff5470);
+  animation: mic-pulse 1.1s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #btn-mic.recording { animation: none; }
+}

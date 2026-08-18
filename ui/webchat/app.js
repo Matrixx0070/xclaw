@@ -688,14 +688,17 @@ function showAuthOverlay() {
     if (voiceStatus) voiceStatus.textContent = s || "";
   }
 
-  // Probe local stack once
+  // Probe local stack once — server STT decides whether the mic records here
+  // and transcribes on the gateway, or falls back to browser speech.
+  let serverSttReady = false;
   fetch("/api/voice/probe")
     .then((r) => r.json())
     .then((v) => {
+      serverSttReady = Boolean(v.stt?.ok);
       const parts = [];
       if (v.tts?.ok) parts.push("TTS " + (v.tts.provider || "ok"));
       else parts.push("TTS off");
-      if (v.stt?.ok) parts.push("STT server ready");
+      if (serverSttReady) parts.push("STT local");
       setVoiceStatus(parts.join(" · "));
     })
     .catch(() => setVoiceStatus(""));
@@ -737,10 +740,77 @@ function showAuthOverlay() {
   }
 
   if (btnMic) {
-    btnMic.addEventListener("click", () => {
+    let recorder = null;
+    let recChunks = [];
+
+    // Server-side STT: record here, transcribe with the gateway's local whisper.
+    // Works in any browser with a mic and keeps the audio on your own box,
+    // unlike the browser SpeechRecognition fallback below (which is
+    // Chrome/Edge-only and ships audio to a cloud speech service).
+    async function startServerRecording() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recChunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size) recChunks.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        btnMic.classList.remove("recording");
+        const blob = new Blob(recChunks, { type: recorder.mimeType || "audio/webm" });
+        recorder = null;
+        if (!blob.size) {
+          setVoiceStatus("no audio captured");
+          btnMic.disabled = false;
+          return;
+        }
+        setVoiceStatus("transcribing…");
+        try {
+          const buf = await blob.arrayBuffer();
+          let bin = "";
+          const bytes = new Uint8Array(buf);
+          for (let i = 0; i < bytes.length; i += 0x8000) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+          }
+          const r = await fetch("/api/voice/transcribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ audioBase64: btoa(bin), mime: blob.type }),
+          });
+          const j = await r.json();
+          if (j.ok && j.text) {
+            input.value = (input.value ? input.value + " " : "") + j.text.trim();
+            setVoiceStatus("heard: " + j.text.trim().slice(0, 60));
+          } else {
+            setVoiceStatus("STT: " + (j.error || "no transcript"));
+          }
+        } catch (e) {
+          setVoiceStatus("STT error: " + e.message);
+        }
+        btnMic.disabled = false;
+      };
+      recorder.start();
+      btnMic.classList.add("recording");
+      setVoiceStatus("recording… click to stop");
+    }
+
+    btnMic.addEventListener("click", async () => {
+      if (recorder && recorder.state === "recording") {
+        recorder.stop();
+        btnMic.disabled = true;
+        return;
+      }
+      if (serverSttReady && navigator.mediaDevices?.getUserMedia && window.MediaRecorder) {
+        try {
+          await startServerRecording();
+          return;
+        } catch (e) {
+          setVoiceStatus("mic: " + (e.message || "denied") + " — trying browser STT");
+        }
+      }
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) {
-        setVoiceStatus("Browser STT not supported — use Chrome/Edge or Telegram voice notes");
+        setVoiceStatus("No mic access and no browser STT — use Telegram voice notes");
         return;
       }
       const rec = new SR();
