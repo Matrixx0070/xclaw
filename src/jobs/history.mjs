@@ -4,6 +4,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { buildToolHashChain } from "../agent/tool-hash-chain.mjs";
 
 export function jobsDir(cfg) {
   const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
@@ -38,9 +39,13 @@ export async function recordJob(cfg, job) {
     workspace: job.workspace,
     at: new Date().toISOString(),
   };
+  const chain = job.toolHashTip
+    ? { tip: job.toolHashTip, version: job.toolHashVersion || 1 }
+    : buildToolHashChain(job.toolTrace || []);
+  slim.toolHashTip = chain.tip;
+  slim.toolHashVersion = chain.version;
   const fp = path.join(dir, `${job.id}.json`);
   await fs.writeFile(fp, JSON.stringify({ ...slim, evidence: job.evidence || [], verify: job.verify || null }, null, 2));
-  // index line
   const indexPath = path.join(dir, "index.jsonl");
   await fs.appendFile(indexPath, JSON.stringify(slim) + "\n");
   return { path: fp, slim };
