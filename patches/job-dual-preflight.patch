@@ -1,0 +1,79 @@
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -13,8 +13,9 @@ import { stampJobToolHash } from "./stamp-tool-hash.mjs";
+ import { rememberJob } from "../memory/durable.mjs";
+ import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
+ import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
+-import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
+-import { checkSeatBudget, recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
++import { recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
++import { recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
++import { preflightJobBudgets, budgetBlockedJob } from "./job-dual-preflight.mjs";
+ 
+ /** @typedef {"pending"|"running"|"succeeded"|"failed"|"cancelled"|"budget_exceeded"} JobStatus */
+ 
+@@ -50,58 +51,14 @@ export async function runJob(opts) {
+ 
+   const evidence = createEvidenceLog();
+ 
+-  // Cost governor pre-check
+-  try {
+-    if (cfg) {
+-      const budget = await checkCostBudget(cfg);
+-      if (!budget.ok) {
+-        return {
+-          id,
+-          goal,
+-          workspace,
+-          status: "failed",
+-          pass: false,
+-          turns: 0,
+-          toolCalls: 0,
+-          toolErrors: 0,
+-          wallMs: 0,
+-          text: "",
+-          error: budget.message || "cost hard cap",
+-          code: budget.code || "BUDGET_EXCEEDED",
+-          costBlocked: true,
+-          evidence: [],
+-        };
+-      }
+-    }
+-  } catch {
+-    /* */
+-  }
+-
+-  // Seat budget pre-check (Phase 3)
++  // Dual preflight: auth refresh → cost governor → seat budget
+   let seatInfo = null;
+   try {
+-    if (cfg && seatsEnabled(cfg)) {
+-      const peer = opts.peer || opts.seatPeer || opts.from || null;
+-      seatInfo = await checkSeatBudget(cfg, peer);
+-      if (!seatInfo.ok) {
+-        return {
+-          id,
+-          goal,
+-          workspace,
+-          status: "failed",
+-          pass: false,
+-          turns: 0,
+-          toolCalls: 0,
+-          toolErrors: 0,
+-          wallMs: 0,
+-          text: "",
+-          error: seatInfo.message || "seat hard cap",
+-          seatBlocked: true,
+-          seat: seatInfo.seat || null,
+-          evidence: [],
+-        };
+-      }
++    const dual = await preflightJobBudgets(cfg, opts);
++    if (dual && dual.ok === false) {
++      return budgetBlockedJob({ id, goal, workspace, r: dual });
+     }
++    seatInfo = dual?.seat || null;
+   } catch {
+     /* */
+   }
