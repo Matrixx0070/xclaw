@@ -5,14 +5,20 @@ export const SHIP_PACK_EXTRA_UNIT_TESTS = [
   "test/approval-digest-cron.test.mjs",
   "test/quota-soft-warn.test.mjs",
   "test/quota-soft-warn-hubs.test.mjs",
+  "test/quota-hard-emit.test.mjs",
   "test/job-history-hash.test.mjs",
   "test/memory-soak-redact.test.mjs",
   "test/memory-md-redact.test.mjs",
   "test/stamp-job-tool-hash.test.mjs",
   "test/doctor-perf-ensure.test.mjs",
+  "test/doctor-json-cold-start.test.mjs",
   "test/ship-patches-remaining.test.mjs",
+  "test/ship-pack-unit-tests.test.mjs",
   "test/ci-ship-pack-strict-check.test.mjs",
   "test/gateway-digest-cron-boot.test.mjs",
+  "test/land-extra-imports.test.mjs",
+  "test/apply-then-check.test.mjs",
+  "test/digest-only-if-pending.test.mjs",
 ];
 
 export default { SHIP_PACK_EXTRA_UNIT_TESTS };
