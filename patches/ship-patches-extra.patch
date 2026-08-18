@@ -1,0 +1,18 @@
+diff --git a/scripts/apply-ship-patches.mjs b/scripts/apply-ship-patches.mjs
+--- a/scripts/apply-ship-patches.mjs
++++ b/scripts/apply-ship-patches.mjs
+@@ -8,6 +8,7 @@ import path from "node:path";
+ import { fileURLToPath } from "node:url";
+ import { spawnSync } from "node:child_process";
++import { extraShipEntries } from "../src/ci/ship-patches-extra.mjs";
+ 
+ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+@@ -204,7 +205,7 @@ if (!fs.existsSync(patchesDir)) {
+   process.exit(0);
+ }
+ 
+-const results = SHIP_PATCHES.map(applyOne);
++const results = [...SHIP_PATCHES, ...extraShipEntries(read)].map(applyOne);
+ if (checkOnly) {
+   process.exit(results.includes("need") ? 1 : 0);
+ }
