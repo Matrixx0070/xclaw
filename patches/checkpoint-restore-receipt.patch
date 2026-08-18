@@ -1,0 +1,18 @@
+diff --git a/src/jobs/checkpoint.mjs b/src/jobs/checkpoint.mjs
+--- a/src/jobs/checkpoint.mjs
++++ b/src/jobs/checkpoint.mjs
+@@ -477,6 +477,14 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
+     onEvent: opts.onEvent,
+     persistRun: true,
+   };
++  try {
++    const { receiptFromCheckpoint } = await import("./checkpoint-restore-receipt.mjs");
++    jobOpts.receiptCollector = receiptFromCheckpoint(cp);
++    jobOpts.job = jobOpts.receiptCollector;
++    jobOpts.quotaEscalate = jobOpts.receiptCollector.quotaEscalate;
++  } catch {
++    /* */
++  }
+ 
+   const resumeRetries =
+     opts.retries ??
