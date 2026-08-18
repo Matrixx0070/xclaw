@@ -1,0 +1,71 @@
+diff --git a/src/gateway/sse-fanout.mjs b/src/gateway/sse-fanout.mjs
+--- a/src/gateway/sse-fanout.mjs
++++ b/src/gateway/sse-fanout.mjs
+@@ -76,11 +76,41 @@
+     };
+   }
+ 
++  function closeRoom(room, reason = "kill") {
++    const key = String(room || "default");
++    const r = rooms.get(key);
++    if (!r) return { closed: 0, room: key };
++    let closed = 0;
++    for (const [sid, sub] of [...r.entries()]) {
++      try {
++        if (isSSEOpen(sub.res)) sendSSE(sub.res, "session_killed", { reason, room: key }, `kill-${sid}`);
++        sub.res.end?.();
++      } catch { /* */ }
++      r.delete(sid);
++      closed += 1;
++    }
++    rooms.delete(key);
++    return { closed, room: key, reason };
++  }
++
++  function closeAll(reason = "kill_all") {
++    const roomsClosed = [];
++    for (const key of [...rooms.keys()]) {
++      roomsClosed.push(closeRoom(key, reason));
++    }
++    rooms.clear();
++    return {
++      reason,
++      rooms: roomsClosed.length,
++      subscribers: roomsClosed.reduce((n, x) => n + x.closed, 0),
++    };
++  }
++
+   function clear() {
+     rooms.clear();
+   }
+ 
+-  return { subscribe, publish, publishAll, stats, clear };
++  return { subscribe, publish, publishAll, stats, clear, closeRoom, closeAll };
+ }
+
+diff --git a/src/agent/session-control.mjs b/src/agent/session-control.mjs
+--- a/src/agent/session-control.mjs
++++ b/src/agent/session-control.mjs
+@@ -53,11 +53,14 @@
+ export async function killAll({ stopComputer: stopComp = true, closeWs = true, cfg } = {}) {
+   const ids = [...active.keys()];
+   for (const id of ids) killSession(id);
+-  let ws = null;
++  let sse = null;
++    let ws = null;
+   if (closeWs) {
+     try {
+       const { closeAllWebSockets } = await import("../gateway/ws-hub.mjs");
++      const { closeAllSSEFanout } = await import("../gateway/sse-fanout-registry.mjs");
+       ws = closeAllWebSockets("kill_all");
++      sse = closeAllSSEFanout("kill_all");
+     } catch (e) {
+       ws = { ok: false, error: String(e?.message || e) };
+     }
+@@ -70,7 +73,7 @@
+       computer = { ok: false, error: String(e?.message || e) };
+     }
+   }
+-  return { ok: true, killedSessions: ids, computer, ws };
++  return { ok: true, killedSessions: ids, computer, ws, sse };
+ }
