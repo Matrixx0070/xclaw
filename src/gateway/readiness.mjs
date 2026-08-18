@@ -7,7 +7,7 @@ import { queueStats } from "../jobs/queue.mjs";
 
 /**
  * @param {object} cfg
- * @returns {Promise<{ ready: boolean, status: number, body: object }>}
+ * @returns {Promise<{ ready: boolean, status: number, body: object }>
  */
 export async function checkReadiness(cfg) {
   const requireComputer = cfg.readiness?.requireComputer !== false;
@@ -37,11 +37,25 @@ export async function checkReadiness(cfg) {
     if ((q.queued || 0) > maxQueued) ready = false;
   } catch (e) {
     checks.queue = { ok: false, error: e.message };
-    // queue probe failure is soft unless configured strict
     if (cfg.readiness?.strictQueue) ready = false;
   }
 
   checks.gateway = { ok: true };
+
+  const prod =
+    cfg.profile === "prod" ||
+    cfg.profile === "strict" ||
+    cfg.gateway?.requireAuth === true ||
+    cfg.readiness?.requireStop === true;
+  try {
+    const { stopAuthReadiness } = await import("./stop-health.mjs");
+    const stop = stopAuthReadiness(cfg);
+    checks.stop = { ok: stop.ready, ...stop };
+    if (prod && !stop.ready) ready = false;
+  } catch (e) {
+    checks.stop = { ok: !prod, error: e.message };
+    if (prod && cfg.readiness?.requireStop !== false) ready = false;
+  }
 
   return {
     ready,
