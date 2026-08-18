@@ -3,6 +3,7 @@
  */
 import { getSharedApprovalGate } from "./approvals.mjs";
 import { deliverToChannel } from "../cron/channel-deliver.mjs";
+import { buildRoutedApprovalDigest } from "./approval-digest-route.mjs";
 
 export function buildApprovalDigest(cfg) {
   const gate = getSharedApprovalGate(cfg);
@@ -16,11 +17,7 @@ export function buildApprovalDigest(cfg) {
     const age = p.ageMs != null ? `${Math.round(p.ageMs / 1000)}s` : "?";
     const left = p.remainingMs != null ? `${Math.round(p.remainingMs / 1000)}s left` : "";
     const fp = p.planFingerprint ? ` plan=${p.planFingerprint.slice(0, 12)}` : "";
-    const cmd =
-      p.plan?.command ||
-      p.args?.command ||
-      p.args?.cmd ||
-      "";
+    const cmd = p.plan?.command || p.args?.command || p.args?.cmd || "";
     const cmdShort = cmd ? ` «${String(cmd).slice(0, 60)}»` : "";
     lines.push(`- ${p.id} ${p.tool} age=${age} ${left}${fp}${cmdShort}`.trim());
   }
@@ -33,21 +30,31 @@ export function buildApprovalDigest(cfg) {
   };
 }
 
-export async function sendApprovalDigest(cfg) {
+export async function sendApprovalDigest(cfg, { deliver = deliverToChannel } = {}) {
   const digest = buildApprovalDigest(cfg);
   if (!digest.pending && cfg?.security?.digestOnlyIfPending !== false) {
     return { sent: false, reason: "empty", digest };
   }
-  const targets = cfg?.security?.digestTargets || cfg?.alerting?.targets || [];
-  if (!targets.length) {
-    return { sent: false, reason: "no_targets", digest };
-  }
-  for (const t of targets) {
-    try {
-      await deliverToChannel(cfg, t, digest.text);
-    } catch (err) {
-      console.error("[xclaw:digest]", err.message);
+  const routed = buildRoutedApprovalDigest(digest, cfg);
+  const deliveries = [];
+  async function sendBucket(bucket, kind) {
+    if (!bucket.items.length && cfg?.security?.digestOnlyIfPending !== false) return;
+    if (!bucket.targets.length) {
+      deliveries.push({ kind, sent: false, reason: "no_targets" });
+      return;
+    }
+    for (const t of bucket.targets) {
+      try {
+        await deliver(cfg, t, bucket.text);
+        deliveries.push({ kind, sent: true, channel: t.channel || t });
+      } catch (err) {
+        console.error("[xclaw:digest]", err.message);
+        deliveries.push({ kind, sent: false, error: err.message });
+      }
     }
   }
-  return { sent: true, digest };
+  await sendBucket(routed.critical, "critical");
+  await sendBucket(routed.soft, "soft");
+  const sent = deliveries.some((d) => d.sent);
+  return { sent, digest, routed, deliveries };
 }
