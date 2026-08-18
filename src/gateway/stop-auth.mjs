@@ -2,9 +2,27 @@
  * POST /stop must not be unauthenticated on a public single-port gateway.
  */
 import crypto from "node:crypto";
+import { stableStringify } from "../utils/stable-stringify.mjs";
+
+/** Canonical payload for HMAC — object → stable JSON; string left as-is if already JSON-ish. */
+export function canonicalizeStopBody(body = "") {
+  if (body == null || body === "") return "";
+  if (typeof body === "string") {
+    const s = body.trim();
+    if (!s) return "";
+    try {
+      return stableStringify(JSON.parse(s));
+    } catch {
+      return s;
+    }
+  }
+  if (typeof body === "object") return stableStringify(body);
+  return String(body);
+}
 
 export function signStopBody(secret, body = "") {
-  return crypto.createHmac("sha256", String(secret || "")).update(String(body || "")).digest("hex");
+  const payload = canonicalizeStopBody(body);
+  return crypto.createHmac("sha256", String(secret || "")).update(payload).digest("hex");
 }
 
 function hmacEqual(got, expected) {
@@ -76,7 +94,12 @@ export function authorizeStop(req, cfg = {}) {
   }
   let raw = "";
   try {
-    raw = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
+    raw =
+      req.rawBody != null
+        ? req.rawBody
+        : typeof req.body === "string"
+          ? req.body
+          : req.body || {};
   } catch {
     raw = "";
   }
@@ -86,4 +109,11 @@ export function authorizeStop(req, cfg = {}) {
   return { ok: true, authMethod: "token" };
 }
 
-export default { authorizeStop, extractStopToken, stopAuthToken, signStopBody, verifyStopSignature };
+export default {
+  authorizeStop,
+  extractStopToken,
+  stopAuthToken,
+  signStopBody,
+  verifyStopSignature,
+  canonicalizeStopBody,
+};

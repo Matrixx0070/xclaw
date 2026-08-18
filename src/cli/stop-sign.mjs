@@ -4,7 +4,7 @@
  *   xclaw stop --sign [--body '{}'] [--print-curl] [--dry-run]
  *   xclaw stop-sign
  */
-import { signStopBody, stopAuthToken } from "../gateway/stop-auth.mjs";
+import { signStopBody, stopAuthToken, canonicalizeStopBody } from "../gateway/stop-auth.mjs";
 
 export function resolveStopSecret(cfg = {}) {
   return (
@@ -34,8 +34,7 @@ export function buildStopSignResult(cfg = {}, opts = {}) {
   if (opts.dryRun && bodyObj && typeof bodyObj === "object") {
     bodyObj = { ...bodyObj, dryRun: true };
   }
-  const raw =
-    typeof bodyObj === "string" ? bodyObj : JSON.stringify(bodyObj);
+  const raw = canonicalizeStopBody(bodyObj);
   const secret = resolveStopSecret(cfg);
   const token = stopAuthToken(cfg);
   const sig = secret ? signStopBody(secret, raw) : null;

@@ -1,7 +1,7 @@
 /**
  * Auth for WS/SSE control-plane stop messages (same surface as POST /stop).
  */
-import { authorizeStop, signStopBody, extractStopToken, stopAuthToken } from "./stop-auth.mjs";
+import { authorizeStop, signStopBody, extractStopToken, stopAuthToken, canonicalizeStopBody } from "./stop-auth.mjs";
 
 /**
  * Normalize a control-plane stop message into a fake req for authorizeStop.
@@ -24,7 +24,7 @@ export function authorizeStopControl(msg, cfg = {}) {
 export function buildStopControlMessage(cfg = {}, body = { type: "stop" }) {
   const token = stopAuthToken(cfg);
   const secret = cfg.gateway?.stopHmacSecret || process.env.XCLAW_STOP_HMAC_SECRET || "";
-  const raw = typeof body === "string" ? body : JSON.stringify(body);
+  const raw = canonicalizeStopBody(body);
   const out = { type: "stop", body, token: token || undefined };
   if (secret) out.sig = signStopBody(secret, raw);
   return out;
