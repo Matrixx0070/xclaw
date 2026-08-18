@@ -12,11 +12,6 @@ import {
 } from "../jobs/evidence.mjs";
 import { principlesForLevel } from "./principles.mjs";
 
-/**
- * Resolve whether this run must refuse ungrounded claims.
- * @param {object} [cfg]
- * @param {object} [opts] job-level overrides
- */
 export function resolveClaimsPolicy(cfg = {}, opts = {}) {
   const level =
     opts.autonomyLevel ||
@@ -56,9 +51,6 @@ export function resolveClaimsPolicy(cfg = {}, opts = {}) {
   };
 }
 
-/**
- * Gate final agent/job text against evidence snapshot.
- */
 export function gateStructuredClaims({
   text,
   evidence = [],
@@ -89,9 +81,17 @@ export function gateStructuredClaims({
   };
 }
 
-/**
- * Apply gate to a job-like result; mutates status when refuse.
- */
+function attachSoftRetryBudget(out, gate, ctx) {
+  if (!ctx?.softRetryBudget) return out;
+  const snap =
+    typeof ctx.softRetryBudget.snapshot === "function"
+      ? ctx.softRetryBudget.snapshot()
+      : ctx.softRetryBudget;
+  out.claimsSoftRetry = snap;
+  out.claimsGate = { ...gate, softRetryBudget: snap };
+  return out;
+}
+
 export function applyClaimsGateToResult(result, ctx = {}) {
   const gate = gateStructuredClaims({
     text: result?.text || result?.finalText || "",
@@ -100,21 +100,29 @@ export function applyClaimsGateToResult(result, ctx = {}) {
     opts: ctx.opts || {},
   });
   if (gate.refuse) {
-    return {
+    return attachSoftRetryBudget(
+      {
+        ...result,
+        ok: false,
+        status: "failed",
+        error: result?.error || gate.reason,
+        groundingWarnings: gate.warnings,
+        claimsGate: gate,
+        pass: false,
+      },
+      gate,
+      ctx
+    );
+  }
+  return attachSoftRetryBudget(
+    {
       ...result,
-      ok: false,
-      status: "failed",
-      error: result?.error || gate.reason,
       groundingWarnings: gate.warnings,
       claimsGate: gate,
-      pass: false,
-    };
-  }
-  return {
-    ...result,
-    groundingWarnings: gate.warnings,
-    claimsGate: gate,
-  };
+    },
+    gate,
+    ctx
+  );
 }
 
 export default {
