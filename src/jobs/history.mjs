@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { buildToolHashChain } from "../agent/tool-hash-chain.mjs";
+import { buildReceiptMetrics } from "./receipt-metrics.mjs";
 
 export function jobsDir(cfg) {
   const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
@@ -22,6 +23,7 @@ export async function ensureJobsDir(cfg) {
  */
 export async function recordJob(cfg, job) {
   const dir = await ensureJobsDir(cfg);
+  const receiptMetrics = job.receiptMetrics || buildReceiptMetrics(job);
   const slim = {
     id: job.id,
     goal: String(job.goal || "").slice(0, 500),
@@ -38,6 +40,9 @@ export async function recordJob(cfg, job) {
     verifyOk: job.verify ? job.verify.ok : null,
     workspace: job.workspace,
     at: new Date().toISOString(),
+    receiptMetrics,
+    claimsSoftRetry: receiptMetrics.claimsSoftRetry,
+    quotaEscalate: receiptMetrics.quotaEscalate,
   };
   const chain = job.toolHashTip
     ? { tip: job.toolHashTip, version: job.toolHashVersion || 1 }
