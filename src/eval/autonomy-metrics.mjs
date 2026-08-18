@@ -4,7 +4,7 @@
 import { looksLikeHandoff, countToolsUsed } from "../agent/autonomy-policy.mjs";
 
 /**
- * @param {{ text?: string, toolTrace?: object[], goalReceipt?: object, pass?: boolean }} run
+ * @param {{ text?: string, toolTrace?: object[], goalReceipt?: object, pass?: boolean, quotaEscalate?: object, receiptMetrics?: object }} run
  * @param {{ pass?: boolean }} [scored]
  */
 export function scoreAutonomyRun(run = {}, scored = {}) {
@@ -20,6 +20,9 @@ export function scoreAutonomyRun(run = {}, scored = {}) {
   const toolFirst = toolCount > 0 || !handoff;
   const zeroToolHandoff = handoff && toolCount === 0;
   const completion = scored.pass === true || run.pass === true;
+  const q = run.quotaEscalate || run.receiptMetrics?.quotaEscalate || {};
+  const hardBlocks = Number(q.hardBlocks) || 0;
+  const softWarns = Number(q.softWarns) || 0;
 
   return {
     completion,
@@ -30,6 +33,9 @@ export function scoreAutonomyRun(run = {}, scored = {}) {
     alternateStrategyUsed: Boolean(run.goalReceipt?.alternateStrategyUsed),
     handoffRetryUsed: Boolean(run.goalReceipt?.handoffRetryUsed),
     stopReason: run.stopReason || run.goalReceipt?.stopReason || null,
+    hardBlocks,
+    softWarns,
+    quotaHard: hardBlocks > 0,
   };
 }
 
@@ -39,6 +45,8 @@ export function scoreAutonomyRun(run = {}, scored = {}) {
 export function aggregateAutonomy(rows = []) {
   const n = rows.length || 0;
   const sum = (fn) => rows.reduce((a, r) => a + (fn(r) ? 1 : 0), 0);
+  const hardBlocks = rows.reduce((a, r) => a + (Number(r.hardBlocks) || 0), 0);
+  const softWarns = rows.reduce((a, r) => a + (Number(r.softWarns) || 0), 0);
   return {
     n,
     completion: n ? sum((r) => r.completion) / n : 0,
@@ -48,6 +56,10 @@ export function aggregateAutonomy(rows = []) {
     meanToolCount: n
       ? rows.reduce((a, r) => a + (r.toolCount || 0), 0) / n
       : 0,
+    hardBlocks,
+    softWarns,
+    hardBlockRate: n ? hardBlocks / n : 0,
+    quotaHardRate: n ? sum((r) => r.quotaHard) / n : 0,
   };
 }
 
