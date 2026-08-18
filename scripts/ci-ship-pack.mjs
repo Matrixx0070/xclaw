@@ -4,6 +4,7 @@
  *
  * Runs:
  *   0) apply ship patches + --check (idempotent)
+ *   0b) land-batch3/4/5 --check (NEED wires fail)
  *   1) core unit tests (security, gateway proxy, cost, stream, skills)
  *   2) eval offline smoke (+ last-mock.json when available)
  *   3) xclaw doctor --json (must produce a report; may warn without keys)
@@ -24,6 +25,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { SHIP_PACK_EXTRA_UNIT_TESTS } from "../src/ci/ship-pack-unit-tests.mjs";
 import { applyThenCheck } from "../src/ci/apply-then-check.mjs";
+import { runLandBatchChecks } from "../src/ci/land-batch-check.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bin = path.join(root, "bin", "xclaw.mjs");
@@ -88,6 +90,19 @@ if (!ap.ok) {
   process.exit(ap.code || 1);
 }
 log("apply-then-check OK");
+
+log("land-batch --check (3/4/5)");
+const lb = runLandBatchChecks(root);
+if (!lb.ok) {
+  for (const r of lb.results) {
+    if (r.skipped) continue;
+    log(`${r.script} exit=${r.code}`);
+    for (const line of r.out || []) log(`  ${line}`);
+  }
+  log("land-batch --check FAILED (NEED wires remain)");
+  process.exit(1);
+}
+log("land-batch --check OK");
 
 log(`unit tests (${UNIT_TESTS.length} files)`);
 const unit = await run(process.execPath, ["--test", ...UNIT_TESTS]);
