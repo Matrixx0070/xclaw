@@ -44,6 +44,13 @@ export async function pushDoctorOpsBundle(push, cfg = {}, opts = {}) {
   }
 
   try {
+    const { pushQuotaEscalateChecks } = await import("./doctor-quota-escalate.mjs");
+    pushQuotaEscalateChecks(push, opts.root || process.cwd());
+  } catch (e) {
+    push("ops.quota_escalate", "warn", e.message || String(e));
+  }
+
+  try {
     const { pushSmokeCompareChecks } = await import("./doctor-smoke-compare.mjs");
     pushSmokeCompareChecks(push, opts.root || process.cwd());
   } catch (e) {
