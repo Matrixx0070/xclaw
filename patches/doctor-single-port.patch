@@ -1,0 +1,17 @@
+diff --git a/src/cli/doctor.mjs b/src/cli/doctor.mjs
+--- a/src/cli/doctor.mjs
++++ b/src/cli/doctor.mjs
+@@ -177,6 +177,13 @@ export async function runDoctor(opts = {}) {
+     push("security.killSwitch", "warn", e.message || String(e));
+   }
+ 
++  try {
++    const { pushSinglePortChecks } = await import("./doctor-single-port.mjs");
++    pushSinglePortChecks(push, cfg);
++  } catch (e) {
++    push("gateway.singlePort", "warn", e.message || String(e));
++  }
++
+   // F — prod honesty (defaults must match the label)
+   try {
+     const { prodHonestyChecks } = await import("./doctor-prod-honesty.mjs");
