@@ -1,0 +1,25 @@
+diff --git a/src/gateway/routes/ops.mjs b/src/gateway/routes/ops.mjs
+--- a/src/gateway/routes/ops.mjs
++++ b/src/gateway/routes/ops.mjs
+@@ -104,6 +104,13 @@ export async function tryHandleOpsRoute({
+   }
+   if (p === "/health" || p === "/gateway/health") {
+     const computerOk = await isComputerRunning(cfg);
++    let stop = null;
++    try {
++      const { stopAuthReadiness } = await import("../stop-health.mjs");
++      stop = stopAuthReadiness(cfg);
++    } catch {
++      stop = null;
++    }
+     json(res, 200, {
+       status: "healthy",
+       service: "XClaw-Gateway",
+@@ -113,6 +120,7 @@ export async function tryHandleOpsRoute({
+       computerUrl: `http://${cfg.computer.host}:${cfg.computer.port}`,
+       webchat: webchatEnabled,
+       sse: true,
++      stop,
+     });
+     return true;
+   }
