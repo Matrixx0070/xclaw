@@ -1,0 +1,14 @@
+diff --git a/src/cli/doctor.mjs b/src/cli/doctor.mjs
+--- a/src/cli/doctor.mjs
++++ b/src/cli/doctor.mjs
+@@ -178,9 +178,9 @@ export async function runDoctor(opts = {}) {
+   }
+ 
+   try {
+-    const { pushPerfChecks } = await import("./doctor-perf-checks.mjs");
+-    pushPerfChecks(push, cfg);
++    const { pushPerfChecksEnsured } = await import("./doctor-perf-ensure.mjs");
++    await pushPerfChecksEnsured(push, cfg);
+   } catch (e) {
+     push("ops.perf", "warn", e.message || String(e));
+   }
