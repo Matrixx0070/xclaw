@@ -40,6 +40,16 @@ export const SHIP_PACK_EXTRA_UNIT_TESTS = [
   "test/apply-idempotent.test.mjs",
   "test/extra-ship-entries-fail-closed.test.mjs",
   "test/digest-only-if-pending.test.mjs",
+  "test/dual-preflight.test.mjs",
+  "test/job-dual-preflight.test.mjs",
+  "test/receipt-metrics.test.mjs",
+  "test/history-receipt-metrics.test.mjs",
+  "test/authorize-quota-receipt.test.mjs",
+  "test/doctor-receipt-metrics.test.mjs",
+  "test/checkpoint-require-tip.test.mjs",
+  "test/stop-kill-switch.test.mjs",
+  "test/autonomy-smoke-artifact.test.mjs",
+  "test/land-remaining-wires.test.mjs",
 ];
 
 export default { SHIP_PACK_EXTRA_UNIT_TESTS };
