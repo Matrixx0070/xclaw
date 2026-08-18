@@ -10,18 +10,27 @@ export function buildStopSummary(checks = []) {
   const last = byId["security.killSwitch.lastDrain"];
   const ks = byId["security.killSwitch"];
   const auth = byId["gateway.stopAuth"];
-  const statuses = [health, hmac, last, ks, auth]
+  const drill = byId["ops.stop_fire_drill"];
+  const statuses = [health, hmac, last, ks, auth, drill]
     .filter(Boolean)
     .map((c) => c.status);
   let status = "ok";
   if (statuses.includes("error")) status = "error";
   else if (statuses.includes("warn")) status = "warn";
+  const lastDetail = last?.detail || {};
   return {
     status,
     health: health?.detail || health?.message || null,
     hmac: hmac?.message || null,
     auth: auth?.message || null,
-    lastDrain: last?.detail || last?.message || null,
+    lastDrain: lastDetail || last?.message || null,
+    lastDrainChannel:
+      lastDetail.channel || lastDetail.drain?.channel || null,
+    lastDrainAuthMethod:
+      lastDetail.authMethod || lastDetail.drain?.authMethod || null,
+    fireDrill: drill
+      ? { status: drill.status, message: drill.message, detail: drill.detail || null }
+      : null,
     killSwitch: ks?.message || null,
   };
 }
