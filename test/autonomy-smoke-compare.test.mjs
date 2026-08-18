@@ -30,3 +30,22 @@ describe("autonomy smoke compare", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 });
+
+describe("quota rate jump", () => {
+  it("regresses when hardBlockRate jumps", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-scq-"));
+    writeAutonomySmokeArtifact(root, {
+      status: 0,
+      quotaEscalate: { jobs: 4, hardBlocks: 0, hardBlockRate: 0 },
+    });
+    rotateSmokeBaseline(root);
+    writeAutonomySmokeArtifact(root, {
+      status: 0,
+      quotaEscalate: { jobs: 4, hardBlocks: 3, hardBlockRate: 0.75 },
+    });
+    const c = compareAutonomySmoke(root);
+    assert.equal(c.ok, false);
+    assert.equal(c.reason, "quota_regressed");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});

@@ -17,6 +17,17 @@ export function loadSmoke(fp) {
   }
 }
 
+export function hardBlockRateJump(previous, current, opts = {}) {
+  const prev = Number(previous?.quotaEscalate?.hardBlockRate);
+  const cur = Number(current?.quotaEscalate?.hardBlockRate);
+  if (!Number.isFinite(prev) || !Number.isFinite(cur)) {
+    return { regressed: false, skipped: true };
+  }
+  const maxDelta = Number(opts.maxHardBlockRateDelta ?? process.env.XCLAW_MAX_HARD_BLOCK_RATE_DELTA ?? 0.2);
+  const delta = cur - prev;
+  return { regressed: delta > maxDelta, delta, maxDelta, prev, cur };
+}
+
 export function compareAutonomySmoke(root, opts = {}) {
   const curPath = opts.currentPath || smokeArtifactPath(root);
   const prevPath = opts.previousPath || previousSmokePath(root);
@@ -41,7 +52,11 @@ export function compareAutonomySmoke(root, opts = {}) {
   if (current.ok === false) {
     return { ok: false, reason: "current_failed", current, previous };
   }
-  return { ok: true, reason: "stable", current, previous };
+  const jump = hardBlockRateJump(previous, current, opts);
+  if (jump.regressed) {
+    return { ok: false, reason: "quota_regressed", current, previous, jump };
+  }
+  return { ok: true, reason: "stable", current, previous, jump };
 }
 
 export function rotateSmokeBaseline(root) {
@@ -53,4 +68,4 @@ export function rotateSmokeBaseline(root) {
   return { rotated: true, previousPath: prev };
 }
 
-export default { compareAutonomySmoke, rotateSmokeBaseline, previousSmokePath };
+export default { compareAutonomySmoke, rotateSmokeBaseline, previousSmokePath, hardBlockRateJump };
