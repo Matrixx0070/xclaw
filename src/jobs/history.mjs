@@ -7,6 +7,7 @@ import os from "node:os";
 import { buildToolHashChain } from "../agent/tool-hash-chain.mjs";
 import { buildReceiptMetrics, stampReceiptMetrics } from "./receipt-metrics.mjs";
 import { ensureQuotaHardCircuitOnJob } from "./receipt-collector.mjs";
+import { mergeReceiptSnapshotIntoJob } from "./history-receipt.mjs";
 
 export function jobsDir(cfg) {
   const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
@@ -23,6 +24,7 @@ export async function ensureJobsDir(cfg) {
  * Store a slim job record for history/API.
  */
 export async function recordJob(cfg, job) {
+  job = mergeReceiptSnapshotIntoJob(job);
   const dir = await ensureJobsDir(cfg);
   ensureQuotaHardCircuitOnJob(job);
   stampReceiptMetrics(job);
@@ -38,6 +40,8 @@ export async function recordJob(cfg, job) {
     wallMs: job.wallMs,
     model: job.model,
     error: job.error || null,
+    quotaEscalate: job.quotaEscalate || null,
+    quotaHardCircuit: job.quotaHardCircuit || null,
     textPreview: String(job.text || "").slice(0, 400),
     evidenceCount: (job.evidence || []).length,
     verifyOk: job.verify ? job.verify.ok : null,

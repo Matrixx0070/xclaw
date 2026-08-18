@@ -2,8 +2,10 @@
  * One-glance kill-switch posture for doctor --json.
  */
 import { normalizeStopChannel, STOP_CHANNELS } from "./doctor-channel.mjs";
+import { enrichOpsStopChannels } from "./doctor-ops-stop-channels.mjs";
 
 export function buildStopSummary(checks = []) {
+  checks = enrichOpsStopChannels(checks);
   const byId = Object.fromEntries(
     (checks || []).filter((c) => c && c.id).map((c) => [c.id, c])
   );
@@ -40,11 +42,31 @@ export function buildStopSummary(checks = []) {
   };
 }
 
-export function attachStopSummary(report) {
+export function attachStopSummary(report, opts = {}) {
   if (!report) return report;
   report.summary = report.summary || {};
   report.summary.stop = buildStopSummary(report.checks || []);
+  if (opts.stopSurface) {
+    report.summary.stop.stopSurface = opts.stopSurface;
+  }
   return report;
 }
 
-export default { buildStopSummary, attachStopSummary };
+export async function attachStopSummaryWithSurface(report, root) {
+  if (!report) return report;
+  report.summary = report.summary || {};
+  report.summary.stop = buildStopSummary(report.checks || []);
+  try {
+    const { computeStopSurfaceVersion } = await import("../ci/stop-surface-version.mjs");
+    report.summary.stop.stopSurface = computeStopSurfaceVersion(root);
+  } catch {
+    report.summary.stop.stopSurface = null;
+  }
+  return report;
+}
+
+export default {
+  buildStopSummary,
+  attachStopSummary,
+  attachStopSummaryWithSurface,
+};
