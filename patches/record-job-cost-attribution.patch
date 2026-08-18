@@ -1,0 +1,27 @@
+diff --git a/src/tokens/cost-governor.mjs b/src/tokens/cost-governor.mjs
+--- a/src/tokens/cost-governor.mjs
++++ b/src/tokens/cost-governor.mjs
+@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
+ import path from "node:path";
+ import os from "node:os";
+ import { getModelMeta } from "../providers/registry.mjs";
++import { stampJobCostEvent } from "../jobs/job-cost-attribution.mjs";
+ 
+ function dayKey(d = new Date()) {
+   return d.toISOString().slice(0, 10);
+@@ -143,7 +144,7 @@ function bandFor(spent, lim, paused, economyAt) {
+   return "normal";
+ }
+ 
+-export async function recordJobCost(cfg, { usd = 0, jobId = null, estimated = false } = {}) {
++export async function recordJobCost(cfg, { usd = 0, jobId = null, estimated = false, result = {} } = {}) {
+   let ledger = await loadLedger(cfg);
+   if (ledger.day !== dayKey()) {
+     ledger = {
+@@ -170,7 +171,7 @@ export async function recordJobCost(cfg, { usd = 0, jobId = null, estimated = fa
+   ledger.jobs += 1;
+   ledger.events = [
+     ...(ledger.events || []).slice(-50),
+-    { at: new Date().toISOString(), usd, jobId },
++    stampJobCostEvent({ usd, jobId, estimated, result }),
+   ];
