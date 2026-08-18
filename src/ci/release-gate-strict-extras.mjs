@@ -1,5 +1,5 @@
 /**
- * Required --strict extras: receipt, dual preflight, kill-switch, resume.
+ * Required --strict extras: receipt, dual preflight, kill-switch, resume, quota.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -19,6 +19,13 @@ export const RELEASE_GATE_STRICT_EXTRA_TESTS = [
   "test/doctor-ops-bundle.test.mjs",
   "test/doctor-stop-auth.test.mjs",
   "test/last-drain.test.mjs",
+  "test/autonomy-smoke-quota.test.mjs",
+  "test/autonomy-smoke-compare.test.mjs",
+  "test/doctor-single-port-stop.test.mjs",
+  "test/doctor-quota-escalate.test.mjs",
+  "test/stop-hmac.test.mjs",
+  "test/land-batch-check.test.mjs",
+  "test/checkpoint-require-tip.test.mjs",
 ];
 
 export function listStrictExtraTests(root) {
