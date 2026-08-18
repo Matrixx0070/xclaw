@@ -23,6 +23,15 @@ export function pushStopHmacChecks(push, cfg = {}) {
     });
     return { hasSecret: true, required };
   }
+  if (prodLike && (required || cfg.readiness?.requireStop === true || process.env.XCLAW_REQUIRE_STOP_HMAC === "1")) {
+    push(
+      "gateway.stopHmac",
+      "error",
+      "prod/strict stop HMAC missing (health.stop.hmac=missing)",
+      { hasSecret: false, prodLike: true, required: true }
+    );
+    return { hasSecret: false, prodLike: true, required: true };
+  }
   if (prodLike) {
     push(
       "gateway.stopHmac",
