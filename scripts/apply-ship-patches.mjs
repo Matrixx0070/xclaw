@@ -92,6 +92,13 @@ const SHIP_PATCHES = [
       return t.includes("redactEvent") && t.includes("redact-secrets");
     },
   },
+  {
+    file: "doctor-perf-wire.patch",
+    isApplied: (rootDir) => {
+      const t = read(rootDir, "src/cli/doctor.mjs");
+      return t.includes("pushPerfChecks");
+    },
+  },
 ];
 
 function read(rootDir, rel) {
