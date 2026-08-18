@@ -71,6 +71,27 @@ const SHIP_PATCHES = [
       return t.includes("toolHashTip") && t.includes("buildToolHashChain");
     },
   },
+  {
+    file: "authorize-quota.patch",
+    isApplied: (rootDir) => {
+      const t = read(rootDir, "src/security/approvals.mjs");
+      return t.includes("authorizeQuotaPreflight");
+    },
+  },
+  {
+    file: "ws-redact-emit.patch",
+    isApplied: (rootDir) => {
+      const t = read(rootDir, "src/gateway/ws-hub.mjs");
+      return t.includes("redactEvent") && t.includes("redact-secrets");
+    },
+  },
+  {
+    file: "sse-redact.patch",
+    isApplied: (rootDir) => {
+      const t = read(rootDir, "src/gateway/sse.mjs");
+      return t.includes("redactEvent") && t.includes("redact-secrets");
+    },
+  },
 ];
 
 function read(rootDir, rel) {
