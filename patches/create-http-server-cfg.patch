@@ -1,0 +1,13 @@
+diff --git a/src/gateway/index.mjs b/src/gateway/index.mjs
+index 516a5ae..dc4bfa4 100644
+--- a/src/gateway/index.mjs
++++ b/src/gateway/index.mjs
+@@ -2410,7 +2410,7 @@ export async function startGateway({ root } = {}) {
+         res.end();
+       }
+     }
+-  });
++  }, cfg);
+ 
+   await new Promise((resolve, reject) => {
+     server.listen(cfg.gateway.port, cfg.gateway.host, (err) =>
