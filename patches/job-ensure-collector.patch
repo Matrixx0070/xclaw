@@ -1,0 +1,34 @@
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -11,6 +11,7 @@ import { runVerifyChecks } from "./verify.mjs";
+ import { recordJob } from "./history.mjs";
+ import { stampJobToolHash } from "./stamp-tool-hash.mjs";
+ import { rememberJob } from "../memory/durable.mjs";
++import { attachReceiptCollectorToJob, ensureJobReceiptCollector } from "./finalize-receipt.mjs";
+ import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
+ import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
+ import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
+@@ -124,6 +125,11 @@ export async function runJob(opts) {
+   let verifyResult = null;
+   let error = null;
+   const midToolTrace = [];
++  // Always-on receipt collector so force-stop still persists quotaHardCircuit
++  const receiptCollector = ensureJobReceiptCollector(
++    { id },
++    opts.receiptCollector || opts.collector || {}
++  );
+ 
+   const ac = new AbortController();
+   const onAbort = () => ac.abort();
+@@ -301,6 +307,11 @@ export async function runJob(opts) {
+     events: events.filter((e) => e.type === "job" || e.type === "guard" || e.type === "retry"),
+   };
+   stampJobToolHash(job);
++  job.receiptCollector = job.receiptCollector || receiptCollector;
++  attachReceiptCollectorToJob(job, {
++    agentResult,
++    collector: receiptCollector,
++  });
+ 
+   push({ type: "job", phase: "end", id, status, pass: job.pass, wallMs: job.wallMs });
