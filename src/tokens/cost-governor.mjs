@@ -36,9 +36,15 @@ export function getCostLimits(cfg) {
 function limits(cfg) {
   const g = cfg?.cost || cfg?.tokens?.cost || {};
   const autonomyCap = cfg?.autonomy?.maxUsdPerDay;
-  const dailyHard =
-    g.dailyHardUsd ??
-    (autonomyCap != null ? Number(autonomyCap) : 15);
+  // Two independent ceilings: the operator's cost cap and the autonomy-level
+  // cap. The stricter one wins — with `??` the autonomy cap was silently
+  // ignored whenever a cost cap existed, making it decorative.
+  const explicitCap = g.dailyHardUsd;
+  const autonomyNum = autonomyCap != null ? Number(autonomyCap) : null;
+  const caps = [explicitCap, autonomyNum].filter(
+    (v) => v != null && Number.isFinite(Number(v))
+  );
+  const dailyHard = caps.length ? Math.min(...caps.map(Number)) : 15;
   const dailySoft =
     g.dailySoftUsd ??
     (Number.isFinite(dailyHard) ? Math.min(5, dailyHard * 0.5) : 5);

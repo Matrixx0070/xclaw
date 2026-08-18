@@ -177,3 +177,32 @@ describe("cost-governor", () => {
     await setCostGovernorPaused(cfg, false);
   });
 });
+
+// Live-verification regression: an autonomy-level daily cap was silently
+// ignored whenever cost.dailyHardUsd was also set (`??` chain), so the
+// autonomy ceiling was decorative. The stricter cap must win.
+describe("daily cap precedence", () => {
+  it("autonomy.maxUsdPerDay wins when stricter than cost.dailyHardUsd", async () => {
+    const { getCostLimits } = await import("../src/tokens/cost-governor.mjs");
+    const lim = getCostLimits({
+      cost: { dailyHardUsd: 60 },
+      autonomy: { maxUsdPerDay: 2 },
+    });
+    assert.equal(lim.dailyHardUsd, 2);
+  });
+
+  it("cost.dailyHardUsd wins when stricter than the autonomy cap", async () => {
+    const { getCostLimits } = await import("../src/tokens/cost-governor.mjs");
+    const lim = getCostLimits({
+      cost: { dailyHardUsd: 3 },
+      autonomy: { maxUsdPerDay: 50 },
+    });
+    assert.equal(lim.dailyHardUsd, 3);
+  });
+
+  it("either cap alone still applies", async () => {
+    const { getCostLimits } = await import("../src/tokens/cost-governor.mjs");
+    assert.equal(getCostLimits({ autonomy: { maxUsdPerDay: 7 } }).dailyHardUsd, 7);
+    assert.equal(getCostLimits({ cost: { dailyHardUsd: 9 } }).dailyHardUsd, 9);
+  });
+});
