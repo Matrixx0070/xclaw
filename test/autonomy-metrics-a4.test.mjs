@@ -31,4 +31,18 @@ describe("A4 autonomy metrics", () => {
     assert.equal(a.completion, 0.5);
     assert.equal(a.handoffRate, 0.5);
   });
+
+  it("includes quota escalate in scorecard", () => {
+    const s = scoreAutonomyRun({
+      text: "done",
+      toolTrace: [{ name: "bash" }],
+      quotaEscalate: { hardBlocks: 2, softWarns: 1 },
+    });
+    assert.equal(s.hardBlocks, 2);
+    assert.equal(s.quotaHard, true);
+    const a = aggregateAutonomy([s, { hardBlocks: 0, softWarns: 0, quotaHard: false }]);
+    assert.equal(a.hardBlocks, 2);
+    assert.equal(a.hardBlockRate, 1);
+    assert.equal(a.quotaHardRate, 0.5);
+  });
 });
