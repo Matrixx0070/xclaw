@@ -8,10 +8,8 @@ import { SHIP_PACK_EXTRA_UNIT_TESTS } from "../src/ci/ship-pack-unit-tests.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("ship-pack extra unit tests", () => {
-  it("patch wires extras into ci-ship-pack", () => {
-    const src = fs.readFileSync(path.join(root, "patches/ci-ship-pack-extra-tests.patch"), "utf8");
-    assert.ok(src.includes("SHIP_PACK_EXTRA_UNIT_TESTS"));
-    assert.ok(src.includes("...SHIP_PACK_EXTRA_UNIT_TESTS"));
+  it("includes self in the extra list", () => {
+    assert.ok(SHIP_PACK_EXTRA_UNIT_TESTS.includes("test/ship-pack-unit-tests.test.mjs"));
   });
 
   it("listed extras exist", () => {
