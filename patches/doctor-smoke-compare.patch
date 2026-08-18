@@ -1,0 +1,17 @@
+diff --git a/src/cli/doctor.mjs b/src/cli/doctor.mjs
+--- a/src/cli/doctor.mjs
++++ b/src/cli/doctor.mjs
+@@ -177,6 +177,13 @@ export async function runDoctor(opts = {}) {
+     push("security.killSwitch", "warn", e.message || String(e));
+   }
+ 
++  try {
++    const { pushSmokeCompareChecks } = await import("./doctor-smoke-compare.mjs");
++    pushSmokeCompareChecks(push, opts.root || process.cwd());
++  } catch (e) {
++    push("ops.smoke_compare", "warn", e.message || String(e));
++  }
++
+   // F — prod honesty (defaults must match the label)
+   try {
+     const { prodHonestyChecks } = await import("./doctor-prod-honesty.mjs");
