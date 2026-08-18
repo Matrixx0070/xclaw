@@ -4,6 +4,7 @@
  *
  * Runs:
  *   0) apply ship patches + --check (idempotent)
+ *   0a) land-all (idempotent apply NEED wires)
  *   0b) land-batch3/4/5 --check (NEED wires fail)
  *   1) core unit tests (security, gateway proxy, cost, stream, skills)
  *   2) eval offline smoke (+ last-mock.json when available)
@@ -90,6 +91,18 @@ if (!ap.ok) {
   process.exit(ap.code || 1);
 }
 log("apply-then-check OK");
+
+if (fs.existsSync(path.join(root, "scripts/land-all.mjs"))) {
+  log("land-all (idempotent apply)");
+  const la = await run(process.execPath, ["scripts/land-all.mjs"]);
+  if (la.code !== 0) {
+    log("land-all FAILED");
+    process.exit(la.code || 1);
+  }
+  log("land-all OK");
+} else {
+  log("land-all SKIP (script missing)");
+}
 
 log("land-batch --check (3/4/5)");
 const lb = runLandBatchChecks(root);
