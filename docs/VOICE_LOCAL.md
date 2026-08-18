@@ -314,3 +314,24 @@ After `opus_start` (or `{ "type": "config", "opusReply": true }`), gateway repli
 ```
 
 Requires an Opus encoder on the gateway (`npm i opusscript`). Without it, reply is JSON-only + local WAV path.
+
+
+## WebRTC signaling (R1)
+
+Optional browser duplex transport. Requires `npm i werift`.
+
+```text
+→ { "type": "webrtc_offer", "sdp": "..." }
+← { "type": "webrtc_answer", "sdp": "...", "engine": "werift" }
+⇄ { "type": "webrtc_ice" / event webrtc_ice, candidate }
+→ { "type": "webrtc_close" }
+```
+
+Without werift, gateway returns `webrtc_unavailable` — use PCM/Opus binary instead.
+
+```bash
+xclaw voice webrtc
+npm i werift
+```
+
+R2+: full Opus-RTP demux → STT, return audio track for TTS.
