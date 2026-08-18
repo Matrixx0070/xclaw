@@ -2,11 +2,6 @@
 /**
  * Apply durable ship patches (doctor integrity, createHttpServer cfg, cost lock, …).
  * Idempotent via content markers; --check exits 1 if any unapplied.
- *
- * Usage:
- *   node scripts/apply-ship-patches.mjs
- *   node scripts/apply-ship-patches.mjs --check
- *   node scripts/apply-ship-patches.mjs --force
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -60,6 +55,20 @@ const SHIP_PATCHES = [
       const t = read(rootDir, "src/gateway/index.mjs");
       const tls = read(rootDir, "src/gateway/tls.mjs");
       return t.includes("proxyComputerRequest") || tls.includes("wrapWithComputerProxy");
+    },
+  },
+  {
+    file: "job-claims-gate-wire.patch",
+    isApplied: (rootDir) => {
+      const t = read(rootDir, "src/jobs/job.mjs");
+      return t.includes("gateStructuredClaims") && t.includes("claims_soft_retry");
+    },
+  },
+  {
+    file: "goal-receipt-hash.patch",
+    isApplied: (rootDir) => {
+      const t = read(rootDir, "src/agent/goal-loop.mjs");
+      return t.includes("toolHashTip") && t.includes("buildToolHashChain");
     },
   },
 ];
