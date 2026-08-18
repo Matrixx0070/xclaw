@@ -1,0 +1,24 @@
+diff --git a/src/gateway/index.mjs b/src/gateway/index.mjs
+index 516a5ae..b5ba737 100644
+--- a/src/gateway/index.mjs
++++ b/src/gateway/index.mjs
+@@ -38,6 +38,7 @@ import {
+   stopComputer,
+ } from "../computer/manager.mjs";
+ import { startComputerWatchdog, stopComputerWatchdog } from "../computer/watchdog.mjs";
++import { proxyComputerRequest, isComputerProxyEnabled } from "./computer-proxy.mjs";
+ import {
+   startChannelHealthWatchdog,
+   stopChannelHealthWatchdog,
+@@ -1134,6 +1135,11 @@ export async function startGateway({ root } = {}) {
+ 
+   const { server, tls: tlsOn } = createHttpServer(async (req, res) => {
+     const url = new URL(req.url || "/", `http://${cfg.gateway.host}`);
++    // Single external port: /computer/proxy/* and /xclaw/computer/* → computer plane
++    if (isComputerProxyEnabled(cfg)) {
++      const proxied = await proxyComputerRequest(req, res, cfg, url);
++      if (proxied) return;
++    }
+     let p = url.pathname;
+     // API versioning: /v1/<route> is an alias for every route (clients can pin
+     // a version prefix today; a breaking v2 surface can then coexist later).

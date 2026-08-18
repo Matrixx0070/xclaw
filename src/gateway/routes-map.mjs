@@ -58,5 +58,7 @@ export function listRoutes() {
     { method: "POST", path: "/swarm/merges/:id/approve", group: "swarm", desc: "Approve merge proposal" },
     { method: "POST", path: "/swarm/merges/:id/reject", group: "swarm", desc: "Reject merge proposal" },
     { method: "GET", path: "/subagents", group: "swarm", desc: "List persisted subagents" },
+    { method: "ALL", path: "/computer/proxy/*", group: "computer", desc: "Proxy to computer plane (single external port)" },
+    { method: "ALL", path: "/xclaw/computer/*", group: "computer", desc: "Alias proxy to computer plane" },
   ];
 }
