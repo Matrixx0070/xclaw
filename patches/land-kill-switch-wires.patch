@@ -1,0 +1,112 @@
+diff --git a/src/agent/loop.mjs b/src/agent/loop.mjs
+--- a/src/agent/loop.mjs
++++ b/src/agent/loop.mjs
+@@ -1220,6 +1220,25 @@ export async function runAgentLoop(options) {
+           onEvent({ type: "guard", ...verdict });
+         }
+ 
++        // Quota hard-block circuit: refuse further tools after N hard denies.
++        try {
++          const { guardToolAgainstHardCircuit } = await import("./quota-hard-circuit.mjs");
++          const circ = guardToolAgainstHardCircuit(options.job || options.receiptCollector);
++          if (circ && circ.ok === false) {
++            onEvent({ type: "security", phase: "quota_hard_circuit", reason: circ.reason });
++            messages.push(
++              makeToolMessage({
++                tool_call_id: call.id,
++                content: circ.message || "QUOTA_HARD_CIRCUIT",
++                source: "quota_circuit",
++              })
++            );
++            return "stop";
++          }
++        } catch {
++          /* circuit optional */
++        }
++
+         // Security: allowlist + optional human approval.
+         // Bind the plan against this run's workingDir — the shared gate's
+         // planRoot is the gateway's process.cwd(), and a plan pinned there
+@@ -1230,6 +1249,7 @@ export async function runAgentLoop(options) {
+             : args;
+         const auth = await approvalGate.authorize(name, authArgs, {
+           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
++          job: options.job || options.receiptCollector || null,
+           // risk scope must resolve against THIS run's workspace (session dir
+           // or mission worktree), not the gateway's cwd — without this, file
+           // tools' targets scoped against the wrong root (live blind spot)
+diff --git a/src/gateway/index.mjs b/src/gateway/index.mjs
+--- a/src/gateway/index.mjs
++++ b/src/gateway/index.mjs
+@@ -2423,6 +2423,7 @@ export async function startGateway({ root } = {}) {
+   const wsHub = attachWebSocketHub(server, {
+     path: cfg.gateway?.wsPath || "/ws/events",
+     heartbeatMs: cfg.gateway?.wsHeartbeatMs || 25_000,
++    cfg,
+     // Reject unauthorized upgrades whenever a token is set or requireAuth (prod)
+     authorize: (req) => gatewayAuth.authorizeWebSocket(req),
+   });
+diff --git a/src/gateway/routes/ops.mjs b/src/gateway/routes/ops.mjs
+--- a/src/gateway/routes/ops.mjs
++++ b/src/gateway/routes/ops.mjs
+@@ -104,6 +104,13 @@ export async function tryHandleOpsRoute({
+   }
+   if (p === "/health" || p === "/gateway/health") {
+     const computerOk = await isComputerRunning(cfg);
++    let stop = null;
++    try {
++      const { stopAuthReadiness } = await import("../stop-health.mjs");
++      stop = stopAuthReadiness(cfg);
++    } catch {
++      stop = null;
++    }
+     json(res, 200, {
+       status: "healthy",
+       service: "XClaw-Gateway",
+@@ -113,6 +120,7 @@ export async function tryHandleOpsRoute({
+       computerUrl: `http://${cfg.computer.host}:${cfg.computer.port}`,
+       webchat: webchatEnabled,
+       sse: true,
++      stop,
+     });
+     return true;
+   }
+diff --git a/src/gateway/ws-hub.mjs b/src/gateway/ws-hub.mjs
+--- a/src/gateway/ws-hub.mjs
++++ b/src/gateway/ws-hub.mjs
+@@ -382,6 +382,7 @@ export function attachWebSocketHub(server, opts = {}) {
+   const maxMessageBytes = Number(opts.maxMessageBytes) || DEFAULT_MAX_MESSAGE_BYTES;
+   /** @type {(req) => {ok:boolean, protocol?:string, error?:string}} */
+   const authorize = typeof opts.authorize === "function" ? opts.authorize : null;
++  const cfg = opts.cfg || {};
+   const missThreshold = Math.max(1, Number(opts.missThreshold) || 2);
+   const stats = {
+     pingsSent: 0,
+@@ -534,6 +535,27 @@ export function attachWebSocketHub(server, opts = {}) {
+               channels: [...client.channels],
+               at: new Date().toISOString(),
+             });
++          } else if (
++            body.type === "stop" ||
++            body.type === "stop-all" ||
++            body.type === "stop_all" ||
++            body.type === "kill_switch"
++          ) {
++            import("./ws-stop-control.mjs")
++              .then(({ handleWsStopControl }) =>
++                handleWsStopControl(body, cfg, (payload) => sendJson(socket, payload))
++              )
++              .catch((e) => {
++                try {
++                  sendJson(socket, {
++                    type: "stop_result",
++                    ok: false,
++                    error: e.message || String(e),
++                  });
++                } catch {
++                  /* */
++                }
++              });
+           }
+         }
+         if (error) {
