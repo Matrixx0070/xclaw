@@ -11,23 +11,11 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { requireLiveApiKeyOrSkip } from "../src/eval/live-gate.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-function hasLiveKey() {
-  return Boolean(
-    process.env.XAI_API_KEY ||
-      process.env.XCLAW_API_KEY ||
-      process.env.GROK_API_KEY
-  );
-}
-
-if (!hasLiveKey()) {
-  console.error(
-    "[autonomy-live] SKIP: no XAI_API_KEY / XCLAW_API_KEY — offline harness only"
-  );
-  process.exit(2);
-}
+requireLiveApiKeyOrSkip({ label: "autonomy-live" });
 
 const idArg = process.argv.includes("--id")
   ? process.argv[process.argv.indexOf("--id") + 1]
