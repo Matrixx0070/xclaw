@@ -9,8 +9,12 @@
  *   { type: "barge_in" }
  *   { type: "pcm_start", sampleRate?: 16000, channels?: 1 }
  *   { type: "pcm_end" }   // finalize PCM buffer → STT → agent
+ *   { type: "opus_start", sampleRate?: 16000, channels?: 1, container?: "packets"|"ogg" }
+ *   { type: "opus_end" }
  *
- * Client binary frames: raw S16_LE mono PCM (after pcm_start)
+ * Client binary frames:
+ *   after pcm_start: raw S16_LE mono PCM
+ *   after opus_start: Opus packets (default) or Ogg/Opus bytes (container=ogg)
  *
  * Server messages:
  *   { type: "ready", sessionId }
@@ -94,6 +98,7 @@ export function attachVoiceWebSocket(server, opts = {}) {
       socket,
       busy: false,
       pcm: null, // { sampleRate, channels, chunks: Buffer[], bytes }
+      opus: null, // { sampleRate, channels, container, packets: Buffer[], bytes }
     };
     sessions.set(sessionId, state);
 
@@ -102,6 +107,7 @@ export function attachVoiceWebSocket(server, opts = {}) {
       sessionId,
       path,
       pcm: { codec: "s16le", sampleRate: 16000, channels: 1 },
+      opus: { codecs: ["opus"], containers: ["packets", "ogg"], sampleRate: 16000 },
       at: new Date().toISOString(),
     });
 
@@ -114,7 +120,8 @@ export function attachVoiceWebSocket(server, opts = {}) {
       }
       for (const msg of messages) {
         if (msg.type === "binary") {
-          handlePcmBinary(state, msg.data, cfg);
+          if (state.opus) handleOpusBinary(state, msg.data);
+          else handlePcmBinary(state, msg.data, cfg);
           continue;
         }
         if (msg.type !== "text") continue;
