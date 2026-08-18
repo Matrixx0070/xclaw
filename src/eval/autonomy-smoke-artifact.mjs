@@ -3,6 +3,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { loadJobIndexQuota } from "./autonomy-smoke-quota.mjs";
 
 export function smokeArtifactPath(root) {
   return path.join(root, "reports", "autonomy", "last-smoke.json");
@@ -18,6 +19,7 @@ export function writeAutonomySmokeArtifact(root, result = {}) {
     tests: result.tests || [],
     mode: result.mode || "offline",
     env: { smoke: process.env.XCLAW_AUTONOMY_SMOKE || null },
+    quotaEscalate: result.quotaEscalate || loadJobIndexQuota(root, result.jobsDir),
   };
   const fp = smokeArtifactPath(root);
   const tmp = fp + ".tmp";
