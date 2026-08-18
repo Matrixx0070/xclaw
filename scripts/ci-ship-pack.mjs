@@ -10,9 +10,12 @@
  *
  * Usage:
  *   node scripts/ci-ship-pack.mjs
+ *   node scripts/ci-ship-pack.mjs --strict
  *   npm run ship:pack
+ *   npm run ship:pack:strict
  *
  * Exit 0 only if unit+eval pass and doctor yields a parseable report.
+ * With --strict / XCLAW_SHIP_STRICT=1, also requires doctor errors=0.
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -21,6 +24,10 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bin = path.join(root, "bin", "xclaw.mjs");
+const strict =
+  process.argv.includes("--strict") ||
+  process.env.XCLAW_SHIP_STRICT === "1" ||
+  process.env.XCLAW_SHIP_STRICT === "true";
 
 const UNIT_TESTS = [
   "test/bind-safety-prod.test.mjs",
@@ -131,5 +138,19 @@ fs.writeFileSync(
   JSON.stringify(report, null, 2)
 );
 log("wrote eval/baselines/last-doctor.json");
+
+if (strict) {
+  const errors =
+    Number(report.errors) ||
+    (Array.isArray(report.checks)
+      ? report.checks.filter((c) => c.status === "error").length
+      : (checks || []).filter((c) => c.status === "error").length);
+  if (errors > 0 || report.ok === false || (doc.code != null && doc.code >= 2)) {
+    log(`STRICT FAIL: doctor errors=${errors} ok=${report.ok} exit=${doc.code}`);
+    process.exit(2);
+  }
+  log("strict: doctor clean");
+}
+
 log("SHIP PACK OK");
 process.exit(0);
