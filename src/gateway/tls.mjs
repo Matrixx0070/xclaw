@@ -34,8 +34,14 @@ function wrapWithComputerProxy(requestListener, cfg) {
       const { isComputerProxyEnabled, proxyComputerRequest } = await import(
         "./computer-proxy.mjs"
       );
+      const url = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
+      try {
+        const { tryHandleGatewayStop } = await import("./stop-proxy.mjs");
+        if (await tryHandleGatewayStop(req, res, cfg, url)) return;
+      } catch {
+        /* */
+      }
       if (isComputerProxyEnabled(cfg)) {
-        const url = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
         const proxied = await proxyComputerRequest(req, res, cfg, url);
         if (proxied) return;
       }
