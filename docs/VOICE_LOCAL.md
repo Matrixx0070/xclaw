@@ -282,3 +282,21 @@ Decoders (first hit wins): `opusscript` → `@discordjs/opus` → `ffmpeg` (ogg)
 xclaw voice opus    # probe backends
 npm i opusscript    # optional packet decoder
 ```
+
+
+## Opus encode (O2 edge)
+
+```bash
+xclaw voice opus   # shows encode + decode backends
+npm i opusscript   # enables packet encode & decode
+```
+
+```js
+import { sendAudioToGateway } from "./src/voice/gateway-opus-client.mjs";
+await sendAudioToGateway(pcmOrWav, {
+  url: "ws://127.0.0.1:18790",
+  preferOpus: true,
+});
+```
+
+Falls back to PCM binary if no encoder is installed.
