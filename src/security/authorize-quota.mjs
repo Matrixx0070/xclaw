@@ -1,5 +1,6 @@
 /**
  * Quota preflight for write/exec tools in authorize().
+ * Soft band may escalate to hard refuse in the same call when near the cap.
  */
 import {
   isWriteTool,
@@ -7,6 +8,10 @@ import {
   preflightWriteQuota,
 } from "./workspace-quota.mjs";
 import { maybeEmitQuotaSoft, maybeEmitQuotaHard } from "./quota-soft-warn.mjs";
+import {
+  shouldEscalateSoftToHard,
+  escalateSoftResult,
+} from "./quota-soft-escalate.mjs";
 
 export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
   if (!isWriteTool(name)) {
@@ -23,7 +28,12 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
     cfg.workspace?.root ||
     process.cwd();
   const delta = estimateWriteDelta(name, args);
-  const r = await preflightWriteQuota(root, cfg, delta);
+  let r = await preflightWriteQuota(root, cfg, delta);
+
+  if (r.ok && r.soft && shouldEscalateSoftToHard(r, cfg)) {
+    r = escalateSoftResult(r, { tool: name, root });
+  }
+
   if (!r.ok) {
     const hard = maybeEmitQuotaHard(r, { tool: name, root }, ctx.hubs || {});
     return {
@@ -32,6 +42,7 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
       message: r.message || "workspace quota exceeded",
       quota: r,
       hard,
+      escalatedFromSoft: Boolean(r.escalatedFromSoft),
     };
   }
   const warn = maybeEmitQuotaSoft(r, { tool: name, root }, ctx.hubs || {});
