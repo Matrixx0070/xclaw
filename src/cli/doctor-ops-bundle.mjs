@@ -58,6 +58,13 @@ export async function pushDoctorOpsBundle(push, cfg = {}, opts = {}) {
   }
 
   try {
+    const { pushStopFireDrillChecks } = await import("./doctor-stop-fire-drill.mjs");
+    await pushStopFireDrillChecks(push, cfg, opts);
+  } catch (e) {
+    push("ops.stop_fire_drill", "warn", e.message || String(e));
+  }
+
+  try {
     const { pushStopProbeChecks } = await import("./doctor-stop-probe.mjs");
     await pushStopProbeChecks(push, cfg);
   } catch (e) {
