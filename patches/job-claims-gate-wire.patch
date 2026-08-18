@@ -1,0 +1,132 @@
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -5,8 +5,9 @@ import fs from "node:fs/promises";
+ import path from "node:path";
+ import os from "node:os";
+ import { runAgentLoop } from "../agent/loop.mjs";
+-import { createEvidenceLog, flagUngroundedClaims, groundingShouldFail } from "./evidence.mjs";
++import { createEvidenceLog } from "./evidence.mjs";
+ import { scoreClaimsAgainstEvidence } from "./claims.mjs";
++import { gateStructuredClaims } from "../agent/claims-gate.mjs";
+ import { runVerifyChecks } from "./verify.mjs";
+ import { recordJob } from "./history.mjs";
+ import { rememberJob } from "../memory/durable.mjs";
+@@ -107,6 +108,7 @@ export async function runJob(opts = {}) {
+   let groundWarn = [];
+   let groundingFailed = false;
+   let claimScore = null;
++  let claimsGate = null;
+   const started = Date.now();
+   /** @type {JobStatus} */
+   let status = "running";
+@@ -223,31 +225,95 @@ export async function runJob(opts = {}) {
+     }
+ 
+     const groundHard = Boolean(opts.groundHard || opts.groundingHard || cfg.jobs?.groundHard);
+-    groundWarn = flagUngroundedClaims(agentResult.text, evidence.snapshot(), { hard: groundHard });
+-    for (const w of groundWarn) {
+-      evidence.add({ source: "system", summary: `grounding: ${w}` });
+-    }
+-    claimScore = scoreClaimsAgainstEvidence(
+-      agentResult.text,
+-      evidence.snapshot(),
+-      {
+-        hard: groundHard || opts.claimsRequireEvidence,
+-        requireStructured: Boolean(opts.requireStructuredClaims),
+-      }
+-    );
+-    for (const w of claimScore.warnings) {
+-      evidence.add({ source: "system", summary: `claim: ${w}` });
+-      groundWarn.push(w);
+-    }
+-    if (
+-      groundingShouldFail(groundWarn, { hard: groundHard }) ||
+-      ((groundHard || opts.claimsRequireEvidence) && !claimScore.ok)
+-    ) {
++    const claimsOpts = {
++      groundHard,
++      claimsRequireEvidence: opts.claimsRequireEvidence ?? cfg.jobs?.claimsRequireEvidence,
++      requireStructuredClaims: opts.requireStructuredClaims ?? cfg.jobs?.requireStructuredClaims,
++    };
++    claimsGate = gateStructuredClaims({
++      text: agentResult.text,
++      evidence: evidence.snapshot(),
++      cfg,
++      opts: claimsOpts,
++    });
++    const softRetry =
++      !claimsGate.refuse &&
++      claimsGate.warnings?.length > 0 &&
++      opts.claimsSoftRetry !== false &&
++      cfg.jobs?.claimsSoftRetry !== false;
++    if (softRetry && typeof runAgentLoop === "function") {
++      evidence.add({
++        source: "system",
++        summary: `claims soft warnings (retry once): ${claimsGate.warnings.slice(0, 3).join("; ")}`,
++      });
++      push({ type: "job", phase: "claims_soft_retry", warnings: claimsGate.warnings.slice(0, 5) });
++      try {
++        const rescue = await runAgentLoop({
++          userMessage:
++            (opts.goal || opts.message || "") +
++            "\n\n[XClaw claims soft retry] Prior answer had grounding warnings. " +
++            "Cite real tool evidence_ids; do not invent results. Warnings:\n- " +
++            claimsGate.warnings.slice(0, 8).join("\n- "),
++          cfg,
++          workingDir: workspace,
++          signal: ac.signal,
++          onEvent: (e) => push(e),
++          stream: false,
++          history: [],
++          rescuePrompt: true,
++        });
++        if (rescue?.text) {
++          agentResult = {
++            ...agentResult,
++            text: rescue.text,
++            toolTrace: [
++              ...(agentResult.toolTrace || []),
++              ...(rescue.toolTrace || []),
++            ],
++            turns: (agentResult.turns || 0) + (rescue.turns || 0),
++          };
++          if (rescue.toolTrace?.length) evidence.fromToolTrace(rescue.toolTrace);
++          claimsGate = gateStructuredClaims({
++            text: agentResult.text,
++            evidence: evidence.snapshot(),
++            cfg,
++            opts: claimsOpts,
++          });
++        }
++      } catch (retryErr) {
++        evidence.add({
++          source: "system",
++          summary: `claims soft retry error: ${retryErr?.message || retryErr}`,
++        });
++      }
++    }
++    claimScore = claimsGate.score || scoreClaimsAgainstEvidence(
++      agentResult.text,
++      evidence.snapshot(),
++      { hard: claimsGate.policy?.hard, requireStructured: claimsGate.policy?.requireStructured }
++    );
++    groundWarn = [...(claimsGate.warnings || [])];
++    for (const w of groundWarn) {
++      evidence.add({ source: "system", summary: `grounding: ${w}` });
++    }
++    if (claimsGate.refuse) {
+       groundingFailed = true;
+       status = "failed";
+-      error = error || groundWarn[0] || "grounding/claim hard fail";
+-      evidence.add({ source: "system", summary: "grounding hard fail" });
++      error = error || claimsGate.reason || groundWarn[0] || "grounding/claim hard fail";
++      evidence.add({ source: "system", summary: "grounding hard fail (claims-gate)" });
+     }
+ 
+     if (groundingFailed) {
+@@ -290,6 +356,7 @@ export async function runJob(opts = {}) {
+     toolTrace: agentResult?.toolTrace || [],
+     groundingWarnings: groundWarn,
+     groundingFailed,
++    claimsGate: typeof claimsGate !== "undefined" ? claimsGate : null,
