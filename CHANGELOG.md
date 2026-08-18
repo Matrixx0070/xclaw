@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 3.131.1 — live-verify fix: tool calls on the default bundle engine (2026-08-18)
+
+Found by driving the running gateway, not by tests: **every tool call failed**
+with `InputValidationError: Unrecognized key(s) in object: 'cwd'`.
+
+The 3.77-line added a per-call `cwd` pin to the args forwarded to the computer
+engine (correct for its C5 native/module engines, whose schemas declare `cwd`,
+and it also made `native` the default). 3.131.0 kept the live-proven `bundle`
+(C4) default, whose frozen strict-zod schemas reject any unrecognized key — so
+the combination killed every call before it executed.
+
+- **router**: probe the engine's advertised `xclaw_bash` schema for `cwd` and
+  strip `cwd`/`workingDir` before forwarding when absent — the same guard the
+  router already applies to `systemRunPlan`. The bundle session already runs in
+  its `createSession(workingDir)`, so nothing is lost; engines that declare
+  `cwd` still receive the pin.
+- Live-proven after fix: agent ran `uname -r` → `6.8.0-90-generic` in 1 turn;
+  outside-workspace write still pends critical and denies with no file created;
+  `/trust` set/status/clear works; governor records every run.
+
 ## 3.131.0 — reconcile: grok 3.77–3.80 line merged with 3.113–3.130 hardening (2026-08-18)
 
 The 3.77.0–3.80.0 releases were authored on a parallel line against v3.76-era
