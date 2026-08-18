@@ -1,4 +1,8 @@
 **Voice:** see [docs/VOICE_LOCAL.md](docs/VOICE_LOCAL.md) (`xclaw voice listen`).
+Building hands-free voice next? Start at
+[docs/JARVIS_VOICE_BUILD.md](docs/JARVIS_VOICE_BUILD.md) — three scoped work
+packages (natural voice · continuous mode · wake word) with live acceptance
+proofs and the failure modes to avoid.
 
 # XClaw
 
