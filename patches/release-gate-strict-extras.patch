@@ -1,0 +1,23 @@
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -179,6 +179,19 @@ if (strict) {
+   }, { required: true });
+ }
+ 
++if (strict) {
++  await step("strict-extras", async () => {
++    const { listStrictExtraTests } = await import("../src/ci/release-gate-strict-extras.mjs");
++    const files = listStrictExtraTests(root);
++    if (!files.length) {
++      return { code: 1, detail: "no strict extra tests found" };
++    }
++    const r = await run(process.execPath, ["--test", ...files], { quiet: true });
++    console.log((r.out + r.err).split("\n").filter((l) => /tests |pass |fail /.test(l)).slice(-6).join("\n"));
++    return { code: r.code, detail: files };
++  }, { required: true });
++}
++
+ if (live) {
+   await step("live-enforcement", async () => {
+     const r = await run(
