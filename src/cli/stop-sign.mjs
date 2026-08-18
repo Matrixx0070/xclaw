@@ -1,7 +1,7 @@
 /**
  * CLI helper: mint X-XClaw-Stop-Sig for POST /stop.
  *
- *   xclaw stop --sign [--body '{}'] [--print-curl] [--dry-run]
+ *   xclaw stop --sign [--body '{}'] [--print-curl] [--dry-run] [--post]
  *   xclaw stop-sign
  */
 import { signStopBody, stopAuthToken, canonicalizeStopBody } from "../gateway/stop-auth.mjs";
@@ -54,6 +54,7 @@ export function buildStopSignResult(cfg = {}, opts = {}) {
     headers,
     hasSecret: Boolean(secret),
     hasToken: Boolean(token),
+    baseUrl: base,
   };
   if (opts.printCurl) {
     const hdr = Object.entries(headers)
@@ -65,15 +66,68 @@ export function buildStopSignResult(cfg = {}, opts = {}) {
 }
 
 /**
+ * Live POST /stop using minted headers (optional network).
+ * @param {ReturnType<typeof buildStopSignResult>} signed
+ * @param {{ timeoutMs?: number, fetchImpl?: typeof fetch }} [opts]
+ */
+export async function postStopSigned(signed, opts = {}) {
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== "function") {
+    return { ok: false, error: "fetch_unavailable" };
+  }
+  const base = signed.baseUrl || "http://127.0.0.1:18790";
+  const url = `${base.replace(/\/$/, "")}/stop`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 5000);
+  try {
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(signed.headers || {}),
+      },
+      body: signed.body,
+      signal: ctrl.signal,
+    });
+    let json = null;
+    const text = await res.text();
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { raw: text };
+    }
+    return {
+      ok: res.ok && json?.ok !== false,
+      status: res.status,
+      response: json,
+      dryRun: json?.dryRun === true,
+      authMethod: json?.authMethod || json?.drain?.authMethod || null,
+      killedSessions: json?.killedSessions || [],
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.name === "AbortError" ? "timeout" : e.message || String(e),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * @param {string[]} args — argv after command name
  */
 export async function stopSignMain(args = [], loadConfigFn) {
   const printCurl = args.includes("--print-curl") || args.includes("--curl");
   const jsonOnly = args.includes("--json");
   const dryRun = args.includes("--dry-run") || args.includes("--dryrun");
+  const doPost = args.includes("--post") || args.includes("--live");
   let body = null;
   const bi = args.indexOf("--body");
   if (bi >= 0 && args[bi + 1]) body = args[bi + 1];
+  let baseUrl;
+  const ui = args.indexOf("--url");
+  if (ui >= 0 && args[ui + 1]) baseUrl = args[ui + 1];
   const load =
     loadConfigFn ||
     (async () => {
@@ -81,7 +135,12 @@ export async function stopSignMain(args = [], loadConfigFn) {
       return loadConfig();
     });
   const cfg = await load();
-  const r = buildStopSignResult(cfg, { body: body || undefined, printCurl, dryRun });
+  const r = buildStopSignResult(cfg, {
+    body: body || undefined,
+    printCurl,
+    dryRun,
+    baseUrl,
+  });
   if (dryRun && r.ok) {
     r.dryRun = true;
     try {
@@ -98,6 +157,19 @@ export async function stopSignMain(args = [], loadConfigFn) {
       }
     } catch (e) {
       r.authError = e.message || String(e);
+    }
+  }
+  if (doPost && r.ok) {
+    const live = await postStopSigned(r, { timeoutMs: 8000 });
+    r.post = live;
+    if (!live.ok) {
+      r.ok = false;
+      process.exitCode = 1;
+    } else if (dryRun && live.dryRun !== true) {
+      // Prefer explicit dryRun response when requesting dry-run
+      r.ok = false;
+      process.exitCode = 1;
+      r.postError = "expected dryRun:true in gateway response";
     }
   }
   if (!r.hasSecret && !r.hasToken) {
@@ -118,4 +190,9 @@ export async function stopSignMain(args = [], loadConfigFn) {
   return r;
 }
 
-export default { buildStopSignResult, stopSignMain, resolveStopSecret };
+export default {
+  buildStopSignResult,
+  stopSignMain,
+  resolveStopSecret,
+  postStopSigned,
+};
