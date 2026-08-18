@@ -1,0 +1,22 @@
+diff --git a/scripts/ci-ship-pack.mjs b/scripts/ci-ship-pack.mjs
+--- a/scripts/ci-ship-pack.mjs
++++ b/scripts/ci-ship-pack.mjs
+@@ -213,5 +213,18 @@ if (strict) {
+   log("strict: doctor clean");
+ }
+ 
++if (fs.existsSync(path.join(root, "scripts/stop-fire-drill.mjs"))) {
++  log("stop-fire-drill");
++  const fd = await run(process.execPath, ["scripts/stop-fire-drill.mjs"]);
++  if (fd.code !== 0) {
++    log("stop-fire-drill FAILED");
++    process.exit(fd.code || 1);
++  }
++  log("stop-fire-drill OK");
++} else if (strict) {
++  log("STRICT FAIL: stop-fire-drill script missing");
++  process.exit(2);
++}
++
+ log("SHIP PACK OK");
+ process.exit(0);
