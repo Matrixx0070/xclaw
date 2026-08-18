@@ -26,9 +26,16 @@ export function buildReceiptMetrics(job = {}) {
     lastCode: q?.lastCode || job.quotaLastCode || null,
   };
 
+  const quotaHardCircuit =
+    job.quotaHardCircuit ||
+    job.receiptCollector?.quotaHardCircuit ||
+    job.collector?.quotaHardCircuit ||
+    null;
+
   return {
     claimsSoftRetry,
     quotaEscalate,
+    quotaHardCircuit,
     at: new Date().toISOString(),
   };
 }
@@ -40,6 +47,9 @@ export function stampReceiptMetrics(job, extra = {}) {
   }
   if (extra.quotaEscalate) {
     job.quotaEscalate = { ...(job.quotaEscalate || {}), ...extra.quotaEscalate };
+  }
+  if (extra.quotaHardCircuit) {
+    job.quotaHardCircuit = { ...(job.quotaHardCircuit || {}), ...extra.quotaHardCircuit };
   }
   job.receiptMetrics = buildReceiptMetrics(job);
   return job;

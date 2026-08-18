@@ -6,6 +6,7 @@ import path from "node:path";
 import os from "node:os";
 import { buildToolHashChain } from "../agent/tool-hash-chain.mjs";
 import { buildReceiptMetrics, stampReceiptMetrics } from "./receipt-metrics.mjs";
+import { ensureQuotaHardCircuitOnJob } from "./receipt-collector.mjs";
 
 export function jobsDir(cfg) {
   const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
@@ -23,6 +24,7 @@ export async function ensureJobsDir(cfg) {
  */
 export async function recordJob(cfg, job) {
   const dir = await ensureJobsDir(cfg);
+  ensureQuotaHardCircuitOnJob(job);
   stampReceiptMetrics(job);
   const receiptMetrics = job.receiptMetrics || buildReceiptMetrics(job);
   const slim = {
@@ -44,7 +46,8 @@ export async function recordJob(cfg, job) {
     receiptMetrics,
     claimsSoftRetry: receiptMetrics.claimsSoftRetry,
     quotaEscalate: receiptMetrics.quotaEscalate,
-    quotaHardCircuit: job.quotaHardCircuit || null,
+    quotaHardCircuit:
+      job.quotaHardCircuit || receiptMetrics.quotaHardCircuit || null,
   };
   const chain = job.toolHashTip
     ? { tip: job.toolHashTip, version: job.toolHashVersion || 1 }
