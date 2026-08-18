@@ -1,6 +1,8 @@
 /**
  * One-glance kill-switch posture for doctor --json.
  */
+import { normalizeStopChannel, STOP_CHANNELS } from "./doctor-channel.mjs";
+
 export function buildStopSummary(checks = []) {
   const byId = Object.fromEntries(
     (checks || []).filter((c) => c && c.id).map((c) => [c.id, c])
@@ -18,16 +20,19 @@ export function buildStopSummary(checks = []) {
   if (statuses.includes("error")) status = "error";
   else if (statuses.includes("warn")) status = "warn";
   const lastDetail = last?.detail || {};
+  const channel = normalizeStopChannel(
+    lastDetail.channel || lastDetail.drain?.channel || null
+  );
   return {
     status,
     health: health?.detail || health?.message || null,
     hmac: hmac?.message || null,
     auth: auth?.message || null,
     lastDrain: lastDetail || last?.message || null,
-    lastDrainChannel:
-      lastDetail.channel || lastDetail.drain?.channel || null,
+    lastDrainChannel: channel,
     lastDrainAuthMethod:
       lastDetail.authMethod || lastDetail.drain?.authMethod || null,
+    channels: STOP_CHANNELS,
     fireDrill: drill
       ? { status: drill.status, message: drill.message, detail: drill.detail || null }
       : null,

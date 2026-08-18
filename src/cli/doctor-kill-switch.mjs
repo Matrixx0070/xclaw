@@ -3,6 +3,7 @@
  */
 import { listActiveSessions } from "../agent/session-control.mjs";
 import { getLastDrain } from "../gateway/last-drain.mjs";
+import { normalizeStopChannel, isKnownStopChannel } from "./doctor-channel.mjs";
 
 export async function pushKillSwitchChecks(push) {
   const n = listActiveSessions().length;
@@ -30,12 +31,14 @@ export async function pushKillSwitchChecks(push) {
   );
   if (lastDrain) {
     const method = lastDrain.authMethod || lastDrain.drain?.authMethod || "unknown";
-    const channel = lastDrain.channel || lastDrain.drain?.channel || "http";
+    const rawChannel = lastDrain.channel || lastDrain.drain?.channel || "http";
+    const channel = normalizeStopChannel(rawChannel);
+    const channelOk = isKnownStopChannel(channel);
     push(
       "security.killSwitch.lastDrain",
-      "ok",
+      channelOk ? "ok" : "warn",
       `last stop drain authMethod=${method} channel=${channel} sessions=${lastDrain.sessionsKilled} ws=${lastDrain.wsClosed} sse=${lastDrain.sseClosed}`,
-      { ...lastDrain, authMethod: method, channel }
+      { ...lastDrain, authMethod: method, channel, channelKnown: channelOk }
     );
   }
   return { ready, wsOk, sseOk, n, lastDrain };
