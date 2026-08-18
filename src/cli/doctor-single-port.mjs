@@ -3,6 +3,7 @@
  */
 
 import { isComputerProxyEnabled, matchComputerProxyPath } from "../gateway/computer-proxy.mjs";
+import { isSinglePortStopPath } from "../gateway/stop-proxy.mjs";
 
 /**
  * @param {object} cfg
@@ -44,6 +45,16 @@ export function singlePortChecks(cfg = {}) {
       message: "proxy prefixes /computer/proxy/ and /xclaw/computer/ match",
     });
   }
+
+  const stopPaths = ["/stop", "/xclaw/stop", "/computer/proxy/stop", "/xclaw/computer/stop"];
+  const stopOk = stopPaths.every((sp) => isSinglePortStopPath(sp));
+  checks.push({
+    id: "gateway.singlePort.stop",
+    status: stopOk ? "ok" : "error",
+    message: stopOk
+      ? "single-port kill-switch paths: /stop /xclaw/stop /computer/proxy/stop"
+      : "single-port /stop prefixes not recognized",
+  });
 
   if (gwPort != null && compPort != null && Number(gwPort) === Number(compPort)) {
     checks.push({
