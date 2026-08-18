@@ -1,3 +1,5 @@
+**Voice:** see [docs/VOICE_LOCAL.md](docs/VOICE_LOCAL.md) (`xclaw voice listen`).
+
 # XClaw
 
 **Self-hosted multi-LLM agent gateway** with a real computer (bash / files / browser tools), swarm + receipts, and production-minded guards.
