@@ -45,16 +45,24 @@ export async function loadAuthRefreshStatus(cfg) {
   }
 }
 
+function isProdLike(cfg = {}) {
+  const profile = String(cfg.profile || process.env.XCLAW_PROFILE || "").toLowerCase();
+  return profile === "prod" || profile === "strict" || cfg.gateway?.requireAuth === true;
+}
+
 export async function pushAuthRefreshChecks(push, cfg = {}) {
   const st = await loadAuthRefreshStatus(cfg);
+  const prod = isProdLike(cfg);
   if (!st) {
     push(
       "ops.auth_refresh",
-      "warn",
-      "no auth-refresh status yet (run a job / cost preflight first)",
-      { present: false }
+      prod ? "error" : "warn",
+      prod
+        ? "prod/strict: no auth-refresh status (seat token may be stale)"
+        : "no auth-refresh status yet (run a job / cost preflight first)",
+      { present: false, prod }
     );
-    return { present: false };
+    return { present: false, prod };
   }
 
   const failed = (st.results || []).filter((r) => r.ok === false);
@@ -73,11 +81,13 @@ export async function pushAuthRefreshChecks(push, cfg = {}) {
       }
     );
   } else if (st.skipped) {
-    push("ops.auth_refresh", "ok", `skipped (${st.reason || "disabled"})`, {
-      present: true,
-      at: st.at,
-      skipped: true,
-    });
+    const skipStatus = prod && st.reason !== "disabled" ? "error" : "ok";
+    push(
+      "ops.auth_refresh",
+      skipStatus,
+      `skipped (${st.reason || "disabled"})`,
+      { present: true, at: st.at, skipped: true, prod }
+    );
   } else {
     push(
       "ops.auth_refresh",
