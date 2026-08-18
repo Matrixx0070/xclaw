@@ -27,6 +27,11 @@ export const REMAINING_WIRES = [
     needles: ["verifyCheckpointToolHash"],
   },
   {
+    file: "patches/checkpoint-require-tip-delta.patch",
+    target: "src/jobs/checkpoint.mjs",
+    needles: ["shouldRequireToolHashTip"],
+  },
+  {
     file: "patches/doctor-auth-refresh.patch",
     target: "src/cli/doctor.mjs",
     needles: ["pushAuthRefreshChecks", "ops.auth_refresh"],

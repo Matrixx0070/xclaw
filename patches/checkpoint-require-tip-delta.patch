@@ -1,0 +1,20 @@
+diff --git a/src/jobs/checkpoint.mjs b/src/jobs/checkpoint.mjs
+--- a/src/jobs/checkpoint.mjs
++++ b/src/jobs/checkpoint.mjs
+@@ -9,6 +9,7 @@ import { runJob } from "./job.mjs";
+ import { withBackoff } from "../utils/backoff.mjs";
+ import { stampJobToolHash } from "./stamp-tool-hash.mjs";
+ import { verifyCheckpointToolHash } from "./checkpoint-hash-verify.mjs";
++import { shouldRequireToolHashTip } from "./checkpoint-require-tip.mjs";
+ 
+ /** Structured resume / lock error codes */
+ export const RESUME_CODES = {
+@@ -416,7 +417,7 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
+   // Integrity: tool-hash tip must match stored toolTrace (unless opts.skipHashVerify)
+   if (opts.skipHashVerify !== true && cfg?.checkpoints?.skipHashVerify !== true) {
+     const hv = verifyCheckpointToolHash(cp, {
+-      requireTip: opts.requireToolHashTip === true || cfg?.checkpoints?.requireToolHashTip === true,
++      requireTip: shouldRequireToolHashTip(cfg, opts),
+     });
+     if (!hv.ok) {
+       return {
