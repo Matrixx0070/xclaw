@@ -24,6 +24,8 @@
     "eval:campaign": "node scripts/eval-campaign.mjs",
     "soak": "node scripts/soak-run.mjs",
     "evidence": "node scripts/evidence-release.mjs",
+    "evidence:pack": "node scripts/release-evidence-pack.mjs",
+    "evidence:pack:ship": "node scripts/release-evidence-pack.mjs --run-ship-pack",
     "skill-ab": "node scripts/skill-ab.mjs",
     "soak:nights": "node scripts/soak-multinight.mjs",
     "queue:load": "node scripts/queue-load.mjs",
