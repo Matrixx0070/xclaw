@@ -1,0 +1,11 @@
+diff --git a/src/security/authorize-quota.mjs b/src/security/authorize-quota.mjs
+--- a/src/security/authorize-quota.mjs
++++ b/src/security/authorize-quota.mjs
+@@ -45,6 +45,7 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
+       const { recordHardBlock } = await import("../agent/quota-hard-circuit.mjs");
+       const trip = recordHardBlock(ctx.job || ctx.collector, {
+         cfg,
++        collector: ctx.collector,
+         code: r.code || "WORKSPACE_QUOTA_EXCEEDED",
+         escalatedFromSoft: Boolean(r.escalatedFromSoft),
+       });

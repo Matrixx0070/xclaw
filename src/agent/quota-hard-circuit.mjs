@@ -21,7 +21,13 @@ export function recordHardBlock(job, detail = {}) {
     job.quotaEscalate.escalatedFromSoft =
       (Number(job.quotaEscalate.escalatedFromSoft) || 0) + 1;
   }
-  return tripHardBlockCircuit(job, detail.cfg || {});
+  const trip = tripHardBlockCircuit(job, detail.cfg || {});
+  const collector = detail.collector || job.receiptCollector || job.collector;
+  if (collector && collector !== job) {
+    collector.quotaEscalate = job.quotaEscalate;
+    if (job.quotaHardCircuit) collector.quotaHardCircuit = job.quotaHardCircuit;
+  }
+  return trip;
 }
 
 export function tripHardBlockCircuit(job, cfg = {}) {
