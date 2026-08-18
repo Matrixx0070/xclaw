@@ -35,6 +35,33 @@ export async function handleStopAll(req, res, { cfg } = {}) {
     return payload;
   }
   const before = listActiveSessions();
+  const dryRun = body.dryRun === true || body.dry_run === true;
+  if (dryRun) {
+    const drain = {
+      sessionsKilled: 0,
+      sessionsBefore: before.length,
+      wsClosed: 0,
+      sseClosed: 0,
+      wsOk: true,
+      sseOk: true,
+      authMethod: auth.authMethod || (auth.skipped ? "lab" : "token"),
+      dryRun: true,
+    };
+    const payload = {
+      ok: true,
+      dryRun: true,
+      killedSessions: [],
+      before: before.length,
+      drain,
+      authMethod: drain.authMethod,
+      message: "dry-run: auth ok, no sessions aborted",
+    };
+    if (res && typeof res.writeHead === "function") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(payload));
+    }
+    return payload;
+  }
   const r = await killAll({
     cfg,
     stopComputer: body.keepComputer === true ? false : body.stopComputer !== false,
