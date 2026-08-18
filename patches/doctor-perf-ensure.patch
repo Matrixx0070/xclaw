@@ -15,3 +15,15 @@ diff --git a/src/cli/doctor.mjs b/src/cli/doctor.mjs
    // F — prod honesty (defaults must match the label)
    try {
      const { prodHonestyChecks } = await import("./doctor-prod-honesty.mjs");
+@@ -1739,6 +1746,13 @@ export async function runDoctor(opts = {}) {
+     /* pm2 optional */
+   }
+ 
++  try {
++    const { mergePerfIntoChecks } = await import("./doctor-perf-ensure.mjs");
++    await mergePerfIntoChecks(checks, cfg);
++  } catch (e) {
++    push("ops.perf", "warn", e.message || String(e));
++  }
++
+   return finish(checks, opts);

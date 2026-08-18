@@ -19,6 +19,11 @@ export const EXTRA_SHIP_PATCHES = [
     needles: ["ensureApprovalDigestCronJob"],
   },
   {
+    file: "gateway-land-wires.patch",
+    files: ["src/gateway/index.mjs"],
+    needles: ["ensureApprovalDigestCronJob", "createLiveStreamWriter"],
+  },
+  {
     file: "stamp-job-tool-hash.patch",
     files: ["src/jobs/job.mjs"],
     needles: ["stampJobToolHash"],
@@ -26,7 +31,7 @@ export const EXTRA_SHIP_PATCHES = [
   {
     file: "doctor-perf-ensure.patch",
     files: ["src/cli/doctor.mjs"],
-    needles: ["pushPerfChecksEnsured"],
+    needles: ["pushPerfChecksEnsured", "mergePerfIntoChecks"],
   },
   {
     file: "release-gate-ensure-cold-start.patch",
