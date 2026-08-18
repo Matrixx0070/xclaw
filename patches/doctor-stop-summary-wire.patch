@@ -1,0 +1,20 @@
+diff --git a/src/cli/doctor.mjs b/src/cli/doctor.mjs
+--- a/src/cli/doctor.mjs
++++ b/src/cli/doctor.mjs
+@@ -19,6 +19,7 @@ import { loadMotor } from "../computer/motor-bridge.mjs";
+ import { loadChromeArgsModule } from "../computer/chrome-args-bridge.mjs";
+ import { buildChromeArgs, chromeArgsInvariants } from "../computer/chrome-args.mjs";
+ import fsSync from "node:fs";
++import { attachStopSummary } from "./doctor-stop-summary.mjs";
+ 
+ 
+ function httpGet(url, timeoutMs = 3000) {
+@@ -1810,6 +1811,7 @@ function finish(checks, opts) {
+     groups: grouped,
+     checks,
+     at: new Date().toISOString(),
+   };
++  attachStopSummary(report);
+   if (!opts.quiet) {
+     if (opts.json) {
+       console.log(JSON.stringify(report, null, 2));
