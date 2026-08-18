@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { scoreAutonomyRun, aggregateAutonomy } from "../src/eval/autonomy-metrics.mjs";
+import { scoreAutonomyRun, aggregateAutonomy, hardBlockRateCeilingVerdict, attachCeilingToAggregate } from "../src/eval/autonomy-metrics.mjs";
 
 describe("A4 autonomy metrics", () => {
   it("flags zero-tool handoff", () => {
@@ -44,5 +44,16 @@ describe("A4 autonomy metrics", () => {
     assert.equal(a.hardBlocks, 2);
     assert.equal(a.hardBlockRate, 1);
     assert.equal(a.quotaHardRate, 0.5);
+  });
+});
+
+describe("A4 hardBlockRateCeiling", () => {
+  it("fails when rate exceeds max", () => {
+    const v = hardBlockRateCeilingVerdict({ hardBlockRate: 0.5 }, { maxHardBlockRate: 0.25 });
+    assert.equal(v.ok, false);
+    assert.equal(v.reason, "hard_block_rate_ceiling");
+    const a = attachCeilingToAggregate({ hardBlockRate: 0.5, n: 10 });
+    assert.equal(a.ok, false);
+    assert.equal(a.ceiling.exceeded, true);
   });
 });
