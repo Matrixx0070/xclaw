@@ -1,4 +1,13 @@
 export const SHIP_PACK_EXTRA_UNIT_TESTS = [
+  "test/autonomy-harness-offline.test.mjs",
+  "test/autonomy-metrics-a4.test.mjs",
+  "test/autonomy-policy-a1.test.mjs",
+  "test/cost-preflight-auth.test.mjs",
+  "test/sse-kill-prefix.test.mjs",
+  "test/quota-soft-escalate.test.mjs",
+  "test/checkpoint-tool-hash.test.mjs",
+  "test/claims-soft-retry-budget.test.mjs",
+  "test/doctor-single-port.test.mjs",
   "test/doctor-perf-wire-apply.test.mjs",
   "test/init-live-sse-ship.test.mjs",
   "test/record-job-cost-ship.test.mjs",
