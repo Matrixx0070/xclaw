@@ -1,0 +1,33 @@
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -15,6 +15,8 @@
+ import path from "node:path";
+ import fs from "node:fs/promises";
+ import { fileURLToPath } from "node:url";
++import { evaluateReleaseGateStrict } from "../src/eval/release-gate-strict.mjs";
++import { readLastColdStart, readSoakFlakeCounts } from "../src/cli/doctor-perf-checks.mjs";
+ 
+ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+ const args = process.argv.slice(2);
+@@ -166,6 +168,20 @@
+   return { code: 0, detail: markers };
+ }, { required: false });
+ 
++if (strict) {
++  await step("flake-cold-start", async () => {
++    const flake = readSoakFlakeCounts();
++    const { report: coldStart } = readLastColdStart();
++    const verdict = evaluateReleaseGateStrict({
++      flake: flake.missing ? { missing: true } : flake,
++      coldStart,
++      cfg: { ops: { requireColdStart: Boolean(coldStart) } },
++    });
++    console.log(JSON.stringify({ flake, coldStart: coldStart || null, verdict }, null, 2));
++    return { code: verdict.ok ? 0 : 1, detail: verdict };
++  }, { required: true });
++}
++
+ if (live) {
+   await step("live-enforcement", async () => {
+     const r = await run(
