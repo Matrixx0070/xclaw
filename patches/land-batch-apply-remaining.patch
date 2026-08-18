@@ -1,0 +1,131 @@
+diff --git a/bin/xclaw.mjs b/bin/xclaw.mjs
+--- a/bin/xclaw.mjs
++++ b/bin/xclaw.mjs
+@@ -1669,6 +1669,25 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
+       break;
+     }
+ 
++    case "stop":
++    case "stop-sign": {
++      // xclaw stop --sign | xclaw stop-sign  → mint X-XClaw-Stop-Sig
++      const rest = args.slice(1);
++      if (cmd === "stop-sign" || rest.includes("--sign") || rest[0] === "sign") {
++        const { stopSignMain } = await import("../src/cli/stop-sign.mjs");
++        const cleaned = rest.filter((a) => a !== "--sign" && a !== "sign");
++        await stopSignMain(cleaned);
++        break;
++      }
++      // default: same as stop-all for convenience
++      const { loadConfig } = await import("../src/config/load.mjs");
++      const { killAll, listActiveSessions } = await import("../src/agent/session-control.mjs");
++      const cfg = await loadConfig();
++      const before = listActiveSessions();
++      const r = await killAll({ stopComputer: !rest.includes("--keep-computer"), cfg });
++      console.log(JSON.stringify({ ...r, before }, null, 2));
++      break;
++    }
+     case "stop-all":
+     case "kill-all": {
+       const { loadConfig } = await import("../src/config/load.mjs");
+@@ -2876,6 +2895,8 @@ Commands:
+   doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
+   self-test            Fast unit smoke (autonomy, sandbox, fabric, …)
+   stop-all             Abort agent sessions + stop computer
++  stop --sign          Mint X-XClaw-Stop-Sig (JSON; add --print-curl)
++  stop-sign            Alias of stop --sign
+   automations          list|add|pause|resume|run|results|delete
+   providers            list | setup (wizard) | set | oauth | use [X] [model]
+   channels             list | setup (wizard) | set | enable X | disable X
+diff --git a/scripts/ci-ship-pack.mjs b/scripts/ci-ship-pack.mjs
+--- a/scripts/ci-ship-pack.mjs
++++ b/scripts/ci-ship-pack.mjs
+@@ -104,6 +104,16 @@ if (fs.existsSync(path.join(root, "scripts/land-all.mjs"))) {
+   log("land-all SKIP (script missing)");
+ }
+ 
++if (fs.existsSync(path.join(root, "scripts/land-kill-switch-wires.mjs"))) {
++  log("land-kill-switch-wires --check");
++  const ks = await run(process.execPath, ["scripts/land-kill-switch-wires.mjs", "--check"]);
++  if (ks.code !== 0) {
++    log("land-kill-switch-wires NEED");
++    process.exit(ks.code || 1);
++  }
++  log("land-kill-switch-wires OK");
++}
++
+ log("land-batch --check (3/4/5)");
+ const lb = runLandBatchChecks(root);
+ if (!lb.ok) {
+diff --git a/src/cli/doctor.mjs b/src/cli/doctor.mjs
+--- a/src/cli/doctor.mjs
++++ b/src/cli/doctor.mjs
+@@ -18,6 +18,7 @@ import { loadMotor } from "../computer/motor-bridge.mjs";
+ import { loadChromeArgsModule } from "../computer/chrome-args-bridge.mjs";
+ import { buildChromeArgs, chromeArgsInvariants } from "../computer/chrome-args.mjs";
+ import fsSync from "node:fs";
++import { attachStopSummary } from "./doctor-stop-summary.mjs";
+ 
+ 
+ function httpGet(url, timeoutMs = 3000) {
+@@ -1811,6 +1812,7 @@ function finish(checks, opts) {
+     checks,
+     at: new Date().toISOString(),
+   };
++  attachStopSummary(report);
+   if (!opts.quiet) {
+     if (opts.json) {
+       console.log(JSON.stringify(report, null, 2));
+diff --git a/src/gateway/routes-map.mjs b/src/gateway/routes-map.mjs
+--- a/src/gateway/routes-map.mjs
++++ b/src/gateway/routes-map.mjs
+@@ -3,8 +3,11 @@
+  */
+ export function listRoutes() {
+   return [
+-    { method: "GET", path: "/health", group: "ops", desc: "Liveness" },
+-    { method: "GET", path: "/ready", group: "ops", desc: "Readiness (computer + queue depth)" },
++    { method: "GET", path: "/health", group: "ops", desc: "Liveness + stop auth/HMAC readiness" },
++    { method: "GET", path: "/ready", group: "ops", desc: "Readiness (computer + queue + prod stop.ready)" },
++    { method: "POST", path: "/stop", group: "ops", desc: "Kill-switch: abort sessions, drain WS/SSE" },
++    { method: "POST", path: "/sessions/stop-all", group: "ops", desc: "Alias of POST /stop" },
++    { method: "POST", path: "/xclaw/stop", group: "ops", desc: "Alias of POST /stop" },
+     { method: "GET", path: "/metrics", group: "ops", desc: "Prometheus text metrics" },
+     { method: "GET", path: "/version", group: "ops", desc: "Version + uptime" },
+     { method: "GET", path: "/dashboard", group: "ops", desc: "Aggregated ops snapshot" },
+diff --git a/src/gateway/ws-stop-control.mjs b/src/gateway/ws-stop-control.mjs
+--- a/src/gateway/ws-stop-control.mjs
++++ b/src/gateway/ws-stop-control.mjs
+@@ -40,7 +40,13 @@ export async function handleWsStopControl(body, cfg = {}, sendJson) {
+   }
+   const fakeReq = {
+     method: "POST",
+-    headers: {},
++    headers: {
++      ...(body.token ? { "x-xclaw-token": body.token } : {}),
++      ...(body.sig || body.signature
++        ? { "x-xclaw-stop-sig": body.sig || body.signature }
++        : {}),
++      ...(body.headers || {}),
++    },
+     body: body.body || { type: "stop" },
+   };
+   const result = await handleStopAll(fakeReq, null, { cfg });
+@@ -49,6 +55,7 @@ export async function handleWsStopControl(body, cfg = {}, sendJson) {
+     ok: result?.ok !== false,
+     drain: result?.drain || null,
+     killedSessions: result?.killedSessions || [],
++    authMethod: result?.authMethod || result?.drain?.authMethod || auth.authMethod || null,
+   };
+   try {
+     sendJson?.(payload);
+diff --git a/src/security/authorize-quota.mjs b/src/security/authorize-quota.mjs
+--- a/src/security/authorize-quota.mjs
++++ b/src/security/authorize-quota.mjs
+@@ -46,6 +46,7 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
+       const { recordHardBlock } = await import("../agent/quota-hard-circuit.mjs");
+       const trip = recordHardBlock(ctx.job || ctx.collector, {
+         cfg,
++        collector: ctx.collector,
+         code: r.code || "WORKSPACE_QUOTA_EXCEEDED",
+         escalatedFromSoft: Boolean(r.escalatedFromSoft),
+       });
