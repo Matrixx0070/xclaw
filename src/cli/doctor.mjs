@@ -927,6 +927,18 @@ export async function runDoctor(opts = {}) {
   }
 
   try {
+    const { probeWebRtc } = await import("../voice/webrtc-session.mjs");
+    const w = await probeWebRtc();
+    push(
+      "voice.webrtc",
+      w.ok ? "ok" : "warn",
+      w.ok ? `engine=${w.engine}` : (w.error || "werift optional")
+    );
+  } catch (e) {
+    push("voice.webrtc", "warn", e.message || String(e));
+  }
+
+  try {
     const { probeOpusDecode } = await import("../voice/opus-decode.mjs");
     const o = await probeOpusDecode();
     push(
