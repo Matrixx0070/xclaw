@@ -1,0 +1,72 @@
+diff --git a/src/providers/failover-router.mjs b/src/providers/failover-router.mjs
+--- a/src/providers/failover-router.mjs
++++ b/src/providers/failover-router.mjs
+@@ -24,6 +24,12 @@ import {
+ } from "./registry.mjs";
+ import { isTransientError } from "../utils/backoff.mjs";
++import {
++  transferBudgetOnFailover,
++  isBudgetExhausted,
++  remainingBudget,
++} from "./failover-budget.mjs";
+ 
+ /**
+  * Build ordered list of model refs to try.
+@@ -145,6 +151,12 @@ export async function createProviderForRef(cfg, modelRef, opts = {}) {
+   return { provider, route };
+ }
+ 
++export {
++  transferBudgetOnFailover,
++  isBudgetExhausted,
++  remainingBudget,
++} from "./failover-budget.mjs";
++
+ /**
+  * Create a provider facade that failovers across the model chain.
+@@ -245,7 +257,33 @@ export async function createFailoverProvider(cfg = {}, opts = {}) {
+         onEvent({
+           type: "router",
+           phase: fb ? "failover" : "error",
+           modelRef: route.modelRef,
+           method,
+           status: err.status || err.statusCode,
+           message: String(err.message || err),
+           willFailover: fb && i < clients.length - 1,
+         });
+         if (!fb || i === clients.length - 1) throw err;
+-        // else try next
++        if (opts.budget && !isBudgetExhausted(opts.budget)) {
++          const transferred = transferBudgetOnFailover(opts.budget, {
++            fromRef: route.modelRef,
++            toRef: clients[i + 1]?.route?.modelRef,
++            reason: String(err.message || err.status || "failover"),
++          });
++          Object.assign(opts.budget, transferred);
++          onEvent({
++            type: "router",
++            phase: "budget_transfer",
++            from: route.modelRef,
++            to: clients[i + 1]?.route?.modelRef,
++            remaining: remainingBudget(opts.budget),
++            transfer: opts.budget.transfer,
++          });
++        } else if (opts.budget && isBudgetExhausted(opts.budget)) {
++          onEvent({
++            type: "router",
++            phase: "budget_exhausted",
++            modelRef: route.modelRef,
++          });
++          throw err;
++        }
+       }
+     }
+     throw lastErr || new Error("failover chain exhausted");
+@@ -310,6 +348,9 @@ export default {
+   createProviderForRef,
+   createFailoverProvider,
+   listRoutableProviders,
++  transferBudgetOnFailover,
++  isBudgetExhausted,
++  remainingBudget,
+ };
