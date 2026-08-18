@@ -65,15 +65,15 @@ export async function rebuildMemoryMd(cfg, workspacePath) {
   const p = memoryPaths(cfg, workspacePath);
   const items = await listMemory(cfg, workspacePath, { limit: 30 });
   const lines = [
-    `# Workspace memory`,
-    ``,
-    `Path: \`${p.workspace}\`,
-    ``,
+    "# Workspace memory",
+    "",
+    "Path: `" + p.workspace + "`",
+    "",
   ];
   for (const it of items) {
     const tag = it.type || "note";
-    lines.push(redactString(`- **${tag}** (${(it.at || "").slice(0, 19)}): ${(it.summary || it.goal || "").slice(0, 200)}`));
-    if (it.proposal) lines.push(redactString(`  - skill proposal: \`${it.proposal}\``));
+    lines.push(redactString("- **" + tag + "** (" + String(it.at || "").slice(0, 19) + "): " + String(it.summary || it.goal || "").slice(0, 200)));
+    if (it.proposal) lines.push(redactString("  - skill proposal: `" + it.proposal + "`"));
   }
   lines.push("");
   await fs.mkdir(p.dir, { recursive: true });
@@ -107,8 +107,8 @@ export async function rememberJob(cfg, job, extra = {}) {
     status: job.status,
     turns: job.turns,
     summary: job.pass
-      ? `Succeeded: ${String(job.goal || "").slice(0, 120)}`
-      : `Failed: ${job.error || job.status} — ${String(job.goal || "").slice(0, 100)}`,
+      ? "Succeeded: " + String(job.goal || "").slice(0, 120)
+      : "Failed: " + (job.error || job.status) + " — " + String(job.goal || "").slice(0, 100),
     proposal: extra.proposal || job.proposal || null,
     jobId: job.id,
   });
