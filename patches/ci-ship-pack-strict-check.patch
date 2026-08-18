@@ -1,0 +1,17 @@
+diff --git a/scripts/ci-ship-pack.mjs b/scripts/ci-ship-pack.mjs
+--- a/scripts/ci-ship-pack.mjs
++++ b/scripts/ci-ship-pack.mjs
+@@ -140,6 +140,13 @@ fs.writeFileSync(
+ log("wrote eval/baselines/last-doctor.json");
+ 
+ if (strict) {
++  log("strict: apply-ship-patches --check");
++  const chk = await run(process.execPath, ["scripts/apply-ship-patches.mjs", "--check"]);
++  if (chk.code !== 0) {
++    log("STRICT FAIL: apply-ship-patches --check (unapplied registered patch)");
++    process.exit(2);
++  }
++  log("strict: ship patches applied");
+   const errors =
+     Number(report.errors) ||
+     (Array.isArray(report.checks)
