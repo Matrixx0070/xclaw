@@ -63,4 +63,26 @@ export function aggregateAutonomy(rows = []) {
   };
 }
 
-export default { scoreAutonomyRun, aggregateAutonomy };
+export function hardBlockRateCeilingVerdict(agg = {}, opts = {}) {
+  const rate = Number(agg.hardBlockRate);
+  const max = Number(
+    opts.maxHardBlockRate ?? process.env.XCLAW_MAX_HARD_BLOCK_RATE ?? 0.25
+  );
+  const skipped = !Number.isFinite(rate);
+  const exceeded = !skipped && rate > max;
+  return {
+    ok: !exceeded,
+    exceeded,
+    skipped,
+    hardBlockRate: skipped ? null : rate,
+    max,
+    reason: exceeded ? "hard_block_rate_ceiling" : "ok",
+  };
+}
+
+export function attachCeilingToAggregate(agg = {}, opts = {}) {
+  const ceiling = hardBlockRateCeilingVerdict(agg, opts);
+  return { ...agg, ceiling, ok: ceiling.ok };
+}
+
+export default { scoreAutonomyRun, aggregateAutonomy, hardBlockRateCeilingVerdict, attachCeilingToAggregate };
