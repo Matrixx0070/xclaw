@@ -1,7 +1,7 @@
 /**
  * Live SSE attach — streams must go through the fanout registry.
  */
-import { initSSE } from "./sse.mjs";
+import { initSSE, createStreamWriter } from "./sse.mjs";
 import { subscribeLiveSSE } from "./sse-fanout-registry.mjs";
 
 export function initLiveSSE(res, opts = {}) {
@@ -11,4 +11,11 @@ export function initLiveSSE(res, opts = {}) {
   return { room, ...sub };
 }
 
-export default { initLiveSSE };
+export function createLiveStreamWriter(req, res, opts = {}) {
+  const writer = createStreamWriter(req, res, opts);
+  const room = opts.room || opts.sessionId || opts.jobId || opts.prefix || "default";
+  const sub = subscribeLiveSSE(res, String(room), { hello: false });
+  return { ...writer, room: String(room), unsubscribe: sub.unsubscribe };
+}
+
+export default { initLiveSSE, createLiveStreamWriter };

@@ -1,0 +1,46 @@
+diff --git a/src/gateway/index.mjs b/src/gateway/index.mjs
+--- a/src/gateway/index.mjs
++++ b/src/gateway/index.mjs
+@@ -51,6 +51,7 @@ import {
+   createChatSession,
+ } from "../channels/webchat/index.mjs";
+ import { initSSE, sendSSE, closeSSE, isSSEOpen, bindSSEAbort, onAbort, createStreamWriter, prefersNdjson } from "./sse.mjs";
++import { createLiveStreamWriter } from "./sse-live.mjs";
+ import {
+   parseLastEventId,
+   resolveStreamResume,
+@@ -213,8 +214,11 @@ function noteEviction(e, source = "agent") {
+ async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} }) {
+   const controller = new AbortController();
+   const so = streamOpts(cfg);
+-  const writer = createStreamWriter(req, res, {
++  const writer = createLiveStreamWriter(req, res, {
+     heartbeatMs: so.heartbeatMs,
++    prefix: "agent",
++    sessionId: body.sessionId,
++    jobId: body.jobId,
+   });
+   const cleanup = writer.bindAbort(controller);
+   const push = (eventName, payload) => {
+@@ -408,8 +412,10 @@ async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} })
+ async function streamSwarmRun(req, res, { body, cfg }) {
+   const controller = new AbortController();
+   const so = streamOpts(cfg);
+-  const writer = createStreamWriter(req, res, {
++  const writer = createLiveStreamWriter(req, res, {
+     heartbeatMs: so.heartbeatMs,
++    prefix: "swarm",
++    sessionId: body.sessionId || body.swarmId,
+   });
+   const cleanup = writer.bindAbort(controller);
+   let swarmIdSeen = null;
+@@ -714,8 +720,10 @@ async function streamSwarmRun(req, res, { body, cfg }) {
+ async function streamWebChatMessage(req, res, { message, sessionId, cfg, mode, verify, body = {} }) {
+   const controller = new AbortController();
+   const so = streamOpts(cfg);
+-  const writer = createStreamWriter(req, res, {
++  const writer = createLiveStreamWriter(req, res, {
+     heartbeatMs: so.heartbeatMs,
++    prefix: "chat",
++    sessionId,
+   });
