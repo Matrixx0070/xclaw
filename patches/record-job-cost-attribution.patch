@@ -25,3 +25,5 @@ diff --git a/src/tokens/cost-governor.mjs b/src/tokens/cost-governor.mjs
 -    { at: new Date().toISOString(), usd, jobId },
 +    stampJobCostEvent({ usd, jobId, estimated, result }),
    ];
+   if (ledger.spentUsd >= lim.dailyHardUsd && lim.pauseQueueOnHard) {
+     ledger.paused = true;
