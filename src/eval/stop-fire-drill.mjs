@@ -1,11 +1,12 @@
 /**
  * Single-port kill-switch fire-drill (no live server required).
- * Covers HTTP auth methods, WS control signing, TLS path parity markers.
+ * Covers HTTP auth methods, WS/SSE control signing, TLS path parity markers.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { authorizeStop, signStopBody } from "../gateway/stop-auth.mjs";
 import { handleWsStopControl } from "../gateway/ws-stop-control.mjs";
+import { handleSseStopControl } from "../gateway/sse-stop-control.mjs";
 import { buildStopControlMessage } from "../gateway/stop-control-auth.mjs";
 import { recordLastDrain, getLastDrain } from "../gateway/last-drain.mjs";
 import { tryHandleGatewayStop } from "../gateway/stop-proxy.mjs";
@@ -92,6 +93,30 @@ export async function fireDrillWsSigned() {
     handled: r?.handled === true,
     ok: r?.ok === true && payload.ok !== false,
     authMethod: payload.authMethod || payload.drain?.authMethod || null,
+    channel: payload.channel || null,
+    result: payload,
+  };
+}
+
+export async function fireDrillSseSigned() {
+  const secret = "drill-hmac-secret";
+  const cfg = {
+    gateway: { token: "drill-token", stopHmacSecret: secret },
+  };
+  const msg = buildStopControlMessage(cfg, { type: "stop", action: "stop-all" });
+  const out = [];
+  const r = await handleSseStopControl(msg, cfg, (p) => out.push(p));
+  const payload = out[0] || r?.payload || {};
+  return {
+    name: "sse_signed",
+    handled: r?.handled === true,
+    ok:
+      r?.ok === true &&
+      payload.ok !== false &&
+      payload.channel === "sse" &&
+      Boolean(payload.authMethod),
+    authMethod: payload.authMethod || payload.drain?.authMethod || null,
+    channel: payload.channel || null,
     result: payload,
   };
 }
@@ -183,6 +208,7 @@ export async function runStopFireDrill(opts = {}) {
     fireDrillHttpHmac(),
     fireDrillHmacCanonical(),
     await fireDrillWsSigned(),
+    await fireDrillSseSigned(),
     fireDrillTlsParity(root),
     fireDrillPaths(),
     await fireDrillNonPost405(),
