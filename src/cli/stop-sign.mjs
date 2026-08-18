@@ -105,9 +105,14 @@ export async function postStopSigned(signed, opts = {}) {
       killedSessions: json?.killedSessions || [],
     };
   } catch (e) {
+    const msg = e.name === "AbortError" ? "timeout" : e.message || String(e);
+    const offline =
+      /ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|fetch failed|network/i.test(msg) ||
+      msg === "timeout";
     return {
       ok: false,
-      error: e.name === "AbortError" ? "timeout" : e.message || String(e),
+      error: offline ? (msg === "timeout" ? "timeout" : "gateway_offline") : msg,
+      code: offline ? (msg === "timeout" ? "STOP_POST_TIMEOUT" : "GATEWAY_OFFLINE") : "STOP_POST_FAILED",
     };
   } finally {
     clearTimeout(timer);
@@ -164,9 +169,13 @@ export async function stopSignMain(args = [], loadConfigFn) {
     r.post = live;
     if (!live.ok) {
       r.ok = false;
-      process.exitCode = 1;
+      process.exitCode = live.code === "GATEWAY_OFFLINE" || live.code === "STOP_POST_TIMEOUT" ? 2 : 1;
+      if (live.code === "GATEWAY_OFFLINE") {
+        console.error("[xclaw] stop --post: gateway offline (ECONNREFUSED / unreachable)");
+      } else if (live.code === "STOP_POST_TIMEOUT") {
+        console.error("[xclaw] stop --post: gateway timeout");
+      }
     } else if (dryRun && live.dryRun !== true) {
-      // Prefer explicit dryRun response when requesting dry-run
       r.ok = false;
       process.exitCode = 1;
       r.postError = "expected dryRun:true in gateway response";
