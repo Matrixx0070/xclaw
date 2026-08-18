@@ -1,0 +1,39 @@
+diff --git a/src/gateway/ws-hub.mjs b/src/gateway/ws-hub.mjs
+--- a/src/gateway/ws-hub.mjs
++++ b/src/gateway/ws-hub.mjs
+@@ -382,6 +382,7 @@ export function attachWebSocketHub(server, opts = {}) {
+   const maxMessageBytes = Number(opts.maxMessageBytes) || DEFAULT_MAX_MESSAGE_BYTES;
+   /** @type {(req) => {ok:boolean, protocol?:string, error?:string}} */
+   const authorize = typeof opts.authorize === "function" ? opts.authorize : null;
++  const cfg = opts.cfg || {};
+   const missThreshold = Math.max(1, Number(opts.missThreshold) || 2);
+   const stats = {
+     pingsSent: 0,
+@@ -534,6 +535,27 @@ export function attachWebSocketHub(server, opts = {}) {
+               channels: [...client.channels],
+               at: new Date().toISOString(),
+             });
++          } else if (
++            body.type === "stop" ||
++            body.type === "stop-all" ||
++            body.type === "stop_all" ||
++            body.type === "kill_switch"
++          ) {
++            import("./ws-stop-control.mjs")
++              .then(({ handleWsStopControl }) =>
++                handleWsStopControl(body, cfg, (payload) => sendJson(socket, payload))
++              )
++              .catch((e) => {
++                try {
++                  sendJson(socket, {
++                    type: "stop_result",
++                    ok: false,
++                    error: e.message || String(e),
++                  });
++                } catch {
++                  /* */
++                }
++              });
+           }
+         }
+         if (error) {
