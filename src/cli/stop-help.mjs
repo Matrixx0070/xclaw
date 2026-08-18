@@ -1,12 +1,13 @@
 /**
  * Operator one-pager for kill-switch CLI.
+ * Keep in lockstep with docs/STOP.md (see test/stop-docs-lockstep.test.mjs).
  */
 export const STOP_HELP = `
 XClaw stop — single-port kill-switch
 
 Usage:
   xclaw stop --help
-  xclaw stop --sign [--body '{}'] [--print-curl] [--dry-run] [--json]
+  xclaw stop --sign [--body '{}'] [--print-curl] [--dry-run] [--post] [--json]
   xclaw stop-sign                 (alias)
   xclaw stop-all [--keep-computer]
 
@@ -18,6 +19,7 @@ Auth:
 Safe live probe (no sessions aborted):
   xclaw stop --sign --dry-run
   xclaw stop --sign --dry-run --print-curl
+  xclaw stop --sign --dry-run --post
 
 Fire-drill / doctor:
   node scripts/stop-fire-drill.mjs
