@@ -1,0 +1,18 @@
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -9,6 +9,7 @@ import { createEvidenceLog, flagUngroundedClaims, groundingShouldFail } from "./
+ import { scoreClaimsAgainstEvidence } from "./claims.mjs";
+ import { runVerifyChecks } from "./verify.mjs";
+ import { recordJob } from "./history.mjs";
++import { stampJobToolHash } from "./stamp-tool-hash.mjs";
+ import { rememberJob } from "../memory/durable.mjs";
+ import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
+ import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
+@@ -299,6 +300,7 @@ export async function runJob(opts) {
+     maxTurns,
+     events: events.filter((e) => e.type === "job" || e.type === "guard" || e.type === "retry"),
+   };
++  stampJobToolHash(job);
+ 
+   push({ type: "job", phase: "end", id, status, pass: job.pass, wallMs: job.wallMs });
