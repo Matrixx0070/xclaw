@@ -1,0 +1,16 @@
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -118,6 +118,12 @@ if (!quick) {
+     return { code: r.code };
+   }, { required: true });
+ 
++  await step("stop-fire-drill", async () => {
++    const r = await run(process.execPath, ["scripts/stop-fire-drill.mjs"], { quiet: true });
++    console.log((r.out + r.err).slice(-500));
++    return { code: r.code };
++  }, { required: true });
++
+   await step("evidence", async () => {
+     const env = strict ? { REQUIRE_SOAK: "1", XCLAW_RELEASE_STRICT: "1" } : {};
+     const r = await run("npm", ["run", "evidence"], { env, quiet: true });
