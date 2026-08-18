@@ -80,7 +80,56 @@ export function createSSEFanout() {
     rooms.clear();
   }
 
-  return { subscribe, publish, publishAll, stats, clear };
+  function closeRoom(room, reason = "close_room") {
+    const key = String(room || "default");
+    const r = rooms.get(key);
+    if (!r) return { room: key, subscribers: 0, reason };
+    let closed = 0;
+    for (const [sid, sub] of [...r.entries()]) {
+      try {
+        sendSSE(sub.res, "kill", { reason, room: key }, `kill-${sid}`);
+      } catch {
+        /* */
+      }
+      try {
+        if (typeof sub.res.end === "function" && !sub.res.writableEnded) sub.res.end();
+      } catch {
+        /* */
+      }
+      r.delete(sid);
+      closed += 1;
+    }
+    rooms.delete(key);
+    return { room: key, subscribers: closed, reason };
+  }
+
+  function closeAll(reason = "kill_all") {
+    const keys = [...rooms.keys()];
+    let subscribers = 0;
+    const closedRooms = [];
+    for (const key of keys) {
+      const r = closeRoom(key, reason);
+      subscribers += r.subscribers;
+      closedRooms.push(r.room);
+    }
+    rooms.clear();
+    return { rooms: closedRooms.length, roomIds: closedRooms, subscribers, reason };
+  }
+
+  function closeByPrefix(prefix, reason = "kill_prefix") {
+    const p = String(prefix || "");
+    const keys = [...rooms.keys()].filter((k) => k === p || k.startsWith(p + ":"));
+    let subscribers = 0;
+    const closedRooms = [];
+    for (const key of keys) {
+      const r = closeRoom(key, reason);
+      subscribers += r.subscribers;
+      closedRooms.push(r.room);
+    }
+    return { rooms: closedRooms.length, roomIds: closedRooms, subscribers, reason, prefix: p };
+  }
+
+  return { subscribe, publish, publishAll, stats, clear, closeRoom, closeAll, closeByPrefix };
 }
 
 /**
