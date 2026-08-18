@@ -15,6 +15,10 @@ export const RELEASE_GATE_STRICT_EXTRA_TESTS = [
   "test/stop-drain-stats.test.mjs",
   "test/checkpoint-quota-escalate.test.mjs",
   "test/checkpoint-restore-receipt.test.mjs",
+  "test/stop-auth.test.mjs",
+  "test/doctor-ops-bundle.test.mjs",
+  "test/doctor-stop-auth.test.mjs",
+  "test/last-drain.test.mjs",
 ];
 
 export function listStrictExtraTests(root) {
