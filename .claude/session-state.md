@@ -12,6 +12,21 @@ same guard already used for systemRunPlan. FACT: NO engine here declares cwd on 
 (neither frozen bundle nor maintained module) — workingDir travels via session ctx (proven:
 module `pwd` → /root/xclaw through ctx). So the strip loses nothing; the probe future-proofs.
 
+## PROVIDER SWITCHED TO xAI grok-4.6 (Frank, 2026-08-18)
+`xclaw providers use xai grok-4.6` → cfg.agent = {provider: xai, model: grok-4.6}; gateway restarted.
+xai was already configured (apikey★ preferred; its oauth seat is EXPIRED — leave it, apikey works).
+Live-proven on grok-4.6: /agent/run `hostname`+`uname -r` → srv1474168 / 6.8.0-90-generic (1 turn);
+webchat channel runtime (same path Telegram uses) `whoami` → root; outside-workspace write PENDED
+(apr_1787020038627_564oz) → denied via /approvals/deny → agent said DENIED-OK → NO file created.
+Telegram @xxclaw_bot re-polling on the new config. Doctor 0 errors / 3 warnings (anthropic OAuth
+SCAFFOLD warning cleared with the switch).
+BONUS PROOF of v3.130 restored feature: governor now shows billed $0.020118 (xai returns real usage)
+vs estimated $0.147525 (anthropic OAuth) — the billed/estimated split working on real data.
+NOTE: Anthropic account was HTTP 429 from E2E volume; the switch also removed that dependency.
+WATCH (provider layer, NOT merge damage): an in-process cfg.agent.provider override to an
+unconfigured provider silently falls back to the config provider; and the anthropic apikey path
+appears to hold a stale key (401 invalid x-api-key) while OAuth works — pre-existing, unverified origin.
+
 LIVE PROOFS captured (running gateway, not tests):
 - agent ran `uname -r` → `6.8.0-90-generic` in 1 turn (was total failure pre-fix)
 - router-level deterministic proof on shipped code: live engine advertises cwd=false, dispatch ok, output "6.8.0-90-generic\nsrv1474168"
