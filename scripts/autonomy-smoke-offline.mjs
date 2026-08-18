@@ -2,7 +2,7 @@
 /**
  * Offline autonomy harness smoke — no API key.
  * Exit 0 when autonomy cases load and offline tests pass.
- * Writes reports/autonomy/last-smoke.json for CI baselines.
+ * Writes reports/autonomy/last-smoke.json and compares to prev-smoke.json.
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -27,5 +27,13 @@ const art = writeAutonomySmokeArtifact(root, {
   mode: "offline",
 });
 console.error(`[autonomy-smoke] wrote ${art.path} ok=${art.payload.ok}`);
+
+const { compareAutonomySmoke, rotateSmokeBaseline } = await import("../src/eval/autonomy-smoke-compare.mjs");
+const cmp = compareAutonomySmoke(root);
+console.error(`[autonomy-smoke] compare reason=${cmp.reason} ok=${cmp.ok}`);
+if (art.payload.ok) rotateSmokeBaseline(root);
+if (!cmp.ok && process.env.XCLAW_SMOKE_COMPARE_STRICT === "1") {
+  process.exit(2);
+}
 
 process.exit(r.status ?? 1);
