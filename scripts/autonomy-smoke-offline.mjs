@@ -2,6 +2,7 @@
 /**
  * Offline autonomy harness smoke — no API key.
  * Exit 0 when autonomy cases load and offline tests pass.
+ * Writes reports/autonomy/last-smoke.json for CI baselines.
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -18,4 +19,13 @@ const r = spawnSync(process.execPath, ["--test", ...tests], {
   stdio: "inherit",
   env: { ...process.env, XCLAW_AUTONOMY_SMOKE: "1" },
 });
+
+const { writeAutonomySmokeArtifact } = await import("../src/eval/autonomy-smoke-artifact.mjs");
+const art = writeAutonomySmokeArtifact(root, {
+  status: r.status ?? 1,
+  tests,
+  mode: "offline",
+});
+console.error(`[autonomy-smoke] wrote ${art.path} ok=${art.payload.ok}`);
+
 process.exit(r.status ?? 1);
