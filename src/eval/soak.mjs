@@ -4,6 +4,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { redactEvent } from "../security/redact-secrets.mjs";
 
 function baseDir(cfg) {
   return path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "soak");
@@ -22,10 +23,10 @@ export function soakPaths(cfg) {
 export async function appendSoakRun(cfg, run) {
   const p = soakPaths(cfg);
   await fs.mkdir(p.dir, { recursive: true });
-  const row = {
+  const row = redactEvent({
     at: new Date().toISOString(),
     ...run,
-  };
+  });
   await fs.appendFile(p.runs, JSON.stringify(row) + "\n");
   await rebuildSoakSummary(cfg);
   return row;
@@ -34,7 +35,7 @@ export async function appendSoakRun(cfg, run) {
 export async function appendFlake(cfg, flake) {
   const p = soakPaths(cfg);
   await fs.mkdir(p.dir, { recursive: true });
-  const row = { at: new Date().toISOString(), ...flake };
+  const row = redactEvent({ at: new Date().toISOString(), ...flake });
   await fs.appendFile(p.flakes, JSON.stringify(row) + "\n");
   await rebuildSoakSummary(cfg);
   return row;
@@ -101,11 +102,6 @@ export async function getSoakSummary(cfg) {
   }
 }
 
-
-/**
- * Seed or record N calendar nights (for lab proof when nightly cron not yet run).
- * Each night: optional results array or empty pass placeholder.
- */
 export async function seedMultiNightSoak(cfg, nights = 3, nightResults = []) {
   const out = [];
   const base = Date.now();
