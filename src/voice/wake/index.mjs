@@ -13,6 +13,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { localTranscribe, localConfig, looksLikeWhisperCli } from "../providers/local.mjs";
+import {
+  probeCapture,
+  captureReadyForWake,
+} from "../capture-probe.mjs";
 
 export const DEFAULT_WAKE_PHRASES = [
   "hey xclaw",
@@ -37,8 +41,7 @@ function run(cmd, args, opts = {}) {
       resolve({
         code: err.code === "ENOENT" ? 127 : 1,
         stdout,
-        stderr: err.message,
-        spawnError: err,
+        stderr: err.message || String(err),
         errorCode: err.code || null,
       })
     );
@@ -105,7 +108,163 @@ export async function recordClip(opts = {}) {
   const out =
     opts.path ||
     path.join(os.tmpdir(), `xclaw-wake-${Date.now()}.wav`);
-  const r = await run("arecord", [
+
+  let device =
+    opts.device ||
+    opts.target ||
+    process.env.XCLAW_CAPTURE_TARGET ||
+    null;
+
+  let backend = (
+    opts.backend ||
+    process.env.XCLAW_CAPTURE_BACKEND ||
+    ""
+  )
+    .toString()
+    .toLowerCase()
+    .trim();
+
+  let probe = opts.probe || null;
+  if (!backend && opts.autoProbe !== false) {
+    try {
+      probe =
+        probe ||
+        (await probeCapture({
+          target: device || process.env.PIPEWIRE_NODE || null,
+        }));
+      if (probe?.monitorRejected && !device) {
+        return {
+          ok: false,
+          error:
+            probe.errors?.join("; ") ||
+            "default capture source looks like a sink monitor",
+          path: null,
+          device: null,
+          tool: null,
+          backend: probe.backend || null,
+          probe,
+        };
+      }
+      if (!backend && probe?.backend) {
+        backend = String(probe.backend).toLowerCase();
+      }
+      if (!device && probe?.target) {
+        device = probe.target;
+      }
+      if (
+        !device &&
+        probe?.backend === "pulse" &&
+        probe?.pulse?.defaultSource?.name
+      ) {
+        device = probe.pulse.defaultSource.name;
+      }
+    } catch {
+      /* keep backend empty → alsa path */
+    }
+  }
+
+  const wantPulse =
+    backend === "pulse" ||
+    opts.usePulse === true ||
+    device === "pulse" ||
+    device === "@DEFAULT_SOURCE@";
+
+  const env = { ...process.env };
+  if (backend === "wireplumber" || backend === "pipewire-alsa") {
+    if (device && !env.PIPEWIRE_NODE) env.PIPEWIRE_NODE = String(device);
+  } else if (opts.target && !device) {
+    env.PIPEWIRE_NODE = String(opts.target);
+  } else if (process.env.PIPEWIRE_NODE) {
+    env.PIPEWIRE_NODE = process.env.PIPEWIRE_NODE;
+  }
+
+  const finishOk = async (tool, usedDevice) => {
+    const b =
+      tool === "parecord" || usedDevice === "pulse"
+        ? "pulse"
+        : backend || "alsa";
+    try {
+      await fs.access(out);
+      return {
+        ok: true,
+        path: out,
+        device: usedDevice || null,
+        tool,
+        backend: b,
+        probe: probe || undefined,
+      };
+    } catch {
+      return {
+        ok: false,
+        error: "record produced no file",
+        path: null,
+        tool,
+        backend: b,
+        probe: probe || undefined,
+      };
+    }
+  };
+
+  if (wantPulse || backend === "pulse") {
+    const pulseDev = device && device !== "pulse" ? device : "@DEFAULT_SOURCE@";
+    const pr = await run(
+      "timeout",
+      [
+        String(Math.max(1, Number(seconds) + 1)),
+        "parecord",
+        "-d",
+        pulseDev,
+        `--rate=${rate}`,
+        "--channels=1",
+        "--format=s16le",
+        out,
+      ],
+      { env }
+    );
+    if (
+      (pr.code === 0 || pr.code === 124) &&
+      !(pr.errorCode === "ENOENT" || pr.code === 127)
+    ) {
+      const ok = await finishOk("parecord", pulseDev);
+      if (ok.ok) return ok;
+    }
+    const arPulse = await run(
+      "arecord",
+      [
+        "-d",
+        String(seconds),
+        "-f",
+        "S16_LE",
+        "-r",
+        String(rate),
+        "-c",
+        "1",
+        "-D",
+        "pulse",
+        out,
+      ],
+      { env }
+    );
+    if (arPulse.code === 0) {
+      return finishOk("arecord", "pulse");
+    }
+    if (wantPulse && backend === "pulse") {
+      return {
+        ok: false,
+        error:
+          pr.stderr ||
+          arPulse.stderr ||
+          "parecord/arecord -D pulse failed (install pulseaudio-utils)",
+        path: null,
+        device: pulseDev,
+        tool: "parecord",
+        backend: "pulse",
+        probe: probe || undefined,
+      };
+    }
+  }
+
+  const args = [
     "-d",
     String(seconds),
     "-f",
@@ -114,21 +273,24 @@ export async function recordClip(opts = {}) {
     String(rate),
     "-c",
     "1",
-    out,
-  ]);
+  ];
+  if (device && device !== "pulse" && device !== "@DEFAULT_SOURCE@") {
+    args.push("-D", String(device));
+  }
+  args.push(out);
+  const r = await run("arecord", args, { env });
   if (r.code !== 0) {
     return {
       ok: false,
       error: r.stderr || "arecord failed (install alsa-utils)",
       path: null,
+      device: device || null,
+      tool: "arecord",
+      backend: backend || "alsa",
+      probe: probe || undefined,
     };
   }
-  try {
-    await fs.access(out);
-    return { ok: true, path: out };
-  } catch {
-    return { ok: false, error: "record produced no file", path: null };
-  }
+  return finishOk("arecord", device);
 }
 
 export async function probeWakeOnce(cfg = {}, opts = {}) {
@@ -136,6 +298,18 @@ export async function probeWakeOnce(cfg = {}, opts = {}) {
   const rec = await recordClip({
     seconds: opts.seconds ?? c.recordSeconds,
     sampleRate: c.sampleRate,
+    backend:
+      opts.backend ||
+      cfg.voice?.captureBackend ||
+      process.env.XCLAW_CAPTURE_BACKEND ||
+      null,
+    device:
+      opts.device ||
+      opts.target ||
+      cfg.voice?.captureTarget ||
+      process.env.XCLAW_CAPTURE_TARGET ||
+      null,
+    target: opts.target || cfg.voice?.captureTarget || null,
   });
   if (!rec.ok) {
     return {
@@ -143,6 +317,7 @@ export async function probeWakeOnce(cfg = {}, opts = {}) {
       stage: "record",
       error: rec.error,
       hit: false,
+      tool: rec.tool || null,
     };
   }
 
@@ -197,22 +372,34 @@ export async function probeWakeStack(cfg = {}) {
     phrases: c.phrases,
     energyThreshold: c.energyThreshold,
     arecord: { ok: false },
+    capture: null,
     openWakeWord: { ok: false },
     stt: { ok: false },
   };
 
-  const ar = await run("arecord", ["--version"]);
-  const arInstalled =
-    !ar.spawnError &&
-    (ar.code === 0 || /arecord/i.test(ar.stderr + ar.stdout.toString()));
-  if (!arInstalled) {
-    out.arecord = { ok: false, error: "arecord not found (alsa-utils)" };
-  } else {
-    const devs = await run("arecord", ["-l"]);
-    const listing = devs.stdout.toString() + devs.stderr;
-    out.arecord = /^card \d+/m.test(listing)
-      ? { ok: true }
-      : { ok: false, installed: true, error: "no capture device (no soundcards found)" };
+  try {
+    out.capture = await probeCapture({
+      target:
+        cfg.voice?.captureTarget ||
+        cfg.captureTarget ||
+        process.env.XCLAW_CAPTURE_TARGET ||
+        process.env.PIPEWIRE_NODE ||
+        null,
+    });
+    out.arecord = {
+      ok: Boolean(out.capture?.arecord?.ok) || Boolean(out.capture?.ok),
+      cards: out.capture?.arecord?.cards || [],
+      backend: out.capture?.backend || null,
+      error: out.capture?.arecord?.error,
+      monitorRejected: Boolean(out.capture?.monitorRejected),
+    };
+  } catch (e) {
+    out.capture = { ok: false, error: e.message };
+    const ar = await run("arecord", ["--version"]);
+    const arMissing = ar.errorCode === "ENOENT" || ar.code === 127;
+    out.arecord = arMissing
+      ? { ok: false, error: "arecord not found (alsa-utils)" }
+      : { ok: true, note: "capture probe failed; binary only" };
   }
 
   const py = await run("python3", [
@@ -227,7 +414,6 @@ export async function probeWakeStack(cfg = {}) {
           error: "openwakeword not installed (optional for W1+)",
         };
 
-  // STT: looksLikeWhisperCli — never call probeLocalVoiceStack from here (recursion).
   try {
     const whisperBin = localConfig(cfg).whisperBin;
     const wh = await run(whisperBin, ["--help"]);
@@ -236,7 +422,7 @@ export async function probeWakeStack(cfg = {}) {
       : {
           ok: false,
           error:
-            wh.errorCode === "ENOENT" || wh.code === 127 || wh.spawnError
+            wh.errorCode === "ENOENT" || wh.code === 127
               ? "whisper CLI not found (ENOENT)"
               : "no whisper CLI",
         };
@@ -244,8 +430,11 @@ export async function probeWakeStack(cfg = {}) {
     out.stt = { ok: false, error: e.message };
   }
 
+  const captureOk = captureReadyForWake(out.capture) || out.arecord.ok;
   out.readyForW1 =
-    out.arecord.ok && (out.stt.ok || out.openWakeWord.ok);
+    captureOk &&
+    !out.capture?.monitorRejected &&
+    (out.stt.ok || out.openWakeWord.ok);
 
   return out;
 }
@@ -267,6 +456,8 @@ except Exception as e:
   return { ok: false, error: text.trim() || "import failed" };
 }
 
+export { probeCapture, captureReadyForWake };
+
 export default {
   DEFAULT_WAKE_PHRASES,
   wakeConfig,
@@ -276,4 +467,6 @@ export default {
   probeWakeOnce,
   probeWakeStack,
   probeOpenWakeWordOnce,
+  probeCapture,
+  captureReadyForWake,
 };
