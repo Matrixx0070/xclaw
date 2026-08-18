@@ -1,0 +1,13 @@
+diff --git a/src/jobs/checkpoint.mjs b/src/jobs/checkpoint.mjs
+--- a/src/jobs/checkpoint.mjs
++++ b/src/jobs/checkpoint.mjs
+@@ -57,6 +57,9 @@ export async function saveCheckpoint(cfg, job) {
+     maxTurns: job.maxTurns,
+     resumedBy: job.resumedBy || null,
+     resumedAt: job.resumedAt || null,
++    quotaEscalate: job.quotaEscalate || job.receiptMetrics?.quotaEscalate || null,
++    receiptMetrics: job.receiptMetrics || null,
++    claimsSoftRetry: job.claimsSoftRetry || job.receiptMetrics?.claimsSoftRetry || null,
+   };
+   const tmp = fp + ".tmp";
+   await fs.writeFile(tmp, JSON.stringify(slim, null, 2));
