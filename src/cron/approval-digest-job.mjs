@@ -1,19 +1,40 @@
 /**
  * Scheduled approval digest (critical vs soft channels).
+ * Quiet by default when nothing is pending (security.digestOnlyIfPending).
  */
 import { addJob, listJobs, cancelJob } from "./scheduler.mjs";
 import { sendApprovalDigest } from "../security/approval-digest.mjs";
 
 export const DEFAULT_DIGEST_EVERY_MS = 5 * 60 * 1000;
 
+/**
+ * @param {object} [opts]
+ * @param {object} [opts.cfg]
+ * @param {function} [opts.deliver]
+ * @param {boolean} [opts.onlyIfPending] — default true (cfg.security.digestOnlyIfPending)
+ */
 export async function runApprovalDigestJob(opts = {}) {
-  const cfg = opts.cfg || {};
+  const cfg = { ...(opts.cfg || {}) };
+  cfg.security = {
+    digestOnlyIfPending: true,
+    ...(cfg.security || {}),
+  };
+  if (opts.onlyIfPending === false) {
+    cfg.security.digestOnlyIfPending = false;
+  } else if (opts.onlyIfPending === true) {
+    cfg.security.digestOnlyIfPending = true;
+  }
   const result = await sendApprovalDigest(cfg, {
     deliver: opts.deliver,
   });
-  console.log(
-    `[xclaw:digest-cron] sent=${Boolean(result.sent)} reason=${result.reason || "ok"} pending=${result.digest?.pending ?? 0}`
-  );
+  const pending = result.digest?.pending ?? 0;
+  if (!result.sent && result.reason === "empty") {
+    console.log(`[xclaw:digest-cron] quiet (no pending approvals)`);
+  } else {
+    console.log(
+      `[xclaw:digest-cron] sent=${Boolean(result.sent)} reason=${result.reason || "ok"} pending=${pending}`
+    );
+  }
   return result;
 }
 
@@ -31,7 +52,7 @@ export function ensureApprovalDigestCronJob(opts = {}) {
     enabled: opts.enabled !== false,
     delivery: opts.delivery || null,
     sessionKey: opts.sessionKey || null,
-    payload: { kind: "approval_digest" },
+    payload: { kind: "approval_digest", onlyIfPending: opts.onlyIfPending !== false },
     cfg: opts.cfg,
     handler: async () => runApprovalDigestJob(opts),
   });
