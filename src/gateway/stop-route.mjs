@@ -3,6 +3,7 @@
  */
 import { killAll, listActiveSessions } from "../agent/session-control.mjs";
 import { authorizeStop } from "./stop-auth.mjs";
+import { recordLastDrain } from "./last-drain.mjs";
 
 export function drainStats(r = {}, before = []) {
   const wsClosed = Number(r.ws?.closed ?? r.ws?.clients ?? 0) || 0;
@@ -41,6 +42,7 @@ export async function handleStopAll(req, res, { cfg } = {}) {
     closeSse: body.closeSse !== false,
   });
   const drain = drainStats(r, before);
+  recordLastDrain(drain);
   const payload = {
     ok: true,
     killedSessions: r.killedSessions || [],
