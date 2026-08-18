@@ -1,0 +1,19 @@
+diff --git a/src/gateway/index.mjs b/src/gateway/index.mjs
+--- a/src/gateway/index.mjs
++++ b/src/gateway/index.mjs
+@@ -14,6 +14,7 @@ import { tryHandleLedgerRoute } from "./routes/ledger.mjs";
+ import { tryHandleEvalQueueRoute } from "./routes/eval-queue.mjs";
+ import { tryHandleTokensRoute } from "./routes/tokens.mjs";
+ import { tryHandleSessionsRoute } from "./routes/sessions.mjs";
++import { tryHandleStopRoute } from "./routes/stop.mjs";
+ import { tryHandleSubagentsRoute } from "./routes/subagents.mjs";
+ import { tryHandleMcpRoute } from "./routes/mcp.mjs";
+ import { tryHandleMediaRoute } from "./routes/media.mjs";
+@@ -1171,6 +1172,7 @@ export async function startGateway({ root } = {}) {
+       if (await tryHandleJwksRoute(routeArgs)) return;
+       if (await tryHandleTokensRoute(routeArgs)) return;
+       if (await tryHandleSessionsRoute(routeArgs)) return;
++      if (await tryHandleStopRoute(routeArgs)) return;
+       if (await tryHandleSubagentsRoute(routeArgs)) return;
+       if (await tryHandleMcpRoute({ ...routeArgs, mcpClient, mcpServer })) return;
+       if (await tryHandleMediaRoute(routeArgs)) return;
