@@ -1,0 +1,24 @@
+diff --git a/src/agent/goal-loop.mjs b/src/agent/goal-loop.mjs
+--- a/src/agent/goal-loop.mjs
++++ b/src/agent/goal-loop.mjs
+@@ -2,6 +2,7 @@
+  * A2 — Goal loop helpers: plan → act → verify → receipt.
+  * Channel-invariant; used inside runAgentLoop / runAgent.
+  */
++import { buildToolHashChain } from "./tool-hash-chain.mjs";
+ 
+ /**
+  * @param {string} goal
+@@ -106,9 +107,12 @@
+     .map((t) => t.name || t.tool)
+     .filter(Boolean);
+   const uniqueTools = [...new Set(toolsUsed)];
++  const chain = buildToolHashChain(toolTrace || []);
+   return {
+     version: 1,
+     goal: String(goal || "").slice(0, 500),
++    toolHashTip: chain.tip,
++    toolHashVersion: chain.version,
+     objective: plan?.objective || String(goal || "").slice(0, 500),
+     phases: plan?.steps || [],
+     turns,
