@@ -927,6 +927,20 @@ export async function runDoctor(opts = {}) {
   }
 
   try {
+    const { probeOpusDecode } = await import("../voice/opus-decode.mjs");
+    const o = await probeOpusDecode();
+    push(
+      "voice.opus",
+      o.ready ? "ok" : "warn",
+      o.ready
+        ? `decode ready (opus=${o.opusscript.ok} discord=${o.discordjsOpus.ok} ffmpeg=${o.ffmpeg.ok})`
+        : "no opus decoder (optional: opusscript or ffmpeg)"
+    );
+  } catch (e) {
+    push("voice.opus", "warn", e.message || String(e));
+  }
+
+  try {
     const { probeVad } = await import("../voice/vad.mjs");
     const v = probeVad(cfg);
     push(
