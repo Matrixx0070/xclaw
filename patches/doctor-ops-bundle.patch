@@ -1,0 +1,19 @@
+diff --git a/src/cli/doctor.mjs b/src/cli/doctor.mjs
+--- a/src/cli/doctor.mjs
++++ b/src/cli/doctor.mjs
+@@ -166,13 +166,8 @@ export async function runDoctor(opts = {}) {
+     push("security.egress", "warn", e.message || String(e));
+   }
+   try {
+-    const { listActiveSessions } = await import("../agent/session-control.mjs");
+-    const n = listActiveSessions().length;
+-    push(
+-      "security.killSwitch",
+-      "ok",
+-      `session kill-switch ready (activeSessions=${n}); use: xclaw stop-all`
+-    );
++    const { pushDoctorOpsBundle } = await import("./doctor-ops-bundle.mjs");
++    await pushDoctorOpsBundle(push, cfg, opts);
+   } catch (e) {
+     push("security.killSwitch", "warn", e.message || String(e));
+   }
