@@ -1,0 +1,28 @@
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -140,11 +140,14 @@ export async function runJob(opts) {
+     },
+   };
+ 
++  const receiptCollector = { quotaEscalate: { softWarns: 0, hardBlocks: 0, escalatedFromSoft: 0, lastCode: null } };
+   try {
+     agentResult = await runAgentLoop({
+       userMessage: goal,
+       cfg: jobCfg,
+       workingDir: workspace,
++      job: receiptCollector,
++      receiptCollector,
+       signal: ac.signal,
+       ledgerIds: { jobId: id },
+       systemNotes: opts.systemNotes || jobCfg.agent?.systemNotes,
+@@ -300,6 +303,9 @@ export async function runJob(opts) {
+     maxTurns,
+     events: events.filter((e) => e.type === "job" || e.type === "guard" || e.type === "retry"),
+   };
++  if (typeof receiptCollector !== "undefined" && receiptCollector.quotaEscalate) {
++    job.quotaEscalate = receiptCollector.quotaEscalate;
++  }
+   stampJobToolHash(job);
+ 
+   push({ type: "job", phase: "end", id, status, pass: job.pass, wallMs: job.wallMs });
