@@ -6,6 +6,7 @@ import {
   estimateWriteDelta,
   preflightWriteQuota,
 } from "./workspace-quota.mjs";
+import { maybeEmitQuotaSoft } from "./quota-soft-warn.mjs";
 
 export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
   if (!isWriteTool(name)) {
@@ -31,7 +32,8 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
       quota: r,
     };
   }
-  return { ok: true, soft: r.soft, quota: r };
+  const warn = maybeEmitQuotaSoft(r, { tool: name, root }, ctx.hubs || {});
+  return { ok: true, soft: r.soft, quota: r, warn };
 }
 
 export default { authorizeQuotaPreflight };
