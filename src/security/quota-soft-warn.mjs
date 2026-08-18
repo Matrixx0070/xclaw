@@ -2,6 +2,15 @@
  * Soft-band workspace quota — warn on WS/SSE before hard refuse.
  */
 
+async function defaultPublish(room, event, data) {
+  const { publishLiveSSE } = await import("../gateway/sse-fanout-registry.mjs");
+  return publishLiveSSE(room, event, data);
+}
+
+function defaultBroadcast() {
+  return globalThis.__xclawWsBroadcast;
+}
+
 export function emitQuotaSoftWarn(payload = {}, hubs = {}) {
   const event = {
     type: "quota",
@@ -12,21 +21,23 @@ export function emitQuotaSoftWarn(payload = {}, hubs = {}) {
   let ws = null;
   let sse = null;
   try {
-    const broadcast = hubs.broadcast || globalThis.__xclawWsBroadcast;
+    const broadcast = hubs.broadcast || defaultBroadcast();
     if (typeof broadcast === "function") {
-      ws = broadcast("security", event);
+      ws = broadcast("security", event) ?? { ok: true };
     }
   } catch (err) {
     ws = { ok: false, error: err.message };
   }
-  try {
-    const publish = hubs.publish;
-    if (typeof publish === "function") {
+  const publish = hubs.publish;
+  if (typeof publish === "function") {
+    try {
       sse = publish(payload.room || "security", "quota_soft", event);
+    } catch (err) {
+      sse = { ok: false, error: err.message };
     }
-  } catch (err) {
-    sse = { ok: false, error: err.message };
+    return { event, ws, sse };
   }
+  sse = defaultPublish(payload.room || "security", "quota_soft", event);
   return { event, ws, sse };
 }
 
