@@ -9,51 +9,34 @@
  *   const out = await runAgent({ goal: "…", channel: "telegram", … });
  */
 
+import { applyClaimsGateToResult } from "./claims-gate.mjs";
 import { runAgentLoop } from "./loop.mjs";
 
 /** @typedef {"cli"|"telegram"|"webchat"|"discord"|"slack"|"email"|"tui"|"api"|"automation"|"unknown"} AgentChannel */
 
 /**
  * @typedef {object} AgentRequest
- * @property {string} [goal]           Primary user goal / message
- * @property {string} [message]        Alias of goal
- * @property {string} [userMessage]    Alias of goal
+ * @property {string} [goal]
+ * @property {string} [message]
+ * @property {string} [userMessage]
  * @property {object} [cfg]
  * @property {string} [workingDir]
  * @property {AbortSignal} [signal]
  * @property {(e: object) => void} [onEvent]
  * @property {boolean} [stream]
  * @property {string} [userId]
- * @property {AgentChannel|string} [channel]  Metadata only
+ * @property {AgentChannel|string} [channel]
  * @property {string} [chatId]
  * @property {string} [chatSessionId]
- * @property {string} [sessionId]             Alias → chatSessionId
- * @property {string} [conversationId]        Alias → chatSessionId
+ * @property {string} [sessionId]
+ * @property {string} [conversationId]
  * @property {Array<{role:string,content:string}>} [history]
  * @property {string|null} [rescuePrompt]
- * @property {string} [profile]               Optional profile name (cfg still authoritative)
- */
-
-/**
- * @typedef {object} AgentResponse
- * @property {boolean} ok
- * @property {string} text
- * @property {string|null} [error]
- * @property {number} [turns]
- * @property {string} [model]
- * @property {object[]} [toolTrace]
- * @property {object[]} [suggestions]
- * @property {object|null} [turnState]
- * @property {string|null} [stopReason]
- * @property {object} [raw]
- * @property {AgentChannel|string} [channel]
- * @property {string} [sessionId]
+ * @property {string} [profile]
  */
 
 /**
  * Normalize any surface payload into the single loop options object.
- * Channel does not change tools, model selection, or autonomy policy.
- *
  * @param {AgentRequest} req
  */
 export function normalizeAgentRequest(req = {}) {
@@ -77,16 +60,16 @@ export function normalizeAgentRequest(req = {}) {
     chatSessionId,
     history: Array.isArray(req.history) ? req.history : undefined,
     rescuePrompt: req.rescuePrompt ?? null,
-    // reserved for A1+ — not forked by channel
     profile: req.profile || null,
   };
 }
 
 /**
  * Single entry for all channels. Same goal → same loop contract.
+ * Applies structured claims gate when cfg/principles require evidence.
  *
  * @param {AgentRequest} req
- * @returns {Promise<AgentResponse>}
+ * @returns {Promise<object>}
  */
 export async function runAgent(req = {}) {
   const opts = normalizeAgentRequest(req);
@@ -123,23 +106,36 @@ export async function runAgent(req = {}) {
       (typeof raw === "string" ? raw : "") ||
       "(no response)";
 
-    return {
-      ok: true,
-      text,
-      finalText: text,
-      turns: raw?.turns,
-      model: raw?.model,
-      toolTrace: raw?.toolTrace,
-      suggestions: raw?.suggestions || [],
-      turnState: raw?.turnState || null,
-      stopReason: raw?.stopReason || null,
-      usage: raw?.usage,
-      goalReceipt: raw?.goalReceipt || null,
-      reach: raw?.reach || null,
-      raw,
-      channel: opts.channel,
-      sessionId: opts.chatSessionId,
-    };
+    const evidence = [];
+    for (const tr of raw?.toolTrace || []) {
+      evidence.push({
+        source: "tool",
+        id: tr.id || tr.toolCallId || tr.name,
+        toolCallId: tr.toolCallId || tr.id,
+        summary: `${tr.name || "tool"} → ${tr.status || "ok"}`,
+      });
+    }
+    const gated = applyClaimsGateToResult(
+      {
+        ok: true,
+        text,
+        finalText: text,
+        turns: raw?.turns,
+        model: raw?.model,
+        toolTrace: raw?.toolTrace,
+        suggestions: raw?.suggestions || [],
+        turnState: raw?.turnState || null,
+        stopReason: raw?.stopReason || null,
+        usage: raw?.usage,
+        goalReceipt: raw?.goalReceipt || null,
+        reach: raw?.reach || null,
+        raw,
+        channel: opts.channel,
+        sessionId: opts.chatSessionId,
+      },
+      { evidence, cfg: opts.cfg, opts: {} }
+    );
+    return gated;
   } catch (e) {
     return {
       ok: false,
