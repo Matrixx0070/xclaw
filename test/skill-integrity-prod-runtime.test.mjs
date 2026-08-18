@@ -3,14 +3,23 @@
  */
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   resolveIntegrityMode,
   applyIntegrity,
   _resetWarnedForTests,
 } from "../src/skills/integrity.mjs";
 
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 describe("skill integrity prod runtime enforce", () => {
   beforeEach(() => {
+    spawnSync(process.execPath, [path.join(root, "scripts/apply-ship-patches.mjs")], {
+      cwd: root,
+      encoding: "utf8",
+    });
     _resetWarnedForTests();
   });
 

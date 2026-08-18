@@ -41,6 +41,13 @@ const SHIP_PATCHES = [
     },
   },
   {
+    file: "skill-integrity-prod-runtime.patch",
+    isApplied: (rootDir) => {
+      const text = read(rootDir, "src/skills/integrity.mjs");
+      return text.includes("no_lockfile") && text.includes("excluding all skills");
+    },
+  },
+  {
     file: "cost-governor-atomic.patch",
     isApplied: (rootDir) => {
       const text = read(rootDir, "src/tokens/cost-governor.mjs");
