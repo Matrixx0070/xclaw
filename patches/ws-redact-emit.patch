@@ -1,0 +1,30 @@
+diff --git a/src/gateway/ws-hub.mjs b/src/gateway/ws-hub.mjs
+--- a/src/gateway/ws-hub.mjs
++++ b/src/gateway/ws-hub.mjs
+@@ -13,6 +13,8 @@
+  *   { "type": "event", "channel": "admission"|"queue"|"eviction"|"swarm", "data": {...}, "at": ISO }
+  *   { "type": "pong", "t": number }
+  */
++import { redactEvent } from "../security/redact-secrets.mjs";
++
+ 
+ import crypto from "node:crypto";
+ import { createBoundedQueue, DropPolicy } from "../shared/bounded-queue.mjs";
+@@ -288,7 +290,7 @@
+ function sendJson(socket, obj) {
+   if (!socket || socket.destroyed) return false;
+   try {
+-    socket.write(encodeTextFrame(JSON.stringify(obj)));
++    socket.write(encodeTextFrame(JSON.stringify(redactEvent(obj))));
+     return true;
+   } catch {
+     return false;
+@@ -605,7 +607,7 @@
+   const envelope = {
+     type: "event",
+     channel: ch,
+-    data,
++    data: redactEvent(data),
+     at: new Date().toISOString(),
+   };
+   const frame = encodeTextFrame(JSON.stringify(envelope));
