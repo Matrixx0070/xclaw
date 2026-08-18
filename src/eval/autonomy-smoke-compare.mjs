@@ -28,6 +28,16 @@ export function hardBlockRateJump(previous, current, opts = {}) {
   return { regressed: delta > maxDelta, delta, maxDelta, prev, cur };
 }
 
+/** Absolute ceiling on hardBlockRate (not just delta vs previous). */
+export function hardBlockRateCeiling(current, opts = {}) {
+  const cur = Number(current?.quotaEscalate?.hardBlockRate);
+  if (!Number.isFinite(cur)) return { exceeded: false, skipped: true };
+  const max = Number(
+    opts.maxHardBlockRate ?? process.env.XCLAW_MAX_HARD_BLOCK_RATE ?? 0.25
+  );
+  return { exceeded: cur > max, cur, max };
+}
+
 export function compareAutonomySmoke(root, opts = {}) {
   const curPath = opts.currentPath || smokeArtifactPath(root);
   const prevPath = opts.previousPath || previousSmokePath(root);
@@ -38,12 +48,17 @@ export function compareAutonomySmoke(root, opts = {}) {
     return { ok: false, reason: "missing_current", current: null, previous };
   }
   if (!previous) {
+    const ceiling = hardBlockRateCeiling(current, opts);
+    if (ceiling.exceeded) {
+      return { ok: false, reason: "hard_block_rate_ceiling", current, previous: null, ceiling };
+    }
     return {
       ok: current.ok !== false,
       reason: current.ok === false ? "current_failed" : "no_previous",
       current,
       previous: null,
       first: current.ok !== false,
+      ceiling,
     };
   }
   if (previous.ok === true && current.ok !== true) {
@@ -56,7 +71,11 @@ export function compareAutonomySmoke(root, opts = {}) {
   if (jump.regressed) {
     return { ok: false, reason: "quota_regressed", current, previous, jump };
   }
-  return { ok: true, reason: "stable", current, previous, jump };
+  const ceiling = hardBlockRateCeiling(current, opts);
+  if (ceiling.exceeded) {
+    return { ok: false, reason: "hard_block_rate_ceiling", current, previous, jump, ceiling };
+  }
+  return { ok: true, reason: "stable", current, previous, jump, ceiling };
 }
 
 export function rotateSmokeBaseline(root) {
@@ -68,4 +87,4 @@ export function rotateSmokeBaseline(root) {
   return { rotated: true, previousPath: prev };
 }
 
-export default { compareAutonomySmoke, rotateSmokeBaseline, previousSmokePath, hardBlockRateJump };
+export default { compareAutonomySmoke, rotateSmokeBaseline, previousSmokePath, hardBlockRateJump, hardBlockRateCeiling };
