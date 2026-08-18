@@ -124,3 +124,17 @@ describe("voice config has one source of truth", () => {
     assert.equal(w.stt.ok, false);
   });
 });
+
+describe("wake readiness reflects hardware, not just tooling", () => {
+  it("an installed arecord with no capture device is not ready", async () => {
+    const src = await fs.readFile(
+      new URL("../src/voice/wake/index.mjs", import.meta.url),
+      "utf8"
+    );
+    // `arecord --version` succeeds on any host with alsa-utils; `arecord -l`
+    // exits 0 while printing "no soundcards found". Wake capture needs a real
+    // device, so the probe must inspect the device listing.
+    assert.match(src, /arecord", \["-l"\]/);
+    assert.match(src, /card \\d\+/);
+  });
+});

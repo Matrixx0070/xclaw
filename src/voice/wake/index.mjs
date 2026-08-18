@@ -215,11 +215,21 @@ export async function probeWakeStack(cfg = {}) {
   };
 
   const ar = await run("arecord", ["--version"]);
-  out.arecord =
+  const arInstalled =
     !ar.spawnError &&
-    (ar.code === 0 || /arecord/i.test(ar.stderr + ar.stdout.toString()))
+    (ar.code === 0 || /arecord/i.test(ar.stderr + ar.stdout.toString()));
+  if (!arInstalled) {
+    out.arecord = { ok: false, error: "arecord not found (alsa-utils)" };
+  } else {
+    // Having the binary is not having a microphone: `arecord -l` exits 0 on a
+    // headless host and prints "no soundcards found". Wake capture needs a
+    // real device, so report on the device, not the tool.
+    const devs = await run("arecord", ["-l"]);
+    const listing = devs.stdout.toString() + devs.stderr;
+    out.arecord = /^card \d+/m.test(listing)
       ? { ok: true }
-      : { ok: false, error: "arecord not found (alsa-utils)" };
+      : { ok: false, installed: true, error: "no capture device (no soundcards found)" };
+  }
 
   // Optional: python -c "import openwakeword"
   const py = await run("python3", [
