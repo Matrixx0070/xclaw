@@ -56,6 +56,15 @@ export const SHIP_PACK_EXTRA_UNIT_TESTS = [
   "test/autonomy-smoke-compare.test.mjs",
   "test/doctor-stop-route.test.mjs",
   "test/history-stamp-receipt.test.mjs",
+  "test/stop-proxy.test.mjs",
+  "test/gateway-stop-route.test.mjs",
+  "test/checkpoint-quota-escalate.test.mjs",
+  "test/checkpoint-restore-receipt.test.mjs",
+  "test/stop-auth.test.mjs",
+  "test/receipt-collector.test.mjs",
+  "test/doctor-ops-bundle.test.mjs",
+  "test/doctor-smoke-compare.test.mjs",
+  "test/land-batch3.test.mjs",
 ];
 
 export default { SHIP_PACK_EXTRA_UNIT_TESTS };
