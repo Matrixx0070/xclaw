@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
  * Apply all production wires (land-batch3/4/5) in one shot.
- * Prefer patches/land-all-wires.patch; fall back to sequential batches.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -10,10 +9,22 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
-const mega = path.join(root, "patches/land-all-wires.patch");
 
-function run(args) {
-  return spawnSync(process.execPath, args, { cwd: root, encoding: "utf8", stdio: "inherit" });
+function run(args, inherit = true) {
+  return spawnSync(process.execPath, args, {
+    cwd: root,
+    encoding: "utf8",
+    stdio: inherit ? "inherit" : "pipe",
+  });
+}
+
+function tryApply(rel) {
+  const fp = path.join(root, rel);
+  if (!fs.existsSync(fp)) return false;
+  const chk = spawnSync("git", ["apply", "--check", fp], { cwd: root, encoding: "utf8" });
+  if (chk.status !== 0) return false;
+  const a = spawnSync("git", ["apply", "--whitespace=nowarn", fp], { cwd: root, encoding: "utf8" });
+  return a.status === 0;
 }
 
 if (check) {
@@ -25,17 +36,16 @@ if (check) {
   process.exit(0);
 }
 
-if (fs.existsSync(mega)) {
-  const chk = spawnSync("git", ["apply", "--check", mega], { cwd: root, encoding: "utf8" });
-  if (chk.status === 0) {
-    const a = spawnSync("git", ["apply", "--whitespace=nowarn", mega], { cwd: root, encoding: "utf8" });
-    if (a.status === 0) {
-      console.error("[land-all] APPLIED patches/land-all-wires.patch");
-    } else {
-      console.error("[land-all] mega apply failed, falling back to batches");
+const mega = "patches/land-all-wires.patch";
+if (tryApply(mega)) {
+  console.error(`[land-all] APPLIED ${mega}`);
+} else {
+  const splitDir = path.join(root, "patches/land-split");
+  if (fs.existsSync(splitDir)) {
+    for (const f of fs.readdirSync(splitDir).filter((x) => x.endsWith(".patch")).sort()) {
+      const rel = path.join("patches/land-split", f);
+      if (tryApply(rel)) console.error(`[land-all] APPLIED ${rel}`);
     }
-  } else {
-    console.error("[land-all] mega already applied or conflict; falling back to batches");
   }
 }
 
