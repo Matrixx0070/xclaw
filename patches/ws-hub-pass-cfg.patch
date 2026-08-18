@@ -1,0 +1,11 @@
+diff --git a/src/gateway/index.mjs b/src/gateway/index.mjs
+--- a/src/gateway/index.mjs
++++ b/src/gateway/index.mjs
+@@ -2423,6 +2423,7 @@ export async function startGateway({ root } = {}) {
+   const wsHub = attachWebSocketHub(server, {
+     path: cfg.gateway?.wsPath || "/ws/events",
+     heartbeatMs: cfg.gateway?.wsHeartbeatMs || 25_000,
++    cfg,
+     // Reject unauthorized upgrades whenever a token is set or requireAuth (prod)
+     authorize: (req) => gatewayAuth.authorizeWebSocket(req),
+   });
