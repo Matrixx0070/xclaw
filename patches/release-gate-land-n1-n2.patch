@@ -1,0 +1,32 @@
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -187,6 +187,28 @@ if (strict) {
+     console.log((r.out + r.err).slice(-500));
+     return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
+   }, { required: true });
++
++  await step("land-batch-n1-check", async () => {
++    const script = path.join(root, "scripts/land-batch-n1.mjs");
++    if (!fsSync.existsSync(script)) {
++      console.error("[release-gate] land-batch-n1.mjs missing");
++      return { code: 1, detail: "missing land-batch-n1.mjs" };
++    }
++    const r = await run(process.execPath, [script, "--check"], { quiet: true });
++    console.log((r.out + r.err).slice(-500));
++    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
++  }, { required: true });
++
++  await step("land-batch-n2-check", async () => {
++    const script = path.join(root, "scripts/land-batch-n2.mjs");
++    if (!fsSync.existsSync(script)) {
++      console.error("[release-gate] land-batch-n2.mjs missing");
++      return { code: 1, detail: "missing land-batch-n2.mjs" };
++    }
++    const r = await run(process.execPath, [script, "--check"], { quiet: true });
++    console.log((r.out + r.err).slice(-500));
++    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
++  }, { required: true });
+ }
+ 
+ if (live) {
