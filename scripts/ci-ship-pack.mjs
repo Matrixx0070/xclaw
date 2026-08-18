@@ -21,6 +21,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { SHIP_PACK_EXTRA_UNIT_TESTS } from "../src/ci/ship-pack-unit-tests.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bin = path.join(root, "bin", "xclaw.mjs");
@@ -52,6 +53,7 @@ const UNIT_TESTS = [
   "test/eval-baseline-mock-artifact.test.mjs",
   "test/retry-after-jitter.test.mjs",
   "test/apply-ship-patches.test.mjs",
+  ...SHIP_PACK_EXTRA_UNIT_TESTS,
 ].filter((f) => fs.existsSync(path.join(root, f)));
 
 function run(cmd, args, opts = {}) {
@@ -140,6 +142,13 @@ fs.writeFileSync(
 log("wrote eval/baselines/last-doctor.json");
 
 if (strict) {
+  log("strict: apply-ship-patches --check");
+  const chk = await run(process.execPath, ["scripts/apply-ship-patches.mjs", "--check"]);
+  if (chk.code !== 0) {
+    log("STRICT FAIL: apply-ship-patches --check (unapplied registered patch)");
+    process.exit(2);
+  }
+  log("strict: ship patches applied");
   const errors =
     Number(report.errors) ||
     (Array.isArray(report.checks)
