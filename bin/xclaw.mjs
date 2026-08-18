@@ -925,7 +925,11 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       }
       if (sub === "opus") {
         const { probeOpusDecode } = await import("../src/voice/opus-decode.mjs");
-        console.log(JSON.stringify(await probeOpusDecode(), null, 2));
+        const { probeOpusEncode } = await import("../src/voice/opus-encode.mjs");
+        console.log(JSON.stringify({
+          decode: await probeOpusDecode(),
+          encode: await probeOpusEncode(),
+        }, null, 2));
         break;
       }
       if (sub === "vad") {
