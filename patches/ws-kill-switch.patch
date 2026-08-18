@@ -1,0 +1,57 @@
+diff --git a/src/gateway/ws-hub.mjs b/src/gateway/ws-hub.mjs
+--- a/src/gateway/ws-hub.mjs
++++ b/src/gateway/ws-hub.mjs
+@@ -376,6 +376,26 @@
+  * @param {import('http').Server} server
+  * @param {{ path?: string, heartbeatMs?: number }} [opts]
+  */
++
++/** @type {ReturnType<typeof attachWebSocketHub>|null} */
++let activeHub = null;
++
++export function getActiveWsHub() {
++  return activeHub;
++}
++
++export function closeAllWebSockets(reason = "kill_all") {
++  if (!activeHub) return { ok: true, closed: 0, reason };
++  const n = activeHub.clientCount?.() ?? 0;
++  try {
++    activeHub.closeAll();
++  } catch {
++    /* */
++  }
++  activeHub = null;
++  return { ok: true, closed: n, reason };
++}
++
+ export function attachWebSocketHub(server, opts = {}) {
+   const path = opts.path || "/ws/events";
+   const heartbeatMs = Math.max(1000, Number(opts.heartbeatMs) || 25_000);
+@@ -578,7 +598,7 @@
+   }, heartbeatMs);
+   if (typeof hb.unref === "function") hb.unref();
+ 
+-  return {
++  const hub = {
+     path,
+     heartbeatMs,
+     missThreshold,
+@@ -591,8 +611,11 @@
+       }
+       clients.clear();
+       clearInterval(hb);
++      if (activeHub === hub) activeHub = null;
+     },
+   };
++  activeHub = hub;
++  return hub;
+ }
+ 
+ /**
+@@ -630,4 +653,4 @@
+   return { ...outboundStats, clients: clients.size };
+ }
+ 
+-export default { attachWebSocketHub, broadcast, wsClientCount, wsOutboundStats, encodeTextFrame, encodeBinaryFrame, decodeFrames, createFrameParser };
++export default { attachWebSocketHub, broadcast, wsClientCount, wsOutboundStats, encodeTextFrame, encodeBinaryFrame, decodeFrames, createFrameParser, getActiveWsHub, closeAllWebSockets };

@@ -9,7 +9,6 @@ const active = new Map();
 
 export function registerSession(sessionId, { label } = {}) {
   const id = String(sessionId || `sess_${Date.now()}`);
-  // replace prior controller for same id
   const prev = active.get(id);
   if (prev && !prev.abort.signal.aborted) {
     try {
@@ -36,9 +35,6 @@ export function listActiveSessions() {
   }));
 }
 
-/**
- * Abort one session (agent loop should respect signal).
- */
 export function killSession(sessionId) {
   const id = String(sessionId || "");
   const entry = active.get(id);
@@ -52,11 +48,20 @@ export function killSession(sessionId) {
 }
 
 /**
- * Abort every active agent session and optionally stop computer.
+ * Abort every active agent session, close WS clients, optionally stop computer.
  */
-export async function killAll({ stopComputer: stopComp = true, cfg } = {}) {
+export async function killAll({ stopComputer: stopComp = true, closeWs = true, cfg } = {}) {
   const ids = [...active.keys()];
   for (const id of ids) killSession(id);
+  let ws = null;
+  if (closeWs) {
+    try {
+      const { closeAllWebSockets } = await import("../gateway/ws-hub.mjs");
+      ws = closeAllWebSockets("kill_all");
+    } catch (e) {
+      ws = { ok: false, error: String(e?.message || e) };
+    }
+  }
   let computer = null;
   if (stopComp && cfg) {
     try {
@@ -65,7 +70,7 @@ export async function killAll({ stopComputer: stopComp = true, cfg } = {}) {
       computer = { ok: false, error: String(e?.message || e) };
     }
   }
-  return { ok: true, killedSessions: ids, computer };
+  return { ok: true, killedSessions: ids, computer, ws };
 }
 
 export function unregisterSession(sessionId) {
