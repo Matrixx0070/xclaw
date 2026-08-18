@@ -4,10 +4,11 @@ import { shouldRequireToolHashTip } from "../src/jobs/checkpoint-require-tip.mjs
 import { verifyCheckpointToolHash } from "../src/jobs/checkpoint-hash-verify.mjs";
 
 describe("lab requireToolHashTip", () => {
-  it("defaults on for lab/strict", () => {
+  it("defaults on for lab/strict/prod", () => {
     assert.equal(shouldRequireToolHashTip({ profile: "lab" }), true);
     assert.equal(shouldRequireToolHashTip({ profile: "strict" }), true);
-    assert.equal(shouldRequireToolHashTip({ profile: "prod" }), false);
+    assert.equal(shouldRequireToolHashTip({ profile: "prod" }), true);
+    assert.equal(shouldRequireToolHashTip({ profile: "dev" }), false);
   });
 
   it("opts override cfg", () => {

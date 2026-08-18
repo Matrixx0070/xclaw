@@ -1,5 +1,5 @@
 /**
- * Lab (and explicit cfg) require checkpoint toolHashTip on resume.
+ * Prod/strict/lab require checkpoint toolHashTip on resume (opt-out via cfg/opts).
  */
 export function shouldRequireToolHashTip(cfg = {}, opts = {}) {
   if (opts.requireToolHashTip === true) return true;
@@ -7,7 +7,7 @@ export function shouldRequireToolHashTip(cfg = {}, opts = {}) {
   if (cfg?.checkpoints?.requireToolHashTip === true) return true;
   if (cfg?.checkpoints?.requireToolHashTip === false) return false;
   const profile = String(cfg?.profile || cfg?.env || process.env.XCLAW_PROFILE || "").toLowerCase();
-  return profile === "lab" || profile === "strict";
+  return profile === "lab" || profile === "strict" || profile === "prod";
 }
 
 export default { shouldRequireToolHashTip };
