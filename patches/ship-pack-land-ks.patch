@@ -1,0 +1,20 @@
+diff --git a/scripts/ci-ship-pack.mjs b/scripts/ci-ship-pack.mjs
+--- a/scripts/ci-ship-pack.mjs
++++ b/scripts/ci-ship-pack.mjs
+@@ -104,6 +104,16 @@ if (fs.existsSync(path.join(root, "scripts/land-all.mjs"))) {
+   log("land-all SKIP (script missing)");
+ }
+ 
++if (fs.existsSync(path.join(root, "scripts/land-kill-switch-wires.mjs"))) {
++  log("land-kill-switch-wires --check");
++  const ks = await run(process.execPath, ["scripts/land-kill-switch-wires.mjs", "--check"]);
++  if (ks.code !== 0) {
++    log("land-kill-switch-wires NEED");
++    process.exit(ks.code || 1);
++  }
++  log("land-kill-switch-wires OK");
++}
++
+ log("land-batch --check (3/4/5)");
+ const lb = runLandBatchChecks(root);
+ if (!lb.ok) {
