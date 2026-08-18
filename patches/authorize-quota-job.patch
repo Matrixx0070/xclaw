@@ -1,7 +1,9 @@
 diff --git a/src/security/approvals.mjs b/src/security/approvals.mjs
+index 44875fd..275d27a 100644
 --- a/src/security/approvals.mjs
 +++ b/src/security/approvals.mjs
 @@ -269,7 +269,7 @@ export function createApprovalGate(cfg = {}) {
+   /**
     * @returns {Promise<{ok, approved?, reason?, message?, mode?, pendingId?, plan?, planFingerprint?}>}
     */
 -  async function authorize(name, args, { timeoutMs = 120_000, onPending, forceHuman = false, riskWorkingDir = null } = {}) {
@@ -33,6 +35,6 @@ diff --git a/src/security/approvals.mjs b/src/security/approvals.mjs
 +    } catch {
 +      /* quota optional */
 +    }
-     // A2: deterministic risk assessment for every action. Never throws —
+     // A2: deterministic risk assessment for every action. Never throws --
      // assessment failure degrades to null (pre-A2 behavior), not to a block.
      let risk = null;
