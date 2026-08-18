@@ -44,6 +44,8 @@ export async function recordJob(cfg, job) {
     : buildToolHashChain(job.toolTrace || []);
   slim.toolHashTip = chain.tip;
   slim.toolHashVersion = chain.version;
+  job.toolHashTip = chain.tip;
+  job.toolHashVersion = chain.version;
   const fp = path.join(dir, `${job.id}.json`);
   await fs.writeFile(fp, JSON.stringify({ ...slim, evidence: job.evidence || [], verify: job.verify || null }, null, 2));
   const indexPath = path.join(dir, "index.jsonl");
