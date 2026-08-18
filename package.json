@@ -75,6 +75,7 @@
     "smoke:arc": "node scripts/smoke-arc.mjs",
     "harness:live": "node scripts/live-harness-smoke.mjs",
     "ship:pack": "node scripts/ci-ship-pack.mjs",
+    "ship:pack:strict": "node scripts/ci-ship-pack.mjs --strict",
     "patches:apply": "node scripts/apply-ship-patches.mjs",
     "patches:check": "node scripts/apply-ship-patches.mjs --check"
   },
