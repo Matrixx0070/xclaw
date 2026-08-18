@@ -2,11 +2,8 @@
  * A2 — Goal loop helpers: plan → act → verify → receipt.
  * Channel-invariant; used inside runAgentLoop / runAgent.
  */
+import { buildToolHashChain } from "./tool-hash-chain.mjs";
 
-/**
- * @param {string} goal
- * @returns {{ objective: string, steps: string[], verifyHints: string[] }}
- */
 export function buildGoalPlan(goal) {
   const objective = String(goal || "").trim() || "(empty goal)";
   const steps = [
@@ -36,9 +33,6 @@ export function buildGoalPlan(goal) {
   return { objective, steps, verifyHints };
 }
 
-/**
- * @param {{ objective: string, steps: string[], verifyHints: string[] }} plan
- */
 export function formatGoalPlanForPrompt(plan) {
   if (!plan?.objective) return "";
   const lines = [
@@ -54,10 +48,6 @@ export function formatGoalPlanForPrompt(plan) {
   return lines.join("\n");
 }
 
-/**
- * @param {object[]} [toolTrace]
- * @returns {object[]}
- */
 export function listFailedTools(toolTrace = []) {
   const out = [];
   for (const t of toolTrace || []) {
@@ -72,11 +62,6 @@ export function listFailedTools(toolTrace = []) {
   return out;
 }
 
-/**
- * One-shot nudge after tool failures this run.
- * @param {object[]} toolTrace
- * @returns {string|null}
- */
 export function buildAlternateStrategyNudge(toolTrace) {
   const failed = listFailedTools(toolTrace);
   if (failed.length === 0) return null;
@@ -88,9 +73,6 @@ export function buildAlternateStrategyNudge(toolTrace) {
   );
 }
 
-/**
- * @param {object} args
- */
 export function buildGoalReceipt({
   goal,
   plan,
@@ -102,13 +84,14 @@ export function buildGoalReceipt({
   handoffRetryUsed = false,
 }) {
   const failed = listFailedTools(toolTrace);
-  const toolsUsed = (toolTrace || [])
-    .map((t) => t.name || t.tool)
-    .filter(Boolean);
+  const toolsUsed = (toolTrace || []).map((t) => t.name || t.tool).filter(Boolean);
   const uniqueTools = [...new Set(toolsUsed)];
+  const chain = buildToolHashChain(toolTrace || []);
   return {
     version: 1,
     goal: String(goal || "").slice(0, 500),
+    toolHashTip: chain.tip,
+    toolHashVersion: chain.version,
     objective: plan?.objective || String(goal || "").slice(0, 500),
     phases: plan?.steps || [],
     turns,
