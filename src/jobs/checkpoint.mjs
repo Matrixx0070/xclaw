@@ -7,6 +7,7 @@ import path from "node:path";
 import os from "node:os";
 import { runJob } from "./job.mjs";
 import { withBackoff } from "../utils/backoff.mjs";
+import { stampJobToolHash } from "./stamp-tool-hash.mjs";
 
 /** Structured resume / lock error codes */
 export const RESUME_CODES = {
@@ -28,6 +29,13 @@ export async function saveCheckpoint(cfg, job) {
   const d = dir(cfg);
   await fs.mkdir(d, { recursive: true });
   const fp = path.join(d, `${job.id}.json`);
+  // Stamp tool-hash tip for mid-run and final checkpoints (integrity on resume).
+  const stamped = stampJobToolHash({
+    ...job,
+    toolTrace: job.toolTrace || [],
+    toolHashTip: job.toolHashTip,
+    toolHashVersion: job.toolHashVersion,
+  });
   const slim = {
     id: job.id,
     goal: job.goal,
@@ -43,6 +51,8 @@ export async function saveCheckpoint(cfg, job) {
     groundingWarnings: job.groundingWarnings || [],
     midRun: Boolean(job.midRun),
     checkpointTurn: job.checkpointTurn ?? job.turns ?? null,
+    toolHashTip: stamped.toolHashTip || null,
+    toolHashVersion: stamped.toolHashVersion || null,
     at: new Date().toISOString(),
     maxTurns: job.maxTurns,
     resumedBy: job.resumedBy || null,
@@ -123,15 +133,6 @@ export async function listCheckpoints(cfg, { limit = 20 } = {}) {
   return out.slice(0, limit);
 }
 
-
-/**
- * Evict old terminal checkpoints.
- * Never deletes status running|resuming unless opts.forceAll.
- *
- * cfg.checkpoints.maxCount (default 100)
- * cfg.checkpoints.maxAgeMs (default 14d)
- * cfg.checkpoints.pruneOnSave (default false — call explicitly or from evolve)
- */
 export async function pruneCheckpoints(cfg, opts = {}) {
   const cpc = cfg?.checkpoints || {};
   const maxCount = opts.maxCount ?? cpc.maxCount ?? 100;
@@ -166,32 +167,18 @@ export async function pruneCheckpoints(cfg, opts = {}) {
         midRun: Boolean(j.midRun),
       });
     } catch {
-      // corrupt → eligible for removal
       rows.push({ fp, id: f, status: "corrupt", at: 0, midRun: false });
     }
   }
 
   rows.sort((a, b) => b.at - a.at);
   const now = Date.now();
-  const toRemove = [];
   let keptProtected = 0;
-
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
+  for (const r of rows) {
     const protectedStatus = keep.has(r.status) || (r.midRun && r.status === "running");
-    if (protectedStatus && !forceAll) {
-      keptProtected += 1;
-      continue;
-    }
-    const tooOld = maxAgeMs > 0 && r.at > 0 && now - r.at > maxAgeMs;
-    const overCount = maxCount > 0 && i >= maxCount;
-    // Count only non-protected toward maxCount: recompute index among evictable
-    if (tooOld || overCount) {
-      toRemove.push(r);
-    }
+    if (protectedStatus && !forceAll) keptProtected += 1;
   }
 
-  // Refine maxCount: among non-protected, keep newest maxCount
   const evictable = rows.filter(
     (r) => forceAll || !(keep.has(r.status) || (r.midRun && r.status === "running"))
   );
@@ -200,10 +187,7 @@ export async function pruneCheckpoints(cfg, opts = {}) {
     ? evictable.filter((r) => r.at > 0 && now - r.at > maxAgeMs)
     : [];
   const removeSet = new Map();
-  for (const r of [...over, ...old]) {
-    removeSet.set(r.fp, r);
-  }
-  // corrupt always removable
+  for (const r of [...over, ...old]) removeSet.set(r.fp, r);
   for (const r of rows) {
     if (r.status === "corrupt") removeSet.set(r.fp, r);
   }
@@ -232,7 +216,6 @@ export async function pruneCheckpoints(cfg, opts = {}) {
   };
 }
 
-/** Classify checkpoint / job error for recovery strategy */
 export function classifyFailure(error = "", cp = null) {
   const e = String(error || cp?.error || "");
   if (cp?.midRun && !e) return "interrupted";
@@ -246,9 +229,6 @@ export function classifyFailure(error = "", cp = null) {
   return "unknown";
 }
 
-/**
- * Recovery playbook per failure class.
- */
 export function recoveryStrategyFor(kind, cp = {}, opts = {}) {
   const used = cp.turns || 0;
   const baseMax = cp.maxTurns || opts.maxTurns || 12;
@@ -344,10 +324,6 @@ export function recoveryStrategyFor(kind, cp = {}, opts = {}) {
   }
 }
 
-
-/**
- * Mark parent checkpoint so auto-resume will not pick it again.
- */
 export async function markCheckpointResumed(cfg, jobId, { resumedBy, status = "resumed" } = {}) {
   const cp = await loadCheckpoint(cfg, jobId);
   cp.status = status;
@@ -358,23 +334,17 @@ export async function markCheckpointResumed(cfg, jobId, { resumedBy, status = "r
   return cp;
 }
 
-/** In-process lock to reduce double-resume races within one process */
 const resumeLocks = new Set();
 
 function lockPath(cfg, jobId) {
   return path.join(dir(cfg), ".locks", `${String(jobId)}.lock`);
 }
 
-/**
- * In-process + cross-process lock (exclusive lock file under checkpoints/.locks/).
- * @returns {boolean|Promise<boolean>}
- */
 export function tryAcquireResumeLock(jobId, cfg = null) {
   const id = String(jobId || "");
   if (!id || resumeLocks.has(id)) return false;
   resumeLocks.add(id);
   if (!cfg) return true;
-  // Sync-ish via deasync-free path: return Promise when cfg provided
   return acquireFileLock(cfg, id);
 }
 
@@ -383,7 +353,7 @@ async function acquireFileLock(cfg, id, attempt = 0) {
   const maxLockAttempts = 3;
   try {
     await fs.mkdir(path.dirname(fp), { recursive: true });
-    const fh = await fs.open(fp, "wx"); // exclusive create
+    const fh = await fs.open(fp, "wx");
     await fh.writeFile(
       JSON.stringify({ pid: process.pid, at: new Date().toISOString() })
     );
@@ -391,7 +361,6 @@ async function acquireFileLock(cfg, id, attempt = 0) {
     return true;
   } catch (err) {
     if (err && (err.code === "EEXIST" || err.code === "EACCES")) {
-      // Stale lock: if older than 2h, steal
       try {
         const st = await fs.stat(fp);
         if (Date.now() - st.mtimeMs > 2 * 60 * 60 * 1000) {
@@ -404,7 +373,6 @@ async function acquireFileLock(cfg, id, attempt = 0) {
       resumeLocks.delete(id);
       return false;
     }
-    // Transient FS errors: brief retry
     if (
       attempt < maxLockAttempts - 1 &&
       err &&
@@ -429,9 +397,6 @@ export async function releaseResumeLock(jobId, cfg = null) {
   }
 }
 
-/**
- * Resume: classify failure → strategy → re-run with tailored recovery prompt.
- */
 export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
   let cp;
   try {
@@ -487,7 +452,6 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
   }
 
   try {
-  // Mark parent as resuming so parallel ticks skip it
   try {
     cp.status = "resuming";
     cp.midRun = false;
@@ -498,7 +462,6 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
 
   const kind = opts.strategy || classifyFailure(opts.error || cp.error, cp);
   const plan = recoveryStrategyFor(kind, cp, opts);
-
   const goal = [cp.goal, "", plan.goalSuffix].filter(Boolean).join("\n\n");
 
   const jobOpts = {
@@ -598,7 +561,6 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
       job = await withBackoff(
         async () => {
           const j = await runAgentOnce();
-          // Soft-fail job object: retry if transport-like
           if (j && j.pass === false && isTransientResumeFailure(j)) {
             const e = new Error(j.error || "transient resume failure");
             e.code = "TRANSIENT_RESUME";

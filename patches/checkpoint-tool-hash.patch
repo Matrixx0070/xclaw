@@ -1,0 +1,34 @@
+diff --git a/src/jobs/checkpoint.mjs b/src/jobs/checkpoint.mjs
+--- a/src/jobs/checkpoint.mjs
++++ b/src/jobs/checkpoint.mjs
+@@ -7,6 +7,7 @@ import path from "node:path";
+ import os from "node:os";
+ import { runJob } from "./job.mjs";
+ import { withBackoff } from "../utils/backoff.mjs";
++import { stampJobToolHash } from "./stamp-tool-hash.mjs";
+ 
+ /** Structured resume / lock error codes */
+ export const RESUME_CODES = {
+@@ -28,6 +29,13 @@ export async function saveCheckpoint(cfg, job) {
+   const d = dir(cfg);
+   await fs.mkdir(d, { recursive: true });
+   const fp = path.join(d, `${job.id}.json`);
++  // Stamp tool-hash tip for mid-run and final checkpoints (integrity on resume).
++  const stamped = stampJobToolHash({
++    ...job,
++    toolTrace: job.toolTrace || [],
++    toolHashTip: job.toolHashTip,
++    toolHashVersion: job.toolHashVersion,
++  });
+   const slim = {
+     id: job.id,
+     goal: job.goal,
+@@ -43,6 +51,8 @@ export async function saveCheckpoint(cfg, job) {
+     groundingWarnings: job.groundingWarnings || [],
+     midRun: Boolean(job.midRun),
+     checkpointTurn: job.checkpointTurn ?? job.turns ?? null,
++    toolHashTip: stamped.toolHashTip || null,
++    toolHashVersion: stamped.toolHashVersion || null,
+     at: new Date().toISOString(),
+     maxTurns: job.maxTurns,
+     resumedBy: job.resumedBy || null,
