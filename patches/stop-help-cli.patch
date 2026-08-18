@@ -1,0 +1,24 @@
+diff --git a/bin/xclaw.mjs b/bin/xclaw.mjs
+--- a/bin/xclaw.mjs
++++ b/bin/xclaw.mjs
+@@ -1668,6 +1668,22 @@ switch (cmd) {
+       break;
+     }
+     case "stop-all": {
++    case "stop":
++    case "stop-sign": {
++      const { printStopHelp } = await import("../src/cli/stop-help.mjs");
++      if (args.includes("--help") || args.includes("-h") || cmd === "stop" && args.length === 0) {
++        printStopHelp();
++        break;
++      }
++      if (cmd === "stop-sign" || args.includes("--sign")) {
++        const { stopSignMain } = await import("../src/cli/stop-sign.mjs");
++        await stopSignMain(args);
++        break;
++      }
++      if (cmd === "stop") {
++        printStopHelp();
++        break;
++      }
+       const { killAll } = await import("../src/agent/session-control.mjs");
