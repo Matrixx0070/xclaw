@@ -497,6 +497,13 @@ export async function runAgentLoop(options) {
       computerTools.find((t) => t.name === "xclaw_bash")?.inputSchema
         ?.properties?.systemRunPlan
     );
+    // Same probe for the injected cwd key: the maintained module engines pin
+    // spawn cwd per call, but the frozen C4 bundle's strict zod schemas
+    // predate it and reject the whole call on any unrecognized key.
+    var computerAcceptsCwd = Boolean(
+      computerTools.find((t) => t.name === "xclaw_bash")?.inputSchema
+        ?.properties?.cwd
+    );
     // Local tools (not on computer server)
     const spawnTool = createSpawnTool({
       cfg,
@@ -635,6 +642,8 @@ export async function runAgentLoop(options) {
       typeof computerAcceptsRunPlan === "boolean"
         ? computerAcceptsRunPlan
         : true,
+    computerAcceptsCwd:
+      typeof computerAcceptsCwd === "boolean" ? computerAcceptsCwd : true,
   });
 
 

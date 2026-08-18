@@ -43,6 +43,7 @@ export function createToolRouter(ctx = {}) {
     workingDir = process.cwd(),
     beforeComputer = null,
     computerAcceptsRunPlan = true,
+    computerAcceptsCwd = true,
   } = ctx;
 
   const localNames = new Set(
@@ -152,6 +153,13 @@ export function createToolRouter(ctx = {}) {
             };
           }
           if (check.command) args.command = check.command;
+        }
+        // Same strict-schema guard for the injected cwd/workingDir pin: the
+        // frozen C4 bundle rejects unknown keys, and its session already runs
+        // in the createSession(workingDir) directory — stripping loses nothing.
+        if (!computerAcceptsCwd) {
+          if ("cwd" in args) delete args.cwd;
+          if ("workingDir" in args) delete args.workingDir;
         }
         if (typeof beforeComputer === "function") {
           const gate = await beforeComputer(name, args);
