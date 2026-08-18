@@ -1,0 +1,55 @@
+/**
+ * Concurrent recordJobCost must not drop increments under file lock.
+ */
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import {
+  recordJobCost,
+  getCostGovernorStatus,
+} from "../src/tokens/cost-governor.mjs";
+
+describe("cost governor atomic ledger", () => {
+  let tmp;
+  let cfg;
+
+  before(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-cost-atomic-"));
+    cfg = {
+      paths: { configDir: tmp },
+      cost: { dailySoftUsd: 50, dailyHardUsd: 100, pauseQueueOnHard: false },
+    };
+    await fs.writeFile(
+      path.join(tmp, "cost-governor.json"),
+      JSON.stringify({
+        day: new Date().toISOString().slice(0, 10),
+        spentUsd: 0,
+        jobs: 0,
+        paused: false,
+        events: [],
+      })
+    );
+  });
+
+  after(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it("N parallel 0.01 records sum to ~N*0.01", async () => {
+    const N = 20;
+    await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        recordJobCost(cfg, { usd: 0.01, jobId: `atomic-${i}` })
+      )
+    );
+    const st = await getCostGovernorStatus(cfg);
+    const expected = Math.round(N * 0.01 * 1e6) / 1e6;
+    assert.ok(
+      Math.abs(st.spentUsd - expected) < 0.0001,
+      `expected ${expected}, got ${st.spentUsd}`
+    );
+    assert.equal(st.jobs, N);
+  });
+});

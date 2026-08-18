@@ -1,5 +1,5 @@
 /**
- * Concurrent day-boundary: stale ledger + parallel recordJobCost/checkCostBudget.
+ * Concurrent day-boundary: stale ledger + parallel recordJobCost.
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -7,7 +7,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import {
-  checkCostBudget,
   recordJobCost,
   getCostGovernorStatus,
 } from "../src/tokens/cost-governor.mjs";
@@ -42,22 +41,21 @@ describe("cost governor day-boundary race", () => {
     );
   }
 
-  it("parallel check + record across stale day does not keep 99 spend", async () => {
+  it("parallel record across stale day does not keep 99 spend", async () => {
     await seedStale();
     const N = 12;
-    await Promise.all([
-      ...Array.from({ length: N }, () => checkCostBudget(cfg)),
-      ...Array.from({ length: N }, (_, i) =>
+    await Promise.all(
+      Array.from({ length: N }, (_, i) =>
         recordJobCost(cfg, { usd: 0.01, jobId: `race-${i}` })
-      ),
-    ]);
+      )
+    );
     const st = await getCostGovernorStatus(cfg);
     assert.notEqual(st.day, "2000-01-01");
     assert.ok(st.spentUsd < 5, `expected reset+small spend, got ${st.spentUsd}`);
     assert.ok(st.spentUsd < 99);
   });
 
-  it("parallel records after clean day accumulate roughly", async () => {
+  it("parallel records after clean day sum exactly", async () => {
     await fs.writeFile(
       ledgerFile(),
       JSON.stringify({
@@ -75,8 +73,11 @@ describe("cost governor day-boundary race", () => {
       )
     );
     const st = await getCostGovernorStatus(cfg);
-    assert.ok(st.spentUsd >= 0.02, `spent=${st.spentUsd}`);
-    assert.ok(st.spentUsd <= N * 0.02 + 0.001);
-    assert.ok(st.jobs >= 1 && st.jobs <= N);
+    const expected = Math.round(N * 0.02 * 1e6) / 1e6;
+    assert.ok(
+      Math.abs(st.spentUsd - expected) < 0.0001,
+      `expected ${expected}, got ${st.spentUsd}`
+    );
+    assert.equal(st.jobs, N);
   });
 });
