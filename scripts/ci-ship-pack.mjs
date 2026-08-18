@@ -16,7 +16,7 @@
  *   npm run ship:pack:strict
  *
  * Exit 0 only if unit+eval pass and doctor yields a parseable report.
- * With --strict / XCLAW_SHIP_STRICT=1, also requires doctor errors=0.
+ * With --strict / XCLAW_SHIP_STRICT=1, also requires doctor errors=0 and autonomy smoke.
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -146,6 +146,7 @@ fs.writeFileSync(
 );
 log("wrote eval/baselines/last-doctor.json");
 
+let autonomySmokeOk = false;
 if (fs.existsSync(path.join(root, "scripts/autonomy-smoke-offline.mjs"))) {
   log("autonomy-smoke-offline");
   const au = await run(process.execPath, ["scripts/autonomy-smoke-offline.mjs"]);
@@ -153,6 +154,10 @@ if (fs.existsSync(path.join(root, "scripts/autonomy-smoke-offline.mjs"))) {
     log("autonomy-smoke-offline FAILED");
     process.exit(au.code);
   }
+  autonomySmokeOk = true;
+  log("autonomy-smoke-offline OK");
+} else {
+  log("autonomy-smoke-offline SKIP (script missing)");
 }
 
 if (strict) {
@@ -163,6 +168,11 @@ if (strict) {
     process.exit(2);
   }
   log("strict: ship patches applied");
+  if (!autonomySmokeOk) {
+    log("STRICT FAIL: autonomy-smoke-offline required under --strict");
+    process.exit(2);
+  }
+  log("strict: autonomy smoke passed");
   const errors =
     Number(report.errors) ||
     (Array.isArray(report.checks)
