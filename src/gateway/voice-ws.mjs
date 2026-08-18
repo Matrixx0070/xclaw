@@ -11,6 +11,9 @@
  *   { type: "pcm_end" }   // finalize PCM buffer → STT → agent
  *   { type: "opus_start", sampleRate?: 16000, channels?: 1, container?: "packets"|"ogg" }
  *   { type: "opus_end" }
+ *   { type: "webrtc_offer", sdp: "..." }
+ *   { type: "webrtc_ice", candidate: {...} }
+ *   { type: "webrtc_close" }
  *
  * Client binary frames:
  *   after pcm_start: raw S16_LE mono PCM
@@ -100,6 +103,7 @@ export function attachVoiceWebSocket(server, opts = {}) {
       pcm: null, // { sampleRate, channels, chunks: Buffer[], bytes }
       opus: null, // { sampleRate, channels, container, packets: Buffer[], bytes }
       preferOpusReply: false,
+      webrtc: null, // { session from acceptOffer }
     };
     sessions.set(sessionId, state);
 
@@ -110,6 +114,7 @@ export function attachVoiceWebSocket(server, opts = {}) {
       pcm: { codec: "s16le", sampleRate: 16000, channels: 1 },
       opus: { codecs: ["opus"], containers: ["packets", "ogg"], sampleRate: 16000 },
       opusReply: true,
+      webrtc: { signaling: true, engine: "werift-optional" },
       at: new Date().toISOString(),
     });
 
@@ -138,7 +143,14 @@ export function attachVoiceWebSocket(server, opts = {}) {
       }
     });
 
-    socket.on("close", () => sessions.delete(sessionId));
+    socket.on("close", () => {
+      try {
+        state.webrtc?.close?.();
+      } catch {
+        /* */
+      }
+      sessions.delete(sessionId);
+    });
     socket.on("error", () => sessions.delete(sessionId));
   });
 
