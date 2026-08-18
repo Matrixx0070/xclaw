@@ -1,0 +1,17 @@
+diff --git a/scripts/ci-ship-pack.mjs b/scripts/ci-ship-pack.mjs
+--- a/scripts/ci-ship-pack.mjs
++++ b/scripts/ci-ship-pack.mjs
+@@ -21,6 +21,7 @@ import { spawn } from "node:child_process";
+ import path from "node:path";
+ import fs from "node:fs";
+ import { fileURLToPath } from "node:url";
++import { SHIP_PACK_EXTRA_UNIT_TESTS } from "../src/ci/ship-pack-unit-tests.mjs";
+ 
+ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+ const bin = path.join(root, "bin", "xclaw.mjs");
+@@ -52,6 +53,7 @@ const UNIT_TESTS = [
+   "test/eval-baseline-mock-artifact.test.mjs",
+   "test/retry-after-jitter.test.mjs",
+   "test/apply-ship-patches.test.mjs",
++  ...SHIP_PACK_EXTRA_UNIT_TESTS,
+ ].filter((f) => fs.existsSync(path.join(root, f)));
