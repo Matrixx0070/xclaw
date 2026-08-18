@@ -51,6 +51,13 @@ export async function pushDoctorOpsBundle(push, cfg = {}, opts = {}) {
   }
 
   try {
+    const { pushStopHealthChecks } = await import("./doctor-stop-health.mjs");
+    await pushStopHealthChecks(push, cfg);
+  } catch (e) {
+    push("ops.stop_health", "warn", e.message || String(e));
+  }
+
+  try {
     const { pushStopProbeChecks } = await import("./doctor-stop-probe.mjs");
     await pushStopProbeChecks(push, cfg);
   } catch (e) {
