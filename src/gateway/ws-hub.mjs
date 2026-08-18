@@ -341,7 +341,7 @@ function flushOutbound(client) {
  * immediately by default, or after a short grace so the peer can read the
  * frame and echo its own close (RFC close handshake).
  */
-function sendClose(socket, code = 1000, reason = "", { graceMs = 0 } = {}) {
+export function sendClose(socket, code = 1000, reason = "", { graceMs = 0 } = {}) {
   if (!socket || socket.destroyed) return;
   if (!socket._xclawCloseSent) {
     socket._xclawCloseSent = true;

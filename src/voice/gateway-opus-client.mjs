@@ -3,32 +3,15 @@
  */
 
 import { encodePcmToOpusPackets, wavToPcm } from "./opus-encode.mjs";
+import { resolveVoiceWsUrl } from "./ws-url.mjs";
 
-function resolveWsUrl(opts = {}) {
-  const base =
-    opts.url ||
-    process.env.XCLAW_VOICE_WS ||
-    process.env.XCLAW_GATEWAY_WS ||
-    "";
-  if (!base) return null;
-  if (base.startsWith("http://")) {
-    return base.replace(/^http/, "ws").replace(/\/?$/, "") + "/ws/voice";
-  }
-  if (base.startsWith("https://")) {
-    return base.replace(/^https/, "wss").replace(/\/?$/, "") + "/ws/voice";
-  }
-  if (!base.includes("/ws/")) {
-    return base.replace(/\/?$/, "") + "/ws/voice";
-  }
-  return base;
-}
 
 /**
  * @param {Buffer} pcmOrWav
  * @param {{ url?: string, preferOpus?: boolean, sampleRate?: number, timeoutMs?: number, speak?: boolean }} [opts]
  */
 export async function sendAudioToGateway(pcmOrWav, opts = {}) {
-  const wsUrl = resolveWsUrl(opts);
+  const wsUrl = resolveVoiceWsUrl(opts);
   if (!wsUrl) {
     return { ok: false, error: "no_gateway_ws", skipped: true };
   }

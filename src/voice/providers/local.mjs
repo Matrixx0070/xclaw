@@ -30,8 +30,11 @@ function run(cmd, args, opts = {}) {
       stdout = Buffer.concat([stdout, d]);
     });
     child.stderr?.on("data", (d) => (stderr += d));
+    // spawnError distinguishes "binary missing" from "binary ran and failed".
+    // Without it, an ENOENT message ("spawn whisper-cli ENOENT") satisfies
+    // name-matching probes and reports an absent tool as available.
     child.on("error", (err) =>
-      resolve({ code: 1, stdout, stderr: err.message })
+      resolve({ code: 1, stdout, stderr: err.message, spawnError: err })
     );
     child.on("close", (code) =>
       resolve({ code: code ?? 1, stdout, stderr })
@@ -329,7 +332,8 @@ export async function probeLocalVoiceStack(cfg = {}, { skipNetwork = false } = {
 
   const wh = await run(c.whisperBin, ["--help"]);
   out.stt =
-    wh.code === 0 || /whisper/i.test(wh.stderr + wh.stdout.toString())
+    !wh.spawnError &&
+    (wh.code === 0 || /whisper/i.test(wh.stderr + wh.stdout.toString()))
       ? { ok: true, bin: c.whisperBin }
       : { ok: false, error: "whisper CLI not found (optional for file STT)" };
 

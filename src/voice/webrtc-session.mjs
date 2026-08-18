@@ -88,9 +88,16 @@ export async function acceptOffer(offerSdp, opts = {}) {
     }
   };
 
-  await pc.setRemoteDescription(
-    new RTCSessionDescription({ type: "offer", sdp: offerSdp })
-  );
+  // werift's RTCSessionDescription takes (sdp, type) positionally; the object
+  // form throws "invalid sessionDescription". Fall back to the object form for
+  // other/older builds rather than assuming one shape.
+  let remote;
+  try {
+    remote = new RTCSessionDescription(offerSdp, "offer");
+  } catch {
+    remote = new RTCSessionDescription({ type: "offer", sdp: offerSdp });
+  }
+  await pc.setRemoteDescription(remote);
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
 

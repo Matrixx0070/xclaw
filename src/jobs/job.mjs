@@ -37,6 +37,7 @@ export async function runJob(opts) {
     timeoutMs = 180_000,
     signal,
     onEvent = () => {},
+    persistRun = true,
   } = opts;
 
   const id = opts.id || `job_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -146,8 +147,11 @@ export async function runJob(opts) {
       signal: ac.signal,
       ledgerIds: { jobId: id },
       systemNotes: opts.systemNotes || jobCfg.agent?.systemNotes,
-      sessionId: opts.sessionId || (opts.persistRun ? id : undefined),
-      persistRun: opts.persistRun,
+      // Jobs persist their run snapshot by default: every job already has a
+      // durable id, and the snapshot is what makes `xclaw runs` and resume
+      // usable. Callers opt out with persistRun:false.
+      sessionId: opts.sessionId || (persistRun ? id : undefined),
+      persistRun,
       onEvent: (e) => {
         push(e);
         if (e.type === "tool" && e.phase === "end") {

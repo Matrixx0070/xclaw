@@ -3,26 +3,16 @@
  * Uses Node undici/websocket if available (Node 22+).
  */
 
+import { resolveVoiceWsUrl } from "./ws-url.mjs";
+
 /**
  * @param {string} text
  * @param {{ url?: string, token?: string, speak?: boolean, timeoutMs?: number }} [opts]
  */
 export async function sendUtteranceToGateway(text, opts = {}) {
-  const base =
-    opts.url ||
-    process.env.XCLAW_VOICE_WS ||
-    process.env.XCLAW_GATEWAY_WS ||
-    "";
-  if (!base) {
+  const wsUrl = resolveVoiceWsUrl(opts);
+  if (!wsUrl) {
     return { ok: false, error: "no_gateway_ws", skipped: true };
-  }
-  let wsUrl = base;
-  if (base.startsWith("http://")) {
-    wsUrl = base.replace(/^http/, "ws").replace(/\/?$/, "") + "/ws/voice";
-  } else if (base.startsWith("https://")) {
-    wsUrl = base.replace(/^https/, "wss").replace(/\/?$/, "") + "/ws/voice";
-  } else if (!base.includes("/ws/")) {
-    wsUrl = base.replace(/\/?$/, "") + "/ws/voice";
   }
 
   const WS = globalThis.WebSocket;
@@ -36,6 +26,9 @@ export async function sendUtteranceToGateway(text, opts = {}) {
     const done = (r) => {
       if (settled) return;
       settled = true;
+      // Always clear the timer and close the socket: a lingering open socket
+      // keeps the event loop alive, so a one-shot caller never exits.
+      clearTimeout(timer);
       try {
         ws.close();
       } catch {

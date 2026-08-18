@@ -33,8 +33,11 @@ function run(cmd, args, opts = {}) {
       stdout = Buffer.concat([stdout, d]);
     });
     child.stderr?.on("data", (d) => (stderr += d));
+    // spawnError distinguishes "binary missing" from "binary ran and failed" —
+    // an ENOENT message contains the binary name and would otherwise satisfy
+    // the name-matching probes below, reporting an absent tool as available.
     child.on("error", (err) =>
-      resolve({ code: 1, stdout, stderr: err.message })
+      resolve({ code: 1, stdout, stderr: err.message, spawnError: err })
     );
     child.on("close", (code) =>
       resolve({ code: code ?? 1, stdout, stderr })
@@ -213,7 +216,8 @@ export async function probeWakeStack(cfg = {}) {
 
   const ar = await run("arecord", ["--version"]);
   out.arecord =
-    ar.code === 0 || /arecord/i.test(ar.stderr + ar.stdout.toString())
+    !ar.spawnError &&
+    (ar.code === 0 || /arecord/i.test(ar.stderr + ar.stdout.toString()))
       ? { ok: true }
       : { ok: false, error: "arecord not found (alsa-utils)" };
 
@@ -238,7 +242,8 @@ export async function probeWakeStack(cfg = {}) {
       cfg?.voice?.local?.whisperBin || process.env.XCLAW_WHISPER_BIN || "whisper-cli";
     const wh = await run(whisperBin, ["--help"]);
     out.stt =
-      wh.code === 0 || /whisper/i.test(wh.stderr + wh.stdout.toString())
+      !wh.spawnError &&
+      (wh.code === 0 || /whisper/i.test(wh.stderr + wh.stdout.toString()))
         ? { ok: true, bin: whisperBin }
         : { ok: false, error: "no whisper CLI" };
   } catch (e) {
