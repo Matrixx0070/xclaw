@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+## 3.131.2 — live verification: the shipped voice stack now actually works (2026-08-18)
+
+Every capability from the 3.77–3.80 line was exercised against the running
+gateway. Six defects that tests could not see:
+
+- **Gateway crash (DoS)**: `handlePcmBinary`/`handleOpusBinary` were called but
+  never defined — a single binary frame from any authenticated `/ws/voice`
+  client killed the gateway process, taking Telegram, webchat and jobs with it.
+  Implemented both, capped buffered audio, and made a client fault fail the
+  connection instead of the process.
+- **Binary audio protocol was documentation only**: `pcm_start`/`pcm_end`/
+  `opus_start`/`opus_end` were advertised in the `ready` frame but answered
+  `unknown_type`. Implemented, sharing one turn path with text utterances.
+- **WebRTC R1 never worked**: `webrtc_offer`/`ice`/`close` had no handlers
+  despite `ready` advertising `signaling: true`, and `acceptOffer` used
+  werift's object-form `RTCSessionDescription`, which throws. Wired and fixed —
+  live: offer → 1341-byte answer SDP + trickling ICE.
+- **Close frames ignored**: the server never completed the closing handshake,
+  so one-shot clients hung forever and sessions leaked.
+- **Edge clients could not authenticate**: neither voice client sent the gateway
+  token, so they could never reach a secured gateway.
+- **Probes reported absent binaries as present**: `spawn whisper-cli ENOENT`
+  matched the name check, so doctor claimed STT and `readyForW1` were available
+  with nothing installed. Spawn errors now fail closed.
+
+Also: `autonomy.maxUsdPerDay` was decorative whenever `cost.dailyHardUsd` was
+set (the stricter cap now wins), and jobs persist run snapshots by default so
+`xclaw runs` and resume are usable.
+
 ## 3.131.1 — live-verify fix: tool calls on the default bundle engine (2026-08-18)
 
 Found by driving the running gateway, not by tests: **every tool call failed**
