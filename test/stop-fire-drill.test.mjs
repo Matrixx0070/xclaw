@@ -7,7 +7,7 @@ import { runStopFireDrill } from "../src/eval/stop-fire-drill.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("single-port stop fire-drill", () => {
-  it("passes HTTP + HMAC canonical + WS + TLS + dry-run", async () => {
+  it("passes HTTP + HMAC canonical + WS + SSE + TLS + dry-run", async () => {
     const r = await runStopFireDrill({ root });
     if (!r.ok) {
       console.error(JSON.stringify(r, null, 2));
@@ -16,5 +16,9 @@ describe("single-port stop fire-drill", () => {
     const canon = r.steps.find((s) => s.name === "http_hmac_canonical");
     assert.ok(canon);
     assert.equal(canon.authMethod, "hmac");
+    const sse = r.steps.find((s) => s.name === "sse_signed");
+    assert.ok(sse, "missing sse_signed step");
+    assert.equal(sse.channel, "sse");
+    assert.ok(sse.authMethod);
   });
 });
