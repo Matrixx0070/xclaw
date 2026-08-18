@@ -3,6 +3,19 @@
  */
 import { killAll, listActiveSessions } from "../agent/session-control.mjs";
 
+export function drainStats(r = {}, before = []) {
+  const wsClosed = Number(r.ws?.closed ?? r.ws?.clients ?? 0) || 0;
+  const sseClosed = Number(r.sse?.subscribers ?? r.sse?.closed ?? 0) || 0;
+  return {
+    sessionsKilled: Array.isArray(r.killedSessions) ? r.killedSessions.length : 0,
+    sessionsBefore: Array.isArray(before) ? before.length : Number(before) || 0,
+    wsClosed,
+    sseClosed,
+    wsOk: r.ws?.ok !== false,
+    sseOk: r.sse == null || r.sse.ok !== false,
+  };
+}
+
 export async function handleStopAll(req, res, { cfg } = {}) {
   let body = {};
   try {
@@ -17,6 +30,7 @@ export async function handleStopAll(req, res, { cfg } = {}) {
     closeWs: body.closeWs !== false,
     closeSse: body.closeSse !== false,
   });
+  const drain = drainStats(r, before);
   const payload = {
     ok: true,
     killedSessions: r.killedSessions || [],
@@ -24,6 +38,7 @@ export async function handleStopAll(req, res, { cfg } = {}) {
     ws: r.ws || null,
     sse: r.sse || null,
     computer: r.computer || null,
+    drain,
   };
   if (res && typeof res.writeHead === "function") {
     res.writeHead(200, { "content-type": "application/json" });
@@ -40,4 +55,4 @@ export function isStopPath(pathname) {
   );
 }
 
-export default { handleStopAll, isStopPath };
+export default { handleStopAll, isStopPath, drainStats };
