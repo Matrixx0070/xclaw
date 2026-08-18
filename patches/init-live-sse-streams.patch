@@ -44,3 +44,5 @@ diff --git a/src/gateway/index.mjs b/src/gateway/index.mjs
 +    prefix: "chat",
 +    sessionId,
    });
+   const cleanup = writer.bindAbort(controller);
+   const push = (eventName, payload) => {
