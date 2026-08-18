@@ -50,6 +50,34 @@ export function fireDrillHttpHmac() {
   };
 }
 
+/** HMAC must match across key-order / whitespace variants. */
+export function fireDrillHmacCanonical() {
+  const secret = "drill-hmac-secret";
+  const cfg = {
+    gateway: { token: "drill-token", stopHmacSecret: secret, stopHmac: true },
+  };
+  const pretty =
+    '{\n  "action": "stop-all",\n  "type": "stop"\n}';
+  const shuffled = { type: "stop", action: "stop-all" };
+  const sig = signStopBody(secret, shuffled);
+  const auth = authorizeStop(
+    {
+      headers: {
+        "x-xclaw-token": "drill-token",
+        "x-xclaw-stop-sig": sig,
+      },
+      body: JSON.parse(pretty),
+      rawBody: pretty,
+    },
+    cfg
+  );
+  return {
+    name: "http_hmac_canonical",
+    ok: auth.ok === true && auth.authMethod === "hmac",
+    authMethod: auth.authMethod,
+  };
+}
+
 export async function fireDrillWsSigned() {
   const secret = "drill-hmac-secret";
   const cfg = {
@@ -153,6 +181,7 @@ export async function runStopFireDrill(opts = {}) {
   const steps = [
     fireDrillHttpToken(),
     fireDrillHttpHmac(),
+    fireDrillHmacCanonical(),
     await fireDrillWsSigned(),
     fireDrillTlsParity(root),
     fireDrillPaths(),

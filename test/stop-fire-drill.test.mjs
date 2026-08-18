@@ -7,18 +7,14 @@ import { runStopFireDrill } from "../src/eval/stop-fire-drill.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("single-port stop fire-drill", () => {
-  it("passes HTTP + WS + TLS + dry-run + drain authMethod", async () => {
+  it("passes HTTP + HMAC canonical + WS + TLS + dry-run", async () => {
     const r = await runStopFireDrill({ root });
     if (!r.ok) {
       console.error(JSON.stringify(r, null, 2));
     }
     assert.equal(r.ok, true, `failed: ${(r.failed || []).join(",")}`);
-    const token = r.steps.find((s) => s.name === "http_token");
-    assert.equal(token.authMethod, "token");
-    const dry = r.steps.find((s) => s.name === "http_dry_run");
-    assert.ok(dry, "missing http_dry_run step");
-    assert.equal(dry.dryRun, true);
-    const drain = r.steps.find((s) => s.name === "drain_auth_method");
-    assert.equal(drain.authMethod, "hmac");
+    const canon = r.steps.find((s) => s.name === "http_hmac_canonical");
+    assert.ok(canon);
+    assert.equal(canon.authMethod, "hmac");
   });
 });
