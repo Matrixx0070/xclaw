@@ -1,21 +1,18 @@
 /**
- * Agent-loop cost preflight: OAuth/seat token refresh then cost governor.
+ * Agent-loop cost preflight: OAuth refresh → cost governor → seat budget.
  */
-import { checkCostBudgetWithAuthRefresh } from "./cost-preflight-auth.mjs";
+import { dualBudgetPreflight } from "./dual-preflight.mjs";
 import { checkJobCostBudget } from "./cost-governor.mjs";
 
-/**
- * @param {object} cfg
- * @param {object} [opts]
- * @returns {Promise<object>} budget result (includes auth when refreshed)
- */
 export async function checkLoopCostBudget(cfg, opts = {}) {
-  return checkCostBudgetWithAuthRefresh(cfg, {
+  return dualBudgetPreflight(cfg, {
     apps: opts.apps,
     force: opts.force,
     requireAuth: opts.requireAuth === true || cfg?.cost?.requireAuthBeforeBudget === true,
     ensureFresh: opts.ensureFresh,
     estimateUsd: opts.estimateUsd,
+    estimateTokens: opts.estimateTokens,
+    peer: opts.peer || opts.seatPeer || opts.from,
   });
 }
 
