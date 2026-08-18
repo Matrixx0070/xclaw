@@ -238,8 +238,11 @@ export async function probeWakeStack(cfg = {}) {
   // probeLocalVoiceStack from here — it calls probeWakeStack back and the
   // mutual recursion never terminates (hung doctor + wake tests).
   try {
-    const whisperBin =
-      cfg?.voice?.local?.whisperBin || process.env.XCLAW_WHISPER_BIN || "whisper-cli";
+    // Single source of truth for voice paths — reading cfg by hand here once
+    // diverged from localConfig() and reported a different binary than the one
+    // transcription actually used.
+    const { localConfig } = await import("../providers/local.mjs");
+    const whisperBin = localConfig(cfg).whisperBin;
     const wh = await run(whisperBin, ["--help"]);
     out.stt =
       !wh.spawnError &&

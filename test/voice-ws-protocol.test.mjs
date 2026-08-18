@@ -100,12 +100,27 @@ describe("voice edge clients carry gateway auth", () => {
 describe("probes report absent binaries honestly", () => {
   it("a missing binary is not reported as available", async () => {
     const { probeLocalVoiceStack } = await import("../src/voice/providers/local.mjs");
+    // Canonical location is cfg.voice.* — localConfig() reads it flat, and a
+    // nested cfg.voice.local.* override is silently ignored.
     const v = await probeLocalVoiceStack(
-      { voice: { local: { whisperBin: "xclaw-definitely-not-installed" } } },
+      { voice: { whisperBin: "xclaw-definitely-not-installed" } },
       { skipNetwork: true }
     );
     // The ENOENT message contains the binary name; a name-matching probe used
     // to accept that as proof the tool existed.
     assert.equal(v.stt.ok, false);
+  });
+});
+
+describe("voice config has one source of truth", () => {
+  it("wake probe and transcription resolve the same whisper binary", async () => {
+    const { probeWakeStack } = await import("../src/voice/wake/index.mjs");
+    const { localConfig } = await import("../src/voice/providers/local.mjs");
+    const cfg = { voice: { whisperBin: "xclaw-probe-marker-bin" } };
+    const w = await probeWakeStack(cfg);
+    assert.equal(localConfig(cfg).whisperBin, "xclaw-probe-marker-bin");
+    // The wake probe must report the same binary transcription would run,
+    // not a separately-parsed config path.
+    assert.equal(w.stt.ok, false);
   });
 });
