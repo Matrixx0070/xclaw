@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Full kill-switch surface lander (idempotent).
- * Covers health/WS/loop + doctor/ship/CLI + dry-run + fire-drill CI.
+ * Covers health/WS/loop + doctor/ship/CLI + dry-run + fire-drill CI + n2.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -24,6 +24,9 @@ const NEEDLES = [
   ["src/gateway/stop-route.mjs", "dryRun"],
   ["scripts/ci-ship-pack.mjs", "stop-fire-drill"],
   ["scripts/release-gate.mjs", "stop-fire-drill"],
+  ["src/jobs/job.mjs", "attachReceiptCollectorToJob"],
+  ["bin/xclaw.mjs", "printStopHelp"],
+  ["scripts/release-gate.mjs", "openapi-stop-dryrun"],
 ];
 
 const PATCHES = [
@@ -43,6 +46,7 @@ const PATCHES = [
   "patches/ship-pack-stop-fire-drill.patch",
   "patches/release-gate-stop-fire-drill.patch",
   "patches/land-batch-n1.patch",
+  "patches/land-batch-n2.patch",
 ];
 
 function needList() {
