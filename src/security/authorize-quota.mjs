@@ -42,6 +42,27 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
       escalatedFromSoft: Boolean(r.escalatedFromSoft),
       code: r.code || "WORKSPACE_QUOTA_EXCEEDED",
     });
+    try {
+      const { recordHardBlock } = await import("../agent/quota-hard-circuit.mjs");
+      const trip = recordHardBlock(ctx.job || ctx.collector, {
+        cfg,
+        code: r.code || "WORKSPACE_QUOTA_EXCEEDED",
+        escalatedFromSoft: Boolean(r.escalatedFromSoft),
+      });
+      if (trip?.tripped) {
+        return {
+          ok: false,
+          reason: "QUOTA_HARD_CIRCUIT",
+          message: `workspace quota hard circuit (${trip.hardBlocks}/${trip.limit})`,
+          quota: r,
+          hard,
+          circuit: trip,
+          escalatedFromSoft: Boolean(r.escalatedFromSoft),
+        };
+      }
+    } catch {
+      /* circuit optional */
+    }
     return {
       ok: false,
       reason: r.code || "WORKSPACE_QUOTA_EXCEEDED",

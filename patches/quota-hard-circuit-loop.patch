@@ -1,0 +1,37 @@
+diff --git a/src/agent/loop.mjs b/src/agent/loop.mjs
+--- a/src/agent/loop.mjs
++++ b/src/agent/loop.mjs
+@@ -1220,6 +1220,25 @@ export async function runAgentLoop(options) {
+           onEvent({ type: "guard", ...verdict });
+         }
+ 
++        // Quota hard-block circuit: refuse further tools after N hard denies.
++        try {
++          const { guardToolAgainstHardCircuit } = await import("./quota-hard-circuit.mjs");
++          const circ = guardToolAgainstHardCircuit(options.job || options.receiptCollector);
++          if (circ && circ.ok === false) {
++            onEvent({ type: "security", phase: "quota_hard_circuit", reason: circ.reason });
++            messages.push(
++              makeToolMessage({
++                tool_call_id: call.id,
++                content: circ.message || "QUOTA_HARD_CIRCUIT",
++                source: "quota_circuit",
++              })
++            );
++            return "stop";
++          }
++        } catch {
++          /* circuit optional */
++        }
++
+         // Security: allowlist + optional human approval.
+         // Bind the plan against this run's workingDir — the shared gate's
+         // planRoot is the gateway's process.cwd(), and a plan pinned there
+@@ -1230,6 +1249,7 @@ export async function runAgentLoop(options) {
+             : args;
+         const auth = await approvalGate.authorize(name, authArgs, {
+           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
++          job: options.job || options.receiptCollector || null,
+           // risk scope must resolve against THIS run's workspace (session dir
+           // or mission worktree), not the gateway's cwd — without this, file
+           // tools' targets scoped against the wrong root (live blind spot)
