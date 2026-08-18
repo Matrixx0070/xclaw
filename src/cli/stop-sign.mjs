@@ -1,7 +1,7 @@
 /**
  * CLI helper: mint X-XClaw-Stop-Sig for POST /stop.
  *
- *   xclaw stop --sign [--body '{}'] [--print-curl]
+ *   xclaw stop --sign [--body '{}'] [--print-curl] [--dry-run]
  *   xclaw stop-sign
  */
 import { signStopBody, stopAuthToken } from "../gateway/stop-auth.mjs";
@@ -16,10 +16,10 @@ export function resolveStopSecret(cfg = {}) {
 
 /**
  * @param {object} cfg
- * @param {{ body?: string|object, printCurl?: boolean, baseUrl?: string }} opts
+ * @param {{ body?: string|object, printCurl?: boolean, baseUrl?: string, dryRun?: boolean }} opts
  */
 export function buildStopSignResult(cfg = {}, opts = {}) {
-  const bodyObj =
+  let bodyObj =
     opts.body == null
       ? { type: "stop", action: "stop-all" }
       : typeof opts.body === "string"
@@ -31,6 +31,9 @@ export function buildStopSignResult(cfg = {}, opts = {}) {
             }
           })()
         : opts.body;
+  if (opts.dryRun && bodyObj && typeof bodyObj === "object") {
+    bodyObj = { ...bodyObj, dryRun: true };
+  }
   const raw =
     typeof bodyObj === "string" ? bodyObj : JSON.stringify(bodyObj);
   const secret = resolveStopSecret(cfg);
@@ -68,6 +71,7 @@ export function buildStopSignResult(cfg = {}, opts = {}) {
 export async function stopSignMain(args = [], loadConfigFn) {
   const printCurl = args.includes("--print-curl") || args.includes("--curl");
   const jsonOnly = args.includes("--json");
+  const dryRun = args.includes("--dry-run") || args.includes("--dryrun");
   let body = null;
   const bi = args.indexOf("--body");
   if (bi >= 0 && args[bi + 1]) body = args[bi + 1];
@@ -78,7 +82,25 @@ export async function stopSignMain(args = [], loadConfigFn) {
       return loadConfig();
     });
   const cfg = await load();
-  const r = buildStopSignResult(cfg, { body: body || undefined, printCurl });
+  const r = buildStopSignResult(cfg, { body: body || undefined, printCurl, dryRun });
+  if (dryRun && r.ok) {
+    r.dryRun = true;
+    try {
+      const { authorizeStop } = await import("../gateway/stop-auth.mjs");
+      const auth = authorizeStop(
+        { headers: r.headers, body: r.bodyObject || {} },
+        cfg
+      );
+      r.auth = auth;
+      r.authMethod = auth.authMethod;
+      if (!auth.ok) {
+        r.ok = false;
+        process.exitCode = 1;
+      }
+    } catch (e) {
+      r.authError = e.message || String(e);
+    }
+  }
   if (!r.hasSecret && !r.hasToken) {
     console.error(
       "[xclaw] stop --sign: no stop HMAC secret and no gateway token configured"
