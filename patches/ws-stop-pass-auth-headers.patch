@@ -1,0 +1,26 @@
+diff --git a/src/gateway/ws-stop-control.mjs b/src/gateway/ws-stop-control.mjs
+--- a/src/gateway/ws-stop-control.mjs
++++ b/src/gateway/ws-stop-control.mjs
+@@ -40,7 +40,13 @@ export async function handleWsStopControl(body, cfg = {}, sendJson) {
+   }
+   const fakeReq = {
+     method: "POST",
+-    headers: {},
++    headers: {
++      ...(body.token ? { "x-xclaw-token": body.token } : {}),
++      ...(body.sig || body.signature
++        ? { "x-xclaw-stop-sig": body.sig || body.signature }
++        : {}),
++      ...(body.headers || {}),
++    },
+     body: body.body || { type: "stop" },
+   };
+   const result = await handleStopAll(fakeReq, null, { cfg });
+@@ -49,6 +55,7 @@ export async function handleWsStopControl(body, cfg = {}, sendJson) {
+     ok: result?.ok !== false,
+     drain: result?.drain || null,
+     killedSessions: result?.killedSessions || [],
++    authMethod: result?.authMethod || result?.drain?.authMethod || auth.authMethod || null,
+   };
+   try {
+     sendJson?.(payload);
