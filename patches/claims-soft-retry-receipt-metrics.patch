@@ -1,0 +1,18 @@
+diff --git a/src/jobs/claims-soft-retry-run.mjs b/src/jobs/claims-soft-retry-run.mjs
+--- a/src/jobs/claims-soft-retry-run.mjs
++++ b/src/jobs/claims-soft-retry-run.mjs
+@@ -6,6 +6,7 @@ import {
+   createClaimsSoftRetryBudget,
+   stampClaimsSoftRetryOnJob,
+ } from "../agent/claims-soft-retry.mjs";
++import { stampReceiptMetrics } from "./receipt-metrics.mjs";
+ import { scoreClaimsAgainstEvidence } from "./claims.mjs";
+ 
+ /**
+@@ -146,6 +147,7 @@ export function stampJobClaimsSoftRetry(job, softRetryBudget, claimsGate) {
+   if (claimsGate) {
+     job.claimsGate = claimsGate;
+   }
++  stampReceiptMetrics(job);
+   return job;
+ }
