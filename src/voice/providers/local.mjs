@@ -17,6 +17,8 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { looksLikeWhisperCli } from "./looks-like-whisper.mjs";
+export { looksLikeWhisperCli };
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve) => {
@@ -30,14 +32,18 @@ function run(cmd, args, opts = {}) {
       stdout = Buffer.concat([stdout, d]);
     });
     child.stderr?.on("data", (d) => (stderr += d));
-    // spawnError distinguishes "binary missing" from "binary ran and failed".
-    // Without it, an ENOENT message ("spawn whisper-cli ENOENT") satisfies
-    // name-matching probes and reports an absent tool as available.
+    // spawnError / errorCode distinguish "binary missing" from "binary ran and failed".
     child.on("error", (err) =>
-      resolve({ code: 1, stdout, stderr: err.message, spawnError: err })
+      resolve({
+        code: err.code === "ENOENT" ? 127 : 1,
+        stdout,
+        stderr: err.message || String(err),
+        spawnError: err,
+        errorCode: err.code || null,
+      })
     );
     child.on("close", (code) =>
-      resolve({ code: code ?? 1, stdout, stderr })
+      resolve({ code: code ?? 1, stdout, stderr, errorCode: null })
     );
     if (opts.input != null) {
       child.stdin.write(opts.input);
@@ -123,17 +129,12 @@ export async function localThink(prompt, ctx = {}, cfg = {}) {
 
   const data = await res.json();
   const text = data?.message?.content || data?.response || "";
-  // Optional simple tool hint: ```tool name\n{json}```
   const toolCalls = [];
-  const toolRe =
-    /```tool\s+(\S+)\s*\n([\s\S]*?)```/gi;
+  const toolRe = /```tool\s+(\S+)\s*\n([\s\S]*?)```/gi;
   let m;
   while ((m = toolRe.exec(text))) {
     try {
-      toolCalls.push({
-        name: m[1],
-        arguments: JSON.parse(m[2]),
-      });
+      toolCalls.push({ name: m[1], arguments: JSON.parse(m[2]) });
     } catch {
       /* ignore bad json */
     }
@@ -152,10 +153,7 @@ export async function localThink(prompt, ctx = {}, cfg = {}) {
  */
 export async function localSpeak(text, cfg = {}) {
   const c = localConfig(cfg);
-  const tmp = path.join(
-    os.tmpdir(),
-    `xclaw-tts-${Date.now()}.wav`
-  );
+  const tmp = path.join(os.tmpdir(), `xclaw-tts-${Date.now()}.wav`);
   const t = String(text || "").slice(0, 500);
 
   if (c.piperModel) {
@@ -174,7 +172,6 @@ export async function localSpeak(text, cfg = {}) {
     }
   }
 
-  // espeak-ng → wav
   const r2 = await run(c.espeakBin, ["-w", tmp, t]);
   if (r2.code === 0) {
     try {
@@ -187,28 +184,19 @@ export async function localSpeak(text, cfg = {}) {
 
   return {
     ok: false,
-    error:
-      "No local TTS. Install: espeak-ng, or piper + XCLAW_PIPER_MODEL",
+    error: "No local TTS. Install: espeak-ng, or piper + XCLAW_PIPER_MODEL",
     provider: "none",
   };
 }
 
-/**
- * Ensure audio is wav for whisper (ogg/mp3/m4a via ffmpeg).
- */
 async function ensureWav(audioPath) {
   const lower = String(audioPath || "").toLowerCase();
   if (lower.endsWith(".wav") || lower.endsWith(".flac")) {
     return audioPath;
   }
-  const out = path.join(
-    os.tmpdir(),
-    `xclaw-stt-${Date.now()}.wav`
-  );
+  const out = path.join(os.tmpdir(), `xclaw-stt-${Date.now()}.wav`);
   const r = await run("ffmpeg", ["-y", "-i", audioPath, "-ar", "16000", "-ac", "1", out]);
-  if (r.code !== 0) {
-    return null;
-  }
+  if (r.code !== 0) return null;
   try {
     await fs.access(out);
     return out;
@@ -217,10 +205,6 @@ async function ensureWav(audioPath) {
   }
 }
 
-/**
- * STT via whisper.cpp CLI, faster-whisper, or whisper binary.
- * Accepts wav/flac or converts ogg/mp3 via ffmpeg.
- */
 export async function localTranscribe(audioPath, cfg = {}) {
   const c = localConfig(cfg);
   if (!audioPath) {
@@ -242,7 +226,6 @@ export async function localTranscribe(audioPath, cfg = {}) {
     };
   }
 
-  // 1) whisper.cpp style: whisper-cli -m model -f file -nt
   const attempts = [
     {
       bin: c.whisperBin,
@@ -254,7 +237,6 @@ export async function localTranscribe(audioPath, cfg = {}) {
       args: ["-m", c.whisperModel, "-f", wav, "-nt"],
       provider: "whisper-cpp",
     },
-    // faster-whisper CLI sometimes: whisper audio --model base --language en
     {
       bin: "whisper",
       args: [wav, "--model", c.whisperModel, "--language", "en", "--output_format", "txt"],
@@ -266,7 +248,6 @@ export async function localTranscribe(audioPath, cfg = {}) {
     const r = await run(a.bin, a.args);
     if (r.code === 0) {
       let text = r.stdout.toString("utf8").trim();
-      // strip [timestamps] from whisper.cpp
       text = text
         .split("\n")
         .map((line) => line.replace(/^\[[^\]]*\]\s*/, "").trim())
@@ -331,17 +312,27 @@ export async function probeLocalVoiceStack(cfg = {}, { skipNetwork = false } = {
   }
 
   const wh = await run(c.whisperBin, ["--help"]);
-  out.stt =
-    !wh.spawnError &&
-    (wh.code === 0 || /whisper/i.test(wh.stderr + wh.stdout.toString()))
-      ? { ok: true, bin: c.whisperBin }
-      : { ok: false, error: "whisper CLI not found (optional for file STT)" };
+  out.stt = looksLikeWhisperCli(wh)
+    ? { ok: true, bin: c.whisperBin }
+    : {
+        ok: false,
+        error:
+          wh.errorCode === "ENOENT" || wh.code === 127 || wh.spawnError
+            ? `whisper CLI not found (${c.whisperBin}); install whisper.cpp or set XCLAW_WHISPER_BIN`
+            : "whisper CLI not found (optional for file STT)",
+      };
 
-  try {
-    const { probeWakeStack } = await import("../wake/index.mjs");
-    out.wake = await probeWakeStack(cfg);
-  } catch (e) {
-    out.wake = { ok: false, error: e.message || String(e) };
+  // Avoid mutual recursion with probeWakeStack.
+  if (cfg?.voice?._probeSkipWake !== true) {
+    try {
+      const { probeWakeStack } = await import("../wake/index.mjs");
+      out.wake = await probeWakeStack({
+        ...cfg,
+        voice: { ...(cfg.voice || {}), _probeSkipWake: true },
+      });
+    } catch (e) {
+      out.wake = { ok: false, error: e.message || String(e) };
+    }
   }
 
   return out;
