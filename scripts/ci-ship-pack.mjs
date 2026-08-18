@@ -3,6 +3,7 @@
  * CI ship pack — offline one-liner for production readiness smoke.
  *
  * Runs:
+ *   0) apply ship patches (idempotent)
  *   1) core unit tests (security, gateway proxy, cost, stream, skills)
  *   2) eval offline smoke (+ last-mock.json when available)
  *   3) xclaw doctor --json (must produce a report; may warn without keys)
@@ -43,6 +44,7 @@ const UNIT_TESTS = [
   "test/eval-ci-smoke-offline.test.mjs",
   "test/eval-baseline-mock-artifact.test.mjs",
   "test/retry-after-jitter.test.mjs",
+  "test/apply-ship-patches.test.mjs",
 ].filter((f) => fs.existsSync(path.join(root, f)));
 
 function run(cmd, args, opts = {}) {
@@ -64,6 +66,13 @@ function run(cmd, args, opts = {}) {
 
 function log(msg) {
   console.error(`[ship-pack] ${msg}`);
+}
+
+log("apply ship patches");
+const ap = await run(process.execPath, ["scripts/apply-ship-patches.mjs"]);
+if (ap.code !== 0) {
+  log("apply-ship-patches FAILED");
+  process.exit(ap.code);
 }
 
 log(`unit tests (${UNIT_TESTS.length} files)`);
