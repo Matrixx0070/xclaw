@@ -1,5 +1,5 @@
 {
-  "$schema_note": "Strategy C4 — tool capability parity across computer engines. Source of truth for CI gate scripts/check-computer-parity.mjs",
+  "$schema_note": "Strategy C4 \u2014 tool capability parity across computer engines. Source of truth for CI gate scripts/check-computer-parity.mjs",
   "version": 1,
   "strategy": "C",
   "phase": "C4",
@@ -23,7 +23,7 @@
     },
     "bundle": {
       "entry": "src/computer/xclaw-server.mjs",
-      "role": "legacy full CDP runtime — do not hand-edit; explicit fallback only"
+      "role": "legacy full CDP runtime \u2014 do not hand-edit; explicit fallback only"
     }
   },
   "statusEnum": [
@@ -95,7 +95,7 @@
       "generated": "missing",
       "bundle": "parity",
       "defaultPath": false,
-      "notes": "Dead browser-service.mjs extract deleted 3.82.0 (never ran — undefined identifiers); full CDP lives only in the bundle engine"
+      "notes": "Dead browser-service.mjs extract deleted 3.82.0 (never ran \u2014 undefined identifiers); full CDP lives only in the bundle engine"
     },
     {
       "name": "skills-context",
@@ -114,6 +114,15 @@
       "bundle": "parity",
       "defaultPath": true,
       "notes": "Thin HTTP covers sessions/tools; bundle has full surface"
+    },
+    {
+      "name": "xclaw_computer_act",
+      "maintainedModule": "src/computer/modules/computer-act-tool.mjs",
+      "native": "parity",
+      "generated": "parity",
+      "bundle": "missing",
+      "defaultPath": true,
+      "notes": "C5 native desktop/browser actuation (grok 3.77 line); not in the frozen C4 release bundle"
     }
   ],
   "ci": {

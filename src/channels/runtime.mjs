@@ -247,6 +247,29 @@ export async function processInbound(inbound, opts = {}) {
     }
   }
 
+  // ── Long-run objective routing (mission survives execution boundaries) ──
+  // A channel message may (a) command the objective system, (b) answer an
+  // escalated question, or (c) arrive while a mission runs. Everything else
+  // is a normal turn — which can auto-promote into a mission when the turn
+  // cap truncates it (the traced "asks after ~20-30 tool calls" failure).
+  const objectivesEnabled = cfg.objectives?.enabled !== false;
+  if (objectivesEnabled) {
+    try {
+      const routed = await routeObjective({
+        text,
+        inbound,
+        cfg,
+        workingDir,
+        replyWithAgent,
+        onEvent,
+        notify: opts.notify || null,
+      });
+      if (routed) return routed;
+    } catch (err) {
+      onEvent?.({ type: "objective", phase: "route_error", message: String(err?.message || err) });
+    }
+  }
+
   const result = await replyWithAgent({
     cfg,
     message: text,
@@ -258,14 +281,253 @@ export async function processInbound(inbound, opts = {}) {
     stream: opts.stream === true,
   });
 
+  // Auto-promotion: the run was CUT OFF by the turn cap mid-work — the exact
+  // live failure where the agent then asked "should I continue?". Promote it
+  // into a durable objective and keep going; the user sees one continuous
+  // mission. Requires a channel notify sender for the detached updates.
+  if (
+    objectivesEnabled &&
+    opts.notify &&
+    result.stopReason === "maxTurns" &&
+    cfg.objectives?.autoPromote !== false
+  ) {
+    try {
+      const promo = await promoteTurnToObjective({
+        text,
+        inbound,
+        cfg,
+        workingDir,
+        replyWithAgent,
+        onEvent,
+        notify: opts.notify,
+        turnResult: result,
+      });
+      if (promo) {
+        return {
+          handled: true,
+          via: "objective_promoted",
+          reply:
+            `${result.text || ""}\n\n🎯 I hit this segment's execution budget mid-task — continuing autonomously as mission \`${promo.id}\`. ` +
+            `I'll report progress here; /objective status any time.`,
+          identity: result.identity || inbound.identity,
+          vaultUserId: result.vaultUserId,
+          userId: inbound.userId,
+          turns: result.turns,
+          suggestions: [],
+        };
+      }
+    } catch (err) {
+      onEvent?.({ type: "objective", phase: "promote_error", message: String(err?.message || err) });
+    }
+  }
+
   return {
     handled: true,
     via: "agent",
     reply: result.text || "(no response)",
+    images: result.images || [],
     identity: result.identity || inbound.identity,
     vaultUserId: result.vaultUserId,
     userId: inbound.userId,
     turns: result.turns,
     suggestions: result.suggestions || [],
   };
+}
+
+/** Build the segment runner + start a detached mission loop. */
+function startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts }) {
+  const runSegment = async ({ prompt, rescuePrompt, sessionId }) =>
+    replyWithAgent({
+      cfg,
+      message: prompt,
+      workingDir,
+      userId: inbound.userId,
+      channel: inbound.channel,
+      chatId: inbound.chatId,
+      onEvent,
+      history: [], // fresh context each segment — durable state IS the memory
+      chatSessionId: sessionId,
+      rescuePrompt,
+    });
+  const notifyFn = async (msg, meta) => {
+    try {
+      await notify(msg, meta || {});
+    } catch {
+      /* notify best-effort */
+    }
+  };
+  import("../agent/objective.mjs")
+    .then(({ runObjective }) =>
+      runObjective(cfg, {
+        ...runOpts,
+        sessionKey: runOpts.sessionKey ?? inbound.identity ?? null,
+        channel: inbound.channel,
+        chatId: inbound.chatId,
+        workingDir,
+        runSegment,
+        notify: notifyFn,
+        onEvent,
+      })
+    )
+    .catch((err) => {
+      onEvent?.({ type: "objective", phase: "run_error", message: String(err?.message || err) });
+      notifyFn(`⚠️ Mission runtime error: ${String(err?.message || err).slice(0, 300)}`).catch(() => {});
+    });
+}
+
+/** Handle /objective commands, escalation answers, and in-flight status.
+ *  Exported so non-processInbound channels (webchat) reuse the same router. */
+export async function routeObjective({ text, inbound, cfg, workingDir, replyWithAgent, onEvent, notify }) {
+  const store = await import("../agent/objective-store.mjs");
+  const scope = { sessionKey: inbound.identity, channel: inbound.channel, chatId: inbound.chatId };
+  const lower = text.trim().toLowerCase();
+  const isCmd = lower.startsWith("/objective") || lower.startsWith("/mission");
+
+  const active = await store.findActiveObjective(cfg, scope);
+
+  if (isCmd) {
+    const rest = text.trim().split(/\s+/).slice(1).join(" ").trim();
+    const sub = rest.split(/\s+/)[0]?.toLowerCase() || "";
+    if (!rest || sub === "status") {
+      if (!active) return { handled: true, via: "objective", reply: "No active mission. /objective <goal> to start one." };
+      const done = active.criteria.filter((c) => c.done).length;
+      return {
+        handled: true,
+        via: "objective",
+        reply:
+          `🎯 Mission \`${active.id}\` — ${active.status}\n` +
+          `Objective: ${active.objective.slice(0, 300)}\n` +
+          `Segments: ${active.totals.segments} · tool calls: ${active.totals.toolCalls} · criteria: ${done}/${active.criteria.length}\n` +
+          `Current: ${active.currentSubtask || "—"}` +
+          (active.humanQuestion ? `\n❓ Waiting on you: ${active.humanQuestion}` : ""),
+      };
+    }
+    if (sub === "stop") {
+      if (!active) return { handled: true, via: "objective", reply: "No active mission to stop." };
+      active.stopRequested = true;
+      await store.saveObjective(cfg, active);
+      return { handled: true, via: "objective", reply: `🛑 Stop requested for \`${active.id}\` — it will halt at the next segment boundary (state preserved).` };
+    }
+    if (sub === "list") {
+      const all = await store.listObjectives(cfg);
+      if (!all.length) return { handled: true, via: "objective", reply: "No missions recorded." };
+      return {
+        handled: true,
+        via: "objective",
+        reply: all
+          .slice(0, 10)
+          .map(
+            (o) =>
+              `${o.status === "running" ? "▶️" : o.status === "done" ? "✅" : "⏸"} \`${o.id}\` ${o.status} · seg ${o.totals.segments} · ${o.objective.slice(0, 80)}`
+          )
+          .join("\n") + "\n\nResume any with /objective resume <id>.",
+      };
+    }
+    if (sub === "resume") {
+      // explicit id adopts the mission into THIS chat (heals objectives
+      // orphaned by ephemeral webchat sessions; lets telegram adopt a
+      // webchat-started mission)
+      const explicitId = rest.split(/\s+/)[1] || null;
+      const target = explicitId ? await store.loadObjective(cfg, explicitId) : active;
+      if (!target) return { handled: true, via: "objective", reply: explicitId ? `No mission \`${explicitId}\`.` : "Nothing to resume." };
+      if (!notify) return { handled: true, via: "objective", reply: "This channel cannot run detached missions (no sender)." };
+      if (target.status === "running") return { handled: true, via: "objective", reply: `Mission \`${target.id}\` is already running.` };
+      if (store.isTerminalObjective(target.status) && target.status !== "stopped") {
+        return { handled: true, via: "objective", reply: `Mission \`${target.id}\` is ${target.status} — nothing to resume.` };
+      }
+      if (explicitId) {
+        target.channel = inbound.channel;
+        target.chatId = inbound.chatId;
+        target.sessionKey = inbound.identity || target.sessionKey;
+        await store.saveObjective(cfg, target);
+      }
+      startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { resumeId: target.id } });
+      return { handled: true, via: "objective", reply: `▶️ Resuming mission \`${target.id}\`.` };
+    }
+    // /objective <goal text> — explicit mission start
+    if (active && !store.isTerminalObjective(active.status)) {
+      return { handled: true, via: "objective", reply: `A mission is already active (\`${active.id}\`, ${active.status}). /objective status | stop first.` };
+    }
+    if (!notify) return { handled: true, via: "objective", reply: "This channel cannot run detached missions (no sender)." };
+    startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { objective: rest } });
+    return { handled: true, via: "objective", reply: `🎯 Mission started. I'll work autonomously and report here; /objective status any time.` };
+  }
+
+  if (!active) return null;
+
+  if (active.status === "awaiting_human") {
+    if (!notify) return null;
+    startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { resumeId: active.id, answer: text } });
+    return { handled: true, via: "objective", reply: `▶️ Got it — resuming mission \`${active.id}\` with your answer.` };
+  }
+  if (active.status === "running") {
+    return {
+      handled: true,
+      via: "objective",
+      reply: `⏳ Mission \`${active.id}\` is running (segment ${active.totals.segments}, ${active.totals.toolCalls} tool calls). /objective status | stop. (Your message was not treated as a new task.)`,
+    };
+  }
+  if (active.status === "interrupted" || active.status === "paused_budget") {
+    if (notify) {
+      startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { resumeId: active.id } });
+      return { handled: true, via: "objective", reply: `▶️ Mission \`${active.id}\` was ${active.status.replace("_", " ")} — resuming it now (your message noted). /objective stop to cancel.` };
+    }
+  }
+  return null;
+}
+
+/** Convert a turn-cap-truncated normal turn into a seeded mission. */
+/**
+ * A bare affirmation ("yes", "ok", "go ahead") is a CONTINUATION, not a
+ * mission title. Promoting it verbatim produced missions literally named
+ * "Yes" that lost the actual task. When the inbound is such an affirmation,
+ * anchor the objective in the model's own partial-work summary so the mission
+ * has a real objective and the model doesn't restart blind.
+ */
+const AFFIRMATION_RE =
+  /^(y|yes|yep|yeah|yup|ok|okay|k|sure|go|go ahead|do it|continue|proceed|please do|sounds good|👍)\b[.! ]*$/i;
+
+export function deriveObjectiveText(text, turnResult = {}) {
+  const t = String(text || "").trim();
+  if (!AFFIRMATION_RE.test(t)) return t;
+  const summary = String(turnResult.text || "").trim();
+  const firstLine = summary
+    .split("\n")
+    .map((l) => l.replace(/^[#>*\-\s]+/, "").trim())
+    .find((l) => l.length >= 12);
+  if (!firstLine) return t;
+  return `Continue the in-progress task (user approved with "${t}"): ${firstLine.slice(0, 400)}`;
+}
+
+async function promoteTurnToObjective({ text, inbound, cfg, workingDir, replyWithAgent, onEvent, notify, turnResult }) {
+  const store = await import("../agent/objective-store.mjs");
+  const existing = await store.findActiveObjective(cfg, {
+    sessionKey: inbound.identity,
+    channel: inbound.channel,
+    chatId: inbound.chatId,
+  });
+  if (existing) return null; // never stack missions
+  const files = [];
+  for (const t of turnResult.toolTrace || []) {
+    for (const a of t.artifacts || []) {
+      if (a?.type === "file" && typeof a.ref === "string" && !files.includes(a.ref)) files.push(a.ref);
+    }
+  }
+  const obj = store.newObjective({
+    objective: deriveObjectiveText(text, turnResult),
+    sessionKey: inbound.identity,
+    channel: inbound.channel,
+    chatId: inbound.chatId,
+    workingDir,
+  });
+  store.mergeStateUpdate(obj, {
+    progress: [
+      `Initial turn ran ${(turnResult.toolTrace || []).length} tool calls before hitting the segment budget; its partial summary was delivered to the user.`,
+    ],
+    findings: turnResult.text ? [String(turnResult.text).slice(0, 800)] : [],
+    inspected: { files: files.slice(0, 100) },
+  });
+  await store.saveObjective(cfg, obj);
+  startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { resumeId: obj.id } });
+  return { id: obj.id };
 }

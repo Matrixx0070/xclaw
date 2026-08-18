@@ -16,6 +16,10 @@ Not a thin chat wrapper: agents **run tools**, can **verify work**, and can **pr
 git clone https://github.com/Matrixx0070/xclaw.git
 cd xclaw
 
+# 0) One-command install + onboard (creates ~/.xclaw, runs doctor)
+XAI_API_KEY=xai-... npm run install:local     # or: bash install/install.sh --yes
+# equivalently, just onboard:  npm run onboard -- --yes --profile lab
+
 # 1) Key (never commit this)
 export XAI_API_KEY=xai-...          # or other provider keys via config
 export XCLAW_PROFILE=lab            # convenient defaults
@@ -30,6 +34,85 @@ node bin/xclaw.mjs agent "Create /tmp/xclaw-hello.txt with text ok"
 
 # Optional: long-running gateway + WebChat
 node bin/xclaw.mjs gateway
+# → http://127.0.0.1:18790/chat/
+```
+
+| Check | Expect |
+|-------|--------|
+| `doctor` | Config loads; lab profile OK; warns if no API key |
+| `agent "…"` | Tool runs (lab auto-approves) or clear error |
+| Computer | **Bundle default** (16MB CDP on `:4243`); run `npm run fetch:bundle` + `verify:bundle` — thin: `XCLAW_COMPUTER_ENGINE=native` |
+
+**Requirements:** Node.js **≥ 22**, network for model APIs.
+
+Config file: `~/.xclaw/xclaw.json` (created on first run).
+
+More install detail: [INSTALL.md](./INSTALL.md)
+
+---
+
+## Secrets
+
+Full checklist: [docs/SECRETS.md](./docs/SECRETS.md)
+
+
+- **Never commit** API keys, OAuth tokens, or GitHub PATs.
+- Prefer env vars or local config outside the repo.
+- If a key was pasted into chat or logs → **rotate it**.
+- Prod: set `XCLAW_GATEWAY_TOKEN` (or `gateway.token` in config).
+
+---
+
+## Profiles
+
+| Profile | Intent | Typical defaults |
+|---------|--------|------------------|
+| **lab** | Local experiments | `autoApprove=true`, egress allow, open gateway |
+| **dev** | Day-to-day build | Mixed; prefer explicit approvals for risky tools |
+| **prod** | Exposed or unattended | Token required, stricter approvals, egress **deny**, prefer OS sandbox |
+
+```bash
+export XCLAW_PROFILE=lab    # default-friendly
+export XCLAW_PROFILE=prod
+export XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
+```
+
+| Knob | Env / config | Notes |
+|------|----------------|-------|
+| Egress | `XCLAW_EGRESS=deny\|allow\|allowlist` | Prod default deny for shell network patterns |
+| OS sandbox | `XCLAW_OS_SANDBOX=auto\|bwrap\|off` | Uses **bubblewrap** when installed & usable |
+| Spawn plan | `XCLAW_SPAWN_ENFORCE` | Exact approved command at bash spawn |
+| Kill | `xclaw stop-all` | Abort sessions + stop computer |
+
+Project memory injected into the agent: **[XCLAW.md](./XCLAW.md)** (edit this for repo-local rules).
+
+---
+
+## Strategy C (computer)
+
+**Modules are the source of truth.** Do **not** hand-edit the ~16MB `xclaw-server.mjs` bundle.
+
+| Engine | Entry | When |
+|--------|--------|------|
+| **native** (default) | `src/computer/thin-server.mjs` | Fast lab; edit `src/computer/modules/**` |
+| **generated** | `src/computer/generated/computer-server.mjs` | `npm run build:computer` |
+| **bundle** | `src/computer/xclaw-server.mjs` | Full CDP — treat as **runtime artifact** |
+
+```bash
+npm run build:computer
+# XCLAW_COMPUTER_ENGINE=native|generated|bundle
+```
+
+Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
+
+---
+
+## Docker (try-me)
+
+```bash
+cd deploy
+cp env.example .env   # set XAI_API_KEY
+docker compose up --build
 # → http://127.0.0.1:18790/chat/
 ```
 

@@ -12,8 +12,10 @@
 import path from "node:path";
 import fs from "node:fs";
 
-/** Product default when no env/cfg override is set. */
-export const DEFAULT_COMPUTER_ENGINE = "native";
+/** Product default when no env/cfg override is set.
+ * "bundle" (C4) is the live-proven default; the C5 native plane remains fully
+ * selectable via XCLAW_COMPUTER_ENGINE=native or cfg.computer.engine. */
+export const DEFAULT_COMPUTER_ENGINE = "bundle";
 
 /**
  * @param {object} [cfg]
@@ -92,7 +94,7 @@ export function describeComputerEngine(cfg = {}, root = process.cwd()) {
     /** @deprecated bundle is default; true only if somehow treated as non-default */
     isFallbackBundle: engine === "bundle" && DEFAULT_COMPUTER_ENGINE !== "bundle",
     isDefaultBundle: engine === "bundle",
-    strategyPhase: "C5-native-default",
+    strategyPhase: engine === "native" ? "C5-native" : "C4",
     policy: {
       defaultEngine: DEFAULT_COMPUTER_ENGINE,
       handEditBundle: false,

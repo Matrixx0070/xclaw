@@ -19,14 +19,6 @@ import { buildToolEnv } from "../../security/env-policy.mjs";
 const DEFAULT_TIMEOUT_SECONDS = 30;
 const MAX_TIMEOUT_SECONDS = 120;
 
-/**
- * Normalize model/client timeout to seconds in [0, MAX_TIMEOUT_SECONDS].
- * Models often pass milliseconds (e.g. 30000, 120000); values > 1000 are
- * treated as ms. Avoids Zod/schema max-120 failures on the bundle path.
- * @param {unknown} raw
- * @returns {number} seconds
- */
-
 const TERMINATE_GRACE_MS = 2_000;
 
 /**
@@ -83,6 +75,13 @@ function terminateChild(child, { graceMs = TERMINATE_GRACE_MS, signal } = {}) {
   });
 }
 
+/**
+ * Normalize model/client timeout to seconds in [0, MAX_TIMEOUT_SECONDS].
+ * Models often pass milliseconds (e.g. 30000, 120000); values > 1000 are
+ * treated as ms. Avoids Zod/schema max-120 failures on the bundle path.
+ * @param {unknown} raw
+ * @returns {number} seconds
+ */
 export function normalizeBashTimeoutSeconds(raw) {
   if (raw == null || raw === "") return DEFAULT_TIMEOUT_SECONDS;
   let n = Number(raw);

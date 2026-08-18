@@ -53,8 +53,27 @@ describe("profile precedence", () => {
     const { loadConfig } = await import("../src/config/load.mjs");
     const cfg = await loadConfig();
     assert.equal(cfg.profile, "prod");
-    // user explicit true still wins over prod pack false
-    assert.equal(cfg.security.autoApprove, true);
+    // 3.77.0 enforceProdHardening: prod forces autoApprove off even when the
+    // user config says true — lab config cannot leak blanket auto-run into
+    // prod. Break-glass is the explicit XCLAW_ALLOW_PROD_AUTO env.
+    assert.equal(cfg.security.autoApprove, false);
+  });
+
+  it("XCLAW_ALLOW_PROD_AUTO break-glass restores user autoApprove in prod", async () => {
+    await writeUser({
+      profile: "lab",
+      security: { autoApprove: true },
+    });
+    process.env.XCLAW_PROFILE = "prod";
+    process.env.XCLAW_ALLOW_PROD_AUTO = "1";
+    try {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const cfg = await loadConfig();
+      assert.equal(cfg.profile, "prod");
+      assert.equal(cfg.security.autoApprove, true);
+    } finally {
+      delete process.env.XCLAW_ALLOW_PROD_AUTO;
+    }
   });
 
   it("default profile is lab when user omits profile", async () => {

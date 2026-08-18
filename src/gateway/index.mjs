@@ -4,6 +4,27 @@
  */
 import http from "node:http";
 import { createHttpServer } from "./tls.mjs";
+import { tryHandleSecurityRoute } from "./routes/security.mjs";
+import { tryHandleSwarmRoute } from "./routes/swarm.mjs";
+import { tryHandleCronRoute } from "./routes/cron.mjs";
+import { tryHandleJwksRoute } from "./routes/jwks.mjs";
+import { tryHandleAlertsRoute } from "./routes/alerts.mjs";
+import { tryHandleOpsRoute } from "./routes/ops.mjs";
+import { tryHandleLedgerRoute } from "./routes/ledger.mjs";
+import { tryHandleEvalQueueRoute } from "./routes/eval-queue.mjs";
+import { tryHandleTokensRoute } from "./routes/tokens.mjs";
+import { tryHandleSessionsRoute } from "./routes/sessions.mjs";
+import { tryHandleSubagentsRoute } from "./routes/subagents.mjs";
+import { tryHandleMcpRoute } from "./routes/mcp.mjs";
+import { tryHandleMediaRoute } from "./routes/media.mjs";
+import { tryHandleHooksRoute } from "./routes/hooks.mjs";
+import { tryHandleMissionsRoute } from "./routes/missions.mjs";
+import { tryHandleObjectivesRoute } from "./routes/objectives.mjs";
+import { tryHandlePointRoute } from "./routes/point.mjs";
+import { tryHandleCompletionRoute } from "./routes/completion.mjs";
+import { tryHandleProvidersRoute } from "./routes/providers.mjs";
+import { tryHandleChannelsRoute } from "./routes/channels.mjs";
+import { applyCors } from "./cors.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import { attachVoiceWebSocket } from "./voice-ws.mjs";
 import fs from "node:fs/promises";
@@ -61,20 +82,12 @@ function noteStreamNotFound(kind, resume) {
 
 import {
   pushEvictionEvent,
-  listEvictionEvents,
   subscribeEvictionSSE,
-  evictionListenerCount,
 } from "./eviction-events.mjs";
 import { createChannelManager } from "../channels/manager.mjs";
 import { ensureHeartbeat } from "../cron/heartbeat.mjs";
-import { loadAllSkills, loadMemoryFiles } from "../skills/loader.mjs";
-import { estimateRequestTokens, countTextTokens, resolveTokenizer } from "../tokens/count.mjs";
-import { probeTokenizerRuntime, runTokenProbes, applyProbeCalibration } from "../tokens/probes.mjs";
-import { benchProbeOverhead, formatBenchReport } from "../tokens/bench.mjs";
-import { readCostLedger, defaultLedgerPath, formatUsd } from "../tokens/usage-tracker.mjs";
-import { analyzeCacheByTool, formatCacheByToolReport } from "../tokens/cache-by-tool.mjs";
 
-import { spawnSubagent, listSubagents, getSubagent, configureSubagentPersistence } from "../agents/spawn.mjs";
+import { configureSubagentPersistence } from "../agents/spawn.mjs";
 import { createChannelPolicy } from "../channels/policy.mjs";
 import { createMcpClient } from "../mcp/client.mjs";
 import { createMcpServer } from "../mcp/server.mjs";
@@ -83,27 +96,14 @@ import { createGatewayAuth } from "./auth.mjs";
 import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
 import { takePending } from "../connected/oauth-pending.mjs";
 import { setAppToken } from "../connected/token-store.mjs";
-import { withOAuthRetry } from "../auth/oauth-retry.mjs";
-import { oauthError, withHint, OAuthErrorCode } from "../auth/oauth-errors.mjs";
-import { buildDoctorReport } from "./doctor.mjs";
 import { ensureDoctorCronJob } from "../cron/doctor-job.mjs";
 import { ensureEvalCronJob } from "../cron/eval-job.mjs";
 import { startQueueWorker } from "../jobs/queue.mjs";
 import { gracefulShutdown } from "./shutdown.mjs";
 import { softReloadConfig } from "../config/reload.mjs";
-import { resetSharedAlerter, getSharedAlerter } from "../alerting/alerts.mjs";
-import {
-  handlePagerDutyWebhook,
-  verifyPagerDutySignature,
-  listRecentPagerDutyWebhooks,
-  readRawBody,
-} from "../alerting/pagerduty-webhooks.mjs";
-import { listSessions, createSession, resolveBinding, bindPeer, buildSessionKey, parseSessionKey, getSessionByKey } from "../sessions/router.mjs";
+import { resetSharedAlerter } from "../alerting/alerts.mjs";
 import { createApprovalGate, getSharedApprovalGate, resetSharedApprovalGate } from "../security/approvals.mjs";
-import { resolveProviderRoute } from "../providers/router.mjs";
 import { scheduleJob, cancelJob, listJobs, addJob, run as runCronJob, status as cronStatus, start as startCron, getJob } from "../cron/scheduler.mjs";
-import { startDaemon, stopDaemon, systemdUnit, readPid, isPidAlive } from "../cli/daemon.mjs";
-import { createCanvas, getCanvas, addLayer, enqueueMediaJob, listMediaJobs, listCanvases, listImageProviders, getMediaJob } from "../media/canvas.mjs";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -117,14 +117,25 @@ function json(res, status, body) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "X-Powered-By": "XClaw-Gateway",
-    "Access-Control-Allow-Origin": "*",
   });
   res.end(data);
 }
 
+const MAX_BODY_BYTES = 1_000_000; // 1MB cap — unbounded bodies are a trivial memory DoS
+
 async function readBody(req) {
   const chunks = [];
-  for await (const c of req) chunks.push(c);
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > MAX_BODY_BYTES) {
+      req.destroy();
+      throw Object.assign(new Error(`request body exceeds ${MAX_BODY_BYTES} bytes`), {
+        statusCode: 413,
+      });
+    }
+    chunks.push(c);
+  }
   const raw = Buffer.concat(chunks).toString("utf8");
   if (!raw) return {};
   return JSON.parse(raw);
@@ -134,10 +145,15 @@ const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
+  // Browsers hard-refuse ES module imports served without a JS MIME type —
+  // octet-stream kills every `import "./x.mjs"` in the UIs.
+  ".mjs": "application/javascript; charset=utf-8",
   ".json": "application/json",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".ico": "image/x-icon",
+  ".webp": "image/webp",
+  ".woff2": "font/woff2",
 };
 
 async function serveStatic(res, filePath) {
@@ -159,6 +175,15 @@ async function serveStatic(res, filePath) {
  */
 
 function noteEviction(e, source = "agent") {
+  // Live console: approval/security + budget events go to the WS hub so open
+  // Control UIs update without polling (pending-approval badge, table).
+  if (e?.type === "security" || e?.type === "budget") {
+    try {
+      wsBroadcast("security", { source, ...e });
+    } catch {
+      /* hub not attached yet (boot) — fine */
+    }
+  }
   if (e?.type === "cache" && e?.phase === "eviction") {
     pushEvictionEvent({
       source,
@@ -908,6 +933,14 @@ export async function startGateway({ root } = {}) {
   console.log(`[xclaw] XClaw Gateway starting (Phase 7 · hardening)…`);
   console.log(`[xclaw] Config: ${cfg.paths.configFile}`);
 
+  // Config-driven commit gates: consumers (browser hooks, fabric, doctor,
+  // computer child via env inheritance) all read XCLAW_COMMIT_GATES — export
+  // it from config here so the knob is declarative. Env always wins.
+  if (cfg.security?.commitGates && process.env.XCLAW_COMMIT_GATES == null) {
+    process.env.XCLAW_COMMIT_GATES = "1";
+    console.log(`[xclaw] commit gates enabled (security.commitGates)`);
+  }
+
   if (cfg.computer.autoStart) {
     try {
       await startComputer({ root, foreground: false });
@@ -922,6 +955,25 @@ export async function startGateway({ root } = {}) {
   await channelManager.startAll();
   try {
     configureSubagentPersistence(cfg);
+    // Missions interrupted by a crash/restart become resumable, never lost.
+    import("../missions/store.mjs")
+      .then((m) => m.reconcileInterrupted(cfg))
+      .then((ids) => {
+        if (ids.length) {
+          console.log(`[xclaw:missions] marked ${ids.length} interrupted mission(s) resumable: ${ids.join(", ")}`);
+        }
+      })
+      .catch(() => {});
+    // long-run objectives: running → interrupted at boot; they auto-resume on
+    // the owner's next message in that chat (or /objective resume)
+    import("../agent/objective-store.mjs")
+      .then((m) => m.reconcileInterruptedObjectives(cfg))
+      .then((ids) => {
+        if (ids.length) {
+          console.log(`[xclaw:objectives] marked ${ids.length} interrupted objective(s) resumable: ${ids.join(", ")}`);
+        }
+      })
+      .catch(() => {});
   } catch (e) {
     console.warn("[xclaw] subagent persistence:", e.message);
   }
@@ -992,7 +1044,43 @@ export async function startGateway({ root } = {}) {
     console.warn("[xclaw] computer watchdog:", err.message);
   }
   try {
-    startChannelHealthWatchdog(cfg, channelManager);
+    // Daily stale-tmp sweep (age-gated, mission-worktree-safe) — a live host
+    // accumulated 10k+ /tmp/xclaw-* entries from suite runs before this
+    // existed. Off via ops.tmpSweep.enabled: false.
+    if (cfg.ops?.tmpSweep?.enabled !== false || cfg.ops?.maintenance?.enabled !== false) {
+      const sweepEveryMs = Math.max(3_600_000, Number(cfg.ops?.maintenance?.intervalMs) || Number(cfg.ops?.tmpSweep?.intervalMs) || 24 * 3600 * 1000);
+      const sweepTimer = setInterval(() => {
+        if (cfg.ops?.tmpSweep?.enabled !== false) {
+          import("../ops/tmp-sweeper.mjs")
+            .then((m) => m.sweepStaleTmp(cfg))
+            .then((r) => {
+              if (r.removed.length) console.log(`[xclaw:ops] tmp sweep: removed ${r.removed.length} stale entries`);
+            })
+            .catch((e) => console.warn("[xclaw:ops] tmp sweep failed:", e?.message || e));
+        }
+        // ledger compaction + append-only rotation (audit's deferred finding)
+        import("../ops/maintenance.mjs")
+          .then((m) => m.runOpsMaintenance(cfg))
+          .then((r) => {
+            if (r.skipped) return;
+            if (r.ledger?.removed?.length) console.log(`[xclaw:ops] ledger compact: removed ${r.ledger.removed.length} segments`);
+            for (const rot of r.rotated) console.log(`[xclaw:ops] rotated ${rot.path} (${rot.bytes} → ${rot.keptBytes} bytes)`);
+            for (const e of r.errors) console.warn(`[xclaw:ops] maintenance ${e.target}:`, e.error);
+          })
+          .catch((e) => console.warn("[xclaw:ops] maintenance failed:", e?.message || e));
+      }, sweepEveryMs);
+      if (sweepTimer.unref) sweepTimer.unref();
+    }
+    startChannelHealthWatchdog(cfg, channelManager, {
+      // outage/recovery events reach live Control surfaces
+      onEvent: (e) => {
+        try {
+          wsBroadcast("security", e);
+        } catch {
+          /* hub optional */
+        }
+      },
+    });
   } catch (err) {
     console.warn("[xclaw] channel health watchdog:", err.message);
   }
@@ -1010,8 +1098,8 @@ export async function startGateway({ root } = {}) {
 
   const channelPolicy = createChannelPolicy(cfg);
   const approvalGate = resetSharedApprovalGate(cfg);
-  const mcpClient = createMcpClient({ servers: cfg.mcp?.servers || [] });
-  const mcpServer = createMcpServer({});
+  const mcpClient = createMcpClient({ getServers: () => cfg.mcp?.servers || [], cfg });
+  const mcpServer = createMcpServer({ cfg });
   const pairingStore = createPairingStore({});
   const gatewayAuth = createGatewayAuth(cfg);
   resetSharedAlerter(cfg);
@@ -1046,7 +1134,16 @@ export async function startGateway({ root } = {}) {
 
   const { server, tls: tlsOn } = createHttpServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${cfg.gateway.host}`);
-    const p = url.pathname;
+    let p = url.pathname;
+    // API versioning: /v1/<route> is an alias for every route (clients can pin
+    // a version prefix today; a breaking v2 surface can then coexist later).
+    if (p === "/v1" || p.startsWith("/v1/")) {
+      p = p.slice(3) || "/";
+      res.setHeader("X-XClaw-Api-Version", "1");
+    }
+    // CORS decided once per request (loopback-reflect by default, wildcard only
+    // when cfg.gateway.corsOrigin === "*"); writeHead calls must not set ACAO.
+    applyCors(req, res, cfg);
       if (gatewayAuth.isProtectedPath(p) && req.method !== "OPTIONS") {
         const auth = gatewayAuth.check(req);
         if (!auth.ok) return json(res, 401, { error: "unauthorized" });
@@ -1054,14 +1151,35 @@ export async function startGateway({ root } = {}) {
 
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-xclaw-token",
       });
       return res.end();
     }
 
     try {
+      const routeArgs = { p, method: req.method, req, res, url, cfg, json, readBody };
+      // Mechanical route groups live in ./routes/* (one tryHandle per module);
+      // stream/SSE, WebChat/static, OAuth-callback, telegram, and /agent/run
+      // handlers stay inline — they own writer/closure state.
+      if (await tryHandleProvidersRoute(routeArgs)) return;
+      if (await tryHandleChannelsRoute({ ...routeArgs, channelManager })) return;
+      if (await tryHandleAlertsRoute({ ...routeArgs, channelManager })) return;
+      if (await tryHandleOpsRoute({ ...routeArgs, root, webchatEnabled, channelManager, XCLAW_VERSION, XCLAW_PHASE })) return;
+      if (await tryHandleLedgerRoute(routeArgs)) return;
+      if (await tryHandleEvalQueueRoute({ ...routeArgs, root })) return;
+      if (await tryHandleJwksRoute(routeArgs)) return;
+      if (await tryHandleTokensRoute(routeArgs)) return;
+      if (await tryHandleSessionsRoute(routeArgs)) return;
+      if (await tryHandleSubagentsRoute(routeArgs)) return;
+      if (await tryHandleMcpRoute({ ...routeArgs, mcpClient, mcpServer })) return;
+      if (await tryHandleMediaRoute(routeArgs)) return;
+      if (await tryHandleHooksRoute(routeArgs)) return;
+      if (await tryHandleMissionsRoute(routeArgs)) return;
+      if (await tryHandleObjectivesRoute(routeArgs)) return;
+      if (await tryHandlePointRoute(routeArgs)) return;
+      if (await tryHandleCompletionRoute(routeArgs)) return;
+
       // Local voice stack (WebUI / TUI clients)
       if (p === "/api/voice/probe" && req.method === "GET") {
         const { probeLocalVoiceStack } = await import("../voice/providers/local.mjs");
@@ -1617,27 +1735,7 @@ export async function startGateway({ root } = {}) {
 
 
 
-      if (p === "/tokens/cache-by-tool" && req.method === "POST") {
-        const body = await readBody(req);
-        const analysis = analyzeCacheByTool({
-          usageTurns: body.usageTurns || body.usage?.turns || [],
-          toolTrace: body.toolTrace || [],
-          events: body.events || [],
-        });
-        return json(res, 200, {
-          ok: true,
-          summary: formatCacheByToolReport(analysis),
-          analysis,
-        });
-      }
 
-      if (p === "/events/eviction" && req.method === "GET") {
-        const limit = Number(url.searchParams.get("limit") || 50);
-        return json(res, 200, {
-          events: listEvictionEvents({ limit }),
-          listeners: evictionListenerCount(),
-        });
-      }
 
             if (p === "/events/eviction/stream" && req.method === "GET") {
         const lastEventId =
@@ -1649,8 +1747,7 @@ export async function startGateway({ root } = {}) {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-cache, no-transform",
           Connection: "keep-alive",
-          "Access-Control-Allow-Origin": "*",
-          "X-Accel-Buffering": "no",
+                "X-Accel-Buffering": "no",
         });
         res.write(": eviction stream\n\n");
         subscribeEvictionSSE(res, { lastEventId });
@@ -1666,113 +1763,8 @@ export async function startGateway({ root } = {}) {
         return;
       }
 
-      if (p === "/tokens/cost" && req.method === "GET") {
-        const ledger = cfg.tokens?.ledgerPath || defaultLedgerPath();
-        const since = url.searchParams.get("since");
-        const agg = await readCostLedger(ledger, { since });
-        return json(res, 200, { ok: true, ...agg });
-      }
 
-      if (p === "/tokens/bench" && (req.method === "GET" || req.method === "POST")) {
-        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : {};
-        const model = body.model || url.searchParams.get("model") || cfg.agent?.model || "gpt-4o-mini";
-        const iterations = Number(body.iterations || url.searchParams.get("iterations") || 100);
-        const bench = await benchProbeOverhead({
-          cfg,
-          model,
-          iterations: Number.isFinite(iterations) ? iterations : 100,
-          latencySamples: Number(body.latencySamples || 40),
-          probeIterations: Number(body.probeIterations || 5),
-          agentTurnsPerDay: Number(body.agentTurnsPerDay || 500),
-        });
-        return json(res, 200, {
-          ok: true,
-          summary: formatBenchReport(bench),
-          bench,
-        });
-      }
 
-      if (p === "/tokens/probe" && (req.method === "GET" || req.method === "POST")) {
-        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : {};
-        const model = body.model || url.searchParams.get("model") || cfg.agent?.model || "gpt-4o-mini";
-        const calibrate = body.calibrate === true || url.searchParams.get("calibrate") === "1";
-        const result = await probeTokenizerRuntime(cfg, model, {
-          baseUrl: cfg.agent?.baseUrl,
-        });
-        let calibrated = null;
-        if (calibrate && result.probe?.calibration?.suggested) {
-          const { cfg: newTok, applied } = applyProbeCalibration(cfg.tokens, result.probe);
-          if (applied) {
-            calibrated = newTok;
-            // runtime only — does not persist to disk
-            cfg.tokens = { ...cfg.tokens, ...newTok };
-          }
-        }
-        return json(res, 200, {
-          ok: result.probe.ok,
-          ...result,
-          calibrated,
-        });
-      }
-
-      if (p === "/tokens/estimate" && req.method === "POST") {
-        const body = await readBody(req);
-        const model = body.model || cfg.agent?.model || "gpt-4o-mini";
-        const tok = await resolveTokenizer(cfg, model);
-        const cfgTok = {
-          tokens: {
-            ...(cfg.tokens || {}),
-            mode: tok.encodeFn ? "tiktoken" : "heuristic",
-            _encodeFn: tok.encodeFn,
-          },
-        };
-        const messages = body.messages || [
-          { role: "user", content: body.text || body.message || "" },
-        ];
-        const est = estimateRequestTokens({
-          messages,
-          tools: body.tools,
-          model,
-          cfg: cfgTok,
-        });
-        return json(res, 200, { ok: true, tokenizer: tok.mode, package: tok.package || null, ...est });
-      }
-
-      // --- Skills / memory ---
-      if (p === "/skills" && req.method === "GET") {
-        const skills = await loadAllSkills({
-          configDir: cfg.paths?.configDir,
-          cwd: process.cwd(),
-        });
-        return json(res, 200, {
-          skills: skills.map((s) => ({
-            name: s.name,
-            description: s.description,
-            path: s.path,
-          })),
-        });
-      }
-
-      if (p === "/memory" && req.method === "GET") {
-        const cwd = new URL(req.url, "http://x").searchParams.get("cwd") || process.cwd();
-        const files = await loadMemoryFiles(cwd);
-        return json(res, 200, {
-          files: files.map((f) => ({
-            name: f.name,
-            path: f.path,
-            chars: f.body.length,
-            preview: f.body.slice(0, 200),
-          })),
-        });
-      }
-
-      // --- Channels status (always) ---
-      if (p === "/channels/status" && req.method === "GET") {
-        return json(res, 200, {
-          webchat: { enabled: webchatEnabled },
-          messaging: channelManager.status(),
-        });
-      }
 
       // --- Swarm first-class HTTP API (Phase D) ---
       if (p === "/swarm/run" && req.method === "POST") {
@@ -1815,63 +1807,22 @@ export async function startGateway({ root } = {}) {
         return json(res, 200, { count: items.length, runs: items });
       }
 
-      if (p === "/swarm/merges" && req.method === "GET") {
-        const { listMergeProposals } = await import("../agents/swarm-merge.mjs");
-        const statusFilter = url.searchParams.get("status") || undefined;
-        const limit = Number(url.searchParams.get("limit") || 30);
-        const items = await listMergeProposals(cfg, { status: statusFilter, limit });
-        return json(res, 200, { count: items.length, proposals: items });
-      }
-
-      if (p.startsWith("/swarm/merges/") && p.endsWith("/approve") && req.method === "POST") {
-        const { approveMergeProposal } = await import("../agents/swarm-merge.mjs");
-        const id = p.slice("/swarm/merges/".length, p.length - "/approve".length);
-        const body = await readBody(req).catch(() => ({}));
-        const result = await approveMergeProposal(cfg, id, {
-          repoDir: body.repo || body.repoDir,
-          checkOnly: body.checkOnly === true,
+      // /swarm read + merge-approval routes served by routes/swarm.mjs;
+      // /swarm/run + /swarm/run/stream POST stay inline above (SSE closures).
+      if (p === "/swarm/merges" || p.startsWith("/swarm/")) {
+        const handled = await tryHandleSwarmRoute({
+          p,
+          method: req.method,
+          req,
+          res,
+          url,
+          cfg,
+          json,
+          readBody,
         });
-        return json(res, result.ok ? 200 : 422, result);
+        if (handled) return;
       }
 
-      if (p.startsWith("/swarm/merges/") && p.endsWith("/reject") && req.method === "POST") {
-        const { rejectMergeProposal } = await import("../agents/swarm-merge.mjs");
-        const id = p.slice("/swarm/merges/".length, p.length - "/reject".length);
-        const body = await readBody(req).catch(() => ({}));
-        const result = await rejectMergeProposal(cfg, id, body.reason || "");
-        return json(res, result.ok ? 200 : 422, result);
-      }
-
-      if (p.startsWith("/swarm/merges/") && req.method === "GET") {
-        const { getMergeProposal } = await import("../agents/swarm-merge.mjs");
-        const id = p.slice("/swarm/merges/".length).split("/")[0];
-        const rec = await getMergeProposal(cfg, id);
-        if (!rec) return json(res, 404, { error: "merge proposal not found", id });
-        return json(res, 200, rec);
-      }
-
-      if (p.startsWith("/swarm/") && req.method === "GET") {
-        const { getSwarmRun } = await import("../agents/swarm-store.mjs");
-        const id = p.slice("/swarm/".length).split("/")[0];
-        if (!id || id === "run" || id === "merges") {
-          return json(res, 404, { error: "not found" });
-        }
-        const run = await getSwarmRun(cfg, id);
-        if (!run) return json(res, 404, { error: "swarm run not found", id });
-        return json(res, 200, run);
-      }
-
-      // --- Transcripts (inspectable local conversation log) ---
-      if (p === "/transcripts" && req.method === "GET") {
-        const { listTranscripts } = await import("../sessions/transcript.mjs");
-        return json(res, 200, { transcripts: listTranscripts(cfg) });
-      }
-      if (p.startsWith("/transcripts/") && req.method === "GET") {
-        const { loadTranscriptHistory, transcriptPath } = await import("../sessions/transcript.mjs");
-        const id = decodeURIComponent(p.slice("/transcripts/".length).split("/")[0]);
-        const history = loadTranscriptHistory(cfg, id, Number(new URL(req.url, "http://local").searchParams.get("limit") || 200));
-        return json(res, 200, { sessionId: id, path: transcriptPath(cfg, id), history, count: history.length });
-      }
 
       // --- Agent: JSON (sync) ---
       if (p === "/agent/run" && req.method === "POST") {
@@ -2112,6 +2063,29 @@ export async function startGateway({ root } = {}) {
         const listing = await listArtifacts(workspace);
         return json(res, 200, listing);
       }
+      // Inline artifact bytes for the webchat UI (images etc.) — strict
+      // workspace containment + extension allowlist (src/gateway/artifact-file.mjs)
+      if (p === "/artifacts/file" && req.method === "GET") {
+        const { resolveArtifactFile } = await import("./artifact-file.mjs");
+        const roots = [
+          cfg.paths?.workspaces,
+          cfg.agent?.workingDir || cfg.workspace || process.cwd(),
+        ].filter(Boolean);
+        const rf = await resolveArtifactFile(roots, url.searchParams.get("path"));
+        if (!rf.ok) {
+          const code = rf.code === "not_found" ? 404 : rf.code === "type_not_allowed" ? 415 : 400;
+          return json(res, code, { error: rf.error, code: rf.code });
+        }
+        const data = await fs.readFile(rf.abs);
+        res.writeHead(200, {
+          "Content-Type": rf.mime,
+          "Content-Length": data.length,
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(data);
+        return;
+      }
       if (p === "/artifacts" || p === "/artifacts/") {
         const htmlPath = path.join(root, "ui", "artifacts", "index.html");
         const html = await fs.readFile(htmlPath, "utf8").catch(() => "<h1>artifacts UI missing</h1>");
@@ -2150,53 +2124,38 @@ export async function startGateway({ root } = {}) {
       }
 
 
-      // --- Parity APIs (gaps 1–10) ---
-      if (p === "/subagents" && req.method === "GET") {
-        return json(res, 200, { subagents: listSubagents() });
-      }
-      if (p === "/subagents/spawn" && req.method === "POST") {
-        const body = await readBody(req);
-        if (!body.task) return json(res, 400, { error: "task required" });
-        const out = await spawnSubagent({
-          task: body.task,
-          maxTurns: body.maxTurns,
+
+      // /security/* + /pairing/* served by the routes module (richer than the
+      // old inline handlers: SLA stats, allow-always decision parsing, engine
+      // snapshot; pairing store list/approve/revoke).
+      if (p.startsWith("/security/") || p.startsWith("/pairing/")) {
+        const handled = await tryHandleSecurityRoute({
+          p,
+          method: req.method,
+          req,
+          res,
           cfg,
-          parentId: body.parentId,
-          workingDir: body.workingDir,
+          approvalGate,
+          json,
+          readBody,
         });
-        return json(res, out.ok ? 200 : 500, out);
-      }
-      if (p.startsWith("/subagents/") && req.method === "GET") {
-        const id = p.slice("/subagents/".length);
-        const s = getSubagent(id);
-        return s ? json(res, 200, s) : json(res, 404, { error: "not found" });
+        if (handled) return;
       }
 
-      if (p === "/sessions" && req.method === "GET") {
-        return json(res, 200, { sessions: listSessions() });
-      }
-      if (p === "/sessions" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        return json(res, 200, createSession(body));
-      }
-      if (p === "/sessions/bind" && req.method === "POST") {
-        const body = await readBody(req);
-        const s = bindPeer(body.channel, body.peerId, body.sessionId);
-        return json(res, 200, { ok: true, session: s });
-      }
-      if (p === "/sessions/resolve" && req.method === "POST") {
-        const body = await readBody(req);
-        return json(res, 200, resolveBinding(body.channel, body.peerId, body.peerKind));
-      }
-      if (p === "/sessions/keys" && req.method === "POST") {
-        const body = await readBody(req);
-        if (body.sessionKey) return json(res, 200, { parsed: parseSessionKey(body.sessionKey) });
-        return json(res, 200, { sessionKey: buildSessionKey(body) });
-      }
-      if (p === "/sessions/by-key" && req.method === "GET") {
-        const key = url.searchParams.get("key");
-        const s = getSessionByKey(key);
-        return s ? json(res, 200, s) : json(res, 404, { error: "not found" });
+
+      // /cron scheduler routes served by routes/cron.mjs (/cron/eval stays inline).
+      if (p.startsWith("/cron/") && p !== "/cron/eval" && p !== "/cron/eval/run") {
+        const handled = await tryHandleCronRoute({
+          p,
+          method: req.method,
+          req,
+          res,
+          url,
+          cfg,
+          json,
+          readBody,
+        });
+        if (handled) return;
       }
 
       if (p === "/security/pending" && req.method === "GET") {
@@ -2438,6 +2397,8 @@ export async function startGateway({ root } = {}) {
   const wsHub = attachWebSocketHub(server, {
     path: cfg.gateway?.wsPath || "/ws/events",
     heartbeatMs: cfg.gateway?.wsHeartbeatMs || 25_000,
+    // Reject unauthorized upgrades whenever a token is set or requireAuth (prod)
+    authorize: (req) => gatewayAuth.authorizeWebSocket(req),
   });
   // global broadcast for optional callers
   globalThis.__xclawWsBroadcast = wsBroadcast;

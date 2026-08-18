@@ -99,10 +99,15 @@ describe("memory-file walk trust boundary (7.5)", () => {
 
 describe("run-once → loop contract (tripwire)", () => {
   it("runAgentOnce passes userMessage (not a messages array) to runAgentLoop", async () => {
+    // A0: run-once delegates to channel-invariant run-agent, which owns the
+    // loop call — the userMessage contract is enforced there transitively.
     const fs = await import("node:fs/promises");
-    const src = await fs.readFile(new URL("../src/agent/run-once.mjs", import.meta.url), "utf8");
-    assert.match(src, /userMessage:\s*text/, "run-once must pass userMessage — a messages array is silently dropped by the loop (content:undefined → Provider HTTP 400)");
-    assert.ok(!/messages:\s*\[/.test(src), "run-once must not pass a messages array");
+    const once = await fs.readFile(new URL("../src/agent/run-once.mjs", import.meta.url), "utf8");
+    const agent = await fs.readFile(new URL("../src/agent/run-agent.mjs", import.meta.url), "utf8");
+    assert.match(once, /runAgent\(/, "run-once must delegate to run-agent (A0)");
+    assert.match(agent, /userMessage:\s*(goal|text)/, "run-agent must pass userMessage — a messages array is silently dropped by the loop (content:undefined → Provider HTTP 400)");
+    assert.ok(!/messages:\s*\[/.test(once), "run-once must not pass a messages array");
+    assert.ok(!/messages:\s*\[/.test(agent), "run-agent must not pass a messages array");
   });
 });
 

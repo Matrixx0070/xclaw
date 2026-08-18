@@ -5,393 +5,1069 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>XClaw Control</title>
   <link rel="stylesheet" href="/control/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦞</text></svg>" />
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <span class="logo">X</span>
+  <div class="shell">
+
+  <nav class="nav" id="nav">
+    <div class="nav-brand">
+      <span class="logo">🦞</span>
       <div>
         <h1>XClaw Control</h1>
-        <p class="sub">Phase X3 · swarm · admission · wait/abandon · gateway</p>
+        <p class="sub" id="navSub">operator console</p>
       </div>
     </div>
-    <div class="top-actions">
-      <a class="btn ghost" href="/chat/">Open WebChat</a>
-      <button id="btnRefresh" class="btn">Refresh</button>
+
+    <div class="nav-group">
+      <div class="nav-label">Monitor</div>
+      <a class="nav-item" href="#/overview" data-view="overview"><span class="ni-ico">◉</span>Overview</a>
+      <a class="nav-item" href="#/usage" data-view="usage"><span class="ni-ico">▤</span>Usage &amp; Logs</a>
+      <a class="nav-item" href="#/ops" data-view="ops"><span class="ni-ico">♥</span>Health &amp; Ops</a>
+      <a class="nav-item" href="#/cost" data-view="cost"><span class="ni-ico">¢</span>Cost &amp; Evals</a>
+      <a class="nav-item" href="#/memory" data-view="memory"><span class="ni-ico">◈</span>Memory</a>
     </div>
-  </header>
 
-  <main class="grid">
+    <div class="nav-group">
+      <div class="nav-label">Run</div>
+      <a class="nav-item" href="#/missions" data-view="missions"><span class="ni-ico">🎯</span>Missions</a>
+      <a class="nav-item" href="#/agents" data-view="agents"><span class="ni-ico">▶</span>Agents &amp; Jobs</a>
+      <a class="nav-item" href="#/sessions" data-view="sessions"><span class="ni-ico">❖</span>Sessions</a>
+      <a class="nav-item" href="#/subagents" data-view="subagents"><span class="ni-ico">⑂</span>Subagents</a>
+      <a class="nav-item" href="#/swarm" data-view="swarm"><span class="ni-ico">⛬</span>Swarm</a>
+      <a class="nav-item" href="#/media" data-view="media"><span class="ni-ico">▣</span>Images</a>
+      <a class="nav-item" href="#/approvals" data-view="approvals"><span class="ni-ico">✋</span>Approvals<span class="nav-badge" id="aprBadge" hidden></span></a>
+    </div>
 
-    <section class="card span2" id="cardSwarm">
-      <h2>Swarm runs <span id="swarmLiveStatus" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
-      <div class="row" style="flex-wrap:wrap;gap:0.5rem;">
-        <button class="btn ghost" id="btnSwarmRefresh">Refresh</button>
-        <button class="btn ghost" id="btnMergeRefresh">Merges</button>
-        <input id="swarmGoal" placeholder="goal (optional)" style="flex:1;min-width:140px;" />
-        <input id="swarmTasks" placeholder='tasks JSON e.g. [{"id":"a","role":"research","task":"…"}]' style="flex:2;min-width:200px;" />
-        <button class="btn primary" id="btnSwarmRun">Run (JSON)</button>
-        <button class="btn" id="btnSwarmStream">Run + live SSE</button>
-        <button class="btn ghost" id="btnSwarmAbort" disabled>Abort stream</button>
+    <div class="nav-group">
+      <div class="nav-label">Configure</div>
+      <a class="nav-item" href="#/providers" data-view="providers"><span class="ni-ico">☁</span>Providers</a>
+      <a class="nav-item" href="#/channels" data-view="channels"><span class="ni-ico">✉</span>Channels</a>
+      <a class="nav-item" href="#/automations" data-view="automations"><span class="ni-ico">↻</span>Automations</a>
+      <a class="nav-item" href="#/alerts" data-view="alerts"><span class="ni-ico">⚠</span>Alerts</a>
+      <a class="nav-item" href="#/skills" data-view="skills"><span class="ni-ico">✦</span>Skills</a>
+      <a class="nav-item" href="#/mcp" data-view="mcp"><span class="ni-ico">⌘</span>MCP</a>
+      <a class="nav-item" href="#/hooks" data-view="hooks"><span class="ni-ico">⚓</span>Hooks</a>
+    </div>
+
+    <div class="nav-foot">
+      <a class="btn ghost wide" href="/chat/">🦞 Open WebChat</a>
+      <span id="footMeta" class="muted"></span>
+    </div>
+  </nav>
+
+  <div class="content">
+    <header class="top">
+      <button class="icon-btn only-mobile" id="btnNav" aria-label="Menu">☰</button>
+      <h2 class="view-title" id="viewTitle">Overview</h2>
+      <div class="top-actions">
+        <button id="btnRefresh" class="btn">Refresh</button>
       </div>
-      <div class="table-wrap" style="margin-top:0.5rem;">
-        <table id="swarmTable">
-          <thead>
-            <tr>
-              <th>Id</th>
-              <th>Status</th>
-              <th>Goal</th>
-              <th>Waves</th>
-              <th>When</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <h3 style="margin:0.75rem 0 0.35rem;font-size:0.9rem;opacity:0.9;">Merge proposals</h3>
-      <div class="table-wrap">
-        <table id="mergeTable">
-          <thead>
-            <tr>
-              <th>Id</th>
-              <th>Status</th>
-              <th>Swarm</th>
-              <th>Repo</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <h3 style="margin:0.75rem 0 0.35rem;font-size:0.9rem;opacity:0.9;">Live stream</h3>
-      <pre id="swarmStreamOut" style="margin:0;max-height:220px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.75rem;border-radius:8px;">—</pre>
-      <pre id="swarmDetailOut" style="margin-top:0.5rem;max-height:160px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;display:none;"></pre>
-    </section>
+    </header>
 
-    <section class="card span2" id="cardCheckpoints">
-      <h2>Checkpoints (time-travel)</h2>
-      <div class="row">
-        <button class="btn ghost" id="btnCpRefresh">Refresh</button>
-        <input id="cpId" placeholder="job id" style="flex:1;min-width:120px;" />
-        <button class="btn primary" id="btnCpResume">Resume</button>
+    <main class="views">
+
+    <!-- ═══ Overview ═══ -->
+    <div class="view" data-view="overview">
+      <div class="grid">
+        <section class="card" id="cardStatus">
+          <h2>Gateway</h2>
+          <div class="kv" id="statusKv">Loading…</div>
+        </section>
+
+        <section class="card" id="cardComputer">
+          <h2>Computer</h2>
+          <div class="kv" id="computerKv">Loading…</div>
+          <div class="row">
+            <button class="btn" id="btnStartComputer">Start</button>
+            <button class="btn ghost" id="btnStopComputer">Stop</button>
+          </div>
+        </section>
+
+        <section class="card" id="cardChannels">
+          <h2>Channels</h2>
+          <div class="kv" id="channelsKv">Loading…</div>
+        </section>
+
+        <section class="card" id="cardProfile">
+          <h2>Profile</h2>
+          <button class="btn ghost" id="btnProfile">Refresh</button>
+          <div class="kv" id="profileKv" style="margin-top:0.5rem;">—</div>
+        </section>
+
+        <section class="card" id="cardEviction">
+          <h2>Eviction / LRU</h2>
+          <div class="kv" id="evictionKv">Loading…</div>
+        </section>
       </div>
-      <div class="table-wrap" style="margin-top:0.5rem;">
-        <table id="cpTable">
-          <thead><tr><th>Id</th><th>Status</th><th>Goal</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <pre id="cpOut" style="margin-top:0.5rem;max-height:140px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;"></pre>
-    </section>
+    </div>
 
-    <section class="card span2" id="cardApprovals">
-      <h2>Approvals</h2>
-      <div class="row">
-        <button class="btn ghost" id="btnAprRefresh">Refresh</button>
-        <span id="aprPolicy" style="font-size:0.8rem;opacity:0.85;">—</span>
-      </div>
-      <div class="table-wrap" style="margin-top:0.5rem;">
-        <table id="aprTable">
-          <thead><tr><th>Tool</th><th>When</th><th>Actions</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <pre id="aprOut" style="margin-top:0.5rem;max-height:120px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;"></pre>
-    </section>
-
-    
-    <section class="card span2" id="cardScoreboard">
-      <h2>Autonomy scoreboard</h2>
-      <button class="btn ghost" id="btnScoreboard">Refresh</button>
-      <pre id="scoreOut" style="margin-top:0.5rem;max-height:200px;overflow:auto;font-size:0.72rem;background:#0d131b;padding:0.75rem;border-radius:8px;">—</pre>
-    </section>
-
-    <section class="card span2" id="cardDash">
-      <h2>Dashboard</h2>
-      <button class="btn ghost" id="btnDash">Refresh</button>
-      <pre id="dashOut" style="margin-top:0.5rem;max-height:220px;overflow:auto;font-size:0.72rem;background:#0d131b;padding:0.75rem;border-radius:8px;">—</pre>
-    </section>
-
-    <section class="card" id="cardDoctor">
-      <h2>Doctor</h2>
-      <button class="btn" id="btnDoctor">Run doctor</button>
-      <pre id="doctorOut" class="muted" style="margin-top:0.75rem;max-height:240px;overflow:auto;font-size:0.75rem;"></pre>
-    </section>
-
-    
-    <section class="card span2" id="cardQueue">
-      <h2>Job queue</h2>
-      <div class="row">
-        <input id="queueGoal" placeholder="Goal to enqueue…" style="flex:1;min-width:160px;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.4rem 0.6rem;" />
-        <button class="btn primary" id="btnQueueAdd">Enqueue</button>
-        <button class="btn ghost" id="btnQueueRefresh">Refresh</button>
-        <button class="btn ghost" id="btnQueuePause">Pause</button>
-        <button class="btn ghost" id="btnQueueResume">Resume</button>
-        <button class="btn ghost" id="btnQueueClear">Clear done</button>
-        <button class="btn ghost" id="btnQueueRetry">Retry failed</button>
-      </div>
-      <div id="admissionKv" class="kv-grid" style="margin-top:0.75rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.4rem;font-size:0.75rem;"></div>
-      <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.4rem;">
-        <span class="muted" style="font-size:0.75rem;">QED suggest:</span>
-        <input id="admA" placeholder="a (load)" style="width:80px;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.25rem 0.4rem;font-size:0.75rem;" />
-        <input id="admBeta" placeholder="β" value="1" style="width:48px;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.25rem 0.4rem;font-size:0.75rem;" />
-        <button class="btn ghost" id="btnAdmSuggest" style="font-size:0.75rem;">Suggest c</button>
-        <span id="admSuggestOut" class="muted" style="font-size:0.75rem;">—</span>
-        <button class="btn ghost" id="btnAdmRefresh" style="font-size:0.75rem;margin-left:auto;">Admission live</button>
-        <span id="admLiveStatus" class="pill" style="font-size:0.7rem;">—</span>
-      </div>
-      <div class="table-wrap" style="margin-top:0.75rem;">
-        <table id="queueTable">
-          <thead><tr><th>Status</th><th>Priority</th><th>Goal</th><th>Wait</th><th>When</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <pre id="queueOut" style="margin-top:0.5rem;max-height:160px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;"></pre>
-    </section>
-
-    <section class="card span2" id="cardJobs">
-      <h2>Job runner</h2>
-      <p class="muted" style="margin:0 0 0.5rem;font-size:0.8rem;">Runs a verified job (goal → tools → optional checks). Evidence listed below.</p>
-      <textarea id="jobGoal" rows="3" placeholder="Goal: Create hello.txt containing: hi" style="width:100%;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.6rem;font:inherit;"></textarea>
-      <div class="row" style="margin-top:0.5rem;">
-        <button class="btn primary" id="btnJobRun">Run job</button>
-        <span class="muted" id="jobMeta"></span>
-      </div>
-      <div class="row" style="margin-top:0.5rem;">
-        <button class="btn ghost" id="btnJobHistory">Refresh history</button>
-      </div>
-      <div class="table-wrap" style="margin-top:0.5rem;">
-        <table id="jobHistory">
-          <thead><tr><th>When</th><th>Status</th><th>Turns</th><th>Goal</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <pre id="jobOut" style="margin-top:0.75rem;max-height:320px;overflow:auto;font-size:0.72rem;background:#0d131b;padding:0.75rem;border-radius:8px;border:1px solid var(--border);"></pre>
-    </section>
-
-    <section class="card" id="cardStatus">
-      <h2>Gateway</h2>
-      <div class="kv" id="statusKv">Loading…</div>
-    </section>
-
-    <section class="card" id="cardComputer">
-      <h2>Computer</h2>
-      <div class="kv" id="computerKv">Loading…</div>
-      <div class="row">
-        <button class="btn" id="btnStartComputer">Start</button>
-        <button class="btn ghost" id="btnStopComputer">Stop</button>
-      </div>
-    </section>
-
-    <section class="card span2" id="cardCost">
-      <h2>Cost governor</h2>
-      <div class="kv" id="costGov">Loading…</div>
-      <div style="background:#1a2332;border-radius:6px;height:8px;margin:0.5rem 0;overflow:hidden;">
-        <div id="costBar" style="height:100%;width:0;background:#3b82f6;transition:width 0.3s;"></div>
-      </div>
-      <div class="row">
-        <button class="btn ghost" id="btnCostPause">Pause spend</button>
-        <button class="btn ghost" id="btnCostResume">Resume</button>
-      </div>
-      <h3 style="margin-top:1rem;font-size:0.9rem;">Ledger</h3>
-      <div class="kv" id="costSummary">Loading…</div>
-      <div class="table-wrap">
-        <table id="costTable">
-          <thead>
-            <tr>
-              <th>When</th>
-              <th>Model</th>
-              <th>In</th>
-              <th>Out</th>
-              <th>Cached</th>
-              <th>USD</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-
-    
-    
-    
-    <section class="card" id="cardProfile">
-      <h2>Profile</h2>
-      <button class="btn ghost" id="btnProfile">Refresh</button>
-      <div class="kv" id="profileKv" style="margin-top:0.5rem;">—</div>
-    </section>
-
-    <section class="card" id="cardEval">
-      <h2>Eval baseline</h2>
-      <button class="btn ghost" id="btnEvalBase">Load baseline</button>
-      <button class="btn ghost" id="btnEvalHist">History</button>
-      <button class="btn ghost" id="btnEvalSpend">Spend</button>
-      <pre id="evalBaseOut" style="margin-top:0.5rem;max-height:180px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;">—</pre>
-    </section>
-
-    <section class="card" id="cardSkills">
-      <h2>Skills stats</h2>
-      <button class="btn ghost" id="btnSkillsStats">Refresh</button>
-      <div class="kv" id="skillsKv" style="margin-top:0.5rem;">—</div>
-      <pre id="skillsOut" style="margin-top:0.5rem;max-height:160px;overflow:auto;font-size:0.7rem;background:#0d131b;padding:0.5rem;border-radius:8px;"></pre>
-    </section>
-
-    <section class="card" id="cardChannels">
-      <h2>Channels</h2>
-      <div class="kv" id="channelsKv">Loading…</div>
-    </section>
-
-    <section class="card span2" id="cardCronLogs">
-      <h2>Cron logs</h2>
-      <div class="row">
-        <button class="btn" id="btnCronLogs">Refresh</button>
-        <span class="muted" id="cronLogMeta"></span>
-      </div>
-      <pre id="cronLogOut" style="margin-top:0.75rem;max-height:280px;overflow:auto;font-size:0.72rem;background:#0d131b;padding:0.75rem;border-radius:8px;border:1px solid var(--border);"></pre>
-    </section>
-
-    <section class="card span2" id="cardPairing">
-      <h2>Pairing</h2>
-      <div class="row">
-        <select id="pairChannel">
-          <option value="telegram">telegram</option>
-          <option value="discord">discord</option>
-        </select>
-        <button class="btn" id="btnPairRefresh">Refresh</button>
-        <input id="pairCode" placeholder="Approve code" style="flex:1;min-width:120px;background:#0d131b;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.4rem 0.6rem;" />
-        <button class="btn primary" id="btnPairApprove">Approve</button>
-      </div>
-      <div class="table-wrap" style="margin-top:0.75rem;">
-        <table id="pairTable">
-          <thead>
-            <tr><th>Status</th><th>Id</th><th>Code</th><th>When</th><th></th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="card" id="cardEviction">
-      <h2>Eviction / LRU</h2>
-      <div class="kv" id="evictionKv">Loading…</div>
-    </section>
-
-    <section class="card span2" id="cardEvictionLive">
-      <h2>Live eviction <span id="evictLiveStatus" class="muted">connecting…</span></h2>
-
-      <div class="viz-grid">
-        <div class="viz-panel">
-          <div class="viz-label">Context pressure</div>
-          <div class="gauge-wrap">
-            <div class="gauge-track">
-              <div class="gauge-fill" id="vizPressureFill"></div>
-              <div class="gauge-mark" style="left:95%" title="near"></div>
-              <div class="gauge-mark stress" style="left:105%; max-width:0"></div>
-            </div>
-            <div class="gauge-scale">
-              <span>0</span><span>0.95</span><span>1.05</span><span>1.5+</span>
+    <!-- ═══ Usage & Logs (per provider) ═══ -->
+    <div class="view" data-view="usage">
+      <div class="grid">
+        <section class="card span2" id="cardUsage">
+          <div class="ul-head">
+            <div class="ul-providers" id="ulProviders"><!-- provider chips --></div>
+            <div class="ul-range">
+              <button class="btn ghost ul-range-btn active" data-days="7">7d</button>
+              <button class="btn ghost ul-range-btn" data-days="30">30d</button>
+              <button class="btn ghost" id="ulRefresh">↻</button>
             </div>
           </div>
-          <div class="viz-value" id="vizPressureVal">—</div>
-        </div>
+          <h2 id="ulTitle" class="ul-title">Usage</h2>
 
-        <div class="viz-panel">
-          <div class="viz-label">wSize (size weight)</div>
-          <div class="gauge-wrap">
-            <div class="gauge-track">
-              <div class="gauge-fill size" id="vizWSizeFill"></div>
+          <div class="ul-stats">
+            <div class="ul-stat">
+              <div class="ul-stat-label">Spend</div>
+              <div class="ul-stat-value" id="ulSpend">—</div>
+              <div class="ul-chart" id="ulSpendChart"></div>
             </div>
-            <div class="gauge-scale"><span>0.25</span><span>0.5</span><span>0.75</span><span>0.9</span></div>
+            <div class="ul-stat">
+              <div class="ul-stat-label">Tokens</div>
+              <div class="ul-stat-value" id="ulTokens">—</div>
+              <div class="ul-chart" id="ulTokensChart"></div>
+            </div>
+            <div class="ul-stat">
+              <div class="ul-stat-label">Requests</div>
+              <div class="ul-stat-value" id="ulRequests">—</div>
+              <div class="ul-chart" id="ulRequestsChart"></div>
+            </div>
+            <div class="ul-stat">
+              <div class="ul-stat-label">Cache hit</div>
+              <div class="ul-stat-value" id="ulCacheHit">—</div>
+              <div class="ul-chart muted" id="ulCacheNote" style="font-size:0.75rem;min-height:1.2rem;"></div>
+            </div>
           </div>
-          <div class="viz-value" id="vizWSizeVal">—</div>
-        </div>
+          <div class="ul-legend" id="ulLegend"></div>
 
-        <div class="viz-panel">
-          <div class="viz-label">Last pass actions</div>
-          <div class="bars" id="vizActionBars">
-            <div class="bar-row"><span>trunc</span><div class="bar-track"><div class="bar-fill trunc" id="barTrunc"></div></div><span id="barTruncN">0</span></div>
-            <div class="bar-row"><span>stub</span><div class="bar-track"><div class="bar-fill stub" id="barStub"></div></div><span id="barStubN">0</span></div>
-            <div class="bar-row"><span>drop</span><div class="bar-track"><div class="bar-fill drop" id="barDrop"></div></div><span id="barDropN">0</span></div>
+          <h3 class="subhead">Recent cache hits</h3>
+          <div class="table-wrap" style="max-height:200px;">
+            <table id="ulCacheRecent">
+              <thead><tr><th>When</th><th>Hit %</th><th>Cached/Prompt</th><th>Model</th><th>Turns</th></tr></thead>
+              <tbody></tbody>
+            </table>
           </div>
-        </div>
+          <p class="muted" id="ulCacheAlerts" style="font-size:0.8rem;"></p>
 
-        <div class="viz-panel">
-          <div class="viz-label">State</div>
-          <div class="pills" id="vizPills">
-            <span class="pill" id="pillTrack">track —</span>
-            <span class="pill" id="pillStress">stress —</span>
-            <span class="pill" id="pillPolicy">policy —</span>
+          <h3 class="subhead">Breakdown</h3>
+          <div class="table-wrap" style="max-height:220px;">
+            <table id="ulBreakdown">
+              <thead><tr><th>Type</th><th>Usage</th><th>Share</th></tr></thead>
+              <tbody></tbody>
+            </table>
           </div>
-          <div class="viz-meta muted" id="vizMeta">No events yet</div>
-        </div>
-      </div>
 
-      <div class="spark-wrap">
-        <div class="viz-label">Pressure &amp; wSize (last 40)</div>
-        <svg id="sparkSvg" viewBox="0 0 400 80" preserveAspectRatio="none" class="spark">
-          <polyline id="sparkPressure" fill="none" stroke="#3d8bfd" stroke-width="1.5" points="" />
-          <polyline id="sparkWSize" fill="none" stroke="#3dd68c" stroke-width="1.5" points="" />
-          <line x1="0" y1="40" x2="400" y2="40" stroke="#1e2a36" stroke-dasharray="4 4" />
-        </svg>
-        <div class="spark-legend">
-          <span class="lg p">pressure</span>
-          <span class="lg w">wSize</span>
-        </div>
-      </div>
+          <h3 class="subhead">By provider (cost)</h3>
+          <div id="ulByProviderBars" class="ul-prov-bars" aria-label="Provider cost breakdown"></div>
+          <div class="table-wrap" style="max-height:180px;">
+            <table id="ulByProvider">
+              <thead><tr><th>Provider</th><th>Runs</th><th>Tokens in</th><th>Tokens out</th><th>Cache hit</th><th>Spend</th><th>Share</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
 
-      <div class="table-wrap">
-        <table id="evictTable">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Source</th>
-              <th>Policy</th>
-              <th>Trunc</th>
-              <th>Drop</th>
-              <th>Chars</th>
-              <th>wSize</th>
-              <th>Pressure</th>
-              <th>Track</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+          <h3 class="subhead">By model</h3>
+          <div class="table-wrap" style="max-height:180px;">
+            <table id="ulByModel">
+              <thead><tr><th>Model</th><th>Runs</th><th>Tokens</th><th>Spend</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
 
-    <section class="card span2" id="cardSessions">
-      <h2>WebChat sessions</h2>
-      <div class="table-wrap">
-        <table id="sessionsTable">
-          <thead>
-            <tr>
-              <th>Id</th>
-              <th>Title</th>
-              <th>Updated</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <section class="card span2" id="cardLogs">
+          <h2>Logs <span class="muted" id="ulLogMeta"></span></h2>
+          <div class="row">
+            <input id="ulLogFilter" placeholder="filter by run id, model, session, message…" style="flex:1;min-width:200px;" />
+            <button class="btn ghost" id="ulLogRefresh">Refresh</button>
+          </div>
+          <div class="table-wrap" style="max-height:420px;margin-top:0.5rem;">
+            <table id="ulLogTable">
+              <thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>In</th><th>Out</th><th>Cached</th><th>USD</th><th>Message</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="ulLogDetail" class="ul-detail" style="display:none;">
+            <div class="ul-detail-head">
+              <b id="ulDetailTitle">run</b>
+              <button class="btn ghost" id="ulDetailClose">×</button>
+            </div>
+            <pre id="ulDetailBody" class="log" style="max-height:300px;"></pre>
+          </div>
+        </section>
       </div>
-    </section>
+    </div>
 
-    <section class="card span2" id="cardAgent">
-      <h2>Quick agent run</h2>
-      <textarea id="agentMsg" rows="3" placeholder="Message to agent…"></textarea>
-      <div class="row">
-        <button class="btn primary" id="btnRun">Run</button>
-        <span id="agentStatus" class="muted"></span>
+    <!-- ═══ Agents & Jobs ═══ -->
+    <div class="view" data-view="agents">
+      <div class="grid">
+        <section class="card span2" id="cardAgent">
+          <h2>Quick agent run</h2>
+          <textarea id="agentMsg" rows="3" placeholder="Message to agent…"></textarea>
+          <div class="row">
+            <button class="btn primary" id="btnRun">Run</button>
+            <span id="agentStatus" class="muted"></span>
+          </div>
+          <pre id="agentOut" class="log"></pre>
+        </section>
+
+        <section class="card span2" id="cardJobs">
+          <h2>Job runner</h2>
+          <p class="muted" style="margin:0 0 0.5rem;font-size:0.8rem;">Runs a verified job (goal → tools → optional checks). Evidence listed below.</p>
+          <textarea id="jobGoal" rows="3" placeholder="Goal: Create hello.txt containing: hi"></textarea>
+          <div class="row" style="margin-top:0.5rem;">
+            <button class="btn primary" id="btnJobRun">Run job</button>
+            <span class="muted" id="jobMeta"></span>
+          </div>
+          <div class="row" style="margin-top:0.5rem;">
+            <button class="btn ghost" id="btnJobHistory">Refresh history</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="jobHistory">
+              <thead><tr><th>When</th><th>Status</th><th>Turns</th><th>Goal</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="jobOut" class="log" style="max-height:320px;"></pre>
+        </section>
+
+        <section class="card span2" id="cardQueue">
+          <h2>Job queue</h2>
+          <div class="row">
+            <input id="queueGoal" placeholder="Goal to enqueue…" style="flex:1;min-width:160px;" />
+            <button class="btn primary" id="btnQueueAdd">Enqueue</button>
+            <button class="btn ghost" id="btnQueueRefresh">Refresh</button>
+            <button class="btn ghost" id="btnQueuePause">Pause</button>
+            <button class="btn ghost" id="btnQueueResume">Resume</button>
+            <button class="btn ghost" id="btnQueueClear">Clear done</button>
+            <button class="btn ghost" id="btnQueueRetry">Retry failed</button>
+          </div>
+          <div id="admissionKv" class="kv-grid" style="margin-top:0.75rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.4rem;font-size:0.75rem;"></div>
+          <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.4rem;">
+            <span class="muted" style="font-size:0.75rem;">QED suggest:</span>
+            <input id="admA" placeholder="a (load)" style="width:80px;font-size:0.75rem;" />
+            <input id="admBeta" placeholder="β" value="1" style="width:48px;font-size:0.75rem;" />
+            <button class="btn ghost" id="btnAdmSuggest" style="font-size:0.75rem;">Suggest c</button>
+            <span id="admSuggestOut" class="muted" style="font-size:0.75rem;">—</span>
+            <button class="btn ghost" id="btnAdmRefresh" style="font-size:0.75rem;margin-left:auto;">Admission live</button>
+            <span id="admLiveStatus" class="pill" style="font-size:0.7rem;">—</span>
+          </div>
+          <div class="table-wrap" style="margin-top:0.75rem;">
+            <table id="queueTable">
+              <thead><tr><th>Status</th><th>Priority</th><th>Goal</th><th>Wait</th><th>When</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="queueOut" class="log" style="max-height:160px;"></pre>
+        </section>
       </div>
-      <pre id="agentOut" class="log"></pre>
-    </section>
-  </main>
+    </div>
 
-  <footer class="foot">
-    <span>XClaw Computer Server</span>
-    <span id="footMeta" class="muted"></span>
-  </footer>
+    <!-- ═══ Swarm ═══ -->
+    <div class="view" data-view="swarm">
+      <div class="grid">
+        <section class="card span2" id="cardSwarm">
+          <h2>Swarm runs <span id="swarmLiveStatus" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <div class="row" style="flex-wrap:wrap;gap:0.5rem;">
+            <button class="btn ghost" id="btnSwarmRefresh">Refresh</button>
+            <button class="btn ghost" id="btnMergeRefresh">Merges</button>
+            <input id="swarmGoal" placeholder="goal (optional)" style="flex:1;min-width:140px;" />
+            <input id="swarmTasks" placeholder='tasks JSON e.g. [{"id":"a","role":"research","task":"…"}]' style="flex:2;min-width:200px;" />
+            <button class="btn primary" id="btnSwarmRun">Run (JSON)</button>
+            <button class="btn" id="btnSwarmStream">Run + live SSE</button>
+            <button class="btn ghost" id="btnSwarmAbort" disabled>Abort stream</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="swarmTable">
+              <thead><tr><th>Id</th><th>Status</th><th>Goal</th><th>Waves</th><th>When</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h3 class="subhead">Merge proposals</h3>
+          <div class="table-wrap">
+            <table id="mergeTable">
+              <thead><tr><th>Id</th><th>Status</th><th>Swarm</th><th>Repo</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h3 class="subhead">Live canvas <span id="swarmCostTicker" style="float:right;font-size:0.75rem;opacity:0.8">$0.00000</span></h3>
+          <div id="swarmCanvas" style="overflow-x:auto;min-height:40px;"></div>
+          <pre id="swarmNodeTail" class="log" style="max-height:200px;display:none;"></pre>
+          <h3 class="subhead">Live stream</h3>
+          <pre id="swarmStreamOut" class="log" style="max-height:220px;">—</pre>
+          <pre id="swarmDetailOut" class="log" style="max-height:160px;display:none;"></pre>
+        </section>
+
+        <section class="card span2" id="cardCheckpoints">
+          <h2>Checkpoints (time-travel)</h2>
+          <div class="row">
+            <button class="btn ghost" id="btnCpRefresh">Refresh</button>
+            <input id="cpId" placeholder="job id" style="flex:1;min-width:120px;" />
+            <button class="btn primary" id="btnCpResume">Resume</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="cpTable">
+              <thead><tr><th>Id</th><th>Status</th><th>Goal</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="cpOut" class="log" style="max-height:140px;"></pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Approvals ═══ -->
+    <div class="view" data-view="approvals">
+      <div class="grid">
+        <section class="card span2" id="cardApprovals">
+          <h2>Approvals</h2>
+          <div class="row">
+            <button class="btn ghost" id="btnAprRefresh">Refresh</button>
+            <span id="aprPolicy" style="font-size:0.8rem;opacity:0.85;">—</span>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="aprTable">
+              <thead><tr><th>Tool</th><th>When</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="aprOut" class="log" style="max-height:120px;"></pre>
+        </section>
+
+        <section class="card span2" id="cardPairing">
+          <h2>Pairing</h2>
+          <div class="row">
+            <select id="pairChannel">
+              <option value="telegram">telegram</option>
+              <option value="discord">discord</option>
+            </select>
+            <button class="btn" id="btnPairRefresh">Refresh</button>
+            <input id="pairCode" placeholder="Approve code" style="flex:1;min-width:120px;" />
+            <button class="btn primary" id="btnPairApprove">Approve</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.75rem;">
+            <table id="pairTable">
+              <thead><tr><th>Status</th><th>Id</th><th>Code</th><th>When</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Providers ═══ -->
+    <div class="view" data-view="providers">
+      <div class="grid">
+        <section class="card span2" id="cardProviders">
+          <h2>Providers</h2>
+          <p class="muted">
+            Paste an API key → the model list fills with the provider's <b>live</b> models → pick one → <b>Use</b>.
+            Each provider holds its own key / OAuth / base URL; a credential badge shows the mode
+            (<span class="pill on">apikey</span> <span class="pill on">oauth</span>, ★ = preferred, × removes).
+            <b>OAuth login</b> runs right here for Claude/Anthropic (approve in the opened tab, paste the code);
+            other providers show the CLI command.
+            Configured providers sort to the top; changes apply to new agent runs.
+          </p>
+          <div class="row">
+            <button class="btn" id="btnProvRefresh">Refresh</button>
+            <span id="provStatus" class="muted"></span>
+          </div>
+          <div class="table-wrap" style="max-height: 60vh; margin-top: 0.5rem;">
+            <table id="provTable">
+              <thead><tr><th>Provider</th><th>Base URL</th><th>Credentials</th><th>Model</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Channels (manage) ═══ -->
+    <div class="view" data-view="channels">
+      <div class="grid">
+        <section class="card span2" id="cardChannelsManage">
+          <h2>Channels</h2>
+          <p class="muted">
+            Enable a messaging channel and set its credentials (bot tokens, IMAP/SMTP) — the same
+            as <code>xclaw channels …</code>. Secrets are stored in the (mode&nbsp;600) config, never
+            shown back. Changes apply on the next gateway start / channel restart.
+          </p>
+          <div class="row">
+            <button class="btn" id="btnChanRefresh">Refresh</button>
+            <span id="chanStatus" class="muted"></span>
+          </div>
+          <div class="table-wrap" style="max-height: 60vh; margin-top: 0.5rem;">
+            <table id="chanTable">
+              <thead><tr><th>Channel</th><th>Enabled</th><th>Configuration</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Cost & Evals ═══ -->
+    <div class="view" data-view="cost">
+      <div class="grid">
+        <section class="card span2" id="cardCost">
+          <h2>Cost governor</h2>
+          <div class="kv" id="costGov">Loading…</div>
+          <div class="meter"><div id="costBar" class="meter-fill"></div></div>
+          <div class="row">
+            <button class="btn ghost" id="btnCostPause">Pause spend</button>
+            <button class="btn ghost" id="btnCostResume">Resume</button>
+          </div>
+          <h3 class="subhead">Ledger</h3>
+          <div class="kv" id="costSummary">Loading…</div>
+          <div class="table-wrap">
+            <table id="costTable">
+              <thead><tr><th>When</th><th>Model</th><th>In</th><th>Out</th><th>Cached</th><th>USD</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" id="cardEval">
+          <h2>Eval baseline</h2>
+          <button class="btn ghost" id="btnEvalBase">Load baseline</button>
+          <button class="btn ghost" id="btnEvalHist">History</button>
+          <button class="btn ghost" id="btnEvalSpend">Spend</button>
+          <pre id="evalBaseOut" class="log" style="max-height:180px;">—</pre>
+        </section>
+
+        <section class="card" id="cardSkills">
+          <h2>Skills stats</h2>
+          <button class="btn ghost" id="btnSkillsStats">Refresh</button>
+          <div class="kv" id="skillsKv" style="margin-top:0.5rem;">—</div>
+          <pre id="skillsOut" class="log" style="max-height:160px;"></pre>
+        </section>
+
+        <section class="card span2" id="cardScoreboard">
+          <h2>Autonomy scoreboard</h2>
+          <button class="btn ghost" id="btnScoreboard">Refresh</button>
+          <pre id="scoreOut" class="log" style="max-height:200px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Health & Ops ═══ -->
+    <div class="view" data-view="ops">
+      <div class="grid">
+        <section class="card span2" id="cardDash">
+          <h2>Dashboard</h2>
+          <button class="btn ghost" id="btnDash">Refresh</button>
+          <pre id="dashOut" class="log" style="max-height:220px;">—</pre>
+        </section>
+
+        <section class="card" id="cardDoctor">
+          <h2>Doctor</h2>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn" id="btnDoctor">Run doctor</button>
+            <button class="btn ghost" id="btnDoctorRecord" title="Run the scheduled doctor check (records + alerts on failure)">Run &amp; record</button>
+            <button class="btn ghost" id="btnCfgReload" title="Soft-reload xclaw.json without restarting">Reload config</button>
+          </div>
+          <pre id="doctorOut" class="muted" style="margin-top:0.75rem;max-height:240px;overflow:auto;font-size:0.75rem;"></pre>
+        </section>
+
+        <section class="card" id="cardSessions">
+          <h2>WebChat sessions</h2>
+          <div class="table-wrap">
+            <table id="sessionsTable">
+              <thead><tr><th>Id</th><th>Title</th><th>Updated</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span2" id="cardCronLogs">
+          <h2>Cron logs</h2>
+          <div class="row">
+            <button class="btn" id="btnCronLogs">Refresh</button>
+            <span class="muted" id="cronLogMeta"></span>
+          </div>
+          <pre id="cronLogOut" class="log" style="max-height:280px;"></pre>
+        </section>
+
+        <section class="card span2" id="cardEvictionLive">
+          <h2>Live eviction <span id="evictLiveStatus" class="muted">connecting…</span></h2>
+          <div class="viz-grid">
+            <div class="viz-panel">
+              <div class="viz-label">Context pressure</div>
+              <div class="gauge-wrap">
+                <div class="gauge-track">
+                  <div class="gauge-fill" id="vizPressureFill"></div>
+                  <div class="gauge-mark" style="left:95%" title="near"></div>
+                  <div class="gauge-mark stress" style="left:105%; max-width:0"></div>
+                </div>
+                <div class="gauge-scale"><span>0</span><span>0.95</span><span>1.05</span><span>1.5+</span></div>
+              </div>
+              <div class="viz-value" id="vizPressureVal">—</div>
+            </div>
+            <div class="viz-panel">
+              <div class="viz-label">wSize (size weight)</div>
+              <div class="gauge-wrap">
+                <div class="gauge-track"><div class="gauge-fill size" id="vizWSizeFill"></div></div>
+                <div class="gauge-scale"><span>0.25</span><span>0.5</span><span>0.75</span><span>0.9</span></div>
+              </div>
+              <div class="viz-value" id="vizWSizeVal">—</div>
+            </div>
+            <div class="viz-panel">
+              <div class="viz-label">Last pass actions</div>
+              <div class="bars" id="vizActionBars">
+                <div class="bar-row"><span>trunc</span><div class="bar-track"><div class="bar-fill trunc" id="barTrunc"></div></div><span id="barTruncN">0</span></div>
+                <div class="bar-row"><span>stub</span><div class="bar-track"><div class="bar-fill stub" id="barStub"></div></div><span id="barStubN">0</span></div>
+                <div class="bar-row"><span>drop</span><div class="bar-track"><div class="bar-fill drop" id="barDrop"></div></div><span id="barDropN">0</span></div>
+              </div>
+            </div>
+            <div class="viz-panel">
+              <div class="viz-label">State</div>
+              <div class="pills" id="vizPills">
+                <span class="pill" id="pillTrack">track —</span>
+                <span class="pill" id="pillStress">stress —</span>
+                <span class="pill" id="pillPolicy">policy —</span>
+              </div>
+              <div class="viz-meta muted" id="vizMeta">No events yet</div>
+            </div>
+          </div>
+          <div class="spark-wrap">
+            <div class="viz-label">Pressure &amp; wSize (last 40)</div>
+            <svg id="sparkSvg" viewBox="0 0 400 80" preserveAspectRatio="none" class="spark">
+              <polyline id="sparkPressure" fill="none" stroke="#3d8bfd" stroke-width="1.5" points="" />
+              <polyline id="sparkWSize" fill="none" stroke="#3dd68c" stroke-width="1.5" points="" />
+              <line x1="0" y1="40" x2="400" y2="40" stroke="#1e2a36" stroke-dasharray="4 4" />
+            </svg>
+            <div class="spark-legend">
+              <span class="lg p">pressure</span>
+              <span class="lg w">wSize</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="evictTable">
+              <thead><tr><th>Time</th><th>Source</th><th>Policy</th><th>Trunc</th><th>Drop</th><th>Chars</th><th>wSize</th><th>Pressure</th><th>Track</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Automations (cron jobs) ═══ -->
+    <div class="view" data-view="automations">
+      <div class="grid">
+        <section class="card span2" id="cardAutomations">
+          <h2>Scheduled automations <span id="autoStatus" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">
+            Jobs run inside the gateway on an interval or cron expression. A job with a
+            <b>message</b> announces it through the delivery channel (e.g. a Telegram DM);
+            without one it just logs a tick. Same engine as <code>xclaw automations</code>.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="autoName" placeholder="name" style="width:130px;" />
+            <input id="autoSchedule" placeholder='schedule: 60000 (ms) or "0 9 * * *"' style="flex:1;min-width:170px;" />
+            <input id="autoMsg" placeholder="message to announce (optional)" style="flex:2;min-width:180px;" />
+            <input id="autoSessionKey" placeholder="delivery sessionKey (optional, e.g. telegram:dm:123)" style="flex:2;min-width:210px;" />
+            <button class="btn primary" id="btnAutoCreate">Create</button>
+            <button class="btn ghost" id="btnAutoRefresh">Refresh</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="autoTable">
+              <thead><tr><th>Name</th><th>Schedule</th><th>Enabled</th><th>Delivery</th><th>Last run</th><th>Next run</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="autoOut" class="log" style="max-height:160px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardAutoLogs">
+          <h2>Cron activity</h2>
+          <button class="btn ghost" id="btnAutoLogs">Refresh</button>
+          <pre id="autoLogOut" class="log" style="max-height:240px;margin-top:0.5rem;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Alerts ═══ -->
+    <div class="view" data-view="alerts">
+      <div class="grid">
+        <section class="card span2" id="cardAlertStatus">
+          <h2>Alerting</h2>
+          <div class="kv" id="alertStatusKv">Loading…</div>
+          <h3 class="subhead">Send test alert</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="alertTitle" placeholder="title" value="Test alert" style="flex:1;min-width:140px;" />
+            <select id="alertSeverity">
+              <option value="info">info</option>
+              <option value="warning">warning</option>
+              <option value="error" selected>error</option>
+              <option value="critical">critical</option>
+            </select>
+            <button class="btn primary" id="btnAlertTest">Fire test</button>
+            <button class="btn ghost" id="btnAlertRefresh">Refresh</button>
+          </div>
+          <h3 class="subhead">History</h3>
+          <div class="table-wrap" style="max-height:260px;">
+            <table id="alertHistTable">
+              <thead><tr><th>When</th><th>Severity</th><th>Title</th><th>Sinks</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="alertOut" class="log" style="max-height:140px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardPagerDuty">
+          <h2>PagerDuty</h2>
+          <p class="muted">Escalation wiring for on-call paging. Configure the routing key via
+            <code>alerting.pagerduty</code>; everything here reads/writes through the live REST API.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn ghost" id="btnPdSetup">Setup report</button>
+            <button class="btn ghost" id="btnPdPolicies">Policies</button>
+            <button class="btn ghost" id="btnPdServices">Services</button>
+            <button class="btn ghost" id="btnPdLevels">Levels preview</button>
+            <button class="btn ghost" id="btnPdLevelsDiff">Levels diff</button>
+            <button class="btn ghost" id="btnPdHooks">Recent webhooks</button>
+          </div>
+          <pre id="pdOut" class="log" style="max-height:300px;margin-top:0.5rem;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Skills ═══ -->
+    <div class="view" data-view="skills">
+      <div class="grid">
+        <section class="card span2" id="cardSkillCatalog">
+          <h2>Skill catalog</h2>
+          <div class="row">
+            <button class="btn ghost" id="btnSklRefresh">Refresh</button>
+            <span id="sklStatus" class="muted"></span>
+          </div>
+          <div class="table-wrap" style="max-height:320px;margin-top:0.5rem;">
+            <table id="sklTable">
+              <thead><tr><th>Skill</th><th>Description</th><th>Path</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h3 class="subhead">Outcome stats</h3>
+          <pre id="sklStatsOut" class="log" style="max-height:160px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardSkillProposals">
+          <h2>Proposals (review queue)</h2>
+          <p class="muted">Skills the agent drafted from failed/successful runs. <b>Install</b> enables
+            the skill for future runs; <b>Reject</b> archives it with your reason.</p>
+          <div class="table-wrap" style="max-height:280px;">
+            <table id="sklPropTable">
+              <thead><tr><th>File</th><th>Proposed</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="sklOut" class="log" style="max-height:160px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ MCP ═══ -->
+    <div class="view" data-view="mcp">
+      <div class="grid">
+        <section class="card span2" id="cardMcpServers">
+          <h2>MCP servers</h2>
+          <p class="muted">
+            Connect Model Context Protocol servers — their tools join every agent run
+            (approval-gated by default). Remote servers speak Streamable HTTP with
+            <b>OAuth login</b> or an API key; local ones are spawned commands.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="mcpSrvName" placeholder="name" style="width:110px;" />
+            <input id="mcpSrvUrl" placeholder="https://… (remote) or command (local)" style="flex:2;min-width:220px;" />
+            <input id="mcpSrvKey" type="password" placeholder="API key (optional)" autocomplete="off" style="width:150px;" />
+            <input id="mcpSrvAllow" placeholder="allowTools a,b (optional)" style="width:170px;" />
+            <button class="btn primary" id="btnMcpSrvAdd">Add</button>
+            <button class="btn ghost" id="btnMcpSrvRefresh">Refresh</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="mcpSrvTable">
+              <thead><tr><th>Server</th><th>Transport</th><th>Credentials</th><th>Filters</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="mcpOauthFlow" style="display:none;margin-top:0.5rem;" class="muted"></div>
+          <pre id="mcpSrvOut" class="log" style="max-height:180px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardMcpTools">
+          <h2>MCP tools <span id="mcpCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">Tools exposed by the MCP servers in <code>mcp.servers</code> config.
+            Click a tool to load it into the call console.</p>
+          <button class="btn ghost" id="btnMcpRefresh">Refresh</button>
+          <div class="table-wrap" style="max-height:300px;margin-top:0.5rem;">
+            <table id="mcpTable">
+              <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span2" id="cardMcpCall">
+          <h2>Call console</h2>
+          <div class="row">
+            <input id="mcpToolName" placeholder="tool name" style="flex:1;min-width:160px;" />
+            <button class="btn primary" id="btnMcpCall">Call</button>
+          </div>
+          <textarea id="mcpArgs" rows="4" placeholder='arguments JSON, e.g. {"path": "/tmp"}' style="margin-top:0.5rem;">{}</textarea>
+          <pre id="mcpOut" class="log" style="max-height:280px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardMcpResources">
+          <h2>Resources &amp; prompts</h2>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn ghost" id="btnMcpRes">List resources</button>
+            <button class="btn ghost" id="btnMcpPrompts">List prompts</button>
+          </div>
+          <div class="table-wrap" style="max-height:220px;margin-top:0.5rem;">
+            <table id="mcpResTable">
+              <thead><tr><th>Server</th><th>Name / URI</th><th></th></tr></thead>
+              <tbody><tr><td colspan="3" class="muted">List resources or prompts to browse what connected servers expose.</td></tr></tbody>
+            </table>
+          </div>
+          <pre id="mcpResOut" class="log" style="max-height:260px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Images (media) ═══ -->
+    <div class="view" data-view="media">
+      <div class="grid">
+        <section class="card span2" id="cardMediaGen">
+          <h2>Generate image</h2>
+          <div class="kv" id="mediaProvKv">Loading…</div>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;margin-top:0.5rem;">
+            <input id="mediaPrompt" placeholder="prompt…" style="flex:2;min-width:220px;" />
+            <select id="mediaProvider"><option value="">auto provider</option></select>
+            <input id="mediaModel" placeholder="model (optional)" style="width:150px;" />
+            <button class="btn primary" id="btnMediaGen">Generate</button>
+          </div>
+          <div id="mediaImgWrap" style="margin-top:0.75rem;display:none;">
+            <img id="mediaImg" alt="generated image" style="max-width:100%;max-height:420px;border-radius:8px;border:1px solid #26303d;" />
+          </div>
+          <pre id="mediaOut" class="log" style="max-height:180px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardMediaJobs">
+          <h2>Image jobs</h2>
+          <button class="btn ghost" id="btnMediaJobs">Refresh</button>
+          <div class="table-wrap" style="max-height:280px;margin-top:0.5rem;">
+            <table id="mediaJobsTable">
+              <thead><tr><th>When</th><th>Status</th><th>Prompt</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Sessions ═══ -->
+    <div class="view" data-view="sessions">
+      <div class="grid">
+        <section class="card span2" id="cardSessAdmin">
+          <h2>Sessions <span id="sessCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">Live conversation sessions across all channels. Bind a channel peer
+            (e.g. a Telegram chat) to a session to steer where its messages land.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn ghost" id="btnSessRefresh">Refresh</button>
+            <button class="btn" id="btnSessNew">New session</button>
+            <input id="bindChannel" placeholder="channel (telegram)" style="width:140px;" />
+            <input id="bindPeer" placeholder="peerId" style="width:130px;" />
+            <input id="bindSession" placeholder="sessionId" style="flex:1;min-width:160px;" />
+            <button class="btn" id="btnSessBind">Bind</button>
+          </div>
+          <div class="table-wrap" style="max-height:300px;margin-top:0.5rem;">
+            <table id="sessTable">
+              <thead><tr><th>Id</th><th>Key</th><th>Channel</th><th>Updated</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="sessOut" class="log" style="max-height:140px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardTranscripts">
+          <h2>Transcripts</h2>
+          <p class="muted">Persisted conversation history per session — click one to read it.</p>
+          <button class="btn ghost" id="btnTrRefresh">Refresh</button>
+          <div class="table-wrap" style="max-height:240px;margin-top:0.5rem;">
+            <table id="trTable">
+              <thead><tr><th>Session</th><th>Size</th><th>Updated</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="trOut" class="log" style="max-height:320px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Subagents ═══ -->
+    <div class="view" data-view="subagents">
+      <div class="grid">
+        <section class="card span2" id="cardSubagents">
+          <h2>Subagents <span id="saCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">Spawn an isolated worker for a task (own worktree when in a git repo);
+            merge its changes back after review. Swarm coordinates many of these — this is the
+            single-worker control.</p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="saTask" placeholder="task for the subagent…" style="flex:2;min-width:220px;" />
+            <input id="saTurns" placeholder="maxTurns" style="width:90px;" />
+            <button class="btn primary" id="btnSaSpawn">Spawn</button>
+            <button class="btn ghost" id="btnSaRefresh">Refresh</button>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem;">
+            <input id="saMergeId" placeholder="subagent id to merge" style="flex:1;min-width:200px;" />
+            <label style="font-size:0.8rem;"><input type="checkbox" id="saCheckOnly" checked /> check only</label>
+            <button class="btn" id="btnSaMerge">Merge</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="saTable">
+              <thead><tr><th>Id</th><th>Status</th><th>Task</th><th>When</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="saOut" class="log" style="max-height:260px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Mission Control ═══ -->
+    <div class="view" data-view="missions">
+      <div class="grid">
+        <section class="card span2" id="cardObjectives">
+          <h2>Long-run objectives <span id="objCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">Channel/API missions that survive turn caps, context boundaries, and restarts (docs/LONGRUN.md). Stuck ones warn in doctor.</p>
+          <div style="overflow-x:auto;">
+            <table id="objTable"><thead><tr><th>Status</th><th>Objective</th><th>Seg</th><th>Tools</th><th>Criteria</th><th>Current</th><th></th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+        <section class="card span2" id="cardMissions">
+          <h2>Missions <span id="msnCount" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">
+            Autonomous engineering: give XClaw a high-level objective and a repository.
+            It builds context, plans, implements in an isolated <b>shadow workspace</b>,
+            runs the project's own tests, repairs failures, and only offers a <b>Merge</b>
+            once verification passed — your repo is untouched until then. Rollback
+            discards the workspace.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="msnGoal" placeholder="engineering objective…" style="flex:3;min-width:260px;" />
+            <input id="msnRepo" placeholder="repository path" style="flex:2;min-width:180px;" />
+            <select id="msnStrategy" style="flex:0 0 auto;" title="execution strategy">
+              <option value="solo">solo</option>
+              <option value="swarm">swarm</option>
+            </select>
+            <select id="msnTarget" style="flex:0 0 auto;" title="where the mission runs">
+              <option value="local">local</option>
+            </select>
+            <button class="btn primary" id="btnMsnStart">Launch mission</button>
+            <button class="btn ghost" id="btnMsnRefresh">Refresh</button>
+            <span id="msnLive" class="pill" style="font-size:0.7rem;">—</span>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="msnTable">
+              <thead><tr><th>Status</th><th>Goal</th><th>Repo</th><th>Attempts</th><th>Last activity</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span2" id="cardMissionWorkers">
+          <h2>Remote workers</h2>
+          <p class="muted">
+            Dispatch missions to other xclaw gateways. <code>repoDir</code> is a path on
+            the worker; its own evidence gate and merge approval apply there.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="mwName" placeholder="name" style="flex:1;min-width:100px;" />
+            <input id="mwUrl" placeholder="https://worker-host:18790" style="flex:2;min-width:200px;" />
+            <input id="mwToken" placeholder="worker token" type="password" style="flex:2;min-width:160px;" />
+            <button class="btn" id="btnMwAdd">Add worker</button>
+            <span id="mwStatus" class="pill" style="font-size:0.7rem;">—</span>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;">
+            <table id="mwTable">
+              <thead><tr><th>Worker</th><th>URL</th><th>Status</th><th>Version</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;display:none;" id="mwMissionsWrap">
+            <h3 id="mwMissionsTitle" style="font-size:0.85rem;margin:0 0 0.3rem;"></h3>
+            <table id="mwMissionsTable">
+              <thead><tr><th>Status</th><th>Goal</th><th>Verified</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span2" id="cardPointPrompt">
+          <h2>Point &amp; Prompt</h2>
+          <p class="muted">
+            Point at an element in the running app (the picker overlay appears in the
+            Control browser), describe the change, and a mission is launched with the
+            element's resolved source locations pinned — change → rebuild → verify.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="ppUrl" placeholder="app URL to open (optional — picks in the current tab)" style="flex:2;min-width:220px;" />
+            <input id="ppRepo" placeholder="repository path" style="flex:2;min-width:180px;" />
+            <button class="btn" id="btnPpPick">Pick element</button>
+            <span id="ppStatus" class="pill" style="font-size:0.7rem;">—</span>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;margin-top:0.4rem;">
+            <input id="ppPrompt" placeholder="what should change about this element…" style="flex:3;min-width:260px;" />
+            <select id="ppStrategy" style="flex:0 0 auto;" title="execution strategy">
+              <option value="solo">solo</option>
+              <option value="swarm">swarm</option>
+            </select>
+            <button class="btn primary" id="btnPpLaunch" disabled>Launch pointed mission</button>
+          </div>
+          <pre id="ppElement" class="mono" style="margin-top:0.5rem;white-space:pre-wrap;font-size:0.72rem;max-height:150px;overflow:auto;">no element picked yet</pre>
+        </section>
+
+        <section class="card span2" id="cardMissionDetail" style="display:none;">
+          <h2 id="msnDetailTitle">Mission</h2>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn primary" id="btnMsnMerge" disabled>Merge</button>
+            <button class="btn ghost" id="btnMsnResume" disabled>Resume</button>
+            <button class="btn ghost" id="btnMsnRollback" disabled>Rollback</button>
+            <button class="btn ghost" id="btnMsnDiff" disabled>View diff</button>
+            <span id="msnDetailStatus" class="pill">—</span>
+          </div>
+          <div class="kv" id="msnDetailKv" style="margin-top:0.5rem;">—</div>
+          <h3 class="subhead">Verification evidence</h3>
+          <pre id="msnVerify" class="log" style="max-height:180px;">—</pre>
+          <h3 class="subhead">Plan</h3>
+          <pre id="msnPlan" class="log" style="max-height:200px;">—</pre>
+          <h3 class="subhead">Timeline</h3>
+          <div class="table-wrap" style="max-height:220px;">
+            <table id="msnEvents">
+              <thead><tr><th>When</th><th>Phase</th><th>Note</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h3 class="subhead">Diff</h3>
+          <pre id="msnDiff" class="log" style="max-height:380px;">— (View diff loads it)</pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Hooks ═══ -->
+    <div class="view" data-view="hooks">
+      <div class="grid">
+        <section class="card span2" id="cardHooks">
+          <h2>Lifecycle hooks <span id="hkStatus" class="pill" style="font-weight:500;margin-left:0.35rem;">—</span></h2>
+          <p class="muted">
+            Custom functions at key points in every agent run: rewrite the incoming message,
+            gate or rewrite tool calls (<code>pre_tool_use</code> decisions feed the approval
+            system), transform outputs, or veto completion (<code>on_stop</code>).
+            <b>Command hooks</b> run as separate processes — JSON on stdin, JSON verdict on
+            stdout, exit&nbsp;2 blocks. Full guide: <code>docs/HOOKS.md</code>.
+          </p>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <button class="btn ghost" id="btnHkRefresh">Refresh</button>
+            <span class="muted" style="font-size:0.75rem;">Categories:</span>
+            <span id="hkToggles" class="row" style="gap:0.3rem;flex-wrap:wrap;"></span>
+          </div>
+          <h3 class="subhead">Registered hooks</h3>
+          <div class="table-wrap" style="max-height:240px;">
+            <table id="hkTable">
+              <thead><tr><th>Category</th><th>Name</th><th>Tier</th><th>Matcher</th><th>Source</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h3 class="subhead">Add command hook</h3>
+          <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
+            <input id="hkName" placeholder="name" style="width:110px;" />
+            <select id="hkEvent"></select>
+            <input id="hkMatcher" placeholder="matcher (tools, e.g. xclaw_bash|mcp__*)" style="width:200px;" />
+            <select id="hkTier">
+              <option value="user">user</option>
+              <option value="trusted">trusted</option>
+              <option value="system">system</option>
+            </select>
+            <input id="hkCommand" placeholder="shell command (gets JSON on stdin)" style="flex:2;min-width:220px;" />
+            <button class="btn primary" id="btnHkAdd">Add</button>
+          </div>
+          <div class="table-wrap" style="margin-top:0.5rem;max-height:180px;">
+            <table id="hkCmdTable">
+              <thead><tr><th>Name</th><th>Event</th><th>Tier</th><th>Command</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="hkOut" class="log" style="max-height:140px;">—</pre>
+        </section>
+
+        <section class="card span2" id="cardHkHistory">
+          <h2>Execution history</h2>
+          <button class="btn ghost" id="btnHkHist">Refresh</button>
+          <div class="table-wrap" style="max-height:300px;margin-top:0.5rem;">
+            <table id="hkHistTable">
+              <thead><tr><th>When</th><th>Event</th><th>Category</th><th>Name</th><th>Tier</th><th>ms</th><th>Detail</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ═══ Memory ═══ -->
+    <div class="view" data-view="memory">
+      <div class="grid">
+        <section class="card span2" id="cardMemory">
+          <h2>Agent memory</h2>
+          <p class="muted">Memory files the agent loads each run (<code>MEMORY.md</code>, project
+            memory, CLAUDE.md-style context). Click a file to read it. Editing stays on-host by
+            design — these files feed straight into the agent's context.</p>
+          <button class="btn ghost" id="btnMemRefresh">Refresh</button>
+          <div class="table-wrap" style="max-height:260px;margin-top:0.5rem;">
+            <table id="memTable">
+              <thead><tr><th>File</th><th>Chars</th><th>Path</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="memOut" class="log" style="max-height:380px;">—</pre>
+        </section>
+      </div>
+    </div>
+
+    </main>
+  </div>
+  </div>
+
+  <script>
+    // Hash router — one view visible at a time; deep-linkable (#/swarm …).
+    (() => {
+      const TITLES = {
+        overview: "Overview", usage: "Usage & Logs", agents: "Agents & Jobs",
+        swarm: "Swarm", approvals: "Approvals", providers: "Providers",
+        channels: "Channels", cost: "Cost & Evals", ops: "Health & Ops",
+        automations: "Automations", alerts: "Alerts", skills: "Skills",
+        mcp: "MCP", media: "Images", sessions: "Sessions",
+        subagents: "Subagents", memory: "Memory", hooks: "Hooks",
+        missions: "Mission Control",
+      };
+      const views = [...document.querySelectorAll(".view")];
+      const items = [...document.querySelectorAll(".nav-item")];
+      function activate() {
+        const name = (location.hash.replace(/^#\/?/, "") || "overview").split("/")[0];
+        const target = TITLES[name] ? name : "overview";
+        for (const v of views) v.classList.toggle("active", v.dataset.view === target);
+        for (const i of items) i.classList.toggle("active", i.dataset.view === target);
+        const t = document.getElementById("viewTitle");
+        if (t) t.textContent = TITLES[target];
+        document.getElementById("nav")?.classList.remove("open");
+        document.querySelector(".views")?.scrollTo?.(0, 0);
+      }
+      window.addEventListener("hashchange", activate);
+      document.getElementById("btnNav")?.addEventListener("click", () => {
+        document.getElementById("nav")?.classList.toggle("open");
+      });
+      activate();
+    })();
+  </script>
+  <script src="/control/canvas.js"></script>
   <script src="/control/app.js"></script>
   <p style="padding:1rem;"><a href="/control/voice.html">Voice latency charts</a></p>
 </body>

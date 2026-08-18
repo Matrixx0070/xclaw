@@ -144,6 +144,7 @@ export async function runJob(opts) {
       cfg: jobCfg,
       workingDir: workspace,
       signal: ac.signal,
+      ledgerIds: { jobId: id },
       systemNotes: opts.systemNotes || jobCfg.agent?.systemNotes,
       sessionId: opts.sessionId || (opts.persistRun ? id : undefined),
       persistRun: opts.persistRun,
@@ -320,7 +321,9 @@ export async function runJob(opts) {
         estimateUsdFromUsage(job.usage, cfg) ??
         0;
       job.costUsd = usd;
-      await recordJobCost(cfg, { usd, jobId: job.id });
+      // NOTE: no recordJobCost here anymore — the agent loop itself feeds
+      // the daily governor for every run now; recording again here would
+      // double-count job traffic.
       if (seatsEnabled(cfg)) {
         const peer = opts.peer || opts.seatPeer || opts.from || null;
         const tok =

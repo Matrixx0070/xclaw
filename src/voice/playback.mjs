@@ -182,7 +182,9 @@ export function playWavInterruptible(filePath, opts = {}) {
         stdio: "ignore",
         detached: process.platform !== "win32",
       });
-      child.unref?.();
+      // NOTE: never unref() this child — the awaited playback promise resolves
+      // on its 'close' event, and an unref'd child lets the event loop drain
+      // with the await still pending (process exits mid-playback).
       child.on("error", () => {
         child = null;
         tryNext(i + 1);

@@ -3,6 +3,7 @@
  * Exit codes: 0 ok, 1 warnings only, 2 errors
  */
 import fs from "fs/promises";
+import os from "os";
 import path from "path";
 import http from "node:http";
 import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
@@ -78,31 +79,69 @@ export async function runDoctor(opts = {}) {
   }
   for (const w of v.warnings) push("config.warn", "warn", w);
 
-  // Profile pack vs effective security (mismatch detector)
+  // Profile pack vs effective security (mismatch detector) — F
   try {
-    const name = cfg.profile || "lab";
-    const auto = cfg.security?.autoApprove === true;
-    if (name === "prod" && auto) {
-      push(
-        "profile.mismatch",
-        "warn",
-        'profile is "prod" but security.autoApprove is true — user file or env override; tools will not require approval'
-      );
-    } else if ((name === "lab" || name === "dev") && cfg.security?.autoApprove === false) {
-      push(
-        "profile.mismatch",
-        "warn",
-        `profile is "${name}" but security.autoApprove is false — user xclaw.json overrides profile; bots may hang on tools until /approve`
-      );
-    } else {
-      push(
-        "profile",
-        "ok",
-        `profile=${name} autoApprove=${auto} approvalPolicy=${cfg.security?.approvalPolicy || "—"}`
-      );
+    const { profileMismatchChecks } = await import("./doctor-prod-honesty.mjs");
+    for (const c of profileMismatchChecks(cfg)) {
+      push(c.id, c.status, c.message);
     }
   } catch (e) {
     push("profile", "warn", e.message || String(e));
+  }
+
+  // SSRF guard on agent-controlled fetches (web_fetch)
+  try {
+    const { getSsrfPolicy } = await import("../security/ssrf.mjs");
+    const sp = getSsrfPolicy(cfg);
+    if (sp.mode === "off") {
+      push("security.ssrf", "warn", "SSRF guard OFF — web_fetch can reach loopback/metadata/private IPs");
+    } else if (sp.allowPrivate) {
+      push("security.ssrf", "warn", "SSRF guard on but allowPrivate=true (lab dev) — private/loopback permitted");
+    } else {
+      push(
+        "security.ssrf",
+        "ok",
+        `SSRF guard=block (allowHosts=${sp.allowHosts.length}, maxRedirects=${sp.maxRedirects})`
+      );
+    }
+  } catch (e) {
+    push("security.ssrf", "warn", e.message || String(e));
+  }
+
+  // SCAFFOLD surfacing: Anthropic OAuth path spoofs the Claude Code client
+  // identity (attestation + user-agent). Warn whenever an OAuth token is in
+  // reach so the operator knows the dependency exists.
+  try {
+    const candidates = [
+      cfg.agent?.apiKey,
+      process.env.ANTHROPIC_API_KEY,
+      process.env.CLAUDE_CODE_OAUTH_TOKEN,
+      process.env.ANTHROPIC_AUTH_TOKEN,
+    ];
+    if (candidates.some((t) => String(t || "").startsWith("sk-ant-oat"))) {
+      push(
+        "security.oauthIdentity",
+        "warn",
+        "Anthropic OAuth token in use — requests carry the Claude Code client identity (SCAFFOLD, see src/providers/anthropic-oauth-headers.mjs)"
+      );
+    }
+  } catch {
+    /* informational only */
+  }
+
+  // WebSocket upgrade auth
+  try {
+    const prof = cfg.profile || process.env.XCLAW_PROFILE || "lab";
+    const token = cfg.gateway?.token || process.env.XCLAW_GATEWAY_TOKEN || null;
+    const requireAuth =
+      cfg.gateway?.requireAuth === true || prof === "prod";
+    if (token || requireAuth) {
+      push("security.wsAuth", "ok", "WS /ws/events requires token (upgrade authorized before 101)");
+    } else {
+      push("security.wsAuth", "ok", `WS open (no token, profile=${prof}) — loopback lab default`);
+    }
+  } catch (e) {
+    push("security.wsAuth", "warn", e.message || String(e));
   }
 
   // Egress + kill-switch (philosophy: privacy + always killable)
@@ -138,75 +177,11 @@ export async function runDoctor(opts = {}) {
     push("security.killSwitch", "warn", e.message || String(e));
   }
 
-  // P2 — prod honesty (defaults must match the label)
+  // F — prod honesty (defaults must match the label)
   try {
-    const prof = cfg.profile || process.env.XCLAW_PROFILE || "lab";
-    if (prof === "prod") {
-      const token =
-        cfg.gateway?.token ||
-        process.env.XCLAW_GATEWAY_TOKEN ||
-        process.env.GATEWAY_TOKEN ||
-        null;
-      if (!token) {
-        push(
-          "security.prod.token",
-          "error",
-          "prod requires XCLAW_GATEWAY_TOKEN / gateway.token — fail closed before exposing the gateway"
-        );
-      } else {
-        push("security.prod.token", "ok", "gateway token present");
-      }
-      if (cfg.security?.autoApprove === true) {
-        push(
-          "security.prod.autoApprove",
-          "error",
-          "prod must not autoApprove tools (override detected in config/env)"
-        );
-      } else {
-        push("security.prod.autoApprove", "ok", "autoApprove=false");
-      }
-      const eg = cfg.security?.egress?.mode || process.env.XCLAW_EGRESS || "deny";
-      if (String(eg).toLowerCase() === "allow") {
-        push(
-          "security.prod.egress",
-          "warn",
-          "prod egress mode=allow — outbound shell network is open; prefer deny or allowlist"
-        );
-      } else {
-        push("security.prod.egress", "ok", `egress mode=${eg}`);
-      }
-      if (cfg.swarm?.autoMerge === true) {
-        push(
-          "security.prod.swarmAutoMerge",
-          "error",
-          "prod must not autoMerge swarm worktrees onto main"
-        );
-      } else {
-        push(
-          "security.prod.swarmAutoMerge",
-          "ok",
-          `swarm.autoMerge=${cfg.swarm?.autoMerge === true}`
-        );
-      }
-      if (cfg.gateway?.requireAuth === false) {
-        push(
-          "security.prod.requireAuth",
-          "error",
-          "prod gateway.requireAuth is false — open auth plane"
-        );
-      } else {
-        push(
-          "security.prod.requireAuth",
-          "ok",
-          `requireAuth=${cfg.gateway?.requireAuth !== false}`
-        );
-      }
-    } else {
-      push(
-        "security.prodHonesty",
-        "ok",
-        `profile=${prof} — prod honesty checks skipped`
-      );
+    const { prodHonestyChecks } = await import("./doctor-prod-honesty.mjs");
+    for (const c of prodHonestyChecks(cfg)) {
+      push(c.id, c.status, c.message);
     }
   } catch (e) {
     push("security.prodHonesty", "warn", e.message || String(e));
@@ -515,6 +490,18 @@ export async function runDoctor(opts = {}) {
   const gh = await httpGet(`http://${gHost === "0.0.0.0" ? "127.0.0.1" : gHost}:${gPort}/health`);
   if (gh.ok) push("gateway.health", "ok", `Gateway :${gPort} up`);
   else push("gateway.health", "warn", `Gateway :${gPort} not reachable (${gh.error || gh.status})`);
+  // In-process ops state from the RUNNING gateway — the doctor's own process
+  // cannot see cron/watchdog registrations, which made those checks warn
+  // "start gateway" while the gateway was demonstrably up.
+  let liveOps = null;
+  if (gh.ok) {
+    try {
+      const info = await httpGet(`http://${gHost === "0.0.0.0" ? "127.0.0.1" : gHost}:${gPort}/gateway/info`);
+      if (info.ok && info.data) {
+        try { liveOps = JSON.parse(info.data)?.ops || null; } catch { /* not json */ }
+      }
+    } catch { /* fall back to in-process view */ }
+  }
 
   const ch = await httpGet(`http://${cHost === "0.0.0.0" ? "127.0.0.1" : cHost}:${cPort}/health`);
   if (ch.ok) push("computer.health", "ok", `Computer :${cPort} up`);
@@ -533,11 +520,14 @@ export async function runDoctor(opts = {}) {
     const { watchdogStatus } = await import("../computer/watchdog.mjs");
     const w = watchdogStatus();
     const enabled = cfg.computer?.watchdog?.enabled !== false;
+    const active = w.active || liveOps?.computerWatchdogActive === true;
     push(
       "computer.watchdog",
-      enabled ? (w.active ? "ok" : "warn") : "ok",
+      enabled ? (active ? "ok" : "warn") : "ok",
       enabled
-        ? (w.active ? `active every ${cfg.computer?.watchdog?.intervalMs ?? 30000}ms` : "enabled but not running (start gateway)")
+        ? (active
+            ? `active every ${cfg.computer?.watchdog?.intervalMs ?? 30000}ms${w.active ? "" : " (in gateway)"}`
+            : "enabled but not running (start gateway)")
         : "disabled"
     );
   } catch (err) {
@@ -575,15 +565,55 @@ export async function runDoctor(opts = {}) {
   try {
     const { evalCronStatus } = await import("../cron/eval-job.mjs");
     const st = evalCronStatus();
+    const registered = st.registered || liveOps?.evalCronRegistered === true;
     push(
       "eval.cron",
-      st.registered ? "ok" : "warn",
-      st.registered
-        ? `registered next=${st.job?.nextRunAt ? new Date(st.job.nextRunAt).toISOString() : "—"}`
+      registered ? "ok" : "warn",
+      registered
+        ? st.registered
+          ? `registered next=${st.job?.nextRunAt ? new Date(st.job.nextRunAt).toISOString() : "—"}`
+          : "registered (in gateway)"
         : "not registered (start gateway)"
     );
   } catch (err) {
     push("eval.cron", "warn", err.message);
+  }
+  try {
+    const { countStaleTmp } = await import("../ops/tmp-sweeper.mjs");
+    const stale = await countStaleTmp(cfg);
+    push(
+      "ops.tmp",
+      stale > 50 ? "warn" : "ok",
+      stale > 50
+        ? `${stale} stale xclaw tmp entries (>24h) — run: xclaw sweep-tmp`
+        : `${stale} stale tmp entries`
+    );
+  } catch (err) {
+    push("ops.tmp", "warn", err.message);
+  }
+
+  // Long-run objectives needing attention: a missed escalation DM used to
+  // leave an awaiting_human mission invisible forever.
+  try {
+    const { listObjectives } = await import("../agent/objective-store.mjs");
+    const active = await listObjectives(cfg, { activeOnly: true });
+    const staleMs = 60 * 60 * 1000;
+    const attention = active.filter(
+      (o) =>
+        ["awaiting_human", "interrupted", "paused_budget"].includes(o.status) &&
+        Date.now() - Date.parse(o.updatedAt || 0) > staleMs
+    );
+    push(
+      "objectives.attention",
+      attention.length ? "warn" : "ok",
+      attention.length
+        ? `${attention.length} mission(s) waiting >1h: ` +
+            attention.map((o) => `${o.id}(${o.status})`).join(", ") +
+            " — /objective resume <id> or GET /objectives"
+        : `${active.length} active mission(s), none stuck`
+    );
+  } catch (err) {
+    push("objectives.attention", "warn", err.message);
   }
 
 
@@ -685,6 +715,41 @@ export async function runDoctor(opts = {}) {
       "ok",
       n ? `${n} draft proposal(s) in skill-proposals/` : "no skill drafts pending"
     );
+    // Manifest-first skill integrity (skills.lock.json)
+    try {
+      const integrity = await import("../skills/integrity.mjs");
+      const { loadAllSkills } = await import("../skills/loader.mjs");
+      const { path: lockPath, data } = await integrity.readLockfile(process.cwd());
+      const prod = String(cfg.profile || "").toLowerCase() === "prod";
+      if (!data) {
+        push(
+          "skills.integrity",
+          prod ? "warn" : "ok",
+          prod
+            ? `no ${integrity.LOCKFILE_NAME} — prod injects unpinned skills (run: xclaw skills lock)`
+            : `no ${integrity.LOCKFILE_NAME} (integrity off — optional: xclaw skills lock)`
+        );
+      } else {
+        const rawCfg = { ...cfg, skills: { ...(cfg.skills || {}), integrity: "off" } };
+        const skills = await loadAllSkills({
+          configDir: cfg.paths?.configDir,
+          cwd: process.cwd(),
+          cfg: rawCfg,
+        });
+        const { evaluated, missing } = await integrity.evaluateSkills(skills, data);
+        const drift = evaluated.filter((e) => e.status !== "verified").length + missing.length;
+        const mode = integrity.resolveIntegrityMode(cfg, true);
+        push(
+          "skills.integrity",
+          drift ? "warn" : "ok",
+          drift
+            ? `${drift} skill(s) drifted from ${lockPath} (mode=${mode}) — xclaw skills verify`
+            : `${evaluated.length} skill(s) verified against lockfile (mode=${mode})`
+        );
+      }
+    } catch (ie) {
+      push("skills.integrity", "warn", ie?.message || String(ie));
+    }
     const pref = (await import("node:path")).default.join(
       cfg.paths?.configDir || "",
       "memory",
@@ -886,7 +951,10 @@ export async function runDoctor(opts = {}) {
 
   try {
     const { probeLocalVoiceStack } = await import("../voice/providers/local.mjs");
-    const v = await probeLocalVoiceStack(cfg);
+    // Hermetic doctor (providersLiveCheck:false) must make no network calls.
+    const v = await probeLocalVoiceStack(cfg, {
+      skipNetwork: cfg.doctor?.providersLiveCheck === false,
+    });
     const parts = [
       v.tts?.ok ? `tts=${v.tts.provider || "ok"}` : "tts=missing",
       v.stt?.ok ? `stt=${v.stt.bin || "ok"}` : "stt=optional-missing",
@@ -1331,7 +1399,14 @@ export async function runDoctor(opts = {}) {
 
   // A6-ops — Phase A enforcement plane (hooks / fabric / motor / chrome-args)
   try {
-    const root = process.env.XCLAW_ROOT || process.cwd();
+    // Resolve against the PACKAGE root first (this file lives at src/cli/), so
+    // the installed `xclaw` CLI passes from any cwd; XCLAW_ROOT/cwd stay as
+    // overrides for exotic layouts.
+    const pkgRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+    const candidates = [process.env.XCLAW_ROOT, pkgRoot, process.cwd()].filter(Boolean);
+    const root =
+      candidates.find((r) => fsSync.existsSync(path.join(r, "src/computer/hooks-bridge.mjs"))) ||
+      candidates[0];
     const bridgeFiles = [
       ["a.hooks_bridge", "src/computer/hooks-bridge.mjs"],
       ["a.motor_bridge", "src/computer/motor-bridge.mjs"],
@@ -1339,7 +1414,6 @@ export async function runDoctor(opts = {}) {
       ["a.hooks_module", "src/browser/hooks.mjs"],
       ["a.motor_module", "src/browser/motor.mjs"],
       ["a.chrome_args_module", "src/computer/chrome-args.mjs"],
-      ["a.browser_service_clean", "src/computer/browser-service.mjs"],
     ];
     for (const [id, rel] of bridgeFiles) {
       const abs = path.join(root, rel);
@@ -1462,10 +1536,14 @@ export async function runDoctor(opts = {}) {
       cfg.profile === "prod" ||
       process.env.XCLAW_ENFORCEMENT_STRICT === "1";
     if (isProd) {
-      if (!(process.env.XCLAW_COMMIT_GATES === "1" || process.env.XCLAW_COMMIT_GATES === "true")) {
-        push("a.prod_commit_gates", "error", "prod profile requires XCLAW_COMMIT_GATES=1");
+      const commitGatesOn =
+        process.env.XCLAW_COMMIT_GATES === "1" ||
+        process.env.XCLAW_COMMIT_GATES === "true" ||
+        cfg.security?.commitGates === true;
+      if (!commitGatesOn) {
+        push("a.prod_commit_gates", "error", "prod profile requires XCLAW_COMMIT_GATES=1 (or security.commitGates)");
       } else {
-        push("a.prod_commit_gates", "ok", "XCLAW_COMMIT_GATES enabled");
+        push("a.prod_commit_gates", "ok", "commit gates enabled");
       }
       if (!(process.env.XCLAW_FABRIC_ENFORCE === "1" || process.env.XCLAW_FABRIC_ENFORCE === "true")) {
         push("a.prod_fabric", "warn", "prod recommended XCLAW_FABRIC_ENFORCE=1");
@@ -1495,7 +1573,26 @@ export async function runDoctor(opts = {}) {
           else push(id, "error", `bundle missing patch marker: ${needle}`);
         }
       } else {
-        push("a.bundle", "error", "xclaw-server.mjs not found");
+        // D3: bundle is the product default — missing blob is an error unless
+        // the operator explicitly selected native/generated escape hatch.
+        let engine = cfg.computer?.engine;
+        try {
+          const { resolveComputerEngine } = await import("../computer/engine.mjs");
+          engine = resolveComputerEngine(cfg);
+        } catch {
+          engine =
+            process.env.XCLAW_COMPUTER_ENGINE ||
+            cfg.computer?.engine ||
+            "bundle";
+        }
+        const needsBundle = engine === "bundle" || engine === "full";
+        push(
+          "a.bundle",
+          needsBundle ? "error" : "ok",
+          needsBundle
+            ? "default engine=bundle but xclaw-server.mjs missing — run: npm run fetch:bundle && npm run verify:bundle"
+            : `lightweight engine=${engine}; CDP bundle not required (escape hatch)`
+        );
       }
     } catch (e) {
       push("a.bundle", "warn", e.message || String(e));
@@ -1515,6 +1612,131 @@ export async function runDoctor(opts = {}) {
     );
   } catch (e) {
     push("tools.computerOnly", "warn", e.message || String(e));
+  }
+
+  // ── Providers ── credential + endpoint per configured provider + active model
+  try {
+    const { providerInventory, checkProviderCredential } = await import("../providers/manage.mjs");
+    const inv = await providerInventory(cfg);
+    const configured = inv.providers.filter((p) => p.configured);
+    push(
+      "providers.summary",
+      "ok",
+      `${configured.length}/${inv.providers.length} configured · active: ${inv.active.provider || "(none)"}/${inv.active.model || "?"}`
+    );
+    for (const p of configured) {
+      const cred = await checkProviderCredential(cfg, p.id);
+      const creds = (p.profiles || []).map((x) => (x.id.includes(":") ? x.id.slice(x.id.indexOf(":") + 1) : x.id)).join("+") || (p.hasEnvKey ? "env" : "?");
+      if (cred.ok) {
+        push(`providers.${p.id}`, "ok", `${p.id}: ${creds} → resolves (${cred.source || "?"}) · ${p.baseUrl}`);
+      } else {
+        push(`providers.${p.id}`, "warn", `${p.id}: credential does not resolve (${cred.error || "no token"})`);
+      }
+    }
+    // image-gen capability (xai key)
+    const xai = await checkProviderCredential(cfg, "xai");
+    push("providers.imageGen", xai.ok ? "ok" : "warn",
+      xai.ok ? "image generation ready (xai credential resolves)" : "image generation needs an xai credential");
+
+    // Live liveness ping (active provider only — this is what actually
+    // serves the bot). Credential *resolving* is not the same as the
+    // credential *working*: the 2026-08-13 outage had an anthropic OAuth
+    // token that resolved fine (the expiry check was broken) for 9 hours
+    // while every real request 401'd, with doctor reporting green the
+    // whole time. A forced (uncached), real, authenticated request is the
+    // only check that would have caught it — status ERROR so hourly
+    // doctor-cron's notifyOnFail actually pages the operator.
+    if (inv.active?.provider && cfg.doctor?.providersLiveCheck !== false) {
+      try {
+        const { fetchLiveModels } = await import("../providers/discovery.mjs");
+        const live = await fetchLiveModels(cfg, inv.active.provider, {
+          force: true,
+          timeoutMs: 8_000,
+        });
+        if (live.ok) {
+          push(
+            "providers.liveCheck",
+            "ok",
+            `${inv.active.provider}: live API call succeeded (${live.count} models)`
+          );
+        } else {
+          push(
+            "providers.liveCheck",
+            "error",
+            `${inv.active.provider}: live API call failed — ${live.error || "unknown error"}`
+          );
+        }
+      } catch (e) {
+        push(
+          "providers.liveCheck",
+          "error",
+          `${inv.active.provider}: live check threw — ${e.message || String(e)}`
+        );
+      }
+    }
+  } catch (e) {
+    push("providers.summary", "warn", e.message || String(e));
+  }
+
+  // ── Channels ── enabled/configured + live reachability
+  try {
+    const { channelInventory } = await import("../channels/manage.mjs");
+    const inv = channelInventory(cfg);
+    const enabled = inv.channels.filter((c) => c.enabled);
+    push("channels.summary", "ok", `${enabled.length}/${inv.channels.length} enabled: ${enabled.map((c) => c.id).join(", ") || "(none)"}`);
+    for (const c of inv.channels) {
+      if (!c.enabled && !c.fields.some((f) => f.set)) continue; // skip untouched channels
+      const setFields = c.fields.filter((f) => f.set).map((f) => f.key).join(",");
+      const state = c.enabled ? (c.configured ? "enabled+ready" : "enabled but MISSING required config") : "configured (disabled)";
+      push(`channels.${c.id}`, c.enabled && !c.configured ? "warn" : "ok", `${c.id}: ${state}${setFields ? " · " + setFields : ""}`);
+    }
+    // live telegram bot reachability (if a token is configured)
+    const tgToken = cfg.channels?.telegram?.token;
+    if (tgToken) {
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${tgToken}/getMe`, { signal: AbortSignal.timeout(8000) });
+        const j = await res.json();
+        push("channels.telegram.api", j.ok ? "ok" : "warn",
+          j.ok ? `bot @${j.result.username} reachable (id ${j.result.id})` : `getMe failed: ${j.description || res.status}`);
+      } catch (e) {
+        push("channels.telegram.api", "warn", `telegram API unreachable: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    push("channels.summary", "warn", e.message || String(e));
+  }
+
+  // ── Services ── pm2-managed gateway (the running bot)
+  try {
+    // Only query pm2 if its daemon is already running: the pm2 client
+    // auto-spawns a God Daemon under $PM2_HOME (default $HOME/.pm2) when
+    // none exists, and that daemon outlives us. Under test/temp HOMEs this
+    // leaked one immortal ~25MB daemon per doctor run (612 daemons / 13.6GB
+    // on 2026-08-14). A doctor must never mutate the host it examines.
+    const pm2Home = process.env.PM2_HOME || path.join(os.homedir(), ".pm2");
+    const pm2DaemonUp = await fs
+      .stat(path.join(pm2Home, "rpc.sock"))
+      .then((s) => s.isSocket())
+      .catch(() => false);
+    const { execFile } = await import("node:child_process");
+    const pm2 = !pm2DaemonUp ? null : await new Promise((resolve) => {
+      execFile("pm2", ["jlist"], { timeout: 6000 }, (err, out) => {
+        if (err) return resolve(null);
+        try { resolve(JSON.parse(out)); } catch { resolve(null); }
+      });
+    });
+    if (pm2) {
+      const gw = pm2.find((p) => p.name === "xclaw-gateway");
+      if (gw) {
+        const st = gw.pm2_env?.status;
+        push("service.gateway", st === "online" ? "ok" : "warn",
+          `pm2 xclaw-gateway: ${st} (restarts=${gw.pm2_env?.restart_time ?? "?"}, uptime=${gw.pm2_env?.pm_uptime ? Math.round((Date.now() - gw.pm2_env.pm_uptime) / 1000) + "s" : "?"})`);
+      } else {
+        push("service.gateway", "ok", "no pm2 xclaw-gateway (run under pm2 for a persistent bot)");
+      }
+    }
+  } catch {
+    /* pm2 optional */
   }
 
   return finish(checks, opts);
@@ -1550,6 +1772,8 @@ function doctorGroup(id) {
     s.startsWith("a.")
   )
     return "Computer";
+  if (s.startsWith("providers")) return "Providers";
+  if (s.startsWith("channels") || s.startsWith("service")) return "Channels";
   if (
     s.startsWith("gateway") ||
     s.startsWith("bind") ||
@@ -1592,7 +1816,7 @@ function finish(checks, opts) {
       console.log(JSON.stringify(report, null, 2));
     } else {
       console.log("XClaw doctor\n");
-      const order = ["Config", "Security", "Computer", "Runtime", "Other"];
+      const order = ["Config", "Security", "Providers", "Channels", "Computer", "Runtime", "Other"];
       for (const g of order) {
         const list = grouped[g];
         if (!list?.length) continue;

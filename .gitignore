@@ -23,3 +23,5 @@ src/computer/xclaw-server.mjs
 eval/fixtures/wc/**
 !eval/fixtures/wc/README.md
 eval/fixtures/wc/wc-05_*/**
+.xclaw_mail_state.json
+tmp-live/

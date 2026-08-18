@@ -45,19 +45,38 @@ describe("doctor profile.mismatch", () => {
     return report.checks.find((c) => c.id === id);
   }
 
-  it("warns when profile=prod but autoApprove=true", async () => {
+  it("prod + autoApprove:true is ENFORCED off at load (3.77.0 hardening)", async () => {
+    // enforceProdHardening sanitizes the config before doctor ever sees it, so
+    // the old "warn on mismatch" state is unreachable without break-glass —
+    // strictly stronger than warning.
     await writeUser({
       profile: "prod",
       security: { autoApprove: true },
     });
     const { runDoctor } = await import("../src/cli/doctor.mjs");
     const report = await runDoctor({ json: true });
-    const m = find(report, "profile.mismatch");
-    assert.ok(m, JSON.stringify(report.checks.filter((c) => c.id.startsWith("profile")), null, 2));
-    // Prod + autoApprove is elevated to error (honesty / safety).
-    assert.ok(["warn", "error"].includes(m.status), m.status);
-    assert.match(m.message, /prod/i);
-    assert.match(m.message, /autoApprove/i);
+    const p = find(report, "profile");
+    assert.ok(p, JSON.stringify(report.checks.filter((c) => c.id.startsWith("profile")), null, 2));
+    assert.match(p.message, /autoApprove=false/);
+  });
+
+  it("warns when prod runs autoApprove via XCLAW_ALLOW_PROD_AUTO break-glass", async () => {
+    await writeUser({
+      profile: "prod",
+      security: { autoApprove: true },
+    });
+    process.env.XCLAW_ALLOW_PROD_AUTO = "1";
+    try {
+      const { runDoctor } = await import("../src/cli/doctor.mjs");
+      const report = await runDoctor({ json: true });
+      const m = find(report, "profile.mismatch");
+      assert.ok(m, JSON.stringify(report.checks.filter((c) => c.id.startsWith("profile") || c.id.startsWith("security.prod")), null, 2));
+      assert.ok(["warn", "error"].includes(m.status), m.status);
+      assert.match(m.message, /prod/i);
+      assert.match(m.message, /autoApprove/i);
+    } finally {
+      delete process.env.XCLAW_ALLOW_PROD_AUTO;
+    }
   });
 
   it("warns when profile=lab but autoApprove=false", async () => {

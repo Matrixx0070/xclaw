@@ -28,7 +28,7 @@ describe("channel-deliver", () => {
   it("rejects missing fields", async () => {
     const r = await deliverToChannel({ mode: "announce", channel: "telegram" }, {});
     assert.equal(r.ok, false);
-    assert.equal(r.reason, "missing_fields");
+    assert.equal(r.reason, "missing_to_or_text");
   });
 
   it("telegram uses correct arg order (delivery, cfg)", async () => {

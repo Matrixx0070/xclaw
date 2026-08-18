@@ -10,7 +10,12 @@ import {
 import { ensureComputer } from "../computer/ensure.mjs";
 import { createProvider } from "./provider.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
-import { createRoleRouter, selectRole } from "../providers/role-router.mjs";
+import {
+  createRoleRouter,
+  selectRole,
+  resolveRoleToolPack,
+  resolveRoleEffort,
+} from "../providers/role-router.mjs";
 import { runVerifyPass } from "../providers/verify-pass.mjs";
 import { buildTurnSuggestions } from "./suggestions.mjs";
 import {
@@ -33,6 +38,8 @@ import {
   loadTranscriptHistory,
 } from "../sessions/transcript.mjs";
 import { revalidatePlan, isExecTool } from "../security/system-run-plan.mjs";
+import { createRunBudget } from "./run-budget.mjs";
+import { compileToolFilter, filterToolDefs } from "./tool-filter.mjs";
 import { resolveProviderRoute, resolveProviderRouteAsync } from "../providers/router.mjs";
 import { createSpawnTool, spawnSubagent } from "../agents/spawn.mjs";
 import { createSwarmRunTool } from "../agents/swarm-run.mjs";
@@ -44,6 +51,7 @@ import {
 } from "../skills/loader.mjs";
 import { loadDurableMemoryFile } from "../memory/durable.mjs";
 import { createRecallTool } from "../memory/recall.mjs";
+import { createRepoIntelTool } from "../intel/intel-tool.mjs";
 import { estimateRequestTokens, resolveTokenizer } from "../tokens/count.mjs";
 import { createUsageTracker, defaultLedgerPath } from "../tokens/usage-tracker.mjs";
 import {
@@ -55,7 +63,9 @@ import { buildSystemMessageWithBreakpoints } from "../tokens/cache-breakpoints.m
 import {
   optimizePrefix,
   assertPrefixStable,
+  ensurePrefixStable,
   makeEphemeralNotice,
+  defaultCacheOptimizePolicy,
 } from "../tokens/prefix-optimize.mjs";
 import { evictMessages, evictionOptsFromConfig } from "../tokens/eviction.mjs";
 import { measureContextPressure, pressureToEvictionTweaks } from "../tokens/pressure.mjs";
@@ -71,9 +81,44 @@ import { registerSession, unregisterSession } from "./session-control.mjs";
 import { makeToolMessage, freezeRankSize } from "../tokens/rank-size.mjs";
 import { createAllLocalTools, localToolsAsOpenAI, executeLocalTool, localToolNames } from "../tools/registry.mjs";
 import { createToolRouter } from "../tools/router.mjs";
+import { createAgentMcpTools } from "./mcp-tools.mjs";
+import { getSharedHookManager } from "../hooks/manager.mjs";
+import { createLedger, slimToolTraceEntry } from "../ops/ledger.mjs";
+import { inferEffects } from "../agents/swarm-receipt.mjs";
 import { afterBrowserToolTruth } from "../browser/truth.mjs";
 import { beforeNavigate, beforeInput } from "../browser/hooks.mjs";
 import { resolveRole } from "../browser/role-binding.mjs";
+
+/**
+ * The model is asked to append a ```json {"claims":…,"evidence_ids":…} ``` block
+ * for internal grounding — strip it (and a bare trailing claims object) from the
+ * user-facing reply so channels don't show the verification scaffold. The raw
+ * finalText is kept for internal consumers; only the presented `text` is cleaned.
+ */
+/**
+ * Assistant message content → plain text. Providers may return a string or a
+ * parts array ({type:"text", text} / {text}); empty/unknown parts collapse to "".
+ */
+export function normalizeAssistantContent(content) {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((p) => (typeof p === "string" ? p : p?.text ?? ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return String(content);
+}
+
+export function stripClaimsBlock(text) {
+  let s = String(text ?? "");
+  // fenced ```json { "claims": … } ``` at the end
+  s = s.replace(/\n*```(?:json)?\s*\{[\s\S]*?"claims"[\s\S]*?\}\s*```\s*$/i, "");
+  // bare trailing {"claims":…,"evidence_ids":…} object (no fence)
+  s = s.replace(/\n*\{\s*"claims"\s*:[\s\S]*?"evidence_ids"\s*:[\s\S]*?\}\s*$/i, "");
+  return s.trimEnd();
+}
 
 const BASE_SYSTEM_PROMPT = `You are XClaw, a personal AI assistant with a real computer.
 When stating what you did, prefer a final structured block:
@@ -116,6 +161,9 @@ export async function runAgentLoop(options) {
     chatSessionId = null,
     /** Prior conversation turns: [{role, content}, ...] — excludes system */
     history = [],
+    /** Override the maxTurns final-answer rescue instruction (orchestrated
+     *  segments want the mission state block, not a user-facing answer) */
+    rescuePrompt = null,
   } = options;
   const transcriptId =
     chatSessionId || options.conversationId || chatId || null;
@@ -155,7 +203,13 @@ export async function runAgentLoop(options) {
     onEventCb(e);
   };
 
+  // Lifecycle hook manager (cfg.hooks / docs/HOOKS.md). Injectable for tests;
+  // every executeAll below is failure-isolated — a broken hook never crashes
+  // the run.
+  const hooks = options.hookManager || getSharedHookManager(cfg);
+
   const maxTurns = cfg.agent?.maxTurns ?? 15;
+  const runBudget = createRunBudget(cfg);
   const skillsEnabled = cfg.skills?.enabled !== false;
   const memoryEnabled = cfg.memory?.enabled !== false;
 
@@ -163,7 +217,8 @@ export async function runAgentLoop(options) {
   try {
   const computer = createComputerClient(cfg);
   const useFailover = cfg.router?.enabled !== false;
-  let provider;
+  // Injected provider (tests / embedders) skips router resolution entirely
+  let provider = options.provider || undefined;
   let route;
   let roleRouterMeta = null;
   const onRetryProvider = (info) => {
@@ -179,7 +234,7 @@ export async function runAgentLoop(options) {
   };
 
   // Role router (draft / act / verify) when configured
-  try {
+  if (!provider) try {
     const rr = await createRoleRouter(cfg, { onEvent, onRetry: onRetryProvider });
     if (rr.enabled && rr.provider) {
       provider = rr.provider;
@@ -209,7 +264,7 @@ export async function runAgentLoop(options) {
   if (!provider && useFailover) {
     try {
       const fo = await createFailoverProvider(cfg, {
-        model: cfg.agent?.model || process.env.XCLAW_MODEL,
+        model: process.env.XCLAW_MODEL || cfg.agent?.model,
         onEvent,
         onRetry: onRetryProvider,
       });
@@ -236,8 +291,8 @@ export async function runAgentLoop(options) {
         message: String(err.message || err),
       });
       route = await resolveProviderRouteAsync(cfg, {
-        model: cfg.agent?.model || process.env.XCLAW_MODEL,
-        provider: cfg.agent?.provider || process.env.XCLAW_PROVIDER,
+        model: process.env.XCLAW_MODEL || cfg.agent?.model,
+        provider: process.env.XCLAW_PROVIDER || cfg.agent?.provider,
       });
       provider = createProvider({
         apiKey:
@@ -252,11 +307,14 @@ export async function runAgentLoop(options) {
           cfg.agent?.baseUrl ||
           process.env.XCLAW_API_BASE ||
           route.baseUrl,
-        model: route.model || cfg.agent?.model || process.env.XCLAW_MODEL || "gpt-4o-mini",
+        model: route.model || process.env.XCLAW_MODEL || cfg.agent?.model || "gpt-4o-mini",
         provider: route.provider,
         api: route.api,
         cfg,
         onRetry: onRetryProvider,
+        convId: sessionKey,
+        sessionId: sessionKey,
+        conversationId: transcriptId || sessionKey,
       });
       provider.providerName = route.provider;
     }
@@ -264,8 +322,8 @@ export async function runAgentLoop(options) {
 
   if (!provider) {
     route = await resolveProviderRouteAsync(cfg, {
-      model: cfg.agent?.model || process.env.XCLAW_MODEL,
-      provider: cfg.agent?.provider || process.env.XCLAW_PROVIDER,
+      model: process.env.XCLAW_MODEL || cfg.agent?.model,
+      provider: process.env.XCLAW_PROVIDER || cfg.agent?.provider,
     });
     provider = createProvider({
       apiKey:
@@ -280,11 +338,14 @@ export async function runAgentLoop(options) {
         cfg.agent?.baseUrl ||
         process.env.XCLAW_API_BASE ||
         route.baseUrl,
-      model: route.model || cfg.agent?.model || process.env.XCLAW_MODEL || "gpt-4o-mini",
+      model: route.model || process.env.XCLAW_MODEL || cfg.agent?.model || "gpt-4o-mini",
       provider: route.provider,
       api: route.api,
       cfg,
       onRetry: onRetryProvider,
+      convId: sessionKey,
+      sessionId: sessionKey,
+      conversationId: transcriptId || sessionKey,
     });
     provider.providerName = route.provider;
   }
@@ -365,6 +426,8 @@ export async function runAgentLoop(options) {
     memoryFiles,
     maxSkillChars: cfg.skills?.maxChars ?? 6000,
     maxMemoryChars: cfg.memory?.maxChars ?? 8000,
+    progressive: cfg.skills?.progressive,
+    inlineMaxChars: cfg.skills?.inlineMaxChars,
   });
   // Stable prefix for provider prompt caching (xAI cached_tokens, etc.)
   const systemContent = buildCacheableSystemPrompt({
@@ -380,6 +443,34 @@ export async function runAgentLoop(options) {
     ].filter(Boolean),
   });
 
+  // Cost governor pre-check — refuse before computer/session when hard-capped
+  try {
+    const { checkCostBudget } = await import("../tokens/cost-governor.mjs");
+    const budget = await checkCostBudget(cfg);
+    if (!budget.ok) {
+      onEvent({
+        type: "cost",
+        phase: "blocked",
+        spentUsd: budget.spentUsd,
+        message: budget.message,
+      });
+      throw new Error(budget.message || "cost hard cap exceeded");
+    }
+    if (budget.soft) {
+      onEvent({
+        type: "cost",
+        phase: "soft_warning",
+        spentUsd: budget.spentUsd,
+        message: budget.message,
+      });
+    }
+  } catch (e) {
+    if (String(e?.message || e).includes("hard cap") || String(e?.message || "").includes("Hard daily")) {
+      throw e;
+    }
+    /* governor optional if module/fs fails */
+  }
+
   // Computer session
   const ready = await ensureComputer(cfg, { log: cfg.computer?.logEnsure !== false });
   if (!ready.ok) {
@@ -388,10 +479,24 @@ export async function runAgentLoop(options) {
   const sessionId = await computer.createSession(workingDir);
   onEvent({ type: "computer", phase: "session", sessionId });
 
+  // Optional run-scoped tool allowlist (cfg.agent.allowTools): narrows which
+  // tools this run advertises AND dispatches. Missions use it to scope agents
+  // to code work; approval gate/hooks/sandbox still apply to what remains.
+  const effectiveAllowTools =
+    cfg.agent?.allowTools ?? resolveRoleToolPack(cfg) ?? undefined;
+  const toolFilter = compileToolFilter(effectiveAllowTools);
+
   let tools;
   try {
     const computerTools = await computer.listTools(sessionId);
     tools = toOpenAITools(computerTools);
+    // Does this engine's bash accept the injected systemRunPlan key?
+    // The strict-zod CDP bundle doesn't — the router then enforces the
+    // plan gateway-side and strips the key before forwarding.
+    var computerAcceptsRunPlan = Boolean(
+      computerTools.find((t) => t.name === "xclaw_bash")?.inputSchema
+        ?.properties?.systemRunPlan
+    );
     // Local tools (not on computer server)
     const spawnTool = createSpawnTool({
       cfg,
@@ -457,23 +562,81 @@ export async function runAgentLoop(options) {
         },
       });
     }
+    // Persistent repo intelligence (B1) — compounding index for every run
+    if (cfg.intel?.tool !== false) {
+      const intelTool = createRepoIntelTool({ cfg, workingDir });
+      tools.push({
+        type: "function",
+        function: {
+          name: intelTool.name,
+          description: intelTool.description,
+          parameters: intelTool.parameters,
+        },
+      });
+    }
+    // B4: caller-injected local tools (e.g. the swarm blackboard) — same
+    // security pipeline as every other tool, dispatched by name before the
+    // router.
+    for (const t of options.extraTools || []) {
+      tools.push({
+        type: "function",
+        function: { name: t.name, description: t.description, parameters: t.parameters },
+      });
+    }
+    // MCP servers (cfg.mcp.servers) — discovered tools join the loop and are
+    // dispatched via the Tool Router's agent plane (same security path).
+    // Skipped entirely when the run's tool filter can never match an mcp__
+    // name: no point connecting/spawning servers whose tools can't be used.
+    var mcpTools =
+      toolFilter && !toolFilter.allowsPrefix("mcp__")
+        ? { enabled: false, toolDefs: [], names: [], close() {} }
+        : await createAgentMcpTools({ cfg, onEvent });
+    tools.push(...mcpTools.toolDefs);
+    if (toolFilter) {
+      const before = tools.length;
+      tools = filterToolDefs(tools, toolFilter);
+      onEvent({
+        type: "tools",
+        phase: "filtered",
+        allow: toolFilter.patterns,
+        before,
+        after: tools.length,
+      });
+    }
     onEvent({
       type: "tools",
       count: tools.length,
       names: tools.map((t) => t.function.name),
     });
   } catch (err) {
+    try {
+      mcpTools?.close?.();
+    } catch {
+      /* ignore */
+    }
     await computer.destroySession(sessionId).catch(() => {});
     throw new Error(`Failed to list computer tools: ${err.message}`);
   }
   if (typeof localTools === "undefined") localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId });
+  const mcpHandlers = {};
+  if (mcpTools?.enabled) {
+    for (const n of mcpTools.names) {
+      mcpHandlers[n] = (args) => mcpTools.callTool(n, args);
+    }
+  }
   const toolRouter = createToolRouter({
     computer,
     sessionId,
     localTools,
+    agentHandlers: mcpHandlers,
     cfg,
     workingDir,
+    computerAcceptsRunPlan:
+      typeof computerAcceptsRunPlan === "boolean"
+        ? computerAcceptsRunPlan
+        : true,
   });
+
 
 
   const harnessNotes = [
@@ -496,9 +659,22 @@ export async function runAgentLoop(options) {
   const optimized = optimizePrefix({
     systemMessage: sysBuilt.message,
     tools,
+    maxToolDescriptionChars:
+      cfg.tokens?.maxToolDescriptionChars ?? cfg.tools?.maxDescriptionChars ?? null,
   });
   tools = optimized.tools;
   const prefixHash = optimized.fingerprint.hash;
+  const frozenSystem = optimized.systemMessage;
+  const cachePolicy = defaultCacheOptimizePolicy(cfg);
+  onEvent({
+    type: "cache",
+    phase: "prefix_ready",
+    hash: prefixHash,
+    systemChars: optimized.fingerprint.systemChars,
+    toolsCount: optimized.fingerprint.toolsCount,
+    breakpointMode: sysBuilt.meta?.mode,
+    restorePrefixEachTurn: cachePolicy.restorePrefixEachTurn,
+  });
   // Conversation threading: prior turns then current user message
   const prior = [];
   if (Array.isArray(history)) {
@@ -513,8 +689,13 @@ export async function runAgentLoop(options) {
   }
   // Cap history to avoid unbounded context (configurable)
   const maxHistory = cfg.agent?.maxHistoryMessages ?? 40;
-  // Durable transcript load when caller did not pass history
-  if (!prior.length && transcriptId && cfg.agent?.persistTranscript !== false) {
+  // Durable transcript load when caller did not pass history. An EXPLICIT
+  // empty array means "fresh context, no replay" — objective segments rely
+  // on this: their memory is the durable mission state, and silently
+  // replaying the prior segment's transcript would reintroduce the
+  // context-window dependency the orchestrator exists to remove.
+  const historyExplicit = options.history !== undefined;
+  if (!historyExplicit && !prior.length && transcriptId && cfg.agent?.persistTranscript !== false) {
     try {
       const loaded = loadTranscriptHistory(cfg, transcriptId, maxHistory);
       for (const m of loaded) prior.push(m);
@@ -535,10 +716,37 @@ export async function runAgentLoop(options) {
     }
   }
   const priorCapped = prior.length > maxHistory ? prior.slice(-maxHistory) : prior;
+
+  // ── Hook: pre_process — system/trusted hooks may rewrite the incoming
+  // message; a system-tier hook may abort the run before any model call.
+  let hookAbort = null;
+  let effectiveMessage = userMessage;
+  {
+    const hr = await hooks.executeAll(
+      "pre_process",
+      {
+        message: userMessage,
+        sessionKey,
+        channel: channel || null,
+        userId: userId || null,
+        workingDir,
+        cfg,
+      },
+      { mutable: ["message"] }
+    );
+    if (typeof hr.context.message === "string") effectiveMessage = hr.context.message;
+    if (hr.abort) {
+      hookAbort = hr.abort;
+      onEvent({ type: "hook", phase: "abort", category: "pre_process", message: hookAbort });
+    } else if (effectiveMessage !== userMessage) {
+      onEvent({ type: "hook", phase: "mutated", category: "pre_process" });
+    }
+  }
+
   let messages = [
     optimized.systemMessage,
     ...priorCapped,
-    { role: "user", content: userMessage },
+    { role: "user", content: effectiveMessage },
   ];
   if (priorCapped.length) {
     onEvent({
@@ -591,6 +799,21 @@ export async function runAgentLoop(options) {
   const guard = createLoopGuard(cfg.agent?.loopGuard || {});
   const approvalGate = options.approvalGate || getSharedApprovalGate(cfg);
   const toolTrace = [];
+  let llmSummarizer; // B2: lazily resolved once per run (undefined = not yet)
+  // A1 operational ledger — every finalized trace entry (including denials,
+  // which post_tool_use hooks never see) is journaled durably. Best-effort:
+  // ledger failures never block the loop.
+  const ledger = createLedger(cfg, {
+    ids: { sessionId: sessionKey, ...(options.ledgerIds || {}) },
+  });
+  const recordTrace = (entry) => {
+    toolTrace.push(entry);
+    ledger.append({
+      kind: "tool",
+      actor: "agent",
+      data: slimToolTraceEntry(entry, { effects: inferEffects([entry]) }),
+    });
+  };
   resetToolTraceSeq();
   const goal = inferGoal(userMessage);
   let lastPendingApproval = null;
@@ -601,9 +824,24 @@ export async function runAgentLoop(options) {
   let dualState = null;
   let lastEvictReport = null;
   let prevWeights = null;
+  let naturalStop = false;
+  let budgetStop = false;
+  let maxTurnsStop = false;
+  let stopBlocks = 0;
+  const stopBlockCap = Number.isFinite(Number(cfg.hooks?.stopBlockCap))
+    ? Number(cfg.hooks.stopBlockCap)
+    : 2;
 
   try {
-    for (turns = 0; turns < maxTurns; turns++) {
+    if (hookAbort && !finalText) {
+      finalText = `Run blocked by hook: ${hookAbort}`;
+    }
+    // on_stop block cycle: a SYSTEM on_stop hook may veto a clean completion
+    // ({abort:"reason"}) — the reason is injected as a user turn and the loop
+    // re-enters, at most stopBlockCap times (Claude-Code-style Stop hooks).
+    stopCycle: while (true) {
+    naturalStop = false;
+    for (turns = 0; !hookAbort && turns < maxTurns; turns++) {
       if (signal?.aborted) throw new Error("aborted");
 
       // Feature 3 — cost governor hard stop (no provider call when over budget)
@@ -639,18 +877,56 @@ export async function runAgentLoop(options) {
         if (cfg?.cost?.strict) throw e;
       }
 
-      onEvent({ type: "model", phase: "request", turn: turns + 1 });
-      const stab = assertPrefixStable(messages, prefixHash, tools);
-      if (!stab.ok) {
-        onEvent({
-          type: "cache",
-          phase: "prefix_drift",
-          expected: stab.expected,
-          actual: stab.actual,
+      // Unattended-operation caps (cfg.agent.budget) — graceful stop, the
+      // post-run pipeline (verify, metrics, receipts) still runs.
+      if (runBudget.enabled) {
+        const bx = runBudget.check({
+          toolCalls: toolTrace.length,
+          totalTokens: usageTracker.snapshot()?.totalTokens || 0,
         });
-        console.warn(
-          `[xclaw] prefix cache drift detected ${stab.expected} → ${stab.actual}`
+        if (bx) {
+          onEvent({ type: "budget", phase: "exceeded", ...bx });
+          budgetStop = true;
+          if (!finalText) {
+            finalText = `Stopped: run budget exceeded (${bx.reason}: ${bx.used}/${bx.limit}).`;
+          }
+          break;
+        }
+      }
+
+      onEvent({ type: "model", phase: "request", turn: turns + 1 });
+      // Re-pin system prefix every turn — highest-leverage cache hit optimization
+      // for xAI / OpenAI automatic prefix caching (and Anthropic stable blocks).
+      if (cachePolicy.restorePrefixEachTurn !== false) {
+        const pinned = ensurePrefixStable(
+          messages,
+          frozenSystem,
+          prefixHash,
+          tools
         );
+        messages = pinned.messages;
+        if (pinned.restored || !pinned.ok) {
+          onEvent({
+            type: "cache",
+            phase: "prefix_restored",
+            expected: pinned.expected || prefixHash,
+            actual: pinned.actual,
+            strippedSystem: pinned.strippedSystem,
+          });
+        }
+      } else {
+        const stab = assertPrefixStable(messages, prefixHash, tools);
+        if (!stab.ok) {
+          onEvent({
+            type: "cache",
+            phase: "prefix_drift",
+            expected: stab.expected,
+            actual: stab.actual,
+          });
+          console.warn(
+            `[xclaw] prefix cache drift detected ${stab.expected} → ${stab.actual}`
+          );
+        }
       }
       // Context / KV eviction: protect system prefix, shed old tool tails
       // Dual-EMA + frozen rank sizes persist across turns via dualState / xclaw_rank_size
@@ -678,12 +954,17 @@ export async function runAgentLoop(options) {
         }
       }
       // P0 compaction: reversible tool offload + extractive fold under pressure
+      // (B2: folds route through a cheap LLM when configured; error → extractive)
       {
         const cOpts = compactionOptsFromConfig(cfg);
         if (cOpts.enabled) {
+          if (llmSummarizer === undefined) {
+            const { createLlmSummarizer } = await import("../tokens/summarize.mjs");
+            llmSummarizer = createLlmSummarizer(cfg, { onEvent });
+          }
           const { messages: compacted, report: cReport } = await compactMessages(
             messages,
-            { ...cOpts, pressure }
+            { ...cOpts, pressure, summarizeFn: llmSummarizer || undefined }
           );
           if (!cReport.skipped) {
             messages = compacted;
@@ -698,11 +979,28 @@ export async function runAgentLoop(options) {
               forceAct: turns > 0,
             })
           : null;
+      const roleForEffort = turnRole || "act";
+      const roleEffort = resolveRoleEffort(roleForEffort, cfg);
       const chatArgs = {
         messages,
         tools,
+        // xAI sticky prompt cache — same id → same cache shard
+        convId: sessionKey,
+        conversationId: transcriptId || sessionKey,
+        sessionId: sessionKey,
         ...(turnRole ? { role: turnRole } : {}),
+        ...(roleEffort ? { reasoning_effort: roleEffort, effort: roleEffort } : {}),
       };
+      // ── Hook: on_request — observers see turn metadata; system tier also
+      // gets the live messages array.
+      await hooks.executeAll("on_request", {
+        turn: turns + 1,
+        model: provider.model,
+        messageCount: messages.length,
+        messages,
+        cfg,
+      });
+      const chatT0 = Date.now();
       const completion =
         preferStream && typeof provider.chatStream === "function"
           ? await provider.chatStream({
@@ -730,6 +1028,15 @@ export async function runAgentLoop(options) {
         finishReason: completion.finishReason,
         hasTools: Boolean(assistant.tool_calls?.length),
       });
+      // ── Hook: on_response — after every model reply
+      await hooks.executeAll("on_response", {
+        turn: turns + 1,
+        finishReason: completion.finishReason || null,
+        hasToolCalls: Boolean(assistant.tool_calls?.length),
+        content:
+          typeof assistant.content === "string" ? assistant.content.slice(0, 2000) : null,
+        cfg,
+      });
 
       if (tokensEnabled) {
         // Estimate of messages *before* this assistant message was appended
@@ -744,6 +1051,8 @@ export async function runAgentLoop(options) {
           turn: turns + 1,
           usage: completion.usage,
           estimate: est,
+          elapsedMs: Date.now() - chatT0,
+          modelRef: provider.modelRef || provider.model || null,
         });
         if (entry) {
           onEvent({
@@ -751,6 +1060,21 @@ export async function runAgentLoop(options) {
             phase: entry.estimated ? "estimate" : "usage",
             ...entry,
           });
+          if (!entry.estimated && entry.promptTokens > 0) {
+            const hit =
+              entry.cacheHitRate != null
+                ? entry.cacheHitRate
+                : (entry.cachedTokens || 0) / entry.promptTokens;
+            onEvent({
+              type: "cache",
+              phase: "turn_hit_rate",
+              turn: turns + 1,
+              cacheHitRate: Math.round(hit * 1000) / 1000,
+              cacheHitRatePct: Math.round(hit * 1000) / 10,
+              cachedTokens: entry.cachedTokens || 0,
+              promptTokens: entry.promptTokens,
+            });
+          }
         }
       }
 
@@ -770,20 +1094,22 @@ export async function runAgentLoop(options) {
               cfg,
               onEvent,
             });
-            if (!v.skipped && v.replaced && v.finalText) {
+            if (!v.skipped && (v.replaced || v.appended) && v.finalText) {
               finalText = v.finalText;
               messages.push({
                 role: "assistant",
                 content: finalText,
                 _xclawVerify: true,
               });
-            } else if (!v.skipped && v.revise && v.revisedText && !v.replaced) {
+            } else if (!v.skipped && v.revise && v.revisedText && !v.replaced && !v.appended) {
               // Soft mode: keep act answer, attach critique in event only
               onEvent({
                 type: "router",
                 phase: "verify_suggest",
                 suggestion: v.revisedText.slice(0, 2000),
               });
+            } else if (!v.skipped && v.ok) {
+              onEvent({ type: "router", phase: "verify_ok" });
             }
           } catch (verr) {
             onEvent({
@@ -793,6 +1119,7 @@ export async function runAgentLoop(options) {
             });
           }
         }
+        naturalStop = true; // clean tool-free completion — on_stop may veto
         break;
       }
 
@@ -809,6 +1136,60 @@ export async function runAgentLoop(options) {
         // Pin exec plans to this loop's workingDir (subagent / swarm isolate)
         if (workingDir && args.cwd == null && args.workingDir == null) {
           args = { ...args, cwd: workingDir };
+        }
+
+        // Run-scoped allowlist: excluded tools are never advertised, but a
+        // hallucinated name must not reach the router either (defense in depth).
+        if (toolFilter && !toolFilter.match(name)) {
+          const msg = `Tool ${name} is not available in this run (allowTools).`;
+          onEvent({ type: "tool", phase: "blocked", name, reason: "allowTools" });
+          messages.push(
+            makeToolMessage({ tool_call_id: call.id, content: msg, source: "filter" })
+          );
+          recordTrace(
+            finalizeToolTraceEntry(
+              beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
+              {
+                resultText: msg,
+                blocked: true,
+                policy: { phase: "filter", decision: "deny", reason: "allowTools" },
+              }
+            )
+          );
+          return;
+        }
+
+        // ── Hook: pre_tool_use — matcher-scoped; system hooks may rewrite
+        // args, deny outright, or force human approval (decision: "ask").
+        let hookForceHuman = false;
+        let hookAllow = false;
+        {
+          const hr = await hooks.executeAll(
+            "pre_tool_use",
+            { toolName: name, args, turn: turns + 1, sessionKey, workingDir, cfg },
+            { mutable: ["args"], matchKey: name }
+          );
+          if (hr.context.args && hr.context.args !== args) args = hr.context.args;
+          if (hr.decision === "deny") {
+            const msg = `Tool ${name} blocked by hook${hr.reason ? `: ${hr.reason}` : ""}.`;
+            onEvent({ type: "hook", phase: "tool_denied", name, reason: hr.reason || null });
+            messages.push(
+              makeToolMessage({ tool_call_id: call.id, content: msg, source: "hook" })
+            );
+            recordTrace(
+              finalizeToolTraceEntry(
+                beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
+                {
+                  resultText: msg,
+                  blocked: true,
+                  policy: { phase: "hook", decision: "deny", reason: hr.reason || "hook_deny" },
+                }
+              )
+            );
+            return;
+          }
+          if (hr.decision === "ask") hookForceHuman = true;
+          if (hr.decision === "allow") hookAllow = true;
         }
 
         const verdict = guard.detect(name, args);
@@ -830,9 +1211,25 @@ export async function runAgentLoop(options) {
           onEvent({ type: "guard", ...verdict });
         }
 
-        // Security: allowlist + optional human approval
-        const auth = await approvalGate.authorize(name, args, {
+        // Security: allowlist + optional human approval.
+        // Bind the plan against this run's workingDir — the shared gate's
+        // planRoot is the gateway's process.cwd(), and a plan pinned there
+        // fails the spawn-time cwd check in the session workspace.
+        const authArgs =
+          isExecTool(name) && !args.cwd && !args.workingDir
+            ? { ...args, cwd: workingDir }
+            : args;
+        const auth = await approvalGate.authorize(name, authArgs, {
           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
+          // risk scope must resolve against THIS run's workspace (session dir
+          // or mission worktree), not the gateway's cwd — without this, file
+          // tools' targets scoped against the wrong root (live blind spot)
+          riskWorkingDir: workingDir,
+          // hook decisions: "ask" escalates to a human even on auto-approve
+          // policy. "allow" only pre-answers when a human WOULD have been
+          // asked — it never bypasses allowlists or exec pattern checks
+          // (hookAllow currently informational; deny>ask>allow already merged).
+          forceHuman: hookForceHuman && !hookAllow,
           onPending: (info) => {
             onEvent({
               type: "security",
@@ -840,6 +1237,9 @@ export async function runAgentLoop(options) {
               pendingId: info.id,
               name: info.tool,
               args: info.args,
+              riskTier: info.risk?.tier || null,
+              riskFactors: info.risk?.factors || null,
+              riskReasons: info.risk?.reasons || null,
             });
           },
         });
@@ -877,6 +1277,11 @@ export async function runAgentLoop(options) {
             name,
             reason: auth.reason,
             pendingId,
+            // authorize already emitted approval_required via onPending when
+            // the pending was created; this second emission after a timeout
+            // is a state update, not a new ask — consumers that prompt a
+            // human (telegram) must not re-prompt on it
+            timedOut: auth.reason === "timeout",
             message: msg,
           });
           messages.push(
@@ -886,7 +1291,7 @@ export async function runAgentLoop(options) {
               source: "security",
             })
           );
-          toolTrace.push(
+          recordTrace(
             finalizeToolTraceEntry(
               beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
               {
@@ -945,7 +1350,7 @@ export async function runAgentLoop(options) {
                 source: "security",
               })
             );
-            toolTrace.push(
+            recordTrace(
               finalizeToolTraceEntry(
                 beginToolTraceEntry({
                   name,
@@ -990,7 +1395,7 @@ export async function runAgentLoop(options) {
               source: "sandbox",
             })
           );
-          toolTrace.push(
+          recordTrace(
             finalizeToolTraceEntry(
               beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
               {
@@ -1015,7 +1420,7 @@ export async function runAgentLoop(options) {
               source: "egress",
             })
           );
-          toolTrace.push(
+          recordTrace(
             finalizeToolTraceEntry(
               beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
               {
@@ -1073,6 +1478,12 @@ export async function runAgentLoop(options) {
           } else if (name === "xclaw_recall") {
             const recallTool = createRecallTool({ cfg, workingDir });
             result = await recallTool.execute(args);
+          } else if (name === "xclaw_repo_intel") {
+            const intelTool = createRepoIntelTool({ cfg, workingDir });
+            result = await intelTool.execute(args);
+          } else if ((options.extraTools || []).some((t) => t.name === name)) {
+            const extra = options.extraTools.find((t) => t.name === name);
+            result = await extra.execute(args);
           } else {
             // T1: single dispatch path via Tool Router (local | computer | search | mcp)
             let dispatchArgs = args;
@@ -1191,7 +1602,28 @@ export async function runAgentLoop(options) {
         const trunc = truncOpts.enabled
           ? truncateToolResult(rawText, truncOpts)
           : { text: rawText, truncated: false, originalChars: rawText.length, keptChars: rawText.length };
-        const text = trunc.text;
+        let text = trunc.text;
+        // ── Hook: post_tool_use — matcher-scoped; system/trusted hooks may
+        // replace the result text the model will see (resultText).
+        {
+          const hr = await hooks.executeAll(
+            "post_tool_use",
+            {
+              toolName: name,
+              args,
+              resultText: text,
+              isError: Boolean(toolThrown || result?.isError),
+              turn: turns + 1,
+              sessionKey,
+              cfg,
+            },
+            { mutable: ["resultText"], matchKey: name }
+          );
+          if (typeof hr.context.resultText === "string" && hr.context.resultText !== text) {
+            text = hr.context.resultText;
+            onEvent({ type: "hook", phase: "mutated", category: "post_tool_use", name });
+          }
+        }
         guard.record(name, args, text);
         const traceEntry = finalizeToolTraceEntry(tracePartial, {
           resultText: text,
@@ -1201,7 +1633,7 @@ export async function runAgentLoop(options) {
           result,
           thrown: toolThrown || Boolean(result?.isError),
         });
-        toolTrace.push(traceEntry);
+        recordTrace(traceEntry);
         onEvent({
           type: "tool",
           phase: "end",
@@ -1245,14 +1677,144 @@ export async function runAgentLoop(options) {
         onEvent,
       });
       void stopTools;
+      // Pairing invariant: EVERY tool_call id in this assistant turn must get
+      // a tool message — a mid-batch stop (pending approval, guard critical)
+      // skips the remaining calls, and an orphaned tool_use makes the next
+      // Anthropic request fail with HTTP 400 ("tool_use ids were found
+      // without tool_result blocks"). Backfill explicit not-executed results.
+      for (const call of calls) {
+        if (
+          call?.id &&
+          !messages.some((m) => m.role === "tool" && m.tool_call_id === call.id)
+        ) {
+          onEvent({
+            type: "tool",
+            phase: "skipped",
+            name: call.function?.name,
+            callId: call.id,
+            reason: "turn_stopped",
+          });
+          messages.push(
+            makeToolMessage({
+              tool_call_id: call.id,
+              content: "Not executed — the turn stopped before this tool call ran.",
+              source: "skipped",
+            })
+          );
+        }
+      }
     }
 
-    if (turns >= maxTurns && !finalText) {
-      finalText = `Stopped after ${maxTurns} turns (maxTurns).`;
+    // ── Hook: on_stop — only on clean tool-free completions (never on
+    // guard stops, pending approvals, budget stops, or aborts).
+    if (
+      naturalStop &&
+      finalText &&
+      !loopGuardStop &&
+      !lastPendingApproval &&
+      !signal?.aborted
+    ) {
+      const sr = await hooks.executeAll("on_stop", {
+        text: finalText,
+        turns,
+        stopBlocks,
+        stopHookActive: stopBlocks > 0,
+        sessionKey,
+        cfg,
+      });
+      if (sr.abort && stopBlocks < stopBlockCap) {
+        stopBlocks += 1;
+        onEvent({
+          type: "hook",
+          phase: "stop_blocked",
+          reason: sr.abort,
+          stopBlocks,
+          cap: stopBlockCap,
+        });
+        messages.push({
+          role: "user",
+          content: `[stop-hook] Not finished: ${sr.abort}. Address this, then finish.`,
+        });
+        finalText = "";
+        continue stopCycle;
+      }
+      if (sr.abort) {
+        onEvent({ type: "hook", phase: "stop_block_cap", cap: stopBlockCap });
+      }
     }
+    break stopCycle;
+    } // end stopCycle
+
+    if (turns >= maxTurns && !finalText) {
+      maxTurnsStop = true;
+      // Final-answer rescue: hitting the turn budget mid-work used to discard
+      // EVERYTHING (live: a 5-node research swarm returned 0/5 ballots — every
+      // node stopped at maxTurns with only the stub text below, and the run
+      // still claimed success). One more model call with NO tools asks for the
+      // best answer from work done so far. Off via agent.finalAnswerRescue:false.
+      if (cfg.agent?.finalAnswerRescue !== false) {
+        try {
+          const rescue = await provider.chat({
+            messages: [
+              ...messages,
+              {
+                role: "user",
+                content:
+                  // orchestrated segments override this: a segment boundary
+                  // wants the mission state block, not a user-facing answer
+                  rescuePrompt ||
+                  "Turn budget exhausted — no more tool calls are possible. " +
+                    "Produce your final answer NOW from the work above. If you were asked " +
+                    "for structured output (ballot, JSON, verdict), emit it based on what " +
+                    "you found so far; state clearly what remains unverified.",
+              },
+            ],
+          });
+          const text =
+            typeof rescue?.message?.content === "string"
+              ? rescue.message.content.trim()
+              : "";
+          if (text) {
+            finalText = `${text}\n\n_[stopped at maxTurns=${maxTurns}; this is a best-effort final answer]_`;
+            onEvent({ type: "lifecycle", phase: "final_answer_rescue", turns });
+          }
+        } catch {
+          /* rescue is best-effort — fall through to the stub */
+        }
+      }
+      if (!finalText) finalText = `Stopped after ${maxTurns} turns (maxTurns).`;
+    }
+
+    // ── Hook: post_process — system/trusted hooks may transform the final
+    // text; runs before the transcript save (finally) so redactions persist.
+    if (finalText) {
+      const hr = await hooks.executeAll(
+        "post_process",
+        { text: finalText, turns, sessionKey, cfg },
+        { mutable: ["text"] }
+      );
+      if (typeof hr.context.text === "string" && hr.context.text !== finalText) {
+        finalText = hr.context.text;
+        onEvent({ type: "hook", phase: "mutated", category: "post_process" });
+      }
+    }
+  } catch (err) {
+    // ── Hook: on_error — observe loop failures; the error still propagates.
+    await hooks.executeAll("on_error", {
+      error: String(err?.message || err),
+      turn: turns,
+      sessionKey,
+      cfg,
+    });
+    throw err;
   } finally {
     try {
       unregisterSession(sessionKey);
+    } catch {
+      /* ignore */
+    }
+    try {
+      mcpTools?.close?.();
     } catch {
       /* ignore */
     }
@@ -1309,9 +1871,47 @@ export async function runAgentLoop(options) {
     }
   }
   if (tokensEnabled && usageSnap && (usageSnap.hasCost || usageSnap.hasRealUsage)) {
+    // Providers that return no cost (anthropic OAuth) used to land $null
+    // rows — the governor and economy band saw $0 for the dominant traffic.
+    // Estimate from getModelMeta list rates and mark the row estimated.
+    let runCostUsd = usageSnap.hasCost ? usageSnap.costUsd : null;
+    let costEstimated = false;
+    if (runCostUsd == null) {
+      try {
+        const { estimateUsdFromUsage } = await import("../tokens/cost-governor.mjs");
+        const est = estimateUsdFromUsage(
+          { prompt_tokens: usageSnap.promptTokens, completion_tokens: usageSnap.completionTokens },
+          cfg,
+          { modelRef: provider?.modelRef || provider?.model || cfg.agent?.model }
+        );
+        if (est > 0) {
+          runCostUsd = est;
+          costEstimated = true;
+        }
+      } catch {
+        /* estimation optional */
+      }
+    }
+    // Feed the DAILY governor — before this, only /job mode recorded spend,
+    // so normal channel/mission traffic never moved the soft/hard caps or
+    // the economy band.
+    if (runCostUsd > 0) {
+      try {
+        const { recordJobCost } = await import("../tokens/cost-governor.mjs");
+        await recordJobCost(cfg, { usd: runCostUsd, jobId: sessionId, estimated: costEstimated });
+      } catch {
+        /* governor best-effort */
+      }
+    }
     await usageTracker.persistLedger({
+      // runId + provider power the per-provider Usage & Logs views — every
+      // ledger entry must say which provider actually served it (model name
+      // alone is ambiguous across gateways/routers).
+      runId: (await import("node:crypto")).randomUUID(),
+      provider: provider?.providerName || route?.provider || cfg.agent?.provider || null,
       sessionId,
       userMessagePreview: String(userMessage || "").slice(0, 120),
+      ...(costEstimated ? { costUsd: runCostUsd, costEstimated: true } : {}),
       cache: usageSnap.cache,
     });
   }
@@ -1419,7 +2019,7 @@ export async function runAgentLoop(options) {
     /* metrics optional */
   }
 
-    // Feature 2 — durable snapshot for resume
+  // Feature 2 — durable snapshot for resume
   try {
     if (options.sessionId || options.persistRun) {
       await saveAgentRun(cfg, {
@@ -1438,14 +2038,28 @@ export async function runAgentLoop(options) {
     onEvent({ type: "session", phase: "persist_fail", error: e?.message || String(e) });
   }
 
-return {
-    text: finalText || "(no response)",
+  return {
+    text: stripClaimsBlock(finalText) || "(no response)",
     turns,
     toolTrace,
     model: provider?.model,
     sessionId,
     suggestions,
     turnState,
+    // Why the run ended — orchestrators must distinguish "the model finished"
+    // from "the runtime cut it off" (a turn cap is an execution constraint,
+    // never evidence the user's objective is complete).
+    stopReason: signal?.aborted || aborted
+      ? "aborted"
+      : hookAbort
+        ? "hook"
+        : loopGuardStop
+          ? "guard"
+          : budgetStop
+            ? "budget"
+            : maxTurnsStop
+              ? "maxTurns"
+              : "natural",
     context: {
       skills: (skills || []).map((s) => s.name),
       memory: (memoryFiles || []).map((m) => m.path),

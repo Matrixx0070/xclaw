@@ -230,13 +230,17 @@ export async function probeWakeStack(cfg = {}) {
           error: "openwakeword not installed (optional for W1+)",
         };
 
-  // STT availability: reuse local probe lightly
+  // STT availability: probe the whisper CLI directly. Never call
+  // probeLocalVoiceStack from here — it calls probeWakeStack back and the
+  // mutual recursion never terminates (hung doctor + wake tests).
   try {
-    const { probeLocalVoiceStack } = await import("../providers/local.mjs");
-    const v = await probeLocalVoiceStack(cfg);
-    out.stt = v.stt?.ok
-      ? { ok: true, bin: v.stt.bin }
-      : { ok: false, error: v.stt?.error || "no whisper CLI" };
+    const whisperBin =
+      cfg?.voice?.local?.whisperBin || process.env.XCLAW_WHISPER_BIN || "whisper-cli";
+    const wh = await run(whisperBin, ["--help"]);
+    out.stt =
+      wh.code === 0 || /whisper/i.test(wh.stderr + wh.stdout.toString())
+        ? { ok: true, bin: whisperBin }
+        : { ok: false, error: "no whisper CLI" };
   } catch (e) {
     out.stt = { ok: false, error: e.message };
   }

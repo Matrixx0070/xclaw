@@ -22,8 +22,10 @@ export async function deliverToChannel(delivery, cfg = {}) {
 
   if (channel === "telegram" || channel === "tg") {
     const token =
+      cfg.channels?.telegram?.token ||
       cfg.channels?.telegram?.botToken ||
       process.env.TELEGRAM_BOT_TOKEN ||
+      process.env.XCLAW_TELEGRAM_TOKEN ||
       process.env.XCLAW_TELEGRAM_BOT_TOKEN;
     if (!token) return { ok: false, reason: "no_telegram_token" };
     const r = await fetchWithRetry(`${TG_API}/bot${token}/sendMessage`, {

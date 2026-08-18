@@ -5,6 +5,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { safeFetch } from "../security/ssrf.mjs";
 import { fetchWithRetry } from "../utils/fetch-retry.mjs";
 
 function textResult(text, extra = {}) {
@@ -214,7 +215,7 @@ export function createGrepTool({ workingDir }) {
   };
 }
 
-export function createWebFetchTool() {
+export function createWebFetchTool({ cfg } = {}) {
   return {
     name: "web_fetch",
     description:
@@ -242,7 +243,9 @@ export function createWebFetchTool() {
           Accept: "text/html,application/xhtml+xml,application/json,text/plain,*/*",
           ...(args.headers || {}),
         };
-        const res = await fetchWithRetry(url, { headers, signal: ctrl.signal, redirect: "follow" });
+        // SSRF-safe: validates the URL and every redirect hop (metadata /
+        // loopback / private ranges blocked unless security.ssrf.allowPrivate)
+        const res = await safeFetch(url, { headers, signal: ctrl.signal }, cfg || {});
         clearTimeout(timer);
         const ct = res.headers.get("content-type") || "";
         let body = await res.text();
@@ -379,7 +382,7 @@ export function createExtraTools({ workingDir, cfg } = {}) {
   return [
     createGlobTool({ workingDir: wd }),
     createGrepTool({ workingDir: wd }),
-    createWebFetchTool(),
+    createWebFetchTool({ cfg }),
     createWebSearchTool(),
   ];
 }

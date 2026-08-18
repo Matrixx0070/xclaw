@@ -287,7 +287,7 @@ export async function localTranscribe(audioPath, cfg = {}) {
 /**
  * Doctor-style probe of local stack.
  */
-export async function probeLocalVoiceStack(cfg = {}) {
+export async function probeLocalVoiceStack(cfg = {}, { skipNetwork = false } = {}) {
   const c = localConfig(cfg);
   const out = {
     ollama: { ok: false },
@@ -296,6 +296,7 @@ export async function probeLocalVoiceStack(cfg = {}) {
   };
 
   try {
+    if (skipNetwork) throw new Error("skipped (hermetic)");
     const r = await fetch(`${c.ollamaUrl.replace(/\/$/, "")}/api/tags`);
     if (r.ok) {
       const j = await r.json();

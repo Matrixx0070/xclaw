@@ -32,6 +32,39 @@ import {
   exportMitmCa,
   trustMitmCaInProfile,
 } from "../browser/mitm.mjs";
+import {
+  loadPolicy,
+  savePolicy,
+  evaluateRequestPolicy,
+  exportProofBundle,
+} from "../browser/truth.mjs";
+import {
+  loadTimeline,
+  scoreCausal,
+  timeTravelReport,
+} from "../browser/timetravel.mjs";
+import {
+  listTabLeases,
+  releaseTabLease,
+  requireTabLease,
+  listCommitGates,
+  openCommitGate,
+  resolveCommitGate,
+  requireCommitGate,
+  fabricStatus,
+} from "../browser/physics.mjs";
+import {
+  acquireWithHeartbeat,
+  touchLease,
+  startLeaseHeartbeat,
+  stopLeaseHeartbeat,
+  listLeaseHeartbeats,
+} from "../browser/lease-heartbeat.mjs";
+import {
+  bindRole,
+  getBoundRole,
+  resolveRole,
+} from "../browser/role-binding.mjs";
 
 function textResult(text, extra = {}) {
   return { content: [{ type: "text", text: String(text ?? "") }], ...extra };

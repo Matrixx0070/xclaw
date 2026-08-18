@@ -98,6 +98,25 @@ export function shouldUseHostWorkspace(opts = {}, task = "") {
 }
 
 export async function spawnSubagent(opts = {}) {
+  // Depth guard: subagents inherit cfg.swarm._spawnDepth (set below for their
+  // children). A chain deeper than swarm.maxSpawnDepth (default 2) is refused
+  // with a structured result instead of a throw — stops recursive spawn loops.
+  const spawnDepth = Number(opts.cfg?.swarm?._spawnDepth ?? 0) || 0;
+  const maxSpawnDepth = Math.max(
+    0,
+    Number(opts.cfg?.swarm?.maxSpawnDepth ?? 2) || 2
+  );
+  if (spawnDepth >= maxSpawnDepth) {
+    return {
+      ok: false,
+      code: "SPAWN_DEPTH_EXCEEDED",
+      status: "refused",
+      error: `spawn depth ${spawnDepth} >= swarm.maxSpawnDepth ${maxSpawnDepth} — flatten the task graph or raise the limit`,
+      depth: spawnDepth,
+      maxSpawnDepth,
+    };
+  }
+
   const id = randomUUID();
   const parentId = opts.parentId || null;
   const record = {
@@ -188,6 +207,17 @@ export async function spawnSubagent(opts = {}) {
     agent: {
       ...(opts.cfg?.agent || {}),
       maxTurns: opts.maxTurns ?? Math.min(opts.cfg?.agent?.maxTurns ?? 8, 8),
+      // B4 dynamic roles: caller-narrowed allowlist (already intersected with
+      // the parent's — callers can only narrow, never widen)
+      ...(Array.isArray(opts.allowTools) && opts.allowTools.length
+        ? { allowTools: opts.allowTools }
+        : {}),
+    },
+    // Children run in-process via runAgentLoop, so cfg is the reliable depth
+    // carrier: any spawn/swarm tool the child invokes receives this cfg.
+    swarm: {
+      ...(opts.cfg?.swarm || {}),
+      _spawnDepth: spawnDepth + 1,
     },
     security: {
       ...(opts.cfg?.security || {}),
@@ -238,6 +268,18 @@ export async function spawnSubagent(opts = {}) {
         workingDir: workingDir || process.cwd(),
         signal: nest.signal,
         onEvent: pushEvent,
+        // A1 ledger correlation: swarm/mission joins resolve node-level work
+        ledgerIds: {
+          nodeId: id,
+          swarmId: opts.swarmId || null,
+          ...(opts.ledgerIds || {}),
+        },
+        // Callers with run-scoped security (missions) pass their own gate —
+        // the loop's default shared gate is primed with the GATEWAY's policy
+        // and would silently override the child cfg's autoApprove.
+        approvalGate: opts.approvalGate,
+        // B4: injected local tools (swarm blackboard etc.)
+        extraTools: opts.extraTools,
       });
     } finally {
       nest.dispose();

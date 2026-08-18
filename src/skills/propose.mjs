@@ -157,7 +157,18 @@ export async function installProposal(cfg, proposalFile, opts = {}) {
     }
   }
   await fs.writeFile(dest, body);
-  return { ok: true, installed: true, name, path: dest, from: fp };
+  // Archive the source proposal so it leaves the review queue — leaving it
+  // listed invited a second Install click, which errors with "already exists".
+  let archived = null;
+  try {
+    const installedDir = path.join(dir, "installed");
+    await fs.mkdir(installedDir, { recursive: true });
+    archived = path.join(installedDir, path.basename(fp));
+    await fs.rename(fp, archived);
+  } catch {
+    archived = null; // best-effort: the install itself already succeeded
+  }
+  return { ok: true, installed: true, name, path: dest, from: fp, archived };
 }
 
 export async function rejectProposal(cfg, proposalFile, reason = "") {

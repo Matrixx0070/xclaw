@@ -1,5 +1,6 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import {
   createComputerClient,
   clearComputerSessionPool,
@@ -30,6 +31,7 @@ describe("computer session reuse", () => {
   before(async () => {
     process.env.XCLAW_COMPUTER_ENGINE = "native";
     process.env.XCLAW_COMPUTER_REUSE_SESSION = "1";
+    await fs.mkdir(path.join(root, "tmp-live"), { recursive: true });
     if (!(await health())) {
       spawn(process.execPath, [path.join(root, "src/computer/thin-server.mjs")], {
         cwd: root,

@@ -89,12 +89,14 @@ function requestOnce(baseUrl, method, path, body, authHeaders = {}) {
 export function sanitizeToolArgs(name, args = {}) {
   if (!args || typeof args !== "object") return args || {};
   const n = String(name || "");
-  if ("timeout" in args && args.timeout != null && args.timeout !== "") {
-    let sec = Number(args.timeout);
-    if (!Number.isFinite(sec) || sec < 0) sec = 30;
-    if (sec > 1000) sec = sec / 1000; // ms → s
-    if (sec > 120) sec = 120;
-    args = { ...args, timeout: sec };
+  if (n === "xclaw_bash" || n === "bash" || n.endsWith("_bash")) {
+    if ("timeout" in args && args.timeout != null && args.timeout !== "") {
+      let sec = Number(args.timeout);
+      if (!Number.isFinite(sec) || sec < 0) sec = 30;
+      if (sec > 1000) sec = sec / 1000; // ms → s
+      if (sec > 120) sec = 120;
+      args = { ...args, timeout: sec };
+    }
   }
   return args;
 }
