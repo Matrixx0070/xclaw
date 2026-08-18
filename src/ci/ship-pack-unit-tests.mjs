@@ -65,6 +65,13 @@ export const SHIP_PACK_EXTRA_UNIT_TESTS = [
   "test/doctor-ops-bundle.test.mjs",
   "test/doctor-smoke-compare.test.mjs",
   "test/land-batch3.test.mjs",
+  "test/release-gate-land-batch3.test.mjs",
+  "test/land-batch4.test.mjs",
+  "test/last-drain.test.mjs",
+  "test/checkpoint-hash-needles.test.mjs",
+  "test/doctor-stop-auth.test.mjs",
+  "test/authorize-quota-job-patch.test.mjs",
+  "test/job-receipt-collector-factory.test.mjs",
 ];
 
 export default { SHIP_PACK_EXTRA_UNIT_TESTS };
