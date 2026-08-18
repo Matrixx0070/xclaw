@@ -1,0 +1,12 @@
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -186,6 +186,8 @@ export async function runJob(opts) {
+               evidence: evidence.snapshot(),
+               text: "",
+               status: "running",
++              quotaEscalate: (typeof receiptCollector !== "undefined" && receiptCollector.quotaEscalate) || null,
++              claimsSoftRetry: (typeof receiptCollector !== "undefined" && receiptCollector.claimsSoftRetry) || null,
+             })
+               .then((fp) => {
+                 push({
