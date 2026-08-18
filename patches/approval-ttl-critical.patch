@@ -1,0 +1,35 @@
+diff --git a/src/security/approvals.mjs b/src/security/approvals.mjs
+--- a/src/security/approvals.mjs
++++ b/src/security/approvals.mjs
+@@ -22,6 +22,7 @@ import {
+   EXEC_TOOLS,
+   isExecTool,
+ } from "./system-run-plan.mjs";
++import { resolveSlaAction, resolveExpiredApproval } from "./approval-ttl.mjs";
+ 
+ const pending = new Map();
+ let slaTimer = null;
+@@ -36,20 +37,23 @@ function ensureSlaTimer(cfg) {
+       if (item.deadline && now >= item.deadline) {
+         pending.delete(id);
+         if (item.timer) clearTimeout(item.timer);
+-        const action = item.slaAction || "deny";
++        // Critical risk never silent-timeout-approves
++        const action = resolveSlaAction(item, cfg);
+         journalDecision(cfg, {
+           tool: item.tool,
+           decision: action === "deny" ? "deny" : "approve",
+           mode: "sla",
+           pendingId: id,
+           planFingerprint: item.plan?.fingerprint ?? null,
++          risk: item.risk || null,
+         }, "sla");
+         if (action === "deny") {
+-          item.resolve({
+-            ok: false,
+-            reason: "sla_timeout",
+-            message: `Approval SLA exceeded for ${item.tool}`,
+-            planFingerprint: item.plan?.fingerprint ?? null,
+-          });
++          item.resolve(resolveExpiredApproval(item, cfg));
+         } else {
