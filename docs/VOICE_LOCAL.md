@@ -300,3 +300,17 @@ await sendAudioToGateway(pcmOrWav, {
 ```
 
 Falls back to PCM binary if no encoder is installed.
+
+
+## Opus TTS replies (O3)
+
+After `opus_start` (or `{ "type": "config", "opusReply": true }`), gateway replies may include:
+
+```text
+← { "type": "reply", "text": "...", "opus": { "packets": N, "provider": "opusscript" } }
+← { "type": "event", "event": "opus_reply_start", "packets": N }
+← (binary Opus packets of spoken reply)
+← { "type": "event", "event": "opus_reply_end" }
+```
+
+Requires an Opus encoder on the gateway (`npm i opusscript`). Without it, reply is JSON-only + local WAV path.
