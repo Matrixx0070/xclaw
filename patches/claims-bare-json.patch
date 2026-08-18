@@ -1,0 +1,34 @@
+diff --git a/src/jobs/claims.mjs b/src/jobs/claims.mjs
+--- a/src/jobs/claims.mjs
++++ b/src/jobs/claims.mjs
+@@ -17,12 +17,21 @@ const STRUCTURED_RE =
+  * Parse optional structured claims block from final text.
+  */
+ export function parseStructuredClaims(text) {
+   const raw = String(text || "");
+-  const m = raw.match(STRUCTURED_RE);
+-  if (!m) return null;
++  let payload = null;
++  const m = raw.match(STRUCTURED_RE);
++  if (m) {
++    payload = m[1];
++  } else {
++    const bare = raw.match(/\n*(\{\s*"claims"\s*:[\s\S]*?\})\s*$/i);
++    if (bare) payload = bare[1];
++  }
++  if (!payload) return null;
+   try {
+-    const j = JSON.parse(m[1]);
++    const j = JSON.parse(payload);
+     if (!j || typeof j !== "object") return null;
+     const claims = Array.isArray(j.claims) ? j.claims.map(String) : [];
+     const evidence_ids = Array.isArray(j.evidence_ids)
+       ? j.evidence_ids.map(String)
+       : Array.isArray(j.evidenceIds)
+         ? j.evidenceIds.map(String)
+         : [];
+     return { claims, evidence_ids, raw: j };
+   } catch {
+     return { error: "invalid_json", claims: [], evidence_ids: [] };
+   }
+ }
