@@ -1,5 +1,6 @@
 /**
  * Workspace quota events — soft warn / hard refuse on WS+SSE.
+ * Hard events always carry `tool` + `root` for operators.
  */
 
 async function defaultPublish(room, event, data) {
@@ -11,14 +12,26 @@ function defaultBroadcast() {
   return globalThis.__xclawWsBroadcast;
 }
 
+/** Ensure operator fields are always present on quota events. */
+export function normalizeQuotaPayload(payload = {}) {
+  return {
+    tool: payload.tool ?? null,
+    root: payload.root ?? payload.cwd ?? payload.workingDir ?? null,
+    ...payload,
+    tool: payload.tool ?? null,
+    root: payload.root ?? payload.cwd ?? payload.workingDir ?? null,
+  };
+}
+
 export function emitQuotaEvent(payload = {}, hubs = {}) {
-  const phase = payload.phase || "soft";
+  const normalized = normalizeQuotaPayload(payload);
+  const phase = normalized.phase || "soft";
   const sseName = phase === "hard" ? "quota_hard" : "quota_soft";
   const event = {
     type: "quota",
     phase,
     at: new Date().toISOString(),
-    ...payload,
+    ...normalized,
     phase,
   };
   let ws = null;
@@ -34,13 +47,13 @@ export function emitQuotaEvent(payload = {}, hubs = {}) {
   const publish = hubs.publish;
   if (typeof publish === "function") {
     try {
-      sse = publish(payload.room || "security", sseName, event);
+      sse = publish(normalized.room || "security", sseName, event);
     } catch (err) {
       sse = { ok: false, error: err.message };
     }
     return { event, ws, sse };
   }
-  sse = defaultPublish(payload.room || "security", sseName, event);
+  sse = defaultPublish(normalized.room || "security", sseName, event);
   return { event, ws, sse };
 }
 
@@ -85,6 +98,7 @@ export function maybeEmitQuotaHard(result, extra = {}, hubs = {}) {
 }
 
 export default {
+  normalizeQuotaPayload,
   emitQuotaEvent,
   emitQuotaSoftWarn,
   emitQuotaHard,
