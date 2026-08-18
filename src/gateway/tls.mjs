@@ -1,6 +1,9 @@
 /**
  * Optional HTTPS for gateway (P4.1).
  * cfg.gateway.tls = { cert, key, ca? } paths or env XCLAW_TLS_CERT / XCLAW_TLS_KEY
+ *
+ * Also wraps the request listener so computer proxy runs first
+ * (single external port) without editing the large index.mjs.
  */
 import fs from "node:fs";
 import https from "node:https";
@@ -25,11 +28,30 @@ export function loadTlsOptions(cfg = {}) {
   }
 }
 
+function wrapWithComputerProxy(requestListener, cfg) {
+  return async (req, res) => {
+    try {
+      const { isComputerProxyEnabled, proxyComputerRequest } = await import(
+        "./computer-proxy.mjs"
+      );
+      if (isComputerProxyEnabled(cfg)) {
+        const url = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
+        const proxied = await proxyComputerRequest(req, res, cfg, url);
+        if (proxied) return;
+      }
+    } catch {
+      /* proxy optional — fall through */
+    }
+    return requestListener(req, res);
+  };
+}
+
 export function createHttpServer(requestListener, cfg = {}) {
+  const listener = wrapWithComputerProxy(requestListener, cfg);
   const tls = loadTlsOptions(cfg);
   if (tls) {
     console.log("[xclaw] TLS enabled");
-    return { server: https.createServer(tls, requestListener), tls: true };
+    return { server: https.createServer(tls, listener), tls: true };
   }
-  return { server: http.createServer(requestListener), tls: false };
+  return { server: http.createServer(listener), tls: false };
 }
