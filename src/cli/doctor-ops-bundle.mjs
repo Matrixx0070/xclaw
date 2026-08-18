@@ -44,6 +44,13 @@ export async function pushDoctorOpsBundle(push, cfg = {}, opts = {}) {
   }
 
   try {
+    const { pushStopHmacChecks } = await import("./doctor-stop-hmac.mjs");
+    pushStopHmacChecks(push, cfg);
+  } catch (e) {
+    push("gateway.stopHmac", "warn", e.message || String(e));
+  }
+
+  try {
     const { pushStopProbeChecks } = await import("./doctor-stop-probe.mjs");
     await pushStopProbeChecks(push, cfg);
   } catch (e) {
