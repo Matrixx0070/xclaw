@@ -1,0 +1,21 @@
+diff --git a/src/gateway/sse.mjs b/src/gateway/sse.mjs
+--- a/src/gateway/sse.mjs
++++ b/src/gateway/sse.mjs
+@@ -1,6 +1,7 @@
+ /**
+  * Server-Sent Events helpers with safe writes on dropped connections.
+  */
++import { redactEvent } from "../security/redact-secrets.mjs";
+ 
+ /**
+  * @param {import('http').ServerResponse} res
+@@ -42,7 +43,8 @@
+   let out = "";
+   if (id != null) out += `id: ${id}\n`;
+   if (event) out += `event: ${event}\n`;
+-  const payload = typeof data === "string" ? data : JSON.stringify(data);
++  const safe = typeof data === "string" ? redactEvent(data) : redactEvent(data);
++  const payload = typeof safe === "string" ? safe : JSON.stringify(safe);
+   for (const line of payload.split("\n")) {
+     out += `data: ${line}\n`;
+   }
