@@ -50,6 +50,12 @@ export const SHIP_PACK_EXTRA_UNIT_TESTS = [
   "test/stop-kill-switch.test.mjs",
   "test/autonomy-smoke-artifact.test.mjs",
   "test/land-remaining-wires.test.mjs",
+  "test/release-gate-strict-extras.test.mjs",
+  "test/land-production-batch.test.mjs",
+  "test/stop-drain-stats.test.mjs",
+  "test/autonomy-smoke-compare.test.mjs",
+  "test/doctor-stop-route.test.mjs",
+  "test/history-stamp-receipt.test.mjs",
 ];
 
 export default { SHIP_PACK_EXTRA_UNIT_TESTS };
