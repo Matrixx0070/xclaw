@@ -26,6 +26,11 @@ export const RELEASE_GATE_STRICT_EXTRA_TESTS = [
   "test/stop-hmac.test.mjs",
   "test/land-batch-check.test.mjs",
   "test/checkpoint-require-tip.test.mjs",
+  "test/doctor-stop-probe.test.mjs",
+  "test/doctor-stop-hmac.test.mjs",
+  "test/autonomy-metrics-a4.test.mjs",
+  "test/ship-pack-land-batch-wire.test.mjs",
+  "test/land-all.test.mjs",
 ];
 
 export function listStrictExtraTests(root) {
