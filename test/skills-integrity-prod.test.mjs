@@ -39,8 +39,8 @@ describe("skills integrity prod posture", () => {
     assert.match(r.message, /2 skill/);
   });
 
-  it("resolveIntegrityMode: prod + lockfile = enforce", () => {
+  it("resolveIntegrityMode: prod always enforce", () => {
     assert.equal(resolveIntegrityMode({ profile: "prod" }, true), "enforce");
-    assert.equal(resolveIntegrityMode({ profile: "prod" }, false), "off");
+    assert.equal(resolveIntegrityMode({ profile: "prod" }, false), "enforce");
   });
 });
