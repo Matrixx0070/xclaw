@@ -12,6 +12,7 @@ import {
   shouldEscalateSoftToHard,
   escalateSoftResult,
 } from "./quota-soft-escalate.mjs";
+import { recordQuotaEscalateEvent } from "../jobs/receipt-metrics.mjs";
 
 export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
   if (!isWriteTool(name)) {
@@ -36,6 +37,11 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
 
   if (!r.ok) {
     const hard = maybeEmitQuotaHard(r, { tool: name, root }, ctx.hubs || {});
+    recordEscalate(ctx, {
+      hard: true,
+      escalatedFromSoft: Boolean(r.escalatedFromSoft),
+      code: r.code || "WORKSPACE_QUOTA_EXCEEDED",
+    });
     return {
       ok: false,
       reason: r.code || "WORKSPACE_QUOTA_EXCEEDED",
@@ -46,7 +52,24 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
     };
   }
   const warn = maybeEmitQuotaSoft(r, { tool: name, root }, ctx.hubs || {});
+  if (r.soft) {
+    recordEscalate(ctx, {
+      soft: true,
+      phase: "soft_warn",
+      code: r.code || "WORKSPACE_QUOTA_SOFT",
+    });
+  }
   return { ok: true, soft: r.soft, quota: r, warn };
+}
+
+function recordEscalate(ctx, event) {
+  const job = ctx?.job || ctx?.collector || ctx?.metrics;
+  if (!job) return;
+  try {
+    recordQuotaEscalateEvent(job, event);
+  } catch {
+    /* optional */
+  }
 }
 
 export default { authorizeQuotaPreflight };
