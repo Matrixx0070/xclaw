@@ -77,7 +77,10 @@
     "ship:pack": "node scripts/ci-ship-pack.mjs",
     "ship:pack:strict": "node scripts/ci-ship-pack.mjs --strict",
     "patches:apply": "node scripts/apply-ship-patches.mjs",
-    "patches:check": "node scripts/apply-ship-patches.mjs --check"
+    "patches:check": "node scripts/apply-ship-patches.mjs --check",
+    "autonomy": "node scripts/autonomy-harness.mjs",
+    "autonomy:offline": "node scripts/autonomy-harness-offline.mjs",
+    "autonomy:live": "node scripts/autonomy-harness-live.mjs"
   },
   "files": [
     "bin/",
