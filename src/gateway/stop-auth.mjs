@@ -61,18 +61,18 @@ export function extractStopToken(req = {}) {
 
 export function authorizeStop(req, cfg = {}) {
   if (cfg.gateway?.stopAuth === false || process.env.XCLAW_STOP_AUTH === "0") {
-    return { ok: true, skipped: true };
+    return { ok: true, skipped: true, authMethod: "disabled" };
   }
   const expected = stopAuthToken(cfg);
   if (!expected) {
     if (cfg.gateway?.requireAuth || cfg.profile === "prod" || cfg.profile === "strict") {
-      return { ok: false, code: "STOP_AUTH_REQUIRED", message: "stop token not configured" };
+      return { ok: false, code: "STOP_AUTH_REQUIRED", message: "stop token not configured", authMethod: "missing" };
     }
-    return { ok: true, skipped: true, reason: "no_token_lab" };
+    return { ok: true, skipped: true, reason: "no_token_lab", authMethod: "lab" };
   }
   const got = extractStopToken(req);
   if (!tokenEqual(got, expected)) {
-    return { ok: false, code: "STOP_UNAUTHORIZED", message: "invalid stop token" };
+    return { ok: false, code: "STOP_UNAUTHORIZED", message: "invalid stop token", authMethod: "token" };
   }
   let raw = "";
   try {
@@ -81,8 +81,9 @@ export function authorizeStop(req, cfg = {}) {
     raw = "";
   }
   const hmac = verifyStopSignature(req, cfg, raw);
-  if (!hmac.ok) return hmac;
-  return { ok: true };
+  if (!hmac.ok) return { ...hmac, authMethod: "hmac" };
+  if (!hmac.skipped) return { ok: true, authMethod: "hmac" };
+  return { ok: true, authMethod: "token" };
 }
 
 export default { authorizeStop, extractStopToken, stopAuthToken, signStopBody, verifyStopSignature };

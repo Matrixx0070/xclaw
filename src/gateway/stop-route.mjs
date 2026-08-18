@@ -41,7 +41,10 @@ export async function handleStopAll(req, res, { cfg } = {}) {
     closeWs: body.closeWs !== false,
     closeSse: body.closeSse !== false,
   });
-  const drain = drainStats(r, before);
+  const drain = {
+    ...drainStats(r, before),
+    authMethod: auth.authMethod || (auth.skipped ? "lab" : "token"),
+  };
   recordLastDrain(drain, { cfg });
   const payload = {
     ok: true,
@@ -51,6 +54,7 @@ export async function handleStopAll(req, res, { cfg } = {}) {
     sse: r.sse || null,
     computer: r.computer || null,
     drain,
+    authMethod: drain.authMethod,
   };
   if (res && typeof res.writeHead === "function") {
     res.writeHead(200, { "content-type": "application/json" });
