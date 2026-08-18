@@ -7,6 +7,8 @@
  * Internally still talks to computer on cfg.computer.port (default 4243).
  *
  * Process isolation is preserved; only the public port count drops to one.
+ * SSE (text/event-stream) is streamed without stripping transfer-encoding;
+ * headers are flushed so heartbeats are not buffered.
  */
 import http from "node:http";
 
@@ -89,13 +91,40 @@ export function proxyComputerRequest(req, res, cfg, url) {
         },
         (pres) => {
           const outHeaders = { ...pres.headers };
-          delete outHeaders["transfer-encoding"];
+          const ct = String(outHeaders["content-type"] || outHeaders["Content-Type"] || "");
+          const isSse =
+            /text\/event-stream/i.test(ct) ||
+            /text\/event-stream/i.test(String(req.headers?.accept || ""));
+          if (!isSse) {
+            delete outHeaders["transfer-encoding"];
+            delete outHeaders["Transfer-Encoding"];
+          } else {
+            outHeaders["cache-control"] = "no-cache, no-transform";
+            outHeaders["x-accel-buffering"] = "no";
+            if (!outHeaders["connection"] && !outHeaders["Connection"]) {
+              outHeaders["connection"] = "keep-alive";
+            }
+          }
           res.writeHead(pres.statusCode || 502, outHeaders);
+          if (typeof res.flushHeaders === "function") {
+            try {
+              res.flushHeaders();
+            } catch {
+              /* */
+            }
+          }
           pres.pipe(res);
           pres.on("end", () => finish(true));
           pres.on("error", () => finish(true));
         }
       );
+      const accept = String(req.headers?.accept || "");
+      const sseTimeout = /text\/event-stream/i.test(accept)
+        ? Number(cfg.gateway?.proxyComputerSseTimeoutMs) || 0
+        : null;
+      if (sseTimeout === 0) {
+        preq.setTimeout(0);
+      }
       preq.on("timeout", () => {
         preq.destroy();
         if (!res.headersSent) {
