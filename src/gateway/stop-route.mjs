@@ -42,7 +42,7 @@ export async function handleStopAll(req, res, { cfg } = {}) {
     closeSse: body.closeSse !== false,
   });
   const drain = drainStats(r, before);
-  recordLastDrain(drain);
+  recordLastDrain(drain, { cfg });
   const payload = {
     ok: true,
     killedSessions: r.killedSessions || [],
