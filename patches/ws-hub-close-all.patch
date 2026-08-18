@@ -1,0 +1,39 @@
+diff --git a/src/gateway/ws-hub.mjs b/src/gateway/ws-hub.mjs
+--- a/src/gateway/ws-hub.mjs
++++ b/src/gateway/ws-hub.mjs
+@@ -630,4 +630,36 @@ export function wsOutboundStats() {
+   return { ...outboundStats, clients: clients.size };
+ }
+ 
+-export default { attachWebSocketHub, broadcast, wsClientCount, wsOutboundStats, encodeTextFrame, encodeBinaryFrame, decodeFrames, createFrameParser };
++
++/**
++ * Close every WS client (kill-switch / shutdown).
++ * @param {string} [reason]
++ */
++export function closeAllWebSockets(reason = "kill_all") {
++  let closed = 0;
++  for (const c of [...clients]) {
++    clients.delete(c);
++    try {
++      if (c?.socket && !c.socket.destroyed) {
++        try {
++          c.socket.end();
++        } catch {
++          try {
++            c.socket.destroy();
++          } catch {
++            /* */
++          }
++        }
++      }
++      closed += 1;
++    } catch {
++      closed += 1;
++    }
++  }
++  clients.clear();
++  return { ok: true, closed, reason, remaining: clients.size };
++}
++
++export default { attachWebSocketHub, broadcast, wsClientCount, wsOutboundStats, closeAllWebSockets, encodeTextFrame, encodeBinaryFrame, decodeFrames, createFrameParser };

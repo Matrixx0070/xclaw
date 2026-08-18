@@ -48,9 +48,9 @@ export function killSession(sessionId) {
 }
 
 /**
- * Abort every active agent session, close WS clients, optionally stop computer.
+ * Abort every active agent session, close WS + SSE, optionally stop computer.
  */
-export async function killAll({ stopComputer: stopComp = true, closeWs = true, cfg } = {}) {
+export async function killAll({ stopComputer: stopComp = true, closeWs = true, closeSse = true, cfg } = {}) {
   const ids = [...active.keys()];
   for (const id of ids) killSession(id);
   let ws = null;
@@ -62,6 +62,15 @@ export async function killAll({ stopComputer: stopComp = true, closeWs = true, c
       ws = { ok: false, error: String(e?.message || e) };
     }
   }
+  let sse = null;
+  if (closeSse !== false) {
+    try {
+      const { closeAllSSEFanout } = await import("../gateway/sse-fanout-registry.mjs");
+      sse = closeAllSSEFanout("kill_all");
+    } catch (e) {
+      sse = { ok: false, error: String(e?.message || e) };
+    }
+  }
   let computer = null;
   if (stopComp && cfg) {
     try {
@@ -70,7 +79,7 @@ export async function killAll({ stopComputer: stopComp = true, closeWs = true, c
       computer = { ok: false, error: String(e?.message || e) };
     }
   }
-  return { ok: true, killedSessions: ids, computer, ws };
+  return { ok: true, killedSessions: ids, computer, ws, sse };
 }
 
 export function unregisterSession(sessionId) {
