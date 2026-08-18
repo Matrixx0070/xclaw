@@ -1,5 +1,18 @@
 ## Unreleased
 
+## 3.80.0 — Live voice stack
+
+- **Local TTS/STT**: espeak/piper + whisper-cli; TUI / WebChat / Telegram
+- **Voice commands**: mute/cancel/status/repeat via shared catalog + entente
+- **Wake W0/W1**: energy + keyword probe; continuous `xclaw voice listen`
+- **VAD**: hysteresis endpointing, noise-floor auto-calibrate
+- **Latency**: barge-in SIGKILL process-group; sentence-flush TTS; stream LLM→TTS
+- **Router**: casual vs agent vs command (skip tools on small-talk)
+- **Gateway `/ws/voice`**: JSON utterances, binary **PCM**, **Opus** (O1–O3)
+- **Metrics**: TTFA/VAD/barge-in ring; `voice metrics --chart`; `/control/voice.html`
+- **Optional**: `opusscript` for Opus encode/decode packets
+
+
 ## 3.79.0 — hands-free evolve
 
 - **Self-evolution**: `xclaw evolve status|tick|overlay`, heartbeat evolve phase, handler refresh on ensure
