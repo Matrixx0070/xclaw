@@ -44,6 +44,13 @@ export async function pushDoctorOpsBundle(push, cfg = {}, opts = {}) {
   }
 
   try {
+    const { pushStopProbeChecks } = await import("./doctor-stop-probe.mjs");
+    await pushStopProbeChecks(push, cfg);
+  } catch (e) {
+    push("gateway.stopProbe", "warn", e.message || String(e));
+  }
+
+  try {
     const { pushQuotaEscalateChecks } = await import("./doctor-quota-escalate.mjs");
     pushQuotaEscalateChecks(push, opts.root || process.cwd());
   } catch (e) {
