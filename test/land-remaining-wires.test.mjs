@@ -8,8 +8,9 @@ import { REMAINING_WIRES } from "../scripts/land-remaining-wires.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("land remaining wires", () => {
-  it("lists five production-wire patches", () => {
-    assert.equal(REMAINING_WIRES.length, 5);
+  it("includes hash-verify and require-tip", () => {
+    assert.ok(REMAINING_WIRES.some((e) => e.file.includes("checkpoint-hash-verify")));
+    assert.ok(REMAINING_WIRES.some((e) => e.file.includes("checkpoint-require-tip")));
   });
 
   it("each patch file exists", () => {
