@@ -38,6 +38,14 @@ export const RELEASE_GATE_STRICT_EXTRA_TESTS = [
   "test/tls-stop-parity.test.mjs",
   "test/doctor-auth-refresh-prod.test.mjs",
   "test/release-gate-land-all-applied.test.mjs",
+  "test/doctor-stop-health.test.mjs",
+  "test/stop-health.test.mjs",
+  "test/hard-block-rate-ceiling.test.mjs",
+  "test/stop-drain-auth-method.test.mjs",
+  "test/cost-preflight-auth-record.test.mjs",
+  "test/ship-pack-land-all-preflight.test.mjs",
+  "test/doctor-quota-hard-circuit.test.mjs",
+  "test/land-remaining-wires.test.mjs",
 ];
 
 export function listStrictExtraTests(root) {
