@@ -30,11 +30,12 @@ export async function pushKillSwitchChecks(push) {
   );
   if (lastDrain) {
     const method = lastDrain.authMethod || lastDrain.drain?.authMethod || "unknown";
+    const channel = lastDrain.channel || lastDrain.drain?.channel || "http";
     push(
       "security.killSwitch.lastDrain",
       "ok",
-      `last stop drain authMethod=${method} sessions=${lastDrain.sessionsKilled} ws=${lastDrain.wsClosed} sse=${lastDrain.sseClosed}`,
-      { ...lastDrain, authMethod: method }
+      `last stop drain authMethod=${method} channel=${channel} sessions=${lastDrain.sessionsKilled} ws=${lastDrain.wsClosed} sse=${lastDrain.sseClosed}`,
+      { ...lastDrain, authMethod: method, channel }
     );
   }
   return { ready, wsOk, sseOk, n, lastDrain };
