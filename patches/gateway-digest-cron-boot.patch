@@ -1,0 +1,31 @@
+diff --git a/src/gateway/index.mjs b/src/gateway/index.mjs
+--- a/src/gateway/index.mjs
++++ b/src/gateway/index.mjs
+@@ -97,6 +97,7 @@ import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
+ import { takePending } from "../connected/oauth-pending.mjs";
+ import { setAppToken } from "../connected/token-store.mjs";
+ import { ensureDoctorCronJob } from "../cron/doctor-job.mjs";
++import { ensureApprovalDigestCronJob } from "../cron/approval-digest-job.mjs";
+ import { ensureEvalCronJob } from "../cron/eval-job.mjs";
+ import { startQueueWorker } from "../jobs/queue.mjs";
+ import { gracefulShutdown } from "./shutdown.mjs";
+@@ -1012,6 +1013,19 @@ export async function startGateway({ root } = {}) {
+     console.log(`[xclaw] doctor cron every ${everyMs}ms id=${docJob.id}`);
+   }
+ 
++  if (cfg.security?.digestCron !== false) {
++    try {
++      const digestJob = ensureApprovalDigestCronJob({
++        cfg,
++        enabled: true,
++        everyMs: cfg.security?.digestEveryMs || cfg.security?.digestIntervalMs,
++      });
++      console.log(`[xclaw] approval digest cron id=${digestJob.id}`);
++    } catch (err) {
++      console.warn("[xclaw] approval digest cron:", err.message);
++    }
++  }
++
+   if (cfg.eval?.cron?.enabled !== false) {
+     try {
+       const ej = ensureEvalCronJob({ cfg });
