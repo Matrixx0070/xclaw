@@ -1,0 +1,72 @@
+diff --git a/bin/xclaw.mjs b/bin/xclaw.mjs
+--- a/bin/xclaw.mjs
++++ b/bin/xclaw.mjs
+@@ -1669,6 +1669,21 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
+       break;
+     }
+ 
++    case "stop":
++    case "stop-sign": {
++      const { printStopHelp } = await import("../src/cli/stop-help.mjs");
++      if (args.includes("--help") || args.includes("-h") || (cmd === "stop" && args.length === 0)) {
++        printStopHelp();
++        break;
++      }
++      if (cmd === "stop-sign" || args.includes("--sign")) {
++        const { stopSignMain } = await import("../src/cli/stop-sign.mjs");
++        await stopSignMain(args);
++        break;
++      }
++      printStopHelp();
++      break;
++    }
+     case "stop-all":
+     case "kill-all": {
+       const { loadConfig } = await import("../src/config/load.mjs");
+@@ -2875,6 +2890,7 @@ Commands:
+   status [--json]      Gateway + computer + active sessions
+   doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
+   self-test            Fast unit smoke (autonomy, sandbox, fabric, …)
++  stop                Kill-switch help / --sign / --dry-run
+   stop-all             Abort agent sessions + stop computer
+   automations          list|add|pause|resume|run|results|delete
+   providers            list | setup (wizard) | set | oauth | use [X] [model]
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -141,6 +141,15 @@ await step("a-enforcement", async () => {
+   return { code: r.code, detail: (r.out + r.err).split("\n").slice(-5).join(" | ") };
+ }, { required: false });
+ 
++await step("openapi-stop-dryrun", async () => {
++    const { checkOpenapiStopContract } = await import("../src/ci/openapi-stop-contract.mjs");
++    const r = checkOpenapiStopContract(root);
++    if (!r.ok) {
++      console.error("[release-gate] OpenAPI /stop missing", (r.missing || []).join(",") || r.error);
++    }
++    return { code: r.ok ? 0 : 1 };
++  }, { required: Boolean(strict) });
++
+ await step("bundle-markers", async () => {
+   const bundlePath = path.join(root, "src/computer/xclaw-server.mjs");
+   let text = "";
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -11,6 +11,7 @@ import { runVerifyChecks } from "./verify.mjs";
+ import { recordJob } from "./history.mjs";
+ import { stampJobToolHash } from "./stamp-tool-hash.mjs";
+ import { rememberJob } from "../memory/durable.mjs";
++import { attachReceiptCollectorToJob } from "./finalize-receipt.mjs";
+ import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
+ import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
+ import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
+@@ -301,6 +302,9 @@ export async function runJob(opts) {
+     events: events.filter((e) => e.type === "job" || e.type === "guard" || e.type === "retry"),
+   };
+   stampJobToolHash(job);
++  attachReceiptCollectorToJob(job, {
++    agentResult,
++  });
+ 
+   push({ type: "job", phase: "end", id, status, pass: job.pass, wallMs: job.wallMs });
