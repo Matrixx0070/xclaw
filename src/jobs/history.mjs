@@ -44,6 +44,7 @@ export async function recordJob(cfg, job) {
     receiptMetrics,
     claimsSoftRetry: receiptMetrics.claimsSoftRetry,
     quotaEscalate: receiptMetrics.quotaEscalate,
+    quotaHardCircuit: job.quotaHardCircuit || null,
   };
   const chain = job.toolHashTip
     ? { tip: job.toolHashTip, version: job.toolHashVersion || 1 }
