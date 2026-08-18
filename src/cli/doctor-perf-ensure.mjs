@@ -24,5 +24,17 @@ export async function collectDoctorPerfChecks(cfg = {}) {
   return { checks, coldStart: checks.find((c) => c.id === "ops.cold_start") || null };
 }
 
+export async function mergePerfIntoChecks(checks, cfg = {}) {
+  const { checks: perf } = await collectDoctorPerfChecks(cfg);
+  const ids = new Set((checks || []).map((c) => c.id));
+  for (const c of perf) {
+    if (!ids.has(c.id)) {
+      checks.push(c);
+      ids.add(c.id);
+    }
+  }
+  return checks;
+}
+
 export { lastColdStartPath };
-export default { pushPerfChecksEnsured, collectDoctorPerfChecks };
+export default { pushPerfChecksEnsured, collectDoctorPerfChecks, mergePerfIntoChecks };
