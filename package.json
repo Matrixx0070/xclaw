@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.132.0",
+  "version": "3.132.1",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
@@ -114,5 +114,8 @@
   "optionalDependencies": {
     "opusscript": "^0.0.8",
     "werift": "^0.22.2"
+  },
+  "xclaw": {
+    "stopSurfaceFreeze": "n10"
   }
 }
