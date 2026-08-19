@@ -1,5 +1,5 @@
 /**
- * Shared cost ledger for swarm — reserve on spawn, settle on finish.
+ * Shared cost ledger for swarm — reserve on spawn, settle on finish, daily hard cap.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -41,9 +41,31 @@ function rollover(data) {
   return data;
 }
 
+export function dailyHardUsd(cfg = {}) {
+  const n = Number(
+    cfg?.tokens?.dailyHardUsd ??
+      cfg?.cost?.dailyHardUsd ??
+      process.env.XCLAW_DAILY_HARD_USD ??
+      50
+  );
+  return Number.isFinite(n) && n > 0 ? n : 50;
+}
+
 export function reserveUsd(cfg, { swarmId, childId, usd = 0 } = {}) {
   let data = rollover(load(cfg));
   const amount = Math.max(0, Number(usd) || 0);
+  const hard = dailyHardUsd(cfg);
+  const projected = (data.spentUsd || 0) + (data.reservedUsd || 0) + amount;
+  if (projected > hard) {
+    return {
+      ok: false,
+      code: "SWARM_LEDGER_HARD_CAP",
+      message: `swarm ledger hard cap: projected $${projected.toFixed(4)} > $${hard}`,
+      reservedUsd: data.reservedUsd,
+      spentUsd: data.spentUsd,
+      hardUsd: hard,
+    };
+  }
   data.reservedUsd = (data.reservedUsd || 0) + amount;
   data.entries.push({
     type: "reserve",
@@ -53,7 +75,7 @@ export function reserveUsd(cfg, { swarmId, childId, usd = 0 } = {}) {
     at: new Date().toISOString(),
   });
   save(cfg, data);
-  return { ok: true, reservedUsd: data.reservedUsd, spentUsd: data.spentUsd };
+  return { ok: true, reservedUsd: data.reservedUsd, spentUsd: data.spentUsd, hardUsd: hard };
 }
 
 export function settleUsd(cfg, { swarmId, childId, usd = 0 } = {}) {
@@ -76,4 +98,4 @@ export function ledgerSnapshot(cfg = {}) {
   return rollover(load(cfg));
 }
 
-export default { reserveUsd, settleUsd, ledgerSnapshot, ledgerPath };
+export default { reserveUsd, settleUsd, ledgerSnapshot, ledgerPath, dailyHardUsd };
