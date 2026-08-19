@@ -77,3 +77,43 @@ describe("tool hash chain", () => {
     assert.equal(re, entry.hash);
   });
 });
+
+describe("stableStringify shared references", () => {
+  it("serialises a value reachable twice, rather than calling it circular", () => {
+    // same bug class as redactValue: `seen` was never released, so a value
+    // reachable from two different branches was written as "[Circular]" and the
+    // canonical form stopped representing the data it was hashing.
+    const shared = { v: 1 };
+    const out = stableStringify({ a: shared, b: shared });
+    assert.ok(!out.includes("[Circular]"), out);
+    assert.equal(out, '{"a":{"v":1},"b":{"v":1}}');
+  });
+
+  it("still refuses to recurse into a genuine cycle", () => {
+    const cyc = { name: "root" };
+    cyc.self = cyc;
+    const out = stableStringify(cyc);
+    assert.match(out, /\[Circular\]/);
+
+    const a = { n: "a" };
+    const b = { n: "b", a };
+    a.b = b;
+    assert.match(stableStringify(a), /\[Circular\]/);
+  });
+
+  it("keeps arrays holding the same element twice", () => {
+    const item = { id: 1 };
+    assert.equal(stableStringify([item, item]), '[{"id":1},{"id":1}]');
+  });
+
+  it("stays deterministic regardless of key order", () => {
+    assert.equal(stableStringify({ b: 1, a: 2 }), stableStringify({ a: 2, b: 1 }));
+  });
+
+  it("distinguishes payloads that the old form collapsed together", () => {
+    const shared = { v: 1 };
+    const withShared = stableStringify({ a: shared, b: shared });
+    const withLiteral = stableStringify({ a: { v: 1 }, b: "[Circular]" });
+    assert.notEqual(withShared, withLiteral);
+  });
+});

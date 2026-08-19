@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 3.139.2 — the same serializer bug in the integrity hash (2026-08-19)
+
+3.139.0 fixed `redactValue` reporting shared references as cycles. Auditing for
+the same pattern found it a second time, in `stableStringify` — which
+canonicalises tool-trace entries for the **tool hash chain** that guards
+checkpoint resume.
+
+- `stableStringify` now tracks the ancestor path rather than every object it has
+  ever visited, so a value reachable twice from different branches serialises as
+  itself instead of `"[Circular]"`. The canonical form again represents the data
+  it is hashing.
+- **No stored checkpoint is invalidated.** `canonicalizeToolEntry` builds a fresh
+  scalar-only object, so shared references cannot occur inside it. Verified by
+  recomputing the chain tip for all 167 stored checkpoints (139 carrying tool
+  traces) before and after: zero tips changed.
+
+Also audited where the original bug could have persisted corrupted data —
+`redactEvent` wraps every SSE event, every WebSocket frame, durable memory lines
+and soak ledger rows. Nothing on disk contains `[Circular]`; the damage was
+confined to live payloads.
+
 ## 3.139.1 — Control UI: empty states and readable time (2026-08-19)
 
 Looking at each view with real data showed the same gap repeatedly — a table

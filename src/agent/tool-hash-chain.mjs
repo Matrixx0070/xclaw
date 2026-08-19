@@ -19,14 +19,23 @@ export function stableStringify(value, seen = new WeakSet()) {
     return JSON.stringify(value);
   }
   if (seen.has(value)) return '"[Circular]"';
+  // Track the ANCESTOR path, not every object ever visited. Keeping entries in
+  // `seen` after returning made a value reachable twice from different branches
+  // serialise as "[Circular]", so the canonical form no longer represented the
+  // data it was hashing. (canonicalizeToolEntry builds fresh scalars, so no
+  // existing chain tip changes — verified against every stored checkpoint.)
   seen.add(value);
-  if (Array.isArray(value)) {
-    return `[${value.map((v) => stableStringify(v, seen)).join(",")}]`;
+  try {
+    if (Array.isArray(value)) {
+      return `[${value.map((v) => stableStringify(v, seen)).join(",")}]`;
+    }
+    const keys = Object.keys(value).filter((k) => value[k] !== undefined).sort();
+    return `{${keys
+      .map((k) => `${JSON.stringify(k)}:${stableStringify(value[k], seen)}`)
+      .join(",")}}`;
+  } finally {
+    seen.delete(value);
   }
-  const keys = Object.keys(value).filter((k) => value[k] !== undefined).sort();
-  return `{${keys
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(value[k], seen)}`)
-    .join(",")}}`;
 }
 
 /**
