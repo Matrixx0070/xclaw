@@ -3,12 +3,16 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { acceptSeq } from "./gossip-seq.mjs";
+import { acceptNonce } from "./gossip-bloom.mjs";
 
-const reject = { gossip_reject_total: 0, reasons: { invalid: 0, required: 0, replay: 0, seq: 0 } };
+const reject = {
+  gossip_reject_total: 0,
+  reasons: { invalid: 0, required: 0, replay: 0, seq: 0, nonce: 0 },
+};
 
 export function incGossipReject(n = 1, reason = "invalid") {
   reject.gossip_reject_total += n;
-  const k = reason === "required" || reason === "replay" || reason === "seq" ? reason : "invalid";
+  const k = ["required", "replay", "seq", "nonce"].includes(reason) ? reason : "invalid";
   reject.reasons[k] = (reject.reasons[k] || 0) + n;
   return reject.gossip_reject_total;
 }
@@ -23,7 +27,7 @@ export function getGossipRejectTotal() {
 
 export function resetGossipReject() {
   reject.gossip_reject_total = 0;
-  reject.reasons = { invalid: 0, required: 0, replay: 0, seq: 0 };
+  reject.reasons = { invalid: 0, required: 0, replay: 0, seq: 0, nonce: 0 };
 }
 
 export function gossipHmacSecret(cfg = {}) {
@@ -110,6 +114,13 @@ export function verifyGossip(payload = {}, cfg = {}) {
         if (!seqr.ok) {
           incGossipReject(1, "seq");
           return { ok: false, ...seqr };
+        }
+      }
+      if (payload.nonce) {
+        const nr = acceptNonce(payload.nonce);
+        if (!nr.ok) {
+          incGossipReject(1, "nonce");
+          return { ok: false, ...nr };
         }
       }
       return { ok: true, authMethod: "hmac", rotated: i > 0 };
