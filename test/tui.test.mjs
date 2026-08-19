@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   renderTuiFrame,
   renderChatScreen,
+  decodeKeys,
+  spinnerFrame,
   collectTuiSnapshot,
   formatToolCall,
   wrapLine,
@@ -114,7 +116,8 @@ describe("tui chat screen", () => {
 
   it("marks the input block busy while a turn is running", () => {
     const frame = renderChatScreen({ ...state, busy: true }, { colour: false, columns: 80, rows: 24 });
-    assert.match(frame.at(-3), /working…/);
+    assert.match(frame.at(-3), /working/);
+    assert.match(frame.at(-3), /esc to cancel/);
   });
 
   it("keeps the frame inside the terminal for a long transcript", () => {
@@ -143,5 +146,96 @@ describe("tui formatting", () => {
     assert.ok(out.length > 1);
     assert.ok(!out[0].startsWith("  "), "first line is not indented");
     assert.ok(out[1].startsWith("  "), "continuations are indented");
+  });
+});
+
+const ESC = "\u001b";
+
+describe("tui key decoding", () => {
+  it("decodes plain characters", () => {
+    assert.deepEqual(decodeKeys("abc"), [{ ch: "a" }, { ch: "b" }, { ch: "c" }]);
+  });
+
+  it("decodes arrows as names and never as typed text", () => {
+    // regression: arrow keys used to leave "[A"/"[D" sitting in the input box
+    assert.deepEqual(decodeKeys(ESC + "[A"), [{ name: "up" }]);
+    assert.deepEqual(decodeKeys(ESC + "[B"), [{ name: "down" }]);
+    assert.deepEqual(decodeKeys(ESC + "[C"), [{ name: "right" }]);
+    assert.deepEqual(decodeKeys(ESC + "[D"), [{ name: "left" }]);
+    const mixed = decodeKeys("a" + ESC + "[D" + "b");
+    assert.deepEqual(mixed, [{ ch: "a" }, { name: "left" }, { ch: "b" }]);
+    assert.ok(!mixed.some((k) => k.ch === "[" || k.ch === "D"));
+  });
+
+  it("decodes home/end/delete and paging", () => {
+    assert.deepEqual(decodeKeys(ESC + "[H"), [{ name: "home" }]);
+    assert.deepEqual(decodeKeys(ESC + "[F"), [{ name: "end" }]);
+    assert.deepEqual(decodeKeys(ESC + "[3~"), [{ name: "delete" }]);
+    assert.deepEqual(decodeKeys(ESC + "[5~"), [{ name: "pageup" }]);
+    assert.deepEqual(decodeKeys(ESC + "[6~"), [{ name: "pagedown" }]);
+  });
+
+  it("treats a bare escape as escape and swallows unknown sequences", () => {
+    assert.deepEqual(decodeKeys(ESC), [{ name: "escape" }]);
+    assert.deepEqual(decodeKeys(ESC + "[200~"), []);
+  });
+
+  it("spinner animates and never indexes out of range", () => {
+    const frames = new Set();
+    for (let i = 0; i < 40; i += 1) {
+      const f = spinnerFrame(i);
+      assert.equal(typeof f, "string");
+      assert.equal(f.length, 1);
+      frames.add(f);
+    }
+    assert.ok(frames.size > 1, "spinner must animate");
+    assert.equal(typeof spinnerFrame(undefined), "string");
+  });
+});
+
+describe("tui chat screen — interaction affordances", () => {
+  const base = {
+    version: "9.9.9",
+    model: "xai/grok-4.6",
+    cwd: "/root/xclaw",
+    transcript: [],
+    input: "",
+    cursor: 0,
+  };
+
+  it("shows a hint instead of an empty void", () => {
+    const out = renderChatScreen(
+      { ...base, hint: "ask for anything" },
+      { colour: false, columns: 80, rows: 24 }
+    );
+    assert.match(out.join("\n"), /ask for anything/);
+  });
+
+  it("renders the caret inside the typed text", () => {
+    const out = renderChatScreen(
+      { ...base, input: "abc", cursor: 1 },
+      { colour: false, columns: 80, rows: 24 }
+    );
+    // with colour off the cursor cell is bracketed
+    assert.match(out.at(-3), /a\[b\]c/);
+  });
+
+  it("replaces the input line with a spinner while busy", () => {
+    const out = renderChatScreen(
+      { ...base, busy: true, spinner: "*", busyLabel: "thinking 3s" },
+      { colour: false, columns: 80, rows: 24 }
+    );
+    assert.match(out.at(-3), /\* thinking 3s/);
+    assert.match(out.at(-3), /esc to cancel/);
+  });
+
+  it("indicates hidden lines when scrolled back", () => {
+    const long = {
+      ...base,
+      transcript: Array.from({ length: 200 }, (_, i) => `l${i}`),
+      scroll: 30,
+    };
+    const out = renderChatScreen(long, { colour: false, columns: 80, rows: 24 });
+    assert.match(out.join("\n"), /30 more line\(s\) below/);
   });
 });

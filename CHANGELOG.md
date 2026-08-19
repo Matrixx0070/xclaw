@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 3.137.0 — TUI polish: it behaves like a terminal app now (2026-08-19)
+
+3.136.0 looked right but did not feel right. Everything here came out of driving
+it under a real pty rather than reading the code.
+
+- **Arrow keys typed junk.** Escape sequences were filtered on their leading
+  ESC byte, so the tail landed in the prompt: pressing Up left `[A` in the input.
+  Keys are decoded properly now (`decodeKeys`), and unknown CSI sequences are
+  swallowed instead of pasted.
+- **Real line editing**: left/right, Home/End, Delete, and insert at the caret,
+  with the cursor drawn in-place inside the text rather than always at the end.
+- **Prompt history** on Up/Down, keeping your in-progress draft when you come
+  back down.
+- **A spinner that means something**: animates with elapsed seconds and names
+  the tool it is waiting on (`running xclaw_bash  12s`).
+- **Esc cancels a running turn** (Ctrl+C too), and the transcript records it as
+  cancelled rather than leaving the spinner spinning.
+- **Ctrl+C is now two-stage**: clears a non-empty prompt first, then asks for a
+  second press to quit — no more losing a half-typed message.
+- **No more full-screen flash.** The screen repainted with a clear-and-redraw on
+  every keystroke; it now writes only the rows that changed. The trailing
+  erase-to-end was also positioned one row too high and was wiping the footer.
+- **Empty state** shows a hint instead of a blank void, tool output over four
+  lines reports `+N more line(s)` instead of silently truncating, PgUp/PgDn
+  scroll the transcript, and the footer summarises turns, tool calls and cost.
+
 ## 3.136.0 — the TUI is a conversation (2026-08-19)
 
 3.135.0 shipped `xclaw tui` as a read-only status dashboard. That is not what a

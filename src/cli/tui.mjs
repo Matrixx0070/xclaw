@@ -226,6 +226,52 @@ export function wrapLine(text, width, indent = "") {
 }
 
 /**
+ * Decode a raw stdin chunk into key events. Without this, arrow keys arrive as
+ * an escape sequence and their tail ("[A", "[D") is typed into the input.
+ */
+export function decodeKeys(buf) {
+  const NAMED = { A: "up", B: "down", C: "right", D: "left", H: "home", F: "end" };
+  const TILDE = { 1: "home", 3: "delete", 4: "end", 5: "pageup", 6: "pagedown" };
+  const keys = [];
+  let i = 0;
+  while (i < buf.length) {
+    const ch = buf[i];
+    if (ch !== ESC) {
+      keys.push({ ch });
+      i += 1;
+      continue;
+    }
+    const rest = buf.slice(i + 1);
+    let m = rest.match(/^\[([ABCDHF])/);
+    if (m) {
+      keys.push({ name: NAMED[m[1]] });
+      i += 1 + m[0].length;
+      continue;
+    }
+    m = rest.match(/^\[([0-9]+)~/);
+    if (m && TILDE[m[1]]) {
+      keys.push({ name: TILDE[m[1]] });
+      i += 1 + m[0].length;
+      continue;
+    }
+    m = rest.match(/^\[[0-9;]*[A-Za-z~]/);
+    if (m) {
+      i += 1 + m[0].length;
+      continue;
+    }
+    keys.push({ name: "escape" });
+    i += 1;
+  }
+  return keys;
+}
+
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+export function spinnerFrame(tick) {
+  return SPINNER[Math.abs(Math.trunc(tick || 0)) % SPINNER.length];
+}
+
+/**
  * Render the whole chat screen. Pure: state in, lines out, so the layout can be
  * asserted without a terminal.
  */
@@ -236,6 +282,7 @@ export function renderChatScreen(state = {}, opts = {}) {
   const p = (t, c) => paint(t, c, colour);
   const dim = (t) => p(t, C.grey);
   const acc = (t) => p(t, C.accent);
+  const cursorOn = (t) => (colour ? `${ESC}[7m${t}${ESC}[0m` : `[${t}]`);
 
   const head = [];
   const meta = [
@@ -252,22 +299,33 @@ export function renderChatScreen(state = {}, opts = {}) {
   head.push("");
 
   const rule = dim("─".repeat(Math.max(10, cols - 2)));
-  const caret = state.busy ? acc("…") : acc("▌");
   const typed = state.input || "";
-  const room = Math.max(10, cols - 8);
-  const shown = typed.length > room ? typed.slice(typed.length - room) : typed;
+  const caret = Math.min(Math.max(0, state.cursor ?? typed.length), typed.length);
+  const room = Math.max(10, cols - 6);
+  const from = caret > room ? caret - room : 0;
+  const vis = typed.slice(from, from + room);
+  const vcur = caret - from;
+  const inputLine = state.busy
+    ? ` ${acc(state.spinner || SPINNER[0])} ${dim(state.busyLabel || "working")}${dim("  esc to cancel")}`
+    : ` ${acc("▌")} ${vis.slice(0, vcur)}${cursorOn(vis.slice(vcur, vcur + 1) || " ")}${vis.slice(vcur + 1)}`;
+
   const foot = [
     ` ${rule}`,
-    ` ${caret} ${shown}${state.busy ? dim("  working…") : ""}`,
+    inputLine,
     ` ${rule}`,
     ` ${acc(CHEV + CHEV)} ${state.footer || dim("Enter send · /help · Ctrl+C quit")}`,
   ];
 
   const budget = Math.max(1, rows - head.length - foot.length - 1);
-  const body = (state.transcript || []).slice(-budget);
-  while (body.length < budget) body.push("");
-
-  return [...head, ...body, ...foot];
+  let body = state.transcript || [];
+  if (!body.length && state.hint) body = ["", dim(`  ${state.hint}`)];
+  const maxScroll = Math.max(0, body.length - budget);
+  const scroll = Math.max(0, Math.min(state.scroll || 0, maxScroll));
+  const end = body.length - scroll;
+  const out = body.slice(Math.max(0, end - budget), end);
+  while (out.length < budget) out.push("");
+  if (scroll > 0) out[0] = dim(`  ↓ ${scroll} more line(s) below · PgDn`);
+  return [...head, ...out, ...foot];
 }
 
 export function tuiHelp() {
@@ -432,12 +490,26 @@ async function chatLoop(cfg, opts) {
     cwd: process.cwd(),
     transcript: [],
     input: "",
+    cursor: 0,
+    scroll: 0,
     busy: false,
+    spinner: spinnerFrame(0),
+    busyLabel: "working",
+    hint: "ask for anything — try: what is running on this box?   /help for commands",
     notice: info.ok
       ? `${dim("gateway ready")}${pendingN ? p(` · ${pendingN} approval(s) pending`, C.yellow) : ""}`
       : p(`gateway unreachable at ${base} — start it with: xclaw gateway`, C.red),
     footer: dim("Enter send · /help · Ctrl+C quit"),
   };
+
+  const history = [];
+  let histIdx = -1;
+  let draft = "";
+  let inFlight = null;
+  let spinTimer = null;
+  let tick = 0;
+  let lastFrame = [];
+  let armedQuit = false;
 
   const cols = () => process.stdout.columns || 80;
   const rowsN = () => process.stdout.rows || 24;
@@ -445,48 +517,116 @@ async function chatLoop(cfg, opts) {
   const pushWrapped = (text, indent = "  ") => {
     for (const l of wrapLine(text, cols() - 4, indent)) push(l);
   };
+
+  /**
+   * Repaint only the rows that changed. A full ESC[2J clear on every keystroke
+   * made the whole screen flash while typing.
+   */
   const draw = () => {
     const frame = renderChatScreen(state, { colour, columns: cols(), rows: rowsN() });
-    process.stdout.write(`${ESC}[2J${ESC}[H` + frame.join("\n"));
+    let out = `${ESC}[H`;
+    for (let i = 0; i < frame.length; i += 1) {
+      if (frame[i] === lastFrame[i]) continue;
+      out += `${ESC}[${i + 1};1H${frame[i]}${ESC}[K`;
+    }
+    // erase BELOW the frame — positioning at frame.length would wipe the footer
+    out += `${ESC}[${frame.length + 1};1H${ESC}[J`;
+    process.stdout.write(out);
+    lastFrame = frame;
+  };
+  const redrawAll = () => {
+    lastFrame = [];
+    process.stdout.write(`${ESC}[2J`);
+    draw();
+  };
+
+  const startSpinner = (label) => {
+    state.busy = true;
+    state.busyLabel = label || "working";
+    tick = 0;
+    state.spinner = spinnerFrame(tick);
+    spinTimer = setInterval(() => {
+      tick += 1;
+      state.spinner = spinnerFrame(tick);
+      const secs = Math.floor(tick / 10);
+      state.busyLabel = `${label || "working"}  ${secs}s`;
+      draw();
+    }, 100);
+  };
+  const stopSpinner = () => {
+    if (spinTimer) clearInterval(spinTimer);
+    spinTimer = null;
+    state.busy = false;
   };
 
   const submit = async (text) => {
-    state.busy = true;
+    history.push(text);
+    histIdx = -1;
+    state.scroll = 0;
     push("");
     pushWrapped(`${acc(">")} ${text}`);
     push("");
+    startSpinner("thinking");
     draw();
+
+    const controller = new AbortController();
+    inFlight = controller;
+    let tools = 0;
     try {
-      const out = await streamAgent(base, token, text, (ev) => {
-        const kind = ev.type || ev.event;
-        if (kind === "tool" && ev.phase === "start") {
-          push(`${acc(MARK)} ${formatToolCall(ev.name, ev.args)}`);
-          draw();
-        } else if (kind === "tool" && (ev.phase === "end" || ev.phase === "result")) {
-          const res = String(ev.preview ?? ev.resultText ?? ev.result ?? ev.text ?? "").trim();
-          if (res) {
-            const shown = wrapLine(res, cols() - 8, "     ").slice(0, 4);
-            push(`  ${dim(ELBOW)} ${shown[0]}`);
-            for (const extra of shown.slice(1)) push(`     ${dim(extra.trim())}`);
+      const out = await streamAgent(
+        base,
+        token,
+        text,
+        (ev) => {
+          const kind = ev.type || ev.event;
+          if (kind === "tool" && ev.phase === "start") {
+            tools += 1;
+            state.busyLabel = `running ${ev.name || "tool"}`;
+            push(`${acc(MARK)} ${formatToolCall(ev.name, ev.args)}`);
+            draw();
+          } else if (kind === "tool" && ev.phase === "end") {
+            const res = String(ev.preview ?? ev.resultText ?? ev.result ?? "").trim();
+            if (res) {
+              const all = wrapLine(res, cols() - 8, "     ");
+              const shown = all.slice(0, 4);
+              push(`  ${dim(ELBOW)} ${shown[0]}`);
+              for (const extra of shown.slice(1)) push(`     ${dim(extra.trim())}`);
+              if (all.length > 4) push(dim(`     +${all.length - 4} more line(s)`));
+            }
+            state.busyLabel = "thinking";
+            draw();
+          } else if (kind === "tool" && ev.phase === "blocked") {
+            push(p(`  ${ELBOW} blocked: ${ev.reason || "policy"}`, C.yellow));
+            draw();
+          } else if (kind === "security" && ev.phase === "pending") {
+            push(p(`  ${ELBOW} approval required — approve in Telegram or the Control UI`, C.yellow));
             draw();
           }
-        } else if (kind === "security" && ev.phase === "pending") {
-          push(p(`  ${ELBOW} approval required — approve in Telegram or the Control UI`, C.yellow));
-          draw();
-        }
-      });
+        },
+        controller.signal
+      );
       const answer = out.result?.text || out.result?.finalText || "";
       push("");
       if (answer) pushWrapped(`${acc(MARK)} ${answer}`);
       else push(dim(`  ${ELBOW} ${out.error || "(no reply)"}`));
       const usd = out.result?.usage?.costUsd;
+      const turns = out.result?.turns;
       state.footer = dim(
-        `Enter send · /help · Ctrl+C quit${usd != null ? ` · last turn $${Number(usd).toFixed(4)}` : ""}`
+        [
+          "Enter send · /help · Ctrl+C quit",
+          turns != null ? `${turns} turn(s)` : null,
+          tools ? `${tools} tool call(s)` : null,
+          usd != null ? `$${Number(usd).toFixed(4)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
       );
     } catch (e) {
-      push(p(`  ${ELBOW} ${String(e?.message || e)}`, C.red));
+      if (controller.signal.aborted) push(dim(`  ${ELBOW} cancelled`));
+      else push(p(`  ${ELBOW} ${String(e?.message || e)}`, C.red));
     } finally {
-      state.busy = false;
+      inFlight = null;
+      stopSpinner();
       draw();
     }
   };
@@ -498,6 +638,8 @@ async function chatLoop(cfg, opts) {
     }
     if (cmd === "/clear") {
       state.transcript = [];
+      state.scroll = 0;
+      redrawAll();
       return;
     }
     if (cmd === "/help") {
@@ -514,52 +656,135 @@ async function chatLoop(cfg, opts) {
     push(dim(`  unknown command ${cmd} — try /help`));
   };
 
+  const pageBy = (n) => {
+    const budget = Math.max(1, rowsN() - 14);
+    state.scroll = Math.max(0, state.scroll + n * budget);
+    draw();
+  };
+
+  const onKey = async (k) => {
+    if (k.ch === KEY_CTRL_C) {
+      if (inFlight) {
+        inFlight.abort();
+        return;
+      }
+      if (state.input) {
+        state.input = "";
+        state.cursor = 0;
+        armedQuit = false;
+        draw();
+        return;
+      }
+      if (!armedQuit) {
+        armedQuit = true;
+        state.footer = dim("press Ctrl+C again to quit");
+        draw();
+        return;
+      }
+      leaveRaw(true);
+      process.exit(0);
+    }
+    armedQuit = false;
+
+    if (k.name === "escape") {
+      if (inFlight) inFlight.abort();
+      return;
+    }
+    if (k.name === "pageup") return pageBy(1);
+    if (k.name === "pagedown") return pageBy(-1);
+    if (state.busy) return;
+
+    if (k.name === "left") {
+      state.cursor = Math.max(0, state.cursor - 1);
+      return draw();
+    }
+    if (k.name === "right") {
+      state.cursor = Math.min(state.input.length, state.cursor + 1);
+      return draw();
+    }
+    if (k.name === "home") {
+      state.cursor = 0;
+      return draw();
+    }
+    if (k.name === "end") {
+      state.cursor = state.input.length;
+      return draw();
+    }
+    if (k.name === "delete") {
+      state.input = state.input.slice(0, state.cursor) + state.input.slice(state.cursor + 1);
+      return draw();
+    }
+    if (k.name === "up") {
+      if (!history.length) return;
+      if (histIdx === -1) draft = state.input;
+      histIdx = histIdx === -1 ? history.length - 1 : Math.max(0, histIdx - 1);
+      state.input = history[histIdx];
+      state.cursor = state.input.length;
+      return draw();
+    }
+    if (k.name === "down") {
+      if (histIdx === -1) return;
+      histIdx += 1;
+      if (histIdx >= history.length) {
+        histIdx = -1;
+        state.input = draft;
+      } else {
+        state.input = history[histIdx];
+      }
+      state.cursor = state.input.length;
+      return draw();
+    }
+
+    const ch = k.ch;
+    if (ch === undefined) return;
+    if (ch === "\r" || ch === "\n") {
+      const text = state.input.trim();
+      state.input = "";
+      state.cursor = 0;
+      state.scroll = 0;
+      if (!text) return draw();
+      if (text.startsWith("/")) {
+        await slash(text);
+        return draw();
+      }
+      return submit(text);
+    }
+    if (ch === KEY_BACKSPACE || ch === "\b") {
+      if (state.cursor > 0) {
+        state.input = state.input.slice(0, state.cursor - 1) + state.input.slice(state.cursor);
+        state.cursor -= 1;
+      }
+      return draw();
+    }
+    if (ch < " ") return;
+    state.input = state.input.slice(0, state.cursor) + ch + state.input.slice(state.cursor);
+    state.cursor += 1;
+    draw();
+  };
+
   enterRaw();
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", async (chunk) => {
-    for (const ch of String(chunk)) {
-      if (ch === KEY_CTRL_C) {
-        leaveRaw(true);
-        process.exit(0);
-      }
-      if (state.busy) continue;
-      if (ch === "\r" || ch === "\n") {
-        const text = state.input.trim();
-        state.input = "";
-        if (!text) {
-          draw();
-          continue;
-        }
-        if (text.startsWith("/")) {
-          await slash(text);
-          draw();
-          continue;
-        }
-        await submit(text);
-        continue;
-      }
-      if (ch === KEY_BACKSPACE || ch === "\b") {
-        state.input = state.input.slice(0, -1);
-        draw();
-        continue;
-      }
-      if (ch < " ") continue;
-      state.input += ch;
-      draw();
-    }
+    for (const k of decodeKeys(String(chunk))) await onKey(k);
   });
   process.on("SIGINT", () => {
+    if (inFlight) {
+      inFlight.abort();
+      return;
+    }
     leaveRaw(true);
     process.exit(0);
   });
-  process.stdout.on("resize", draw);
-  draw();
+  process.stdout.on("resize", redrawAll);
+  redrawAll();
   await new Promise(() => {});
   return { ok: true };
 }
 
 export default {
   runTui,
+  decodeKeys,
+  spinnerFrame,
   collectTuiSnapshot,
   renderTuiFrame,
   renderChatScreen,
