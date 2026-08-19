@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { rehydrateReceiptFromCheckpoint } from "../src/jobs/checkpoint.mjs";
+import { rehydrateReceiptFromCheckpoint } from "../src/jobs/checkpoint-receipt.mjs";
 
 describe("checkpoint receipt rehydrate", () => {
   it("restores quota fields", () => {
