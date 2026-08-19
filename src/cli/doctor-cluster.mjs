@@ -1,5 +1,5 @@
 /**
- * Doctor: cluster role + auth posture.
+ * Doctor: cluster role + auth + generation posture.
  */
 import { isCoordinator, coordinatorUrl } from "../cluster/coordinator.mjs";
 import { clusterToken, clusterHmacSecret } from "../cluster/cluster-auth.mjs";
@@ -10,6 +10,7 @@ export function pushClusterChecks(push, cfg = {}) {
   const url = coordinatorUrl(cfg);
   const token = Boolean(clusterToken(cfg));
   const hmac = Boolean(clusterHmacSecret(cfg));
+  const gen = readGeneration(cfg);
   const prod =
     cfg.profile === "prod" ||
     cfg.profile === "strict" ||
@@ -17,12 +18,15 @@ export function pushClusterChecks(push, cfg = {}) {
   let status = "ok";
   if (prod && !token && !hmac) status = "error";
   else if (role === "follower" && !url) status = "warn";
+  if (prod && role === "coordinator" && !(Number(gen.generation) > 0)) {
+    status = "error";
+  }
   push(
     "cluster.role",
     status,
-    `cluster role=${role} auth=${token || hmac ? "configured" : "none"}` +
-      (url ? " coordinatorUrl=set" : ""),
-    { role, token, hmac, coordinatorUrlSet: Boolean(url), generation: readGeneration(cfg) }
+    `cluster role=${role} gen=${gen.generation || 0} auth=${token || hmac ? "configured" : "none"}` +
+      (prod && role === "coordinator" && !(Number(gen.generation) > 0) ? " MISSING_GENERATION" : ""),
+    { role, token, hmac, coordinatorUrlSet: Boolean(url), generation: gen }
   );
 }
 
