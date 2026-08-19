@@ -78,5 +78,20 @@
       ],
       "budgets": { "maxTurns": 12 }
     }
+  },
+  {
+    "id": "a4-G16-swarm-ballot-merge",
+    "tags": ["autonomy", "a4", "horizon", "g16", "swarm"],
+    "fixture": "g16-swarm",
+    "prompt": "Read ballot-a.json, ballot-b.json, ballot-c.json and policy.json. Merge by majority approve. Write verdict.txt containing APPROVE or REJECT, and receipt.json with keys vote and ballots. No user questions.",
+    "maxTurns": 12,
+    "timeoutMs": 180000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "verdict.txt", "contains": "APPROVE" },
+        { "type": "file_contains", "path": "receipt.json", "contains": "approve" }
+      ],
+      "budgets": { "maxTurns": 12 }
+    }
   }
 ]
