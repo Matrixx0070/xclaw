@@ -1,0 +1,49 @@
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -14,6 +14,7 @@ import { rememberJob } from "../memory/durable.mjs";
+ import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
+ import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
+ import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
++import { stampCostHardBlock } from "../tokens/cost-hard-block.mjs";
+ import { checkSeatBudget, recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
+ 
+ /** @typedef {"pending"|"running"|"succeeded"|"failed"|"cancelled"|"budget_exceeded"} JobStatus */
+@@ -49,13 +50,17 @@ export async function runJob(opts) {
+   await fs.mkdir(workspace, { recursive: true });
+ 
+   const evidence = createEvidenceLog();
++  // Resume / circuit state from prior checkpoint
++  let receiptCollector = opts.receiptCollector || opts.collector || null;
++  let quotaHardCircuit = opts.quotaHardCircuit || null;
++  let quotaEscalate = opts.quotaEscalate || null;
+ 
+   // Cost governor pre-check
+   try {
+     if (cfg) {
+       const budget = await checkCostBudget(cfg);
+       if (!budget.ok) {
+-        return {
++        const denied = {
+           id,
+           goal,
+           workspace,
+@@ -71,6 +76,8 @@ export async function runJob(opts) {
+           costBlocked: true,
+           evidence: [],
+         };
++        await stampCostHardBlock(denied, budget);
++        return denied;
+       }
+     }
+   } catch {
+@@ -280,6 +287,9 @@ export async function runJob(opts) {
+   const job = {
+     id,
+     goal,
++    receiptCollector,
++    quotaHardCircuit,
++    quotaEscalate,
+     workspace,
+     status,
+     pass: status === "succeeded",
