@@ -1,7 +1,8 @@
 /**
- * Doctor: swarm cost ledger snapshot.
+ * Doctor: swarm cost ledger + lease snapshot.
  */
 import { ledgerSnapshot, dailyHardUsd } from "../tokens/swarm-ledger.mjs";
+import { readLease } from "../tokens/ledger-lease.mjs";
 
 export function pushSwarmLedgerChecks(push, cfg = {}) {
   try {
@@ -19,6 +20,22 @@ export function pushSwarmLedgerChecks(push, cfg = {}) {
     );
   } catch (e) {
     push("cost.swarmLedger", "warn", `swarm ledger unavailable: ${e.message || e}`, {});
+  }
+  try {
+    const lease = readLease(cfg);
+    if (!lease) {
+      push("cost.swarmLedgerLease", "ok", "no ledger lease held", { lease: null });
+    } else {
+      const expired = (lease.expiresAt || 0) < Date.now();
+      push(
+        "cost.swarmLedgerLease",
+        expired ? "warn" : "ok",
+        `ledger lease owner=${lease.owner} expiresAt=${lease.expiresAt}` + (expired ? " EXPIRED" : ""),
+        lease
+      );
+    }
+  } catch (e) {
+    push("cost.swarmLedgerLease", "warn", `lease unavailable: ${e.message || e}`, {});
   }
 }
 

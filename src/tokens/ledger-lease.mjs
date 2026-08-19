@@ -1,5 +1,5 @@
 /**
- * Multi-region ledger primary lease prototype (file-based).
+ * Multi-region ledger primary lease (file-based prototype).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -47,4 +47,31 @@ export function releaseLease(cfg = {}, { owner = null } = {}) {
   }
 }
 
-export default { acquireLease, releaseLease, leasePath };
+export function renewLease(cfg = {}, { owner = null, ttlMs = 30_000 } = {}) {
+  const fp = leasePath(cfg);
+  const id = owner || `gw-${process.pid}`;
+  try {
+    const cur = JSON.parse(fs.readFileSync(fp, "utf8"));
+    if (cur.owner !== id) {
+      return { ok: false, reason: "not_owner", owner: cur.owner };
+    }
+    const now = Date.now();
+    const lease = { owner: id, at: cur.at || now, expiresAt: now + ttlMs, renewedAt: now };
+    const tmp = fp + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(lease, null, 2));
+    fs.renameSync(tmp, fp);
+    return { ok: true, ...lease };
+  } catch {
+    return acquireLease(cfg, { owner: id, ttlMs });
+  }
+}
+
+export function readLease(cfg = {}) {
+  try {
+    return JSON.parse(fs.readFileSync(leasePath(cfg), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export default { acquireLease, releaseLease, renewLease, readLease, leasePath };
