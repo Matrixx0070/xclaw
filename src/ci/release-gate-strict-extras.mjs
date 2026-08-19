@@ -71,6 +71,10 @@ export const RELEASE_GATE_STRICT_EXTRA_TESTS = [
   "test/openapi-stop-contract.test.mjs",
   "test/stop-help.test.mjs",
   "test/land-batch-n2.test.mjs",
+  "test/cost-hard-block.test.mjs",
+  "test/checkpoint-receipt.test.mjs",
+  "test/autonomy-compare-channel.test.mjs",
+  "test/smoke-last-drain.test.mjs",
 ];
 
 export function listStrictExtraTests(root) {
