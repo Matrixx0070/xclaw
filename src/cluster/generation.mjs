@@ -4,6 +4,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { publishGeneration } from "./generation-pubsub.mjs";
+import { mergeGossip } from "./gossip-watermark.mjs";
 
 export function generationPath(cfg = {}) {
   const base =
@@ -33,6 +35,12 @@ export function bumpGeneration(cfg = {}, { owner = null } = {}) {
   const tmp = fp + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
   fs.renameSync(tmp, fp);
+  try {
+    publishGeneration({ generation: next.generation, owner: next.owner, region: "local" });
+    mergeGossip(cfg, { generation: next.generation, owner: next.owner, region: "local" });
+  } catch {
+    /* */
+  }
   return next;
 }
 
