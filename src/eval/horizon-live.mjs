@@ -21,6 +21,11 @@ import {
   incSoakResume,
   renderSoakResumeMetrics,
 } from "./horizon-soak-resume-metrics.mjs";
+import { resolveLiveGoals } from "./horizon-live-goals.mjs";
+import {
+  writeLiveSoakReport,
+  DEFAULT_LIVE_IDS,
+} from "./horizon-live-report.mjs";
 
 export function hasLiveKey(cfg = {}) {
   return Boolean(
@@ -125,34 +130,89 @@ export async function runHorizonLive(opts = {}) {
             metricsSoak: renderSoakMetrics(),
           };
         }
-        const live = await runAgent({
-          ...opts,
-          maxTurns,
-          maxUsd: policy.maxUsd,
-          signal: controller.signal,
+        const resolved = await resolveLiveGoals({
+          ids: opts.ids || DEFAULT_LIVE_IDS,
+          goals: opts.goals,
         });
+        const missing = resolved.goals.filter((g) => !g.prompt);
+        if (missing.length === resolved.goals.length) {
+          return {
+            ok: false,
+            mode: "live",
+            code: "empty_goal",
+            error: "empty_goal",
+            ids: resolved.ids,
+            policy,
+            soakJobId,
+          };
+        }
+        const results = [];
+        let live = null;
+        for (const g of resolved.goals) {
+          if (!g.prompt) {
+            results.push({ id: g.id, ok: false, error: "empty_goal" });
+            continue;
+          }
+          live = await runAgent({
+            ...opts,
+            goal: g.prompt,
+            userMessage: g.prompt,
+            workingDir: opts.workspace || opts.workingDir || process.cwd(),
+            maxTurns: g.maxTurns || maxTurns,
+            maxUsd: policy.maxUsd,
+            signal: controller.signal,
+            channel: opts.channel || "eval",
+          });
+          results.push({
+            id: g.id,
+            ok: live?.ok !== false && live?.error !== "empty_goal",
+            error: live?.error || null,
+          });
+          if (live?.error === "empty_goal") {
+            break;
+          }
+        }
+        const allOk = results.length > 0 && results.every((r) => r.ok);
         if (soakJobId) {
           await saveSoakCheckpoint(
             soakJobId,
             {
-              turns: (policy.turns || 0) + 1,
+              turns: (policy.turns || 0) + results.length,
               usedUsd: policy.usedUsd,
               workspace: opts.workspace || null,
-              receipts: [
-                { at: new Date().toISOString(), ok: live?.ok !== false },
-              ],
+              receipts: results.map((r) => ({
+                at: new Date().toISOString(),
+                id: r.id,
+                ok: r.ok,
+              })),
             },
             { base: opts.soakBase }
           );
         }
+        const written = await writeLiveSoakReport(
+          {
+            mode: "live",
+            ok: allOk,
+            ids: resolved.ids,
+            usedUsd: policy.usedUsd,
+            turns: (policy.turns || 0) + results.length,
+            soakJobId,
+            canary: { fail: 0 },
+          },
+          { base: opts.soakBase }
+        );
         return {
-          ok: live?.ok !== false,
+          ok: allOk,
           mode: "live",
           maxTurns,
           timeoutMs,
           policy,
           soakJobId,
+          ids: resolved.ids,
+          results,
           live,
+          liveReportPath: written.path,
+          liveReport: written.report,
           metricsLive: renderHorizonLiveMetrics(),
           metricsSoak: renderSoakMetrics(),
           metricsResume: renderSoakResumeMetrics(),
