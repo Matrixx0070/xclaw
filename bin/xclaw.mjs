@@ -2145,6 +2145,12 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       await printStatus({ root, json: args.includes("--json") });
       break;
     }
+    case "tui": {
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const { runTui } = await import("../src/cli/tui.mjs");
+      await runTui(await loadConfig(), { args: args.slice(1) });
+      break;
+    }
     case "queue": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const { enqueueJob, listQueue, getQueueItem, startQueueWorker } = await import("../src/jobs/queue.mjs");
@@ -2892,6 +2898,7 @@ Commands:
   agent <message>      One agent turn (CLI)
   run <message>        Stream via gateway (--ndjson, --resume)
   status [--json]      Gateway + computer + active sessions
+  tui                  Live operator dashboard (sessions, approvals, cost)
   doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
   self-test            Fast unit smoke (autonomy, sandbox, fabric, …)
   stop-all             Abort agent sessions + stop computer

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 3.135.0 — `xclaw tui` (2026-08-19)
+
+There was no `xclaw tui`. The only terminal UI was `xclaw voice tui`, a
+voice-specific REPL, and typing `xclaw tui` silently fell through to the help
+text — so a release advertising a TUI shipped without one.
+
+- **`xclaw tui`** is a live operator dashboard: gateway/computer health, agent
+  provider and model, active sessions with channel and age, pending approvals
+  with their risk tier, spend, and channel status. `q` quits, `r` refreshes,
+  auto-refresh every 5s (`--interval`).
+- It reads the **running gateway over HTTP**, not in-process state. `xclaw
+  status` calls `listActiveSessions()` inside the CLI process, which is why it
+  always reported `0` active sessions no matter what the gateway was doing.
+- `--once` renders a single frame (also used when stdout is not a TTY, so it
+  pipes cleanly), `--json` dumps the raw snapshot, `--no-colour` emits no ANSI
+  at all, and `--help` documents the flags.
+- Degrades honestly: when the gateway is unreachable it says so and tells you
+  how to start it, rather than rendering empty panels.
+- The frame renderer is a pure function (snapshot in, string out) and is
+  covered by tests, including the gateway-down path and a regression guard for
+  the `/info` computer field being `healthy` rather than `running`.
+
 ## 3.134.0 — release polish: the version you see is the version you run (2026-08-19)
 
 Public-release pass over the two surfaces a new user actually meets.

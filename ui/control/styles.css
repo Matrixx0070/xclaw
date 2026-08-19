@@ -20,6 +20,10 @@
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* No `a` rule existed, so any bare link fell back to browser-default blue
+   against the dark theme. */
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
 body {
   margin: 0;
   background: var(--bg);
