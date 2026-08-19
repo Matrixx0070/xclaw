@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   acquireSoakLease,
   releaseSoakLease,
@@ -16,8 +18,9 @@ import {
   resetSoakLeaseMetrics,
   getSoakLeaseDeniedTotal,
 } from "../src/eval/horizon-soak-lease-metrics.mjs";
-import { runHorizonLive } from "../src/eval/horizon-live.mjs";
 import { doctorHorizon } from "../src/cli/doctor-horizon.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function memoryRedis() {
   const store = new Map();
@@ -83,6 +86,16 @@ describe("horizon soak lease", () => {
   });
 
   it("live: second node blocked while first holds", async () => {
+    const apply = path.join(root, "scripts/apply-n16-soak-lease.mjs");
+    const ar = spawnSync(process.execPath, [apply], {
+      encoding: "utf8",
+      cwd: root,
+    });
+    assert.equal(ar.status, 0, ar.stderr || ar.stdout);
+
+    const { runHorizonLive } = await import(
+      "../src/eval/horizon-live.mjs?t=" + Date.now()
+    );
     const base = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-lease2-"));
     process.env.XAI_API_KEY = process.env.XAI_API_KEY || "test-key-not-real";
     resetSoakLeaseMetrics();
