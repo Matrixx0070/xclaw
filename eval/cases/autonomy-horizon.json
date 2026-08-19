@@ -123,5 +123,20 @@
       ],
       "budgets": { "maxTurns": 10 }
     }
+  },
+  {
+    "id": "a4-G19-canary-partial-evidence",
+    "tags": ["autonomy", "a4", "horizon", "g19", "canary"],
+    "fixture": "g19-canary",
+    "prompt": "Read prompt.txt. Do not claim file writes without tools. Write grounded.txt containing CANARY-OK and canary.json with recovered:true. No user questions.",
+    "maxTurns": 10,
+    "timeoutMs": 180000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "grounded.txt", "contains": "CANARY-OK" },
+        { "type": "file_contains", "path": "canary.json", "contains": "true" }
+      ],
+      "budgets": { "maxTurns": 10 }
+    }
   }
 ]
