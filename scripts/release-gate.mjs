@@ -256,6 +256,25 @@ if (strict) {
     console.log((r.out + r.err).split("\n").filter((l) => /tests |pass |fail /.test(l)).slice(-6).join("\n"));
     return { code: r.code, detail: files };
   }, { required: true });
+
+  // Strict extras part 2: flake budget + cold-start honesty. Advisory when no
+  // cold-start baseline exists (offline runs), enforced once one is recorded.
+  await step("flake-cold-start", async () => {
+    const { evaluateReleaseGateStrict } = await import("../src/eval/release-gate-strict.mjs");
+    const { readSoakFlakeCounts } = await import("../src/cli/doctor-perf-checks.mjs");
+    let coldStart = null;
+    try {
+      coldStart = JSON.parse(
+        fsSync.readFileSync(path.join(root, "eval/baselines/last-cold-start.json"), "utf8")
+      );
+    } catch {
+      /* no baseline yet */
+    }
+    const r = evaluateReleaseGateStrict({ cfg: {}, flake: readSoakFlakeCounts({}), coldStart });
+    const detail = (r.checks || []).map((c) => `${c.name}:${c.ok ? "ok" : "fail"}`).join(" | ");
+    console.log(JSON.stringify({ ok: r.ok, failed: r.failed, detail }, null, 2));
+    return { code: r.ok ? 0 : 2, detail };
+  }, { required: Boolean(strict) });
 }
 
 if (live) {

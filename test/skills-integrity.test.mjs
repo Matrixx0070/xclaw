@@ -67,11 +67,12 @@ describe("skills integrity manifest", () => {
     }
   });
 
-  it("mode matrix: off without lockfile, warn with, enforce in prod, explicit wins", () => {
+  it("mode matrix: off without lockfile, warn with, prod enforces either way, explicit wins", () => {
     assert.equal(resolveIntegrityMode({}, false), "off");
     assert.equal(resolveIntegrityMode({}, true), "warn");
     assert.equal(resolveIntegrityMode({ profile: "prod" }, true), "enforce");
-    assert.equal(resolveIntegrityMode({ profile: "prod" }, false), "off");
+    // prod fails closed: no lockfile means refuse unpinned skill injection
+    assert.equal(resolveIntegrityMode({ profile: "prod" }, false), "enforce");
     assert.equal(resolveIntegrityMode({ skills: { integrity: "enforce" } }, false), "enforce");
     assert.equal(resolveIntegrityMode({ profile: "prod", skills: { integrity: "off" } }, true), "off");
   });

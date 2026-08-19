@@ -16,6 +16,7 @@ import { attachReceiptCollectorToJob, ensureJobReceiptCollector } from "./finali
 import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
 import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
 import { recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
+import { reserveUsd, settleUsd } from "../tokens/swarm-ledger.mjs";
 import { stampCostHardBlock } from "../tokens/cost-hard-block.mjs";
 import { recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
 import { preflightJobBudgets, budgetBlockedJob } from "./job-dual-preflight.mjs";
@@ -75,6 +76,39 @@ export async function runJob(opts) {
     seatInfo = dual?.seat || null;
   } catch {
     /* */
+  }
+
+  // Swarm children draw on a shared daily ledger: reserve before the run so a
+  // fan-out cannot collectively blow the cap, settle the real spend after.
+  let swarmReserved = 0;
+  if (cfg && opts.swarmId) {
+    const want = Math.max(0, Number(opts.reserveUsd ?? opts.estimateUsd ?? 0) || 0);
+    const res = reserveUsd(cfg, {
+      swarmId: opts.swarmId,
+      childId: opts.childId || id,
+      usd: want,
+      leaseOwner: opts.leaseOwner || null,
+    });
+    if (res && res.ok === false) {
+      return {
+        id,
+        goal,
+        workspace,
+        status: "failed",
+        pass: false,
+        turns: 0,
+        toolCalls: 0,
+        toolErrors: 0,
+        wallMs: 0,
+        text: "",
+        error: res.message || "swarm ledger hard cap",
+        code: res.code || "SWARM_LEDGER_HARD_CAP",
+        costBlocked: true,
+        swarmLedger: res,
+        evidence: [],
+      };
+    }
+    swarmReserved = want;
   }
 
   const started = Date.now();
@@ -364,6 +398,17 @@ export async function runJob(opts) {
         estimateUsdFromUsage(job.usage, cfg) ??
         0;
       job.costUsd = usd;
+      if (opts.swarmId && swarmReserved >= 0) {
+        try {
+          job.swarmLedger = settleUsd(cfg, {
+            swarmId: opts.swarmId,
+            childId: opts.childId || job.id,
+            usd,
+          });
+        } catch {
+          /* ledger settle is best-effort */
+        }
+      }
       // NOTE: no recordJobCost here anymore — the agent loop itself feeds
       // the daily governor for every run now; recording again here would
       // double-count job traffic.

@@ -145,6 +145,14 @@ export async function saveCheckpoint(cfg, job) {
     quotaEscalate: job.quotaEscalate || job.receiptMetrics?.quotaEscalate || null,
     receiptMetrics: job.receiptMetrics || null,
     claimsSoftRetry: job.claimsSoftRetry || job.receiptMetrics?.claimsSoftRetry || null,
+    // rehydrateReceiptFromCheckpoint reads both of these on resume; without
+    // persisting them a tripped circuit was silently lost across a restart.
+    quotaHardCircuit:
+      job.quotaHardCircuit ||
+      job.receiptCollector?.quotaHardCircuit ||
+      job.receiptMetrics?.quotaHardCircuit ||
+      null,
+    receiptCollector: job.receiptCollector || null,
   };
   const tmp = fp + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(slim, null, 2));
