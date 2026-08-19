@@ -15,15 +15,20 @@ export function pushOAuthReuseChecks(push, cfg = {}) {
   }
   const active = Object.entries(tokens).filter(([, v]) => v && !v.retired);
   const retired = Object.entries(tokens).filter(([, v]) => v && v.retired);
+  const reusedFlag = Object.values(tokens).some((v) => v && v.reused);
   const prod =
     cfg.profile === "prod" ||
     cfg.profile === "strict" ||
     cfg.gateway?.requireAuth === true;
+  let status = "ok";
+  if (reusedFlag && prod) status = "error";
+  else if (reusedFlag) status = "warn";
   push(
     "auth.oauthRefreshRegistry",
-    "ok",
-    `oauth refresh registry active=${active.length} retired=${retired.length}`,
-    { path: fp, active: active.length, retired: retired.length, prod }
+    status,
+    `oauth refresh registry active=${active.length} retired=${retired.length}` +
+      (reusedFlag ? " REUSE_DETECTED" : ""),
+    { path: fp, active: active.length, retired: retired.length, prod, reused: reusedFlag }
   );
 }
 

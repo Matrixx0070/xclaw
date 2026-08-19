@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stopAuthToken } from "./stop-auth.mjs";
+import { ledgerSnapshot, dailyHardUsd } from "../tokens/swarm-ledger.mjs";
 
 function readStopSurfaceFreeze() {
   try {
@@ -24,6 +25,7 @@ export function stopAuthReadiness(cfg = {}) {
       ready: true,
       note: "stop auth disabled",
       surfaceVersion: readStopSurfaceFreeze(),
+      swarmLedger: null,
     };
   }
   const token = stopAuthToken(cfg);
@@ -43,12 +45,30 @@ export function stopAuthReadiness(cfg = {}) {
 
   const ready = auth !== "missing" && hmac !== "missing";
 
+  let swarmLedger = null;
+  try {
+    const snap = ledgerSnapshot(cfg);
+    const hard = dailyHardUsd(cfg);
+    const reserved = Number(snap.reservedUsd) || 0;
+    const spent = Number(snap.spentUsd) || 0;
+    swarmLedger = {
+      day: snap.day,
+      spentUsd: spent,
+      reservedUsd: reserved,
+      hardUsd: hard,
+      pressure: hard > 0 ? (spent + reserved) / hard : 0,
+    };
+  } catch {
+    /* */
+  }
+
   return {
     auth,
     hmac,
     ready,
     singlePort: true,
     surfaceVersion: readStopSurfaceFreeze(),
+    swarmLedger,
   };
 }
 
