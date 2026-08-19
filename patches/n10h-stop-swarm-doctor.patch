@@ -1,0 +1,9 @@
+diff --git a/src/gateway/stop-route.mjs b/src/gateway/stop-route.mjs
+--- a/src/gateway/stop-route.mjs
++++ b/src/gateway/stop-route.mjs
+@@ -6,7 +6,7 @@
+-import { recordLastDrain } from "./last-drain.mjs";
++import { recordLastDrain, withSwarmId } from "./last-drain.mjs";
+@@
+-  recordLastDrain(drain, { cfg });
++  recordLastDrain(withSwarmId(drain, body?.swarmId || cfg?.swarmId), { cfg });
