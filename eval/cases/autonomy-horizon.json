@@ -93,5 +93,20 @@
       ],
       "budgets": { "maxTurns": 12 }
     }
+  },
+  {
+    "id": "a4-G17-overnight-soak",
+    "tags": ["autonomy", "a4", "horizon", "g17", "soak"],
+    "fixture": "g17-soak",
+    "prompt": "Read goal.txt and checkpoint.json. Resume from checkpoint step, write final.txt containing SOAK-DONE, and budget.json with ok:true and usedUsd less than maxUsd. No user questions.",
+    "maxTurns": 10,
+    "timeoutMs": 180000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "final.txt", "contains": "SOAK-DONE" },
+        { "type": "file_contains", "path": "budget.json", "contains": "true" }
+      ],
+      "budgets": { "maxTurns": 10 }
+    }
   }
 ]
