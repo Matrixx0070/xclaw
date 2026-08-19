@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+## 3.133.0 — the 322-commit line actually runs (2026-08-19)
+
+v3.132.1 shipped 322 commits in which most features existed as *patch scripts*
+rather than committed code. The tree CI built was missing the wiring, and
+`npm test` applied those patches in place — mutating 13 source files as it ran.
+The suite therefore reported a different result on every invocation
+(2744 tests/50 fail, then 2730/67 on the identical tree) and CI was red.
+
+- **Every wire landed as code.** 34 patches applied — by hand where the patch
+  text had drifted, since three no longer applied at all and
+  `doctor-perf-ensure.patch` was itself corrupt (hunk headers claimed six
+  context lines and carried four). `apply-ship-patches`, `apply-n10-wires
+  --check`, `apply-complete-n3` and `land-all --check` are all clean.
+  Among the things that were never actually reachable: the `/stop` kill-switch
+  HTTP route was not registered; `beforeLiveTurn`/`afterLiveTurn` were imported
+  but never called, so live loops ran with no cost or hallucination brake;
+  failover hops each restarted from a fresh budget.
+- **The suite no longer rewrites its own source.** Seven apply-* scripts write
+  `horizon-offline.mjs` and ~34 test files invoke them concurrently;
+  `writeFileSync` truncates before writing, so a concurrent reader could
+  transform an empty file and write the emptiness back — that file went from
+  413 lines to 0 bytes mid-run. Writes are now skipped when byte-identical and
+  atomic (temp+rename) otherwise. Three consecutive runs now give an identical
+  2749/0-fail, exit 0.
+- **Workspace quota un-bricked, capability kept.** It was on unless explicitly
+  disabled and fails closed after a full recursive walk that stats every file,
+  so any workspace over 512MB/50k files — anything with a `node_modules` — had
+  every write tool call denied. Measured: `authorize("xclaw_bash",
+  {command:"echo hi"})` returned `WORKSPACE_QUOTA_EXCEEDED` after 2731ms, and
+  4/5 subtests of the untouched `security-risk.test.mjs` failed. Now opt-in
+  (inert without `workspace.quota` config) with the measurement memoised for
+  `workspace.quota.measureTtlMs` (default 1500ms).
+- **Real defects in never-executed modules**: `compactSeqLedger` ignored
+  `cfg.compactFence` entirely, so a stale holder could compact;
+  `acquireCompactLease` never issued a fencing token; `saveCheckpoint` never
+  persisted `quotaHardCircuit`, so a tripped circuit was lost across a restart;
+  `sse-fanout.closeRoom` reported no per-room count;
+  `parseStructuredClaims` only accepted fenced JSON.
+- **Tests corrected where they asserted the wrong thing**: several asserted
+  `git apply --check` exits 0 — i.e. that a patch is still *pending*, which
+  inverts the moment the feature ships; two froze horizon case counts that
+  later packs legitimately grew; one required a patch file that was never
+  committed. `test/helpers/patch-state.mjs` asserts landed-or-appliable.
+- Kept Grok's prod skills-integrity hardening (no lockfile in prod now refuses
+  unpinned skill injection) and updated the stale test that asserted the old
+  fail-open contract.
+
 ## 3.132.0 — voice is a conversation (2026-08-18)
 
 Live testing answered "does voice actually work during a conversation?" with:
