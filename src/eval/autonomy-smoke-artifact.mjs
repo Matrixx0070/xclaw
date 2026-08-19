@@ -3,14 +3,25 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import {
   loadJobIndexQuota,
   normalizeQuotaEscalate,
   emptyQuotaEscalate,
 } from "./autonomy-smoke-quota.mjs";
 
+const require = createRequire(import.meta.url);
+
 export function smokeArtifactPath(root) {
   return path.join(root, "reports", "autonomy", "last-smoke.json");
+}
+
+function tryGetLastDrain() {
+  try {
+    return require("../gateway/last-drain.mjs").getLastDrain?.() || null;
+  } catch {
+    return null;
+  }
 }
 
 export function writeAutonomySmokeArtifact(root, result = {}) {
@@ -19,7 +30,8 @@ export function writeAutonomySmokeArtifact(root, result = {}) {
   const quotaEscalate = normalizeQuotaEscalate(
     result.quotaEscalate || loadJobIndexQuota(root, result.jobsDir) || emptyQuotaEscalate()
   );
-  const lastDrain = result.lastDrain || result.stop?.lastDrain || null;
+  const lastDrain =
+    result.lastDrain || result.stop?.lastDrain || tryGetLastDrain() || null;
   const payload = {
     at: new Date().toISOString(),
     ok: result.ok !== false && Number(result.status ?? 0) === 0,
