@@ -8,6 +8,8 @@ import os from "node:os";
 import { runJob } from "./job.mjs";
 import { withBackoff } from "../utils/backoff.mjs";
 import { stampJobToolHash } from "./stamp-tool-hash.mjs";
+import { verifyCheckpointToolHash } from "./checkpoint-hash-verify.mjs";
+import { shouldRequireToolHashTip } from "./checkpoint-require-tip.mjs";
 import { rehydrateReceiptFromCheckpoint } from "./checkpoint-receipt.mjs";
 
 /** Structured resume / lock error codes */
@@ -501,6 +503,26 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
       error: e.message || String(e),
     };
   }
+  // Integrity: tool-hash tip must match stored toolTrace (unless opts.skipHashVerify)
+  if (opts.skipHashVerify !== true && cfg?.checkpoints?.skipHashVerify !== true) {
+    const hv = verifyCheckpointToolHash(cp, {
+      requireTip: shouldRequireToolHashTip(cfg, opts),
+    });
+    if (!hv.ok) {
+      return {
+        id: jobId,
+        resumed: false,
+        pass: false,
+        status: "error",
+        note: "tool_hash_mismatch",
+        code: hv.code,
+        error: hv.message,
+        expectedToolHashTip: hv.expected,
+        actualToolHashTip: hv.actual,
+      };
+    }
+  }
+
   rehydrateReceiptFromCheckpoint(cp, cp);
   if (cp.pass) {
     return {

@@ -15,9 +15,10 @@ import { rememberJob } from "../memory/durable.mjs";
 import { attachReceiptCollectorToJob } from "./finalize-receipt.mjs";
 import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
 import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
-import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
+import { recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
 import { stampCostHardBlock } from "../tokens/cost-hard-block.mjs";
-import { checkSeatBudget, recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
+import { recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
+import { preflightJobBudgets, budgetBlockedJob } from "./job-dual-preflight.mjs";
 import { createReceiptCollector, copyCollectorOntoJob } from "./receipt-collector.mjs";
 
 /** @typedef {"pending"|"running"|"succeeded"|"failed"|"cancelled"|"budget_exceeded"} JobStatus */
@@ -54,68 +55,28 @@ export async function runJob(opts) {
 
   const evidence = createEvidenceLog();
 
-  // Cost governor pre-check
-  try {
-    if (cfg) {
-      const budget = await checkCostBudget(cfg);
-      if (!budget.ok) {
-        const denied = {
-          id,
-          goal,
-          workspace,
-          status: "failed",
-          pass: false,
-          turns: 0,
-          toolCalls: 0,
-          toolErrors: 0,
-          wallMs: 0,
-          text: "",
-          error: budget.message || "cost hard cap",
-          code: budget.code || "BUDGET_EXCEEDED",
-          costBlocked: true,
-          evidence: [],
-        };
-        await stampCostHardBlock(denied, budget);
-        return denied;
-      }
-    }
-  } catch {
-    /* */
-  }
-
-  // Seat budget pre-check (Phase 3)
+  // Dual preflight: auth refresh -> cost governor -> seat budget
   let seatInfo = null;
   try {
-    if (cfg && seatsEnabled(cfg)) {
-      const peer = opts.peer || opts.seatPeer || opts.from || null;
-      seatInfo = await checkSeatBudget(cfg, peer);
-      if (!seatInfo.ok) {
-        return {
-          id,
-          goal,
-          workspace,
-          status: "failed",
-          pass: false,
-          turns: 0,
-          toolCalls: 0,
-          toolErrors: 0,
-          wallMs: 0,
-          text: "",
-          error: seatInfo.message || "seat hard cap",
-          seatBlocked: true,
-          seat: seatInfo.seat || null,
-          evidence: [],
-        };
+    const dual = await preflightJobBudgets(cfg, opts);
+    if (dual && dual.ok === false) {
+      const denied = budgetBlockedJob({ id, goal, workspace, r: dual });
+      // keep the n10 cost-hard-block stamp: budgetBlockedJob does not do it,
+      // and the quota hard circuit + history readers depend on it.
+      if (denied.costBlocked) {
+        try {
+          await stampCostHardBlock(denied, dual.cost || dual);
+        } catch {
+          /* stamping is best-effort */
+        }
       }
+      return denied;
     }
+    seatInfo = dual?.seat || null;
   } catch {
     /* */
   }
 
-  let groundWarn = [];
-  let groundingFailed = false;
-  let claimScore = null;
-  let claimsGate = null;
   const started = Date.now();
   /** @type {JobStatus} */
   let status = "running";
