@@ -130,6 +130,18 @@ const XCLAW_VERSION = (() => {
 })();
 const XCLAW_PHASE = 7;
 
+/**
+ * A missing API token means PagerDuty was never wired up — a configuration
+ * state, not an upstream fault. Answering 502 made an optional, unconfigured
+ * integration look like a broken gateway and logged a console error in the
+ * Control UI on every click.
+ */
+function pdStatus(out) {
+  if (out?.ok) return 200;
+  const reason = String(out?.reason || out?.error || "");
+  return /no_api_token|not_configured|missing_token|disabled/i.test(reason) ? 200 : 502;
+}
+
 function json(res, status, body) {
   const data = JSON.stringify(body, null, 2);
   res.writeHead(status, {
@@ -1697,7 +1709,7 @@ export async function startGateway({ root } = {}) {
         const { applyEscalationLevels } = await import("../alerting/escalation-levels.mjs");
         const body = await readBody(req).catch(() => ({}));
         const out = await applyEscalationLevels(cfg, body);
-        return json(res, out.ok ? 200 : 502, out);
+        return json(res, pdStatus(out), out);
       }
       if (p === "/alerts/pd/setup" && req.method === "GET") {
         const { pagerDutySetupReport } = await import("../alerting/pagerduty-rest.mjs");
@@ -1706,12 +1718,12 @@ export async function startGateway({ root } = {}) {
       if (p === "/alerts/pd/policies" && req.method === "GET") {
         const { listEscalationPolicies } = await import("../alerting/pagerduty-rest.mjs");
         const out = await listEscalationPolicies({ query: url.searchParams.get("query") }, cfg);
-        return json(res, out.ok ? 200 : 502, out);
+        return json(res, pdStatus(out), out);
       }
       if (p === "/alerts/pd/services" && req.method === "GET") {
         const { listServices } = await import("../alerting/pagerduty-rest.mjs");
         const out = await listServices({}, cfg);
-        return json(res, out.ok ? 200 : 502, out);
+        return json(res, pdStatus(out), out);
       }
       if (p === "/alerts/pd" && req.method === "POST") {
         const { sendPagerDutyEvent, pagerDutyDedupKey } = await import("../alerting/pagerduty.mjs");
@@ -1727,7 +1739,7 @@ export async function startGateway({ root } = {}) {
           severity: body.severity || "error",
           customDetails: body.customDetails || body.meta || {},
         });
-        return json(res, out.ok ? 200 : 502, out);
+        return json(res, pdStatus(out), out);
       }
       if (p === "/alerts/test" && req.method === "POST") {
         const body = await readBody(req).catch(() => ({}));

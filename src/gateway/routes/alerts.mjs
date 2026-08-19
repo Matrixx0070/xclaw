@@ -20,6 +20,18 @@ import { buildDoctorReport } from "../doctor.mjs";
 import { isComputerRunning } from "../../computer/manager.mjs";
 
 /**
+ * A missing API token means PagerDuty was never wired up — a configuration
+ * state, not an upstream fault. Answering 502 made an optional, unconfigured
+ * integration look like a broken gateway and logged a console error in the
+ * Control UI on every click.
+ */
+function pdStatus(out) {
+  if (out?.ok) return 200;
+  const reason = String(out?.reason || out?.error || "");
+  return /no_api_token|not_configured|missing_token|disabled/i.test(reason) ? 200 : 502;
+}
+
+/**
  * @param {object} args — standard route args + channelManager (live instance)
  * @returns {Promise<boolean>} true if handled
  */
@@ -123,7 +135,7 @@ export async function tryHandleAlertsRoute({
     const { applyEscalationLevels } = await import("../../alerting/escalation-levels.mjs");
     const body = await readBody(req).catch(() => ({}));
     const out = await applyEscalationLevels(cfg, body);
-    json(res, out.ok ? 200 : 502, out);
+    json(res, pdStatus(out), out);
     return true;
   }
   if (p === "/alerts/pd/setup" && method === "GET") {
@@ -134,13 +146,13 @@ export async function tryHandleAlertsRoute({
   if (p === "/alerts/pd/policies" && method === "GET") {
     const { listEscalationPolicies } = await import("../../alerting/pagerduty-rest.mjs");
     const out = await listEscalationPolicies({ query: url.searchParams.get("query") }, cfg);
-    json(res, out.ok ? 200 : 502, out);
+    json(res, pdStatus(out), out);
     return true;
   }
   if (p === "/alerts/pd/services" && method === "GET") {
     const { listServices } = await import("../../alerting/pagerduty-rest.mjs");
     const out = await listServices({}, cfg);
-    json(res, out.ok ? 200 : 502, out);
+    json(res, pdStatus(out), out);
     return true;
   }
   if (p === "/alerts/pd" && method === "POST") {
@@ -157,7 +169,7 @@ export async function tryHandleAlertsRoute({
       severity: body.severity || "error",
       customDetails: body.customDetails || body.meta || {},
     });
-    json(res, out.ok ? 200 : 502, out);
+    json(res, pdStatus(out), out);
     return true;
   }
   if (p === "/alerts/test" && method === "POST") {

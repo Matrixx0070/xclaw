@@ -2570,10 +2570,20 @@ $("btnAlertTest")?.addEventListener("click", async () => {
     await loadAlerts();
   } catch (e) { $("alertOut").textContent = String(e.message || e); }
 });
+const PD_HINTS = {
+  no_api_token: "PagerDuty is not configured — set alerts.pagerduty.apiToken to use this.",
+  not_configured: "PagerDuty is not configured.",
+  disabled: "PagerDuty alerting is disabled in config.",
+};
 const pdShow = (p) => async () => {
   $("pdOut").textContent = "loading…";
-  try { $("pdOut").textContent = JSON.stringify(await getJSON(p), null, 2); }
-  catch (e) { $("pdOut").textContent = String(e.message || e); }
+  try {
+    const out = await getJSON(p);
+    const hint = out && out.ok === false ? PD_HINTS[String(out.reason || "")] : null;
+    $("pdOut").textContent = hint || JSON.stringify(out, null, 2);
+  } catch (e) {
+    $("pdOut").textContent = String(e.message || e);
+  }
 };
 $("btnPdSetup")?.addEventListener("click", pdShow("/alerts/pd/setup"));
 $("btnPdPolicies")?.addEventListener("click", pdShow("/alerts/pd/policies"));

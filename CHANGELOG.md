@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 3.140.2 — audited every control in the Control UI (2026-08-19)
+
+Clicked all 313 visible controls across the 20 views (skipping the destructive
+ones), recording console errors and failed requests for each. Two findings.
+
+- **PagerDuty answered 502 when it simply was not configured.** A missing API
+  token is a configuration state, not an upstream fault, so an optional
+  integration looked like a broken gateway and logged a console error on every
+  click. The eight PagerDuty endpoints now answer 200 with `{ok:false, reason}`
+  for configuration states and keep 502 for genuine upstream failures. The UI
+  renders "PagerDuty is not configured — set alerts.pagerduty.apiToken to use
+  this." instead of dumping a raw failure object.
+- `POST /point/pick` returning 400 with *"no pickable page (open the app in a
+  tab or pass url)"* is correct and already surfaced in the UI — left alone.
+
+Everything else — 311 controls — ran clean.
+
 ## 3.140.1 — fix a same-process temp-file rename race (2026-08-19)
 
 `eval-regression` went red on the 3.140.0 push with
