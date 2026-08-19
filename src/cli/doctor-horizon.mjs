@@ -1,5 +1,5 @@
 /**
- * Doctor: horizon case count / pack completeness / soak policy.
+ * Doctor: horizon case count / pack completeness / soak policy / checkpoints.
  */
 import { loadCases } from "../eval/runner.mjs";
 import {
@@ -9,6 +9,8 @@ import {
 import { renderHorizonPackMetrics } from "../eval/horizon-pack-metrics.mjs";
 import { loadSoakPolicy } from "../eval/horizon-soak-policy.mjs";
 import { renderSoakMetrics } from "../eval/horizon-soak-metrics.mjs";
+import { listSoakJobs } from "../eval/horizon-soak-checkpoint.mjs";
+import { renderSoakResumeMetrics } from "../eval/horizon-soak-resume-metrics.mjs";
 
 const EXPECTED = [
   "G10",
@@ -31,6 +33,7 @@ export async function doctorHorizon(cfg = {}) {
     (g) => !ids.some((id) => String(id).includes(g))
   );
   const packComplete = missing.length === 0;
+  const soakJobs = await listSoakJobs({});
   return {
     ok: horizon.length >= 5,
     horizonCaseCount: horizon.length,
@@ -48,6 +51,10 @@ export async function doctorHorizon(cfg = {}) {
     metricsPack: renderHorizonPackMetrics(),
     soakPolicy: loadSoakPolicy({}),
     metricsSoak: renderSoakMetrics(),
+    metricsResume: renderSoakResumeMetrics(),
+    soakJobs,
+    soakJobCount: soakJobs.length,
+    lastCheckpointAt: soakJobs[0]?.updatedAt || null,
     at: new Date().toISOString(),
   };
 }
