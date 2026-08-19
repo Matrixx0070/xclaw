@@ -13,6 +13,14 @@ import {
   checkSoakCaps,
 } from "./horizon-soak-policy.mjs";
 import { incSoakBlock, renderSoakMetrics } from "./horizon-soak-metrics.mjs";
+import {
+  loadSoakCheckpoint,
+  saveSoakCheckpoint,
+} from "./horizon-soak-checkpoint.mjs";
+import {
+  incSoakResume,
+  renderSoakResumeMetrics,
+} from "./horizon-soak-resume-metrics.mjs";
 
 export function hasLiveKey(cfg = {}) {
   return Boolean(
@@ -28,11 +36,19 @@ export function hasLiveKey(cfg = {}) {
 export async function runHorizonLive(opts = {}) {
   const requireLive = opts.requireLive === true || opts["require-live"] === true;
   const key = hasLiveKey(opts.cfg);
+  const soakJobId = opts.soakJobId || opts.jobId || null;
+  let checkpoint = null;
+  if (soakJobId) {
+    checkpoint = await loadSoakCheckpoint(soakJobId, { base: opts.soakBase });
+    if (checkpoint.turns > 0 || checkpoint.usedUsd > 0) {
+      incSoakResume();
+    }
+  }
   const policy = loadSoakPolicy({
     maxUsd: opts.maxUsd,
     maxTurns: opts.maxTurns ?? opts.cfg?.agent?.maxTurns,
-    usedUsd: opts.usedUsd,
-    turns: opts.turns,
+    usedUsd: opts.usedUsd ?? checkpoint?.usedUsd,
+    turns: opts.turns ?? checkpoint?.turns,
   });
   const maxTurns = policy.maxTurns;
   const timeoutMs = Number(opts.timeoutMs ?? 120_000);
@@ -42,14 +58,27 @@ export async function runHorizonLive(opts = {}) {
   });
   if (!pre.ok) {
     incSoakBlock();
+    if (soakJobId) {
+      await saveSoakCheckpoint(
+        soakJobId,
+        {
+          turns: pre.policy.turns,
+          usedUsd: pre.policy.usedUsd,
+          workspace: opts.workspace || null,
+        },
+        { base: opts.soakBase }
+      );
+    }
     return {
       ok: false,
       mode: "soak_blocked",
       code: pre.code,
       reason: pre.reason,
       policy: pre.policy,
+      soakJobId,
       metricsLive: renderHorizonLiveMetrics(),
       metricsSoak: renderSoakMetrics(),
+      metricsResume: renderSoakResumeMetrics(),
     };
   }
 
@@ -102,15 +131,31 @@ export async function runHorizonLive(opts = {}) {
           maxUsd: policy.maxUsd,
           signal: controller.signal,
         });
+        if (soakJobId) {
+          await saveSoakCheckpoint(
+            soakJobId,
+            {
+              turns: (policy.turns || 0) + 1,
+              usedUsd: policy.usedUsd,
+              workspace: opts.workspace || null,
+              receipts: [
+                { at: new Date().toISOString(), ok: live?.ok !== false },
+              ],
+            },
+            { base: opts.soakBase }
+          );
+        }
         return {
           ok: live?.ok !== false,
           mode: "live",
           maxTurns,
           timeoutMs,
           policy,
+          soakJobId,
           live,
           metricsLive: renderHorizonLiveMetrics(),
           metricsSoak: renderSoakMetrics(),
+          metricsResume: renderSoakResumeMetrics(),
         };
       } finally {
         clearTimeout(timer);

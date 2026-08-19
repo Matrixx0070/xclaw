@@ -2,6 +2,7 @@
 /**
  * xclaw eval horizon --offline [--all]
  * xclaw eval horizon --live (dry-run unless --confirm-live)
+ * xclaw eval horizon --live --confirm-live --soak-job <id>
  */
 import os from "node:os";
 import path from "node:path";
@@ -16,12 +17,18 @@ import {
 import { runHorizonLive, hasLiveKey } from "./horizon-live.mjs";
 import { loadSoakPolicy } from "./horizon-soak-policy.mjs";
 import { renderSoakMetrics } from "./horizon-soak-metrics.mjs";
+import { renderSoakResumeMetrics } from "./horizon-soak-resume-metrics.mjs";
 
 export async function main(argv = process.argv.slice(2)) {
   const wantLive = argv.includes("--live");
   const confirmLive = argv.includes("--confirm-live");
   const includeAll =
     argv.includes("--all") || argv.includes("--offline-all");
+  const sj = argv.indexOf("--soak-job");
+  const soakJobId =
+    sj >= 0 && argv[sj + 1] && !argv[sj + 1].startsWith("-")
+      ? argv[sj + 1]
+      : null;
 
   resetHorizonMetrics();
   resetHorizonPackMetrics();
@@ -36,8 +43,10 @@ export async function main(argv = process.argv.slice(2)) {
       note: "Pass --confirm-live to spend against the provider",
       wouldRun: includeAll ? "G10-G20" : "default suite",
       policy,
+      soakJobId,
       metricsPack: renderHorizonPackMetrics(),
       metricsSoak: renderSoakMetrics(),
+      metricsResume: renderSoakResumeMetrics(),
     };
     console.log(JSON.stringify(dry, null, 2));
     process.exitCode = 0;
@@ -53,6 +62,7 @@ export async function main(argv = process.argv.slice(2)) {
       requireLive: true,
       maxUsd: policy.maxUsd,
       maxTurns: policy.maxTurns,
+      soakJobId,
     });
     r.policy = r.policy || policy;
     r.metricsSoak = r.metricsSoak || renderSoakMetrics();
