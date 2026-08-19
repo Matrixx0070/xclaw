@@ -43,4 +43,11 @@ export function getLastDrain(cfg = {}) {
   return last || loadLastDrain(cfg);
 }
 
-export default { recordLastDrain, getLastDrain, loadLastDrain, lastDrainPath };
+/** Attach swarm tree id for cross-agent stop audit. */
+export function withSwarmId(drain, swarmId) {
+  if (!drain || typeof drain !== "object") return drain;
+  if (swarmId != null && swarmId !== "") drain.swarmId = swarmId;
+  return drain;
+}
+
+export default { recordLastDrain, getLastDrain, loadLastDrain, lastDrainPath, withSwarmId };
