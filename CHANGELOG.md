@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 3.133.1 — live-verify fix: dry-run kill-switch actually killed (2026-08-19)
+
+Found by driving the running gateway, not by tests: `POST /stop {"dryRun":true}`
+aborted every live session and drained WS/SSE, then reported the kill as if it
+were real. A dry-run probe — what doctor and the fire drill use to check the
+kill-switch is wired — took down live work.
+
+`handleStopAll` reads `req.body` only. The single-port stop intercept
+(`stop-proxy.tryHandleGatewayStop`) runs inside `wrapWithComputerProxy`, ahead
+of the main router, so nothing had parsed the body yet: `body` was always `{}`
+and the `dryRun` branch was unreachable. The intercept now parses its own JSON
+body (64KB cap, fail-soft). `routes/stop.mjs` does the same for the router path.
+
+Live-proven both ways with a session running: `{"dryRun":true}` → `before:1`,
+`sessionsKilled:0`, `killedSessions:[]`; `{}` → the session is killed and the
+WS drained. Fire drill green.
+
 ## 3.133.0 — the 322-commit line actually runs (2026-08-19)
 
 v3.132.1 shipped 322 commits in which most features existed as *patch scripts*
