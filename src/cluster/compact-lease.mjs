@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { bumpFence, readFence } from "./compact-fence.mjs";
 
 const held = new Set();
 
@@ -49,7 +50,13 @@ export function acquireCompactLease(cfg = {}, region = "local", { owner = null }
   fs.writeFileSync(fp + ".tmp", JSON.stringify(next));
   fs.renameSync(fp + ".tmp", fp);
   held.add(`${fp}:${id}`);
-  return { ok: true, owner: id, region, at: now };
+  // Monotonic fencing token: bump on a genuine hand-over, reuse it on a
+  // same-owner renewal so renewals do not inflate the fence.
+  const fence =
+    cur && cur.owner === id
+      ? readFence(cfg, region).fence || bumpFence(cfg, region, { owner: id }).fence
+      : bumpFence(cfg, region, { owner: id }).fence;
+  return { ok: true, owner: id, region, at: now, fence };
 }
 
 export function renewCompactLease(cfg = {}, region = "local", { owner = null } = {}) {

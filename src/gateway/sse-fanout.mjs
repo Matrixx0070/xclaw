@@ -83,7 +83,7 @@ export function createSSEFanout() {
   function closeRoom(room, reason = "close_room") {
     const key = String(room || "default");
     const r = rooms.get(key);
-    if (!r) return { room: key, subscribers: 0, reason };
+    if (!r) return { room: key, subscribers: 0, closed: 0, reason };
     let closed = 0;
     for (const [sid, sub] of [...r.entries()]) {
       try {
@@ -100,7 +100,8 @@ export function createSSEFanout() {
       closed += 1;
     }
     rooms.delete(key);
-    return { room: key, subscribers: closed, reason };
+    // `closed` is the per-room count; `subscribers` kept for closeAll/closeByPrefix sums.
+    return { room: key, subscribers: closed, closed, reason };
   }
 
   function closeAll(reason = "kill_all") {

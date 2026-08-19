@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { acceptFence } from "./compact-fence.mjs";
 
 export function seqDir(cfg = {}) {
   return cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || path.join(os.homedir(), ".xclaw");
@@ -67,6 +68,20 @@ export function ownerCount(data) {
 }
 
 export function compactSeqLedger(cfg = {}, data = null) {
+  // Fencing: a holder carrying an outdated fence must not compact, even when
+  // the ledger is small enough to short-circuit below.
+  if (cfg.compactFence != null) {
+    const gate = acceptFence(cfg, cfg._seqRegion || "local", cfg.compactFence);
+    if (!gate.ok) {
+      return {
+        ok: false,
+        compacted: false,
+        code: gate.code || "STALE_FENCE",
+        fence: cfg.compactFence,
+        current: gate.current,
+      };
+    }
+  }
   const cur = data || readSeqLedger(cfg, cfg._seqRegion || null);
   const max = seqGcMax(cfg);
   const n = ownerCount(cur);
