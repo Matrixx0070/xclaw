@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><head><title>G15 Form</title></head>
+<body>
+<form id="signup">
+  <input name="name" id="name" />
+  <input name="email" id="email" />
+  <button type="submit" id="submit">Submit</button>
+</form>
+<div id="result"></div>
+<script>
+document.getElementById('signup').addEventListener('submit', function(e) {
+  e.preventDefault();
+  document.getElementById('result').textContent = 'SUBMITTED-OK';
+});
+</script>
+</body></html>
