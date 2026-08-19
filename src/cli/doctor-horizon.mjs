@@ -16,6 +16,7 @@ export async function doctorHorizon(cfg = {}) {
     hasG15: horizon.some((c) => String(c.id).includes("G15")),
     hasG16: horizon.some((c) => String(c.id).includes("G16")),
     hasG17: horizon.some((c) => String(c.id).includes("G17")),
+    hasG18: horizon.some((c) => String(c.id).includes("G18")),
     passTotal: getHorizonPassTotal(),
     metrics: renderHorizonMetrics(),
     at: new Date().toISOString(),

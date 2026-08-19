@@ -108,5 +108,20 @@
       ],
       "budgets": { "maxTurns": 10 }
     }
+  },
+  {
+    "id": "a4-G18-oauth-refresh-midrun",
+    "tags": ["autonomy", "a4", "horizon", "g18", "oauth"],
+    "fixture": "g18-oauth",
+    "prompt": "tokens.json has an expired accessToken and a valid refreshToken. Refresh credentials, then write done.txt containing OAUTH-OK and tokens-out.json with refreshed:true. No user questions.",
+    "maxTurns": 10,
+    "timeoutMs": 180000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "done.txt", "contains": "OAUTH-OK" },
+        { "type": "file_contains", "path": "tokens-out.json", "contains": "true" }
+      ],
+      "budgets": { "maxTurns": 10 }
+    }
   }
 ]
