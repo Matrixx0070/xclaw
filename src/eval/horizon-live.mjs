@@ -7,6 +7,12 @@ import {
   incHorizonLiveFail,
   renderHorizonLiveMetrics,
 } from "./horizon-live-metrics.mjs";
+import {
+  loadSoakPolicy,
+  beforeSoakTurn,
+  checkSoakCaps,
+} from "./horizon-soak-policy.mjs";
+import { incSoakBlock, renderSoakMetrics } from "./horizon-soak-metrics.mjs";
 
 export function hasLiveKey(cfg = {}) {
   return Boolean(
@@ -22,8 +28,30 @@ export function hasLiveKey(cfg = {}) {
 export async function runHorizonLive(opts = {}) {
   const requireLive = opts.requireLive === true || opts["require-live"] === true;
   const key = hasLiveKey(opts.cfg);
-  const maxTurns = Number(opts.maxTurns ?? opts.cfg?.agent?.maxTurns ?? 8);
+  const policy = loadSoakPolicy({
+    maxUsd: opts.maxUsd,
+    maxTurns: opts.maxTurns ?? opts.cfg?.agent?.maxTurns,
+    usedUsd: opts.usedUsd,
+    turns: opts.turns,
+  });
+  const maxTurns = policy.maxTurns;
   const timeoutMs = Number(opts.timeoutMs ?? 120_000);
+  const pre = checkSoakCaps(policy, {
+    usedUsd: policy.usedUsd,
+    turns: policy.turns,
+  });
+  if (!pre.ok) {
+    incSoakBlock();
+    return {
+      ok: false,
+      mode: "soak_blocked",
+      code: pre.code,
+      reason: pre.reason,
+      policy: pre.policy,
+      metricsLive: renderHorizonLiveMetrics(),
+      metricsSoak: renderSoakMetrics(),
+    };
+  }
 
   if (!key) {
     if (requireLive) {
@@ -52,9 +80,26 @@ export async function runHorizonLive(opts = {}) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
+        const turnGuard = beforeSoakTurn(policy, {
+          turns: policy.turns,
+          usedUsd: policy.usedUsd,
+        });
+        if (!turnGuard.ok) {
+          incSoakBlock();
+          return {
+            ok: false,
+            mode: "soak_blocked",
+            code: turnGuard.code,
+            reason: turnGuard.reason,
+            policy: turnGuard.policy,
+            metricsLive: renderHorizonLiveMetrics(),
+            metricsSoak: renderSoakMetrics(),
+          };
+        }
         const live = await runAgent({
           ...opts,
           maxTurns,
+          maxUsd: policy.maxUsd,
           signal: controller.signal,
         });
         return {
@@ -62,8 +107,10 @@ export async function runHorizonLive(opts = {}) {
           mode: "live",
           maxTurns,
           timeoutMs,
+          policy,
           live,
           metricsLive: renderHorizonLiveMetrics(),
+          metricsSoak: renderSoakMetrics(),
         };
       } finally {
         clearTimeout(timer);
