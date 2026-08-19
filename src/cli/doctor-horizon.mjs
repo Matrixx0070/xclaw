@@ -1,5 +1,5 @@
 /**
- * Doctor: horizon case count / pack completeness.
+ * Doctor: horizon case count / pack completeness / soak policy.
  */
 import { loadCases } from "../eval/runner.mjs";
 import {
@@ -7,6 +7,8 @@ import {
   renderHorizonMetrics,
 } from "../eval/horizon-metrics.mjs";
 import { renderHorizonPackMetrics } from "../eval/horizon-pack-metrics.mjs";
+import { loadSoakPolicy } from "../eval/horizon-soak-policy.mjs";
+import { renderSoakMetrics } from "../eval/horizon-soak-metrics.mjs";
 
 const EXPECTED = [
   "G10",
@@ -44,6 +46,8 @@ export async function doctorHorizon(cfg = {}) {
     passTotal: getHorizonPassTotal(),
     metrics: renderHorizonMetrics(),
     metricsPack: renderHorizonPackMetrics(),
+    soakPolicy: loadSoakPolicy({}),
+    metricsSoak: renderSoakMetrics(),
     at: new Date().toISOString(),
   };
 }
