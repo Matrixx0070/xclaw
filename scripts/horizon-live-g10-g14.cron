@@ -1,0 +1,4 @@
+# XClaw live G10-G14 nightly (dry-run unless XCLAW_SOAK_CONFIRM=1)
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+30 4 * * * root cd /opt/xclaw && XCLAW_SOAK_MAX_USD=2 /opt/xclaw/scripts/horizon-live-g10-g14.sh >> /var/log/xclaw-live-g10-g14.log 2>&1
