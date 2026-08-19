@@ -2,7 +2,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   renderTuiFrame,
+  renderChatScreen,
   collectTuiSnapshot,
+  formatToolCall,
+  wrapLine,
   tuiHelp,
 } from "../src/cli/tui.mjs";
 
@@ -73,8 +76,72 @@ describe("tui frame", () => {
 
   it("help documents the flags it accepts", () => {
     const h = tuiHelp();
-    for (const flag of ["--once", "--json", "--interval", "--no-colour"]) {
+    for (const flag of ["--once", "--json", "--interval", "--no-colour", "--status"]) {
       assert.ok(h.includes(flag), flag);
     }
+  });
+});
+
+describe("tui chat screen", () => {
+  const state = {
+    version: "3.136.0",
+    model: "xai/grok-4.6",
+    profile: "lab",
+    cwd: "/root/xclaw",
+    transcript: ["> hello", "\u23fa xclaw_bash(whoami)", "  \u23bf root"],
+    input: "what is up",
+    busy: false,
+    notice: "gateway ready",
+  };
+
+  it("lays out header, transcript and the ruled input block", () => {
+    const rows = 24;
+    const frame = renderChatScreen(state, { colour: false, columns: 80, rows });
+    assert.equal(frame.length, rows - 1, "frame must fit the terminal");
+    const text = frame.join("\n");
+    assert.match(text, /XClaw v3\.136\.0/);
+    assert.match(text, /xai\/grok-4\.6 · lab/);
+    assert.match(text, /\/root\/xclaw/);
+    assert.match(text, /gateway ready/);
+    assert.match(text, /xclaw_bash\(whoami\)/);
+    // input block: rule, caret + typed text, rule, footer
+    assert.match(frame.at(-4), /^ ─+$/);
+    assert.match(frame.at(-3), /▌ what is up/);
+    assert.match(frame.at(-2), /^ ─+$/);
+    assert.match(frame.at(-1), /Enter send/);
+    assert.ok(!text.includes("\u001b"), "colour:false must emit no ANSI");
+  });
+
+  it("marks the input block busy while a turn is running", () => {
+    const frame = renderChatScreen({ ...state, busy: true }, { colour: false, columns: 80, rows: 24 });
+    assert.match(frame.at(-3), /working…/);
+  });
+
+  it("keeps the frame inside the terminal for a long transcript", () => {
+    const long = { ...state, transcript: Array.from({ length: 500 }, (_, i) => `line ${i}`) };
+    const frame = renderChatScreen(long, { colour: false, columns: 80, rows: 30 });
+    assert.equal(frame.length, 29);
+    assert.match(frame.join("\n"), /line 499/, "must show the newest lines");
+  });
+});
+
+describe("tui formatting", () => {
+  it("summarises a tool call by its primary argument", () => {
+    assert.equal(formatToolCall("xclaw_bash", { command: "whoami" }), "xclaw_bash(whoami)");
+    assert.equal(formatToolCall("xclaw_file_read", { path: "/etc/hosts" }), "xclaw_file_read(/etc/hosts)");
+    assert.equal(formatToolCall("mystery", {}), "mystery()");
+  });
+
+  it("collapses whitespace and truncates long arguments", () => {
+    const out = formatToolCall("xclaw_bash", { command: "echo   a\n\nb" + "x".repeat(200) });
+    assert.ok(out.length < 90, out.length);
+    assert.ok(!out.includes("\n"));
+  });
+
+  it("wraps with a hanging indent", () => {
+    const out = wrapLine("aaaa bbbb cccc dddd", 10, "  ");
+    assert.ok(out.length > 1);
+    assert.ok(!out[0].startsWith("  "), "first line is not indented");
+    assert.ok(out[1].startsWith("  "), "continuations are indented");
   });
 });

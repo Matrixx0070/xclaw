@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## 3.136.0 — the TUI is a conversation (2026-08-19)
+
+3.135.0 shipped `xclaw tui` as a read-only status dashboard. That is not what a
+TUI is for: you look at it, you cannot use it. `xclaw tui` is now a full-screen
+conversational terminal UI, shaped after the Claude Code TUI.
+
+- Header carries the mark, version, `provider/model · profile` and cwd; an
+  accent notice line reports gateway readiness and any pending approvals.
+- The transcript renders a turn the way you would want to read it: `> ` for
+  your message, `⏺ tool(primary-arg)` for each tool call, `⎿ output` for its
+  result, then `⏺` for the answer.
+- A ruled input block is pinned to the bottom with a `▌` caret, and the footer
+  shows the cost of the last turn.
+- Streams from `/agent/run/stream` (NDJSON) against the running gateway, so
+  tool calls appear as they happen rather than after the turn completes.
+- `/status` (the old dashboard), `/clear`, `/help`, `/quit`; Ctrl+C exits.
+  The dashboard is still reachable as `xclaw tui --status`, and `--once`,
+  `--json` and `--no-colour` are unchanged.
+
+`renderChatScreen` is a pure function (state in, lines out) and is tested for
+layout, the busy state, and transcript overflow, alongside the tool-call
+formatter and the wrapper.
+
 ## 3.135.0 — `xclaw tui` (2026-08-19)
 
 There was no `xclaw tui`. The only terminal UI was `xclaw voice tui`, a

@@ -1,27 +1,39 @@
 /**
- * `xclaw tui` — operator terminal dashboard.
+ * `xclaw tui` — full-screen conversational terminal UI.
  *
- * Reads the RUNNING gateway over HTTP rather than in-process state: sessions,
- * approvals and cost live in the gateway process, which is why `xclaw status`
- * reports 0 active sessions when run from a separate CLI process.
+ * Shaped after the Claude Code TUI: a mascot header carrying version/model/cwd,
+ * an accent notice line, a scrolling transcript that renders tool calls inline,
+ * and a ruled input block pinned to the bottom with a status footer.
  *
- * Zero dependencies — plain ANSI, same as the Control UI's "zero deps" rule.
+ * Talks to the RUNNING gateway over HTTP (`/agent/run/stream`, NDJSON) rather
+ * than in-process state — `xclaw status` calls `listActiveSessions()` inside the
+ * CLI process, which is why it always reports 0 active sessions.
+ *
+ * Zero dependencies — plain ANSI, same rule as the Control UI.
  */
 
+const ESC = "\u001b";
+const KEY_CTRL_C = "\u0003";
+const KEY_BACKSPACE = "\u007f";
+
 const C = {
-  reset: "\u001b[0m",
-  dim: "\u001b[2m",
-  bold: "\u001b[1m",
-  red: "\u001b[31m",
-  green: "\u001b[32m",
-  yellow: "\u001b[33m",
-  blue: "\u001b[34m",
-  cyan: "\u001b[36m",
-  grey: "\u001b[90m",
+  reset: `${ESC}[0m`,
+  bold: `${ESC}[1m`,
+  red: `${ESC}[31m`,
+  green: `${ESC}[32m`,
+  yellow: `${ESC}[33m`,
+  grey: `${ESC}[90m`,
+  accent: `${ESC}[38;5;203m`,
 };
 
 const DOT_ON = "●";
 const DOT_OFF = "○";
+const MARK = "⏺";
+const ELBOW = "⎿";
+const CHEV = "⏵";
+
+/** Small XClaw mark, sized to sit beside the header's meta lines. */
+const MASCOT = [" ▄▖  ▗▄ ", " ▜█▀▀█▛ ", "  ▀▄▄▀  ", "  ▘  ▝  "];
 
 function paint(text, colour, enabled) {
   return enabled === false ? String(text) : `${colour}${text}${C.reset}`;
@@ -50,7 +62,7 @@ async function getJson(url, token, timeoutMs = 4000) {
   }
 }
 
-/** Fetch everything the dashboard renders. Never throws. */
+/** Fetch everything the status view renders. Never throws. */
 export async function collectTuiSnapshot(cfg = {}, opts = {}) {
   const base = opts.base || gatewayBase(cfg);
   const token = opts.token ?? cfg.gateway?.token ?? null;
@@ -90,14 +102,13 @@ function relTime(iso) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/** `dim` is passed in so --no-colour really emits no ANSI, labels included. */
 function row(label, value, dim = (t) => t) {
   return `  ${dim(label.padEnd(10))}${value}`;
 }
 
 /**
- * Pure renderer — a snapshot in, a frame out. Kept separate from the loop so
- * it can be asserted on without a running gateway.
+ * Status view — snapshot in, frame out. Pure, so it can be asserted on without
+ * a running gateway. Reachable as `xclaw tui --status` and `/status`.
  */
 export function renderTuiFrame(snap = {}, opts = {}) {
   const colour = opts.colour !== false;
@@ -142,7 +153,9 @@ export function renderTuiFrame(snap = {}, opts = {}) {
   lines.push(row("sessions", `${sessions.length} active`, dim));
   for (const s of sessions.slice(0, 5)) {
     const who = s.sessionKey || s.id || "";
-    lines.push(`    ${dim((s.channel || "?").padEnd(9))}${String(who).slice(0, 34).padEnd(36)}${dim(relTime(s.updatedAt))}`);
+    lines.push(
+      `    ${dim((s.channel || "?").padEnd(9))}${String(who).slice(0, 34).padEnd(36)}${dim(relTime(s.updatedAt))}`
+    );
   }
   if (sessions.length > 5) lines.push(dim(`    … ${sessions.length - 5} more`));
   lines.push("");
@@ -181,22 +194,141 @@ export function renderTuiFrame(snap = {}, opts = {}) {
   return lines.join("\n");
 }
 
+/** Compact one-line summary of a tool call. */
+export function formatToolCall(name, args = {}) {
+  const a = args || {};
+  const primary = a.command ?? a.path ?? a.file_path ?? a.url ?? a.query ?? a.goal ?? null;
+  const inner = primary == null ? "" : String(primary).replace(/\s+/g, " ").slice(0, 68);
+  return `${name}(${inner})`;
+}
+
+/** Wrap to width; continuation lines carry `indent`. */
+export function wrapLine(text, width, indent = "") {
+  const w = Math.max(8, width);
+  const out = [];
+  for (const raw of String(text).split("\n")) {
+    let line = raw;
+    if (!line) {
+      out.push("");
+      continue;
+    }
+    let first = true;
+    while (line.length > w) {
+      let cut = line.lastIndexOf(" ", w);
+      if (cut <= 0) cut = w;
+      out.push((first ? "" : indent) + line.slice(0, cut));
+      line = line.slice(cut).replace(/^\s+/, "");
+      first = false;
+    }
+    out.push((first ? "" : indent) + line);
+  }
+  return out;
+}
+
+/**
+ * Render the whole chat screen. Pure: state in, lines out, so the layout can be
+ * asserted without a terminal.
+ */
+export function renderChatScreen(state = {}, opts = {}) {
+  const colour = opts.colour !== false;
+  const cols = Math.max(40, opts.columns || 80);
+  const rows = Math.max(14, opts.rows || 24);
+  const p = (t, c) => paint(t, c, colour);
+  const dim = (t) => p(t, C.grey);
+  const acc = (t) => p(t, C.accent);
+
+  const head = [];
+  const meta = [
+    `${p("XClaw", C.bold)} ${dim("v" + (state.version || "?"))}`,
+    dim(`${state.model || "no model"}${state.profile ? " · " + state.profile : ""}`),
+    dim(state.cwd || ""),
+    "",
+  ];
+  for (let i = 0; i < MASCOT.length; i += 1) {
+    head.push(`${acc(MASCOT[i])}${meta[i] ? "  " + meta[i] : ""}`);
+  }
+  head.push("");
+  if (state.notice) head.push(` ${acc(CHEV)} ${state.notice}`);
+  head.push("");
+
+  const rule = dim("─".repeat(Math.max(10, cols - 2)));
+  const caret = state.busy ? acc("…") : acc("▌");
+  const typed = state.input || "";
+  const room = Math.max(10, cols - 8);
+  const shown = typed.length > room ? typed.slice(typed.length - room) : typed;
+  const foot = [
+    ` ${rule}`,
+    ` ${caret} ${shown}${state.busy ? dim("  working…") : ""}`,
+    ` ${rule}`,
+    ` ${acc(CHEV + CHEV)} ${state.footer || dim("Enter send · /help · Ctrl+C quit")}`,
+  ];
+
+  const budget = Math.max(1, rows - head.length - foot.length - 1);
+  const body = (state.transcript || []).slice(-budget);
+  while (body.length < budget) body.push("");
+
+  return [...head, ...body, ...foot];
+}
+
 export function tuiHelp() {
   return [
-    "xclaw tui — operator dashboard (gateway, sessions, approvals, cost)",
+    "xclaw tui — conversational terminal UI for the gateway",
     "",
     "Usage:",
-    "  xclaw tui [--once] [--json] [--interval <seconds>] [--no-colour]",
+    "  xclaw tui [--status] [--once] [--json] [--no-colour]",
     "",
     "Options:",
-    "  --once            render a single frame and exit (non-interactive)",
-    "  --json            print the raw snapshot as JSON and exit",
-    "  --interval <s>    refresh interval, default 5",
-    "  --no-colour       disable ANSI colour",
-    "  --help            show this help",
+    "  --status     operator dashboard instead of the chat UI",
+    "  --once       render one frame and exit (status view)",
+    "  --json       print the raw status snapshot and exit",
+    "  --interval   status auto-refresh seconds (default 5)",
+    "  --no-colour  disable ANSI colour",
+    "  --help       show this help",
     "",
-    "Keys:  q or Ctrl-C quit · r refresh now",
+    "In the chat UI:",
+    "  /status      gateway, sessions, approvals, cost",
+    "  /clear       clear the transcript",
+    "  /help        this help",
+    "  /quit        exit (or Ctrl+C)",
   ].join("\n");
+}
+
+async function streamAgent(base, token, message, onEvent, signal) {
+  const res = await fetch(`${base}/agent/run/stream`, {
+    method: "POST",
+    signal,
+    headers: {
+      "content-type": "application/json",
+      accept: "application/x-ndjson",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ message, channel: "tui" }),
+  });
+  if (!res.ok || !res.body) return { ok: false, error: `HTTP ${res.status}` };
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let result = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      let ev;
+      try {
+        ev = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if ((ev.type || ev.event) === "result") result = ev;
+      onEvent(ev);
+    }
+  }
+  return { ok: true, result };
 }
 
 export async function runTui(cfg = {}, opts = {}) {
@@ -206,11 +338,8 @@ export async function runTui(cfg = {}, opts = {}) {
     return { ok: true, help: true };
   }
   const colour = !args.includes("--no-colour") && !args.includes("--no-color");
-  const iIdx = args.indexOf("--interval");
-  const intervalMs = Math.max(
-    1000,
-    (iIdx >= 0 && Number(args[iIdx + 1]) > 0 ? Number(args[iIdx + 1]) : 5) * 1000
-  );
+  const base = opts.base || gatewayBase(cfg);
+  const token = opts.token ?? cfg.gateway?.token ?? null;
 
   if (args.includes("--json")) {
     console.log(JSON.stringify(await collectTuiSnapshot(cfg, opts), null, 2));
@@ -221,38 +350,55 @@ export async function runTui(cfg = {}, opts = {}) {
     console.log(renderTuiFrame(snap, { colour, intervalMs: null }));
     return { ok: true, once: true, up: snap.up };
   }
+  if (args.includes("--status")) {
+    const iIdx = args.indexOf("--interval");
+    const intervalMs = Math.max(
+      1000,
+      (iIdx >= 0 && Number(args[iIdx + 1]) > 0 ? Number(args[iIdx + 1]) : 5) * 1000
+    );
+    return statusLoop(cfg, opts, { colour, intervalMs });
+  }
+  return chatLoop(cfg, { ...opts, base, token, colour });
+}
 
-  let timer = null;
-  let stopped = false;
-  const draw = async () => {
-    const snap = await collectTuiSnapshot(cfg, opts);
-    if (stopped) return;
-    process.stdout.write("\u001b[2J\u001b[H");
-    process.stdout.write(renderTuiFrame(snap, { colour, intervalMs }) + "\n");
-  };
-  const stop = () => {
-    if (stopped) return;
-    stopped = true;
-    if (timer) clearInterval(timer);
-    try {
-      if (process.stdin.isTTY) process.stdin.setRawMode(false);
-    } catch {
-      /* not a tty */
-    }
-    process.stdin.pause();
-    process.stdout.write("\u001b[?25h");
-  };
-
-  process.stdout.write("\u001b[?25l");
+function enterRaw() {
+  process.stdout.write(`${ESC}[?25l`);
   try {
     if (process.stdin.isTTY) process.stdin.setRawMode(true);
   } catch {
     /* not a tty */
   }
   process.stdin.resume();
-  process.stdin.on("data", (buf) => {
-    const k = String(buf);
-    if (k === "q" || k === "") {
+}
+
+function leaveRaw(clear) {
+  try {
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+  } catch {
+    /* not a tty */
+  }
+  process.stdin.pause();
+  process.stdout.write(`${ESC}[?25h` + (clear ? `${ESC}[2J${ESC}[H` : "\n"));
+}
+
+async function statusLoop(cfg, opts, { colour, intervalMs }) {
+  let timer = null;
+  let stopped = false;
+  const draw = async () => {
+    const snap = await collectTuiSnapshot(cfg, opts);
+    if (stopped) return;
+    process.stdout.write(`${ESC}[2J${ESC}[H` + renderTuiFrame(snap, { colour, intervalMs }) + "\n");
+  };
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    if (timer) clearInterval(timer);
+    leaveRaw(false);
+  };
+  enterRaw();
+  process.stdin.on("data", (b) => {
+    const k = String(b);
+    if (k === "q" || k === KEY_CTRL_C) {
       stop();
       process.exit(0);
     }
@@ -262,11 +408,162 @@ export async function runTui(cfg = {}, opts = {}) {
     stop();
     process.exit(0);
   });
-
   await draw();
   timer = setInterval(draw, intervalMs);
   await new Promise(() => {});
   return { ok: true };
 }
 
-export default { runTui, collectTuiSnapshot, renderTuiFrame, tuiHelp };
+async function chatLoop(cfg, opts) {
+  const { base, token, colour } = opts;
+  const p = (t, c) => paint(t, c, colour);
+  const dim = (t) => p(t, C.grey);
+  const acc = (t) => p(t, C.accent);
+
+  const info = await getJson(`${base}/info`, token);
+  const approvals = await getJson(`${base}/approvals`, token);
+  const agent = info.body?.agent || {};
+  const pendingN = approvals.body?.pending?.length || 0;
+
+  const state = {
+    version: info.body?.version || "?",
+    model: agent.provider ? `${agent.provider}/${agent.model || "?"}` : agent.model || "",
+    profile: cfg.profile || "",
+    cwd: process.cwd(),
+    transcript: [],
+    input: "",
+    busy: false,
+    notice: info.ok
+      ? `${dim("gateway ready")}${pendingN ? p(` · ${pendingN} approval(s) pending`, C.yellow) : ""}`
+      : p(`gateway unreachable at ${base} — start it with: xclaw gateway`, C.red),
+    footer: dim("Enter send · /help · Ctrl+C quit"),
+  };
+
+  const cols = () => process.stdout.columns || 80;
+  const rowsN = () => process.stdout.rows || 24;
+  const push = (l) => state.transcript.push(l);
+  const pushWrapped = (text, indent = "  ") => {
+    for (const l of wrapLine(text, cols() - 4, indent)) push(l);
+  };
+  const draw = () => {
+    const frame = renderChatScreen(state, { colour, columns: cols(), rows: rowsN() });
+    process.stdout.write(`${ESC}[2J${ESC}[H` + frame.join("\n"));
+  };
+
+  const submit = async (text) => {
+    state.busy = true;
+    push("");
+    pushWrapped(`${acc(">")} ${text}`);
+    push("");
+    draw();
+    try {
+      const out = await streamAgent(base, token, text, (ev) => {
+        const kind = ev.type || ev.event;
+        if (kind === "tool" && ev.phase === "start") {
+          push(`${acc(MARK)} ${formatToolCall(ev.name, ev.args)}`);
+          draw();
+        } else if (kind === "tool" && (ev.phase === "end" || ev.phase === "result")) {
+          const res = String(ev.preview ?? ev.resultText ?? ev.result ?? ev.text ?? "").trim();
+          if (res) {
+            const shown = wrapLine(res, cols() - 8, "     ").slice(0, 4);
+            push(`  ${dim(ELBOW)} ${shown[0]}`);
+            for (const extra of shown.slice(1)) push(`     ${dim(extra.trim())}`);
+            draw();
+          }
+        } else if (kind === "security" && ev.phase === "pending") {
+          push(p(`  ${ELBOW} approval required — approve in Telegram or the Control UI`, C.yellow));
+          draw();
+        }
+      });
+      const answer = out.result?.text || out.result?.finalText || "";
+      push("");
+      if (answer) pushWrapped(`${acc(MARK)} ${answer}`);
+      else push(dim(`  ${ELBOW} ${out.error || "(no reply)"}`));
+      const usd = out.result?.usage?.costUsd;
+      state.footer = dim(
+        `Enter send · /help · Ctrl+C quit${usd != null ? ` · last turn $${Number(usd).toFixed(4)}` : ""}`
+      );
+    } catch (e) {
+      push(p(`  ${ELBOW} ${String(e?.message || e)}`, C.red));
+    } finally {
+      state.busy = false;
+      draw();
+    }
+  };
+
+  const slash = async (cmd) => {
+    if (cmd === "/quit" || cmd === "/exit") {
+      leaveRaw(true);
+      process.exit(0);
+    }
+    if (cmd === "/clear") {
+      state.transcript = [];
+      return;
+    }
+    if (cmd === "/help") {
+      push("");
+      for (const l of tuiHelp().split("\n")) push(dim("  " + l));
+      return;
+    }
+    if (cmd === "/status") {
+      const snap = await collectTuiSnapshot(cfg, opts);
+      push("");
+      for (const l of renderTuiFrame(snap, { colour }).split("\n")) push(l);
+      return;
+    }
+    push(dim(`  unknown command ${cmd} — try /help`));
+  };
+
+  enterRaw();
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", async (chunk) => {
+    for (const ch of String(chunk)) {
+      if (ch === KEY_CTRL_C) {
+        leaveRaw(true);
+        process.exit(0);
+      }
+      if (state.busy) continue;
+      if (ch === "\r" || ch === "\n") {
+        const text = state.input.trim();
+        state.input = "";
+        if (!text) {
+          draw();
+          continue;
+        }
+        if (text.startsWith("/")) {
+          await slash(text);
+          draw();
+          continue;
+        }
+        await submit(text);
+        continue;
+      }
+      if (ch === KEY_BACKSPACE || ch === "\b") {
+        state.input = state.input.slice(0, -1);
+        draw();
+        continue;
+      }
+      if (ch < " ") continue;
+      state.input += ch;
+      draw();
+    }
+  });
+  process.on("SIGINT", () => {
+    leaveRaw(true);
+    process.exit(0);
+  });
+  process.stdout.on("resize", draw);
+  draw();
+  await new Promise(() => {});
+  return { ok: true };
+}
+
+export default {
+  runTui,
+  collectTuiSnapshot,
+  renderTuiFrame,
+  renderChatScreen,
+  formatToolCall,
+  wrapLine,
+  tuiHelp,
+};
