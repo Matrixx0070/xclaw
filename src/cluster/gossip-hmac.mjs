@@ -2,12 +2,13 @@
  * HMAC-signed gossip payloads.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { acceptSeq } from "./gossip-seq.mjs";
 
-const reject = { gossip_reject_total: 0, reasons: { invalid: 0, required: 0, replay: 0 } };
+const reject = { gossip_reject_total: 0, reasons: { invalid: 0, required: 0, replay: 0, seq: 0 } };
 
 export function incGossipReject(n = 1, reason = "invalid") {
   reject.gossip_reject_total += n;
-  const k = reason === "required" || reason === "replay" ? reason : "invalid";
+  const k = reason === "required" || reason === "replay" || reason === "seq" ? reason : "invalid";
   reject.reasons[k] = (reject.reasons[k] || 0) + n;
   return reject.gossip_reject_total;
 }
@@ -22,7 +23,7 @@ export function getGossipRejectTotal() {
 
 export function resetGossipReject() {
   reject.gossip_reject_total = 0;
-  reject.reasons = { invalid: 0, required: 0, replay: 0 };
+  reject.reasons = { invalid: 0, required: 0, replay: 0, seq: 0 };
 }
 
 export function gossipHmacSecret(cfg = {}) {
@@ -44,12 +45,14 @@ export function gossipHmacSecrets(cfg = {}) {
   return [one, prev].filter(Boolean);
 }
 
-function stablePayload({ generation, owner, region, at }) {
+function stablePayload({ generation, owner, region, at, seq, nonce }) {
   return JSON.stringify({
     at: at || "",
     generation: Number(generation) || 0,
+    nonce: nonce || null,
     owner: owner || null,
     region: region || "local",
+    seq: seq == null ? null : Number(seq),
   });
 }
 
@@ -99,6 +102,16 @@ export function verifyGossip(payload = {}, cfg = {}) {
     const expected = createHmac("sha256", trySecrets[i]).update(body).digest("hex");
     const b = Buffer.from(expected);
     if (a.length === b.length && timingSafeEqual(a, b)) {
+      if (payload.seq != null) {
+        const seqr = acceptSeq(cfg, {
+          owner: payload.owner || payload.region || "local",
+          seq: payload.seq,
+        });
+        if (!seqr.ok) {
+          incGossipReject(1, "seq");
+          return { ok: false, ...seqr };
+        }
+      }
       return { ok: true, authMethod: "hmac", rotated: i > 0 };
     }
   }
