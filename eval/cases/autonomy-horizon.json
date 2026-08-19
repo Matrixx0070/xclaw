@@ -49,5 +49,20 @@
       ],
       "budgets": { "maxTurns": 6, "maxToolCalls": 4 }
     }
+  },
+  {
+    "id": "a4-G14-multi-file-refactor",
+    "tags": ["autonomy", "a4", "horizon", "g14", "refactor"],
+    "fixture": "g14-refactor",
+    "prompt": "src/b.js imports bar from ./a.js but a.js only exports foo. Fix the import/usage so node src/b.js runs. Write verify.txt containing OK. No user questions.",
+    "maxTurns": 12,
+    "timeoutMs": 180000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "src/b.js", "contains": "foo" },
+        { "type": "file_contains", "path": "verify.txt", "contains": "OK" }
+      ],
+      "budgets": { "maxTurns": 12 }
+    }
   }
 ]

@@ -1,5 +1,5 @@
 /**
- * Live horizon runner — API key optional; fail-closed timeouts.
+ * Live horizon runner — API key optional; default runAgent from run-agent.mjs.
  */
 import { runHorizonSuiteOffline } from "./horizon-offline.mjs";
 import {
@@ -39,11 +39,20 @@ export async function runHorizonLive(opts = {}) {
 
   incHorizonLiveRuns();
   try {
-    if (opts.runAgent && typeof opts.runAgent === "function") {
+    let runAgent = opts.runAgent;
+    if (!runAgent) {
+      try {
+        const mod = await import("../agent/run-agent.mjs");
+        runAgent = mod.runAgent || mod.default?.runAgent;
+      } catch {
+        /* optional */
+      }
+    }
+    if (runAgent && typeof runAgent === "function") {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const live = await opts.runAgent({
+        const live = await runAgent({
           ...opts,
           maxTurns,
           signal: controller.signal,
@@ -64,7 +73,7 @@ export async function runHorizonLive(opts = {}) {
     return {
       ok: offline.ok,
       mode: "live_pending",
-      note: "Inject opts.runAgent for real live loop; offline suite used",
+      note: "runAgent unavailable; offline suite used",
       hasKey: true,
       maxTurns,
       timeoutMs,

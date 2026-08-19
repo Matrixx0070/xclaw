@@ -1,5 +1,5 @@
 /**
- * Offline long-horizon graders for G10/G11/G12/G13 synthetic jobs.
+ * Offline long-horizon graders for G10–G14 synthetic jobs.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -11,6 +11,7 @@ import {
   incHorizonFail,
   renderHorizonMetrics,
 } from "./horizon-metrics.mjs";
+import { incG14Pass } from "./horizon-g14-metrics.mjs";
 
 export async function runHorizonOffline(opts = {}) {
   const ids = opts.ids || [
@@ -34,8 +35,10 @@ export async function runHorizonOffline(opts = {}) {
     }
     const scored = await scoreCase(caseDef, jobLike);
     const auto = scoreAutonomyRun(jobLike, scored);
-    if (scored.pass) incHorizonPass();
-    else incHorizonFail();
+    if (scored.pass) {
+      incHorizonPass();
+      if (id.includes("G14")) incG14Pass();
+    } else incHorizonFail();
     results.push({ id, ok: scored.pass, scored, auto });
   }
   return {
@@ -122,9 +125,38 @@ export async function syntheticG12Job(workspace) {
   };
 }
 
+export async function syntheticG14Job(workspace) {
+  await fs.mkdir(path.join(workspace, "src"), { recursive: true });
+  await fs.writeFile(
+    path.join(workspace, "src", "a.js"),
+    'export function foo() { return "a"; }\n'
+  );
+  await fs.writeFile(
+    path.join(workspace, "src", "b.js"),
+    'import { foo } from "./a.js";\nconsole.log(foo());\n'
+  );
+  await fs.writeFile(path.join(workspace, "verify.txt"), "OK\n");
+  return {
+    text: "Fixed import bar->foo and wrote verify.txt OK",
+    turns: 3,
+    toolTrace: [
+      { name: "xclaw_file_read", status: "ok" },
+      { name: "xclaw_file_write", status: "ok" },
+      { name: "xclaw_file_write", status: "ok" },
+    ],
+    toolCalls: 3,
+    toolErrors: 0,
+    wallMs: 40,
+    status: "succeeded",
+    workspace,
+  };
+}
+
 export async function runHorizonSuiteOffline(opts = {}) {
   const workspace = opts.workspace;
   const jobs = { ...(opts.jobs || {}) };
+  const includeG12 = opts.includeG12 !== false;
+  const includeG14 = opts.includeG14 !== false;
   if (!jobs["a4-G10-plan-write-verify-fix"] && workspace) {
     jobs["a4-G10-plan-write-verify-fix"] = await syntheticG10Job(
       path.join(workspace, "g10")
@@ -140,9 +172,14 @@ export async function runHorizonSuiteOffline(opts = {}) {
       path.join(workspace, "g13")
     );
   }
-  if (!jobs["a4-G12-budget-near-limit"] && workspace && opts.includeG12) {
+  if (!jobs["a4-G12-budget-near-limit"] && workspace && includeG12) {
     jobs["a4-G12-budget-near-limit"] = await syntheticG12Job(
       path.join(workspace, "g12")
+    );
+  }
+  if (!jobs["a4-G14-multi-file-refactor"] && workspace && includeG14) {
+    jobs["a4-G14-multi-file-refactor"] = await syntheticG14Job(
+      path.join(workspace, "g14")
     );
   }
   return runHorizonOffline({
@@ -150,7 +187,8 @@ export async function runHorizonSuiteOffline(opts = {}) {
       "a4-G10-plan-write-verify-fix",
       "a4-G11-tool-fail-recover",
       "a4-G13-canary-then-ground",
-      ...(opts.includeG12 ? ["a4-G12-budget-near-limit"] : []),
+      ...(includeG12 ? ["a4-G12-budget-near-limit"] : []),
+      ...(includeG14 ? ["a4-G14-multi-file-refactor"] : []),
     ],
     jobs,
   });
@@ -163,4 +201,5 @@ export default {
   syntheticG11Job,
   syntheticG13Job,
   syntheticG12Job,
+  syntheticG14Job,
 };
