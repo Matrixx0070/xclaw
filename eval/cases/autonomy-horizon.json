@@ -36,5 +36,18 @@
         { "type": "file_contains", "path": "grounded.txt", "contains": "GROUNDED-OK" }
       ]
     }
+  },
+  {
+    "id": "a4-G12-budget-near-limit",
+    "tags": ["autonomy", "a4", "horizon", "g12", "budget"],
+    "prompt": "Create budget.txt with BUDGET-OK using at most 4 tool calls. Prefer finishing under budget. No user questions.",
+    "maxTurns": 6,
+    "timeoutMs": 120000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "budget.txt", "contains": "BUDGET-OK" }
+      ],
+      "budgets": { "maxTurns": 6, "maxToolCalls": 4 }
+    }
   }
 ]
