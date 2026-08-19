@@ -73,7 +73,10 @@ async function readJson(p, fallback) {
 
 async function writeJsonAtomic(p, data) {
   await ensureFabric();
-  const tmp = p + ".tmp." + process.pid;
+  // Two concurrent writers in the SAME process produced the same tmp name, so
+  // one rename won and the other hit ENOENT ("parallel acquires on different
+  // tabs"). Name every temp file uniquely per call.
+  const tmp = p + ".tmp." + process.pid + "." + Date.now() + "." + Math.random().toString(16).slice(2);
   await fs.writeFile(tmp, JSON.stringify(data, null, 2) + "\n");
   await fs.rename(tmp, p);
 }

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 3.140.1 — fix a same-process temp-file rename race (2026-08-19)
+
+`eval-regression` went red on the 3.140.0 push with
+`ENOENT: rename '.../clock.json.tmp.4254' -> '.../clock.json'` in *parallel
+acquires on different tabs*.
+
+Two concurrent writers **inside the same process** built the same temp filename
+from `process.pid`, so the first rename consumed the file and the second failed.
+`src/browser/physics.mjs` (clock.json, tab leases, commit gates) and
+`src/browser/role-binding.mjs` (session-roles.json) now name every temp file
+uniquely per call, matching the fix the cost governor already carries.
+
+Not caused by the UI work in 3.140.0 — a pre-existing race that CI parallelism
+exposed. Fabric suite green 3/3 in isolation, full suite and ci-gate green.
+
 ## 3.140.0 — Control UI: kill switch and ledger (2026-08-19)
 
 Comparing the gateway's route surface and the CLI against the Control UI's 19

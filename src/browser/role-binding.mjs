@@ -56,7 +56,8 @@ export async function bindRole(sessionId, role, opts = {}) {
         all = {};
       }
       all[id] = rec;
-      const tmp = rolesPath() + ".tmp." + process.pid;
+      // same-process concurrent writers must not share a temp name (see physics.mjs)
+      const tmp = rolesPath() + ".tmp." + process.pid + "." + Date.now() + "." + Math.random().toString(16).slice(2);
       await fs.writeFile(tmp, JSON.stringify(all, null, 2) + "\n");
       await fs.rename(tmp, rolesPath());
     }, { name: "roles" });
