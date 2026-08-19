@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { acquireLease } from "./ledger-lease.mjs";
 
 function dayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
@@ -51,7 +52,25 @@ export function dailyHardUsd(cfg = {}) {
   return Number.isFinite(n) && n > 0 ? n : 50;
 }
 
-export function reserveUsd(cfg, { swarmId, childId, usd = 0 } = {}) {
+export function leaseRequired(cfg = {}) {
+  return (
+    cfg?.tokens?.ledgerLease === true ||
+    process.env.XCLAW_LEDGER_LEASE === "1"
+  );
+}
+
+export function reserveUsd(cfg, { swarmId, childId, usd = 0, leaseOwner = null } = {}) {
+  if (leaseRequired(cfg)) {
+    const lease = acquireLease(cfg, { owner: leaseOwner || `gw-${process.pid}` });
+    if (!lease.ok) {
+      return {
+        ok: false,
+        code: "SWARM_LEDGER_LEASE_HELD",
+        message: `swarm ledger lease held by ${lease.owner || "other"}`,
+        lease,
+      };
+    }
+  }
   let data = rollover(load(cfg));
   const amount = Math.max(0, Number(usd) || 0);
   const hard = dailyHardUsd(cfg);
@@ -98,4 +117,4 @@ export function ledgerSnapshot(cfg = {}) {
   return rollover(load(cfg));
 }
 
-export default { reserveUsd, settleUsd, ledgerSnapshot, ledgerPath, dailyHardUsd };
+export default { reserveUsd, settleUsd, ledgerSnapshot, ledgerPath, dailyHardUsd, leaseRequired };
