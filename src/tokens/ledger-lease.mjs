@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { incLeaseMetric } from "./lease-metrics.mjs";
 
 export function leasePath(cfg = {}) {
   const base =
@@ -21,6 +22,7 @@ export function acquireLease(cfg = {}, { owner = null, ttlMs = 30_000 } = {}) {
     if (fs.existsSync(fp)) {
       const cur = JSON.parse(fs.readFileSync(fp, "utf8"));
       if (cur.owner !== id && cur.expiresAt > now) {
+        incLeaseMetric("lease_held_total");
         return { ok: false, reason: "lease_held", owner: cur.owner, expiresAt: cur.expiresAt };
       }
     }
@@ -32,6 +34,7 @@ export function acquireLease(cfg = {}, { owner = null, ttlMs = 30_000 } = {}) {
   const tmp = fp + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(lease, null, 2));
   fs.renameSync(tmp, fp);
+  incLeaseMetric("lease_acquire_total");
   return { ok: true, ...lease };
 }
 
@@ -41,6 +44,7 @@ export function releaseLease(cfg = {}, { owner = null } = {}) {
     const cur = JSON.parse(fs.readFileSync(fp, "utf8"));
     if (owner && cur.owner !== owner) return { ok: false, reason: "not_owner" };
     fs.unlinkSync(fp);
+    incLeaseMetric("lease_release_total");
     return { ok: true };
   } catch {
     return { ok: true, reason: "absent" };
@@ -60,6 +64,7 @@ export function renewLease(cfg = {}, { owner = null, ttlMs = 30_000 } = {}) {
     const tmp = fp + ".tmp";
     fs.writeFileSync(tmp, JSON.stringify(lease, null, 2));
     fs.renameSync(tmp, fp);
+    incLeaseMetric("lease_renew_total");
     return { ok: true, ...lease };
   } catch {
     return acquireLease(cfg, { owner: id, ttlMs });
