@@ -10,7 +10,7 @@ import {
 export async function doctorHorizon(cfg = {}) {
   const horizon = await loadCases({ tag: "horizon" });
   return {
-    ok: horizon.length >= 3,
+    ok: horizon.length >= 5,
     horizonCaseCount: horizon.length,
     ids: horizon.map((c) => c.id),
     passTotal: getHorizonPassTotal(),
