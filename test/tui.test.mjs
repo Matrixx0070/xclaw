@@ -5,6 +5,9 @@ import {
   renderChatScreen,
   decodeKeys,
   spinnerFrame,
+  renderMarkdownLines,
+  fitToWidth,
+  visibleWidth,
   collectTuiSnapshot,
   formatToolCall,
   wrapLine,
@@ -237,5 +240,78 @@ describe("tui chat screen — interaction affordances", () => {
     };
     const out = renderChatScreen(long, { colour: false, columns: 80, rows: 24 });
     assert.match(out.join("\n"), /30 more line\(s\) below/);
+  });
+});
+
+describe("tui markdown", () => {
+  const md = (t, w = 60) => renderMarkdownLines(t, { colour: false, width: w });
+
+  it("strips bold, italic and inline-code markers", () => {
+    const out = md("Some **bold** and `code` and *italic* here.").join("\n");
+    assert.match(out, /Some bold and code and italic here\./);
+    assert.ok(!out.includes("**"));
+    assert.ok(!out.includes("`"));
+  });
+
+  it("renders headings without hashes", () => {
+    const out = md("## What it needs").join("\n");
+    assert.equal(out, "What it needs");
+    assert.ok(!out.includes("#"));
+  });
+
+  it("turns bullets into a bullet glyph and wraps them hanging", () => {
+    const out = md("- a bullet that is long enough to need wrapping at this width", 30);
+    assert.match(out[0], /^ {2}• a bullet/);
+    assert.ok(out.length > 1, "should wrap");
+    assert.match(out[1], /^ {4}\S/, "continuation aligns under the text");
+  });
+
+  it("keeps ordered list numbering", () => {
+    const out = md("1. first\n2. second");
+    assert.match(out[0], /^ {2}1\. first$/);
+    assert.match(out[1], /^ {2}2\. second$/);
+  });
+
+  it("drops code fences but keeps their contents indented", () => {
+    const out = md("before\n```js\nconst a = 1;\n```\nafter").join("\n");
+    assert.ok(!out.includes("```"));
+    assert.match(out, /const a = 1;/);
+    assert.match(out, /before/);
+    assert.match(out, /after/);
+  });
+
+  it("reduces links to their text", () => {
+    assert.equal(md("see [the docs](https://example.com) now").join("\n"), "see the docs now");
+  });
+
+  it("marks block quotes", () => {
+    assert.match(md("> quoted").join("\n"), /│ quoted/);
+  });
+
+  it("returns nothing for empty input", () => {
+    assert.deepEqual(md(""), []);
+    assert.deepEqual(md(null), []);
+  });
+});
+
+describe("tui width fitting", () => {
+  it("counts printable cells, ignoring colour codes", () => {
+    assert.equal(visibleWidth("abc"), 3);
+    assert.equal(visibleWidth(ESC + "[31mabc" + ESC + "[0m"), 3);
+  });
+
+  it("leaves a string that already fits untouched", () => {
+    assert.equal(fitToWidth("exactlyten", 10), "exactlyten");
+    assert.equal(fitToWidth("short", 10), "short");
+  });
+
+  it("clips to the width including the ellipsis", () => {
+    const out = fitToWidth("abcdefghijklmnop", 10);
+    assert.equal(visibleWidth(out), 10);
+    assert.ok(out.endsWith("…"));
+  });
+
+  it("does not introduce ANSI into plain text", () => {
+    assert.ok(!fitToWidth("abcdefghijklmnop", 10).includes(ESC));
   });
 });

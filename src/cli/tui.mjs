@@ -226,6 +226,134 @@ export function wrapLine(text, width, indent = "") {
 }
 
 /**
+ * Minimal terminal markdown. Model replies are markdown; printing them raw left
+ * literal `**bold**`, `#` headers and fence markers on screen.
+ *
+ * Deliberately small: headings, bullets, ordered lists, fenced and inline code,
+ * bold/italic, and links reduced to their text. Anything else passes through.
+ */
+export function renderMarkdownLines(text, opts = {}) {
+  const colour = opts.colour !== false;
+  const width = Math.max(20, opts.width || 80);
+  const b = (t) => (colour ? `${ESC}[1m${t}${ESC}[0m` : t);
+  const dim = (t) => (colour ? `${C.grey}${t}${C.reset}` : t);
+  const acc = (t) => (colour ? `${C.accent}${t}${C.reset}` : t);
+  const code = (t) => (colour ? `${ESC}[38;5;180m${t}${ESC}[0m` : t);
+
+  const inline = (s) => {
+    let out = String(s);
+    out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label) => label);
+    out = out.replace(/`([^`]+)`/g, (_m, t) => code(t));
+    out = out.replace(/\*\*([^*]+)\*\*/g, (_m, t) => b(t));
+    out = out.replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s.,;:)]|$)/g, (_m, pre, t) => pre + b(t));
+    out = out.replace(/(^|[\s(])_([^_\s][^_]*)_(?=[\s.,;:)]|$)/g, (_m, pre, t) => pre + b(t));
+    return out;
+  };
+
+  const lines = [];
+  let inFence = false;
+  for (const raw of String(text ?? "").split("\n")) {
+    const fence = raw.match(/^\s*```/);
+    if (fence) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      lines.push(dim("  " + raw.replace(/\t/g, "  ")));
+      continue;
+    }
+    if (!raw.trim()) {
+      lines.push("");
+      continue;
+    }
+    const h = raw.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      for (const l of wrapLine(inline(h[2]), width, "")) lines.push(acc(b(l)));
+      continue;
+    }
+    const hr = raw.match(/^\s*([-*_])\1{2,}\s*$/);
+    if (hr) {
+      lines.push(dim("─".repeat(Math.min(width, 40))));
+      continue;
+    }
+    const bullet = raw.match(/^(\s*)[-*+]\s+(.*)$/);
+    if (bullet) {
+      const pad = bullet[1].length >= 2 ? "    " : "  ";
+      const parts = wrapLine(inline(bullet[2]), width - pad.length - 2, "");
+      lines.push(`${pad}${acc("•")} ${parts[0]}`);
+      for (const rest of parts.slice(1)) lines.push(`${pad}  ${rest}`);
+      continue;
+    }
+    const ordered = raw.match(/^(\s*)(\d+)[.)]\s+(.*)$/);
+    if (ordered) {
+      const pad = ordered[1].length >= 2 ? "    " : "  ";
+      const lead = `${ordered[2]}.`;
+      const parts = wrapLine(inline(ordered[3]), width - pad.length - lead.length - 1, "");
+      lines.push(`${pad}${acc(lead)} ${parts[0]}`);
+      for (const rest of parts.slice(1)) lines.push(`${pad}${" ".repeat(lead.length + 1)}${rest}`);
+      continue;
+    }
+    const quote = raw.match(/^\s*>\s?(.*)$/);
+    if (quote) {
+      for (const l of wrapLine(inline(quote[1]), width - 2, "")) lines.push(dim("│ ") + l);
+      continue;
+    }
+    for (const l of wrapLine(inline(raw.trim()), width, "")) lines.push(l);
+  }
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+/** Printable cell count, ignoring SGR sequences. */
+export function visibleWidth(text) {
+  const s = String(text);
+  let cells = 0;
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === ESC) {
+      const m = s.slice(i + 1).match(/^\[[0-9;]*m/);
+      if (m) {
+        i += 1 + m[0].length;
+        continue;
+      }
+    }
+    cells += 1;
+    i += 1;
+  }
+  return cells;
+}
+
+/** Clamp a footer to the terminal width, counting only printable cells. */
+export function fitToWidth(text, width) {
+  const w = Math.max(8, width);
+  // a string that already fits is returned untouched — no needless ellipsis
+  if (visibleWidth(text) <= w) return String(text);
+  let out = "";
+  let cells = 0;
+  let i = 0;
+  const s = String(text);
+  while (i < s.length) {
+    if (s[i] === ESC) {
+      const m = s.slice(i + 1).match(/^\[[0-9;]*m/);
+      if (m) {
+        out += s[i] + m[0];
+        i += 1 + m[0].length;
+        continue;
+      }
+    }
+    // reserve the last cell for the ellipsis so the result never exceeds `w`
+    if (cells + 1 > w - 1) {
+      const needsReset = out.includes(ESC);
+      return out + (needsReset ? C.reset : "") + "…";
+    }
+    out += s[i];
+    cells += 1;
+    i += 1;
+  }
+  return out;
+}
+
+/**
  * Decode a raw stdin chunk into key events. Without this, arrow keys arrive as
  * an escape sequence and their tail ("[A", "[D") is typed into the input.
  */
@@ -295,7 +423,7 @@ export function renderChatScreen(state = {}, opts = {}) {
     head.push(`${acc(MASCOT[i])}${meta[i] ? "  " + meta[i] : ""}`);
   }
   head.push("");
-  if (state.notice) head.push(` ${acc(CHEV)} ${state.notice}`);
+  if (state.notice) head.push(fitToWidth(` ${acc(CHEV)} ${state.notice}`, cols));
   head.push("");
 
   const rule = dim("─".repeat(Math.max(10, cols - 2)));
@@ -313,7 +441,7 @@ export function renderChatScreen(state = {}, opts = {}) {
     ` ${rule}`,
     inputLine,
     ` ${rule}`,
-    ` ${acc(CHEV + CHEV)} ${state.footer || dim("Enter send · /help · Ctrl+C quit")}`,
+    fitToWidth(` ${acc(CHEV + CHEV)} ${state.footer || dim("Enter send · /help · Ctrl+C quit")}`, cols),
   ];
 
   const budget = Math.max(1, rows - head.length - foot.length - 1);
@@ -607,14 +735,20 @@ async function chatLoop(cfg, opts) {
       );
       const answer = out.result?.text || out.result?.finalText || "";
       push("");
-      if (answer) pushWrapped(`${acc(MARK)} ${answer}`);
-      else push(dim(`  ${ELBOW} ${out.error || "(no reply)"}`));
+      if (answer) {
+        const md = renderMarkdownLines(answer, { colour, width: cols() - 6 });
+        push(`${acc(MARK)} ${md[0] ?? ""}`);
+        for (const l of md.slice(1)) push(l ? `  ${l}` : "");
+        push("");
+      } else {
+        push(dim(`  ${ELBOW} ${out.error || "(no reply)"}`));
+      }
       const usd = out.result?.usage?.costUsd;
       const turns = out.result?.turns;
       state.footer = dim(
         [
           "Enter send · /help · Ctrl+C quit",
-          turns != null ? `${turns} turn(s)` : null,
+          turns ? `${turns} turn(s)` : null,
           tools ? `${tools} tool call(s)` : null,
           usd != null ? `$${Number(usd).toFixed(4)}` : null,
         ]
@@ -783,6 +917,9 @@ async function chatLoop(cfg, opts) {
 
 export default {
   runTui,
+  visibleWidth,
+  renderMarkdownLines,
+  fitToWidth,
   decodeKeys,
   spinnerFrame,
   collectTuiSnapshot,

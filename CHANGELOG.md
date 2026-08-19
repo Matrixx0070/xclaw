@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 3.138.0 — the TUI renders markdown (2026-08-19)
+
+Screenshotting the running TUI mid-conversation showed what testing it with
+one-line answers never did: model replies are markdown, and the TUI was printing
+them raw. Literal `**bold**`, `##` headings and ``` fences on screen.
+
+- **Markdown is rendered**: headings, bullets (`•`), ordered lists, block
+  quotes, fenced and inline code, bold/italic, and links reduced to their text.
+  Everything wraps with a hanging indent so lists stay readable.
+- **The footer no longer runs off the edge.** It was cut mid-word by the
+  terminal boundary (`5 turn(s`); the footer and the notice line are now clamped
+  with an ellipsis that counts printable cells, not bytes.
+- Replies get a left gutter and a trailing blank line, so an answer no longer
+  runs flush into the input rule.
+- `0 turn(s)` is no longer printed when a reply used no tool turns.
+
+Two bugs in the width code, both found by running it rather than reading it:
+`visibleWidth` scanned for its SGR pattern starting at the ESC byte instead of
+the character after it, so it counted colour codes as visible text; and the same
+function's regex had been double-escaped by the edit that introduced it. The
+source now carries no literal control characters at all.
+
 ## 3.137.0 — TUI polish: it behaves like a terminal app now (2026-08-19)
 
 3.136.0 looked right but did not feel right. Everything here came out of driving
