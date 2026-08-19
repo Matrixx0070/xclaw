@@ -559,6 +559,9 @@ async function switchSession(id) {
       }
     }
   } catch { /* */ }
+  // A restored session with no history left the landing hidden and the thread
+  // empty — a blank void with nothing to act on. Fall back to the landing.
+  if (!messagesEl.children.length && landingEl) landingEl.style.display = "";
   refreshSessions();
   scrollDown(true);
 }

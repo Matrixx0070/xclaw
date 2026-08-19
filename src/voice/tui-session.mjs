@@ -3,6 +3,9 @@
  * Mic STT is optional when arecord + whisper available.
  */
 import readline from "node:readline";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import {
   localThink,
@@ -18,13 +21,81 @@ import { playWav } from "./playback.mjs";
  * Interactive text loop with optional TTS. Type /quit to exit.
  * /mic records 4s via arecord if present then transcribes.
  */
+
+const DOT_OK = "\u25cf";
+
+function pkgVersion() {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    return JSON.parse(fs.readFileSync(path.join(here, "..", "..", "package.json"), "utf8")).version;
+  } catch {
+    return null;
+  }
+}
+
+function statusLine(label, ok, detail) {
+  const mark = ok ? DOT_OK : "\u25cb";
+  const state = ok ? "ready" : "unavailable";
+  return `  ${mark} ${label.padEnd(6)} ${state.padEnd(12)}${detail ? " " + detail : ""}`;
+}
+
+/** Human-readable startup banner. `--json` still prints the raw probe. */
+export function renderTuiBanner(probe = {}, cfg = {}) {
+  const v = pkgVersion();
+  const llm = probe.ollama || {};
+  const tts = probe.tts || {};
+  const stt = probe.stt || {};
+  const mic = probe.capture || probe.arecord || {};
+  const lines = [
+    `XClaw voice TUI${v ? ` v${v}` : ""}`,
+    "",
+    statusLine("llm", Boolean(llm.ok && llm.hasModel !== false), llm.model || llm.url || ""),
+    statusLine("tts", Boolean(tts.ok), tts.provider || ""),
+    statusLine("stt", Boolean(stt.ok), stt.provider || stt.model || ""),
+    statusLine("mic", Boolean(mic.ok), mic.error ? String(mic.error).slice(0, 48) : ""),
+    "",
+    "  type a message, or /help for commands \u00b7 /quit to exit",
+    "",
+  ];
+  if (llm.ok && llm.hasModel === false && llm.model) {
+    lines.splice(6, 0, `  note: model ${llm.model} is not pulled \u2014 \`ollama pull ${llm.model}\``);
+  }
+  return lines.join("\n");
+}
+
+export function tuiHelp() {
+  return [
+    "XClaw voice TUI \u2014 local speech loop (text in \u2192 agent \u2192 spoken reply)",
+    "",
+    "Usage:",
+    "  xclaw voice tui [--json] [--help]",
+    "",
+    "Options:",
+    "  --json   print the raw local-stack probe instead of the banner",
+    "  --help   show this help",
+    "",
+    "Commands once running:",
+    "  /mic            record 4s from the mic and transcribe it",
+    "  /mute /unmute   suppress or restore spoken replies",
+    "  /help           voice command reference",
+    "  /quit           exit",
+  ].join("\n");
+}
+
 export async function runVoiceTui(cfg = {}, opts = {}) {
   const speech = createSpeechPlane();
   const entente = createEntente({ speech });
+  const args = opts.args || [];
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(tuiHelp());
+    return { ok: true, help: true };
+  }
   const probe = await probeLocalVoiceStack(cfg);
-  console.log("XClaw voice TUI — local stack");
-  console.log(JSON.stringify(probe, null, 2));
-  console.log("Commands: /quit  /mute  /unmute  /mic  (or type a message)\n");
+  if (args.includes("--json")) {
+    console.log(JSON.stringify(probe, null, 2));
+  } else {
+    console.log(renderTuiBanner(probe, cfg));
+  }
 
   const history = [];
   const rl = readline.createInterface({

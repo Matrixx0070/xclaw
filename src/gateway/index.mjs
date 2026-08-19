@@ -29,6 +29,7 @@ import { applyCors } from "./cors.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import { attachVoiceWebSocket } from "./voice-ws.mjs";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { listArtifacts } from "../artifacts/browser.mjs";
 import { fileURLToPath } from "node:url";
@@ -112,8 +113,21 @@ import { scheduleJob, cancelJob, listJobs, addJob, run as runCronJob, status as 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** Keep in sync with package.json */
-const XCLAW_VERSION = "0.7.0";
+/**
+ * Single source of truth: package.json. This used to be a hardcoded literal
+ * with a "keep in sync" comment, and it drifted — the gateway, Control UI,
+ * WebChat and /info all reported 0.7.0 while the package was on 3.x.
+ */
+const XCLAW_VERSION = (() => {
+  try {
+    return (
+      JSON.parse(fsSync.readFileSync(path.join(__dirname, "..", "..", "package.json"), "utf8"))
+        .version || "0.0.0"
+    );
+  } catch {
+    return "0.0.0";
+  }
+})();
 const XCLAW_PHASE = 7;
 
 function json(res, status, body) {

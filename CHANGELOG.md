@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 3.134.0 — release polish: the version you see is the version you run (2026-08-19)
+
+Public-release pass over the two surfaces a new user actually meets.
+
+- **The gateway reported v0.7.0.** `XCLAW_VERSION` was a hardcoded literal in
+  `src/gateway/index.mjs` carrying a "keep in sync with package.json" comment —
+  and it had drifted by three years of releases. Every surface repeated it:
+  Control UI, WebChat sidebar, `/info`, `/status`. It now reads package.json,
+  the way `report.mjs`, `dashboard.mjs` and `metrics.mjs` already did.
+- **WebChat showed a blank void on an empty session.** `switchSession()` hid the
+  landing before fetching history, so restoring a session with no messages left
+  nothing on screen and nothing to click. The landing now returns when the
+  restored thread is empty.
+- **WebChat footer**: the voice/TTS status line was left-aligned under a centred
+  hint and read as a stray fragment; it is centred and reserves its own line.
+- **`xclaw voice tui` dumped a raw JSON probe on startup.** It now prints a
+  branded banner with a readable llm/tts/stt/mic status block, an actionable
+  note when the local model is not pulled (`ollama pull …`), and honours
+  `--help` (previously ignored) and `--json` (the old probe output).
+
 ## 3.133.1 — live-verify fix: dry-run kill-switch actually killed (2026-08-19)
 
 Found by driving the running gateway, not by tests: `POST /stop {"dryRun":true}`
