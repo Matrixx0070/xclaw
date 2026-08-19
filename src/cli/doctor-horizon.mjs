@@ -1,5 +1,5 @@
 /**
- * Doctor: horizon / soak / SIEM / S3 snapshot.
+ * Doctor: horizon / soak / SIEM / S3 / scorecard snapshot.
  */
 import { loadCases } from "../eval/runner.mjs";
 import {
@@ -48,7 +48,7 @@ export async function doctorHorizon(cfg = {}) {
   const packComplete = missing.length === 0;
   const soakJobs = await listSoakJobs({});
   const siemEvents = await readSoakEvents({});
-  return {
+  const out = {
     ok: horizon.length >= 5,
     horizonCaseCount: horizon.length,
     ids,
@@ -80,6 +80,16 @@ export async function doctorHorizon(cfg = {}) {
     metricsS3: renderSoakS3Metrics(),
     at: new Date().toISOString(),
   };
+  out.scorecard = {
+    ok:
+      out.packComplete &&
+      Number(out.siemHmacFail || 0) === 0 &&
+      out.soakPolicy?.maxUsd > 0,
+    packComplete: out.packComplete,
+    hmacFail: out.siemHmacFail,
+    missing: out.missing,
+  };
+  return out;
 }
 
 export default { doctorHorizon };
