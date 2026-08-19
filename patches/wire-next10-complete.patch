@@ -1,0 +1,131 @@
+diff --git a/docs/openapi-stop.yaml b/docs/openapi-stop.yaml
+--- a/docs/openapi-stop.yaml
++++ b/docs/openapi-stop.yaml
+@@ -115,3 +115,15 @@ components:
+       type: apiKey
+       in: header
+       name: X-XClaw-Stop-Sig
++# Fragment documenting POST /stop dryRun runtime contract
++x-dry-run-response:
++  description: Runtime payload when body.dryRun=true
++  type: object
++  required: [ok, dryRun, killedSessions]
++  properties:
++    ok: { type: boolean, example: true }
++    dryRun: { type: boolean, example: true }
++    killedSessions: { type: array, items: { type: string }, maxItems: 0 }
++    authMethod: { type: string }
++    message: { type: string, example: "dry-run: auth ok, no sessions aborted" }
++
+diff --git a/scripts/ci-ship-pack.mjs b/scripts/ci-ship-pack.mjs
+--- a/scripts/ci-ship-pack.mjs
++++ b/scripts/ci-ship-pack.mjs
+@@ -213,5 +213,16 @@ if (strict) {
+   log("strict: doctor clean");
+ }
+ 
++
++if (fs.existsSync(path.join(root, "scripts/apply-complete-n3.mjs"))) {
++  log("apply-complete-n3 --check");
++  const ac = await run(process.execPath, ["scripts/apply-complete-n3.mjs", "--check"]);
++  if (ac.code !== 0) {
++    log("apply-complete-n3 NEED");
++    process.exit(ac.code || 1);
++  }
++  log("apply-complete-n3 OK");
++}
++
+ log("SHIP PACK OK");
+ process.exit(0);
+diff --git a/scripts/release-gate.mjs b/scripts/release-gate.mjs
+--- a/scripts/release-gate.mjs
++++ b/scripts/release-gate.mjs
+@@ -208,8 +208,31 @@ if (live) {
+   }, { required: Boolean(strict) });
+ }
+ 
++let stopSurface = null;
++try {
++  const { computeStopSurfaceVersion } = await import("../src/ci/stop-surface-version.mjs");
++  stopSurface = computeStopSurfaceVersion(root);
++  console.log("[release-gate] stopSurface", stopSurface?.version);
++  try {
++    const evDir = path.join(root, ".xclaw-evidence");
++    fsSync.mkdirSync(evDir, { recursive: true });
++    fsSync.writeFileSync(path.join(evDir, "stopSurface.json"), JSON.stringify(stopSurface, null, 2));
++  } catch (e) {
++    console.error("[release-gate] stopSurface.json write failed", e.message || e);
++  }
++  if (strict && (!stopSurface || !stopSurface.version)) {
++    console.error("[release-gate] STRICT FAIL: empty stopSurface");
++    process.exitCode = 1;
++  }
++} catch (e) {
++  console.error("[release-gate] stopSurface failed", e.message || e);
++  if (strict) process.exitCode = 1;
++}
++
+ const report = {
+   at: new Date().toISOString(),
++  stopSurface,
++
+   quick,
+   strict,
+   live,
+diff --git a/src/jobs/job.mjs b/src/jobs/job.mjs
+--- a/src/jobs/job.mjs
++++ b/src/jobs/job.mjs
+@@ -14,6 +14,7 @@ import { rememberJob } from "../memory/durable.mjs";
+ import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
+ import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
+ import { checkCostBudget, recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
++import { stampCostHardBlock } from "../tokens/cost-hard-block.mjs";
+ import { checkSeatBudget, recordSeatUsage, seatsEnabled } from "../seats/manager.mjs";
+ 
+ /** @typedef {"pending"|"running"|"succeeded"|"failed"|"cancelled"|"budget_exceeded"} JobStatus */
+@@ -55,7 +56,7 @@ export async function runJob(opts) {
+     if (cfg) {
+       const budget = await checkCostBudget(cfg);
+       if (!budget.ok) {
+-        return {
++        const denied = {
+           id,
+           goal,
+           workspace,
+@@ -71,6 +72,8 @@ export async function runJob(opts) {
+           costBlocked: true,
+           evidence: [],
+         };
++        await stampCostHardBlock(denied, budget);
++        return denied;
+       }
+     }
+   } catch {
+diff --git a/src/jobs/checkpoint.mjs b/src/jobs/checkpoint.mjs
+--- a/src/jobs/checkpoint.mjs
++++ b/src/jobs/checkpoint.mjs
+@@ -8,6 +8,7 @@ import path from "node:path";
+ import os from "node:os";
+ import { runJob } from "./job.mjs";
+ import { withBackoff } from "../utils/backoff.mjs";
+ import { stampJobToolHash } from "./stamp-tool-hash.mjs";
++import { rehydrateReceiptFromCheckpoint } from "./checkpoint-receipt.mjs";
+ 
+ /** Structured resume / lock error codes */
+ export const RESUME_CODES = {
+@@ -412,6 +413,7 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
+       error: e.message || String(e),
+     };
+   }
++  rehydrateReceiptFromCheckpoint(cp, cp);
+   if (cp.pass) {
+     return {
+       ...cp,
+@@ -464,6 +466,7 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
+   const plan = recoveryStrategyFor(kind, cp, opts);
+   const goal = [cp.goal, "", plan.goalSuffix].filter(Boolean).join("\n\n");
+ 
++  rehydrateReceiptFromCheckpoint(cp, cp);
+   const jobOpts = {
+     id: `${cp.id}_resume_${Date.now().toString(36)}`,
+     goal,
