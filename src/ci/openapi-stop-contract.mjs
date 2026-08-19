@@ -12,6 +12,7 @@ export function checkOpenapiStopContract(root = process.cwd()) {
   const yaml = fs.readFileSync(fp, "utf8");
   const missing = [];
   if (!yaml.includes("dryRun")) missing.push("dryRun");
+  if (!yaml.includes("x-dry-run-response")) missing.push("x-dry-run-response");
   if (!yaml.includes("/stop")) missing.push("/stop");
   if (!/X-XClaw-Stop-Sig/.test(yaml)) missing.push("X-XClaw-Stop-Sig");
   return {
