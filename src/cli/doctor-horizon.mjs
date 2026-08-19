@@ -26,6 +26,7 @@ import {
 } from "../eval/horizon-soak-s3.mjs";
 import { readLastScorecard } from "../eval/horizon-scorecard-last.mjs";
 import { readLiveSoakReport, renderLiveReportMetrics } from "../eval/horizon-live-report.mjs";
+import { lastChecklist, renderChecklistMetrics } from "../eval/horizon-confirm-checklist.mjs";
 
 const EXPECTED = [
   "G10",
@@ -86,6 +87,8 @@ export async function doctorHorizon(cfg = {}) {
     lastScorecardOk: lastCard.scorecard?.ok ?? null,
     lastLiveReport: await readLiveSoakReport({}),
     metricsLiveReport: renderLiveReportMetrics(),
+    lastChecklist: lastChecklist() || null,
+    metricsChecklist: renderChecklistMetrics(),
     at: new Date().toISOString(),
   };
   out.scorecard = {

@@ -13,7 +13,8 @@ describe("land-all wires", () => {
     // matters is that the lander exists and the wires it lands are present.
     assert.ok(fs.existsSync(path.join(root, "scripts/land-all.mjs")));
     for (const [rel, needle] of [
-      ["src/jobs/job.mjs", "gateStructuredClaims"],
+      ["src/jobs/job.mjs", "runClaimsGateWithSoftRetry"],
+      ["src/jobs/claims-soft-retry-run.mjs", "gateStructuredClaims"],
       ["src/security/approvals.mjs", "authorizeQuotaPreflight"],
       ["src/tokens/cost-governor.mjs", "withLedgerLock"],
     ]) {

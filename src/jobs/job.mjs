@@ -7,7 +7,7 @@ import os from "node:os";
 import { runAgentLoop } from "../agent/loop.mjs";
 import { createEvidenceLog } from "./evidence.mjs";
 import { scoreClaimsAgainstEvidence } from "./claims.mjs";
-import { gateStructuredClaims } from "../agent/claims-gate.mjs";
+import { runClaimsGateWithSoftRetry, stampJobClaimsSoftRetry } from "./claims-soft-retry-run.mjs";
 import { runVerifyChecks } from "./verify.mjs";
 import { recordJob } from "./history.mjs";
 import { stampJobToolHash } from "./stamp-tool-hash.mjs";
@@ -237,82 +237,25 @@ export async function runJob(opts) {
     }
 
     const groundHard = Boolean(opts.groundHard || opts.groundingHard || cfg.jobs?.groundHard);
-    const claimsOpts = {
-      groundHard,
-      claimsRequireEvidence: opts.claimsRequireEvidence ?? cfg.jobs?.claimsRequireEvidence,
-      requireStructuredClaims: opts.requireStructuredClaims ?? cfg.jobs?.requireStructuredClaims,
-    };
-    claimsGate = gateStructuredClaims({
-      text: agentResult.text,
-      evidence: evidence.snapshot(),
+    const gateOut = await runClaimsGateWithSoftRetry({
+      agentResult,
+      evidence,
       cfg,
-      opts: claimsOpts,
+      opts,
+      push,
+      runAgentLoop,
+      workspace,
+      signal: ac.signal,
     });
-    const softRetry =
-      !claimsGate.refuse &&
-      claimsGate.warnings?.length > 0 &&
-      opts.claimsSoftRetry !== false &&
-      cfg.jobs?.claimsSoftRetry !== false;
-    if (softRetry) {
-      evidence.add({
-        source: "system",
-        summary: `claims soft warnings (retry once): ${claimsGate.warnings.slice(0, 3).join("; ")}`,
-      });
-      push({ type: "job", phase: "claims_soft_retry", warnings: claimsGate.warnings.slice(0, 5) });
-      try {
-        const rescue = await runAgentLoop({
-          userMessage:
-            (opts.goal || opts.message || "") +
-            "\n\n[XClaw claims soft retry] Prior answer had grounding warnings. " +
-            "Cite real tool evidence_ids; do not invent results. Warnings:\n- " +
-            claimsGate.warnings.slice(0, 8).join("\n- "),
-          cfg,
-          workingDir: workspace,
-          signal: ac.signal,
-          onEvent: (e) => push(e),
-          stream: false,
-          history: [],
-          rescuePrompt: true,
-        });
-        if (rescue?.text) {
-          agentResult = {
-            ...agentResult,
-            text: rescue.text,
-            toolTrace: [
-              ...(agentResult.toolTrace || []),
-              ...(rescue.toolTrace || []),
-            ],
-            turns: (agentResult.turns || 0) + (rescue.turns || 0),
-          };
-          if (rescue.toolTrace?.length) evidence.fromToolTrace(rescue.toolTrace);
-          claimsGate = gateStructuredClaims({
-            text: agentResult.text,
-            evidence: evidence.snapshot(),
-            cfg,
-            opts: claimsOpts,
-          });
-        }
-      } catch (retryErr) {
-        evidence.add({
-          source: "system",
-          summary: `claims soft retry error: ${retryErr?.message || retryErr}`,
-        });
-      }
-    }
-    claimScore = claimsGate.score || scoreClaimsAgainstEvidence(
-      agentResult.text,
-      evidence.snapshot(),
-      { hard: claimsGate.policy?.hard, requireStructured: claimsGate.policy?.requireStructured }
-    );
-    groundWarn = [...(claimsGate.warnings || [])];
-    for (const w of groundWarn) {
-      evidence.add({ source: "system", summary: `grounding: ${w}` });
-    }
-    if (claimsGate.refuse) {
+    agentResult = gateOut.agentResult || agentResult;
+    claimsGate = gateOut.claimsGate;
+    claimScore = gateOut.claimScore;
+    groundWarn = gateOut.groundWarn || [];
+    softRetryBudget = gateOut.softRetryBudget || null;
+    if (gateOut.groundingFailed) {
       groundingFailed = true;
       status = "failed";
-      error = error || claimsGate.reason || groundWarn[0] || "grounding/claim hard fail";
-      evidence.add({ source: "system", summary: "grounding hard fail (claims-gate)" });
+      error = error || gateOut.error || "grounding/claim hard fail";
     }
 
     if (groundingFailed) {
@@ -367,6 +310,7 @@ export async function runJob(opts) {
   };
   copyCollectorOntoJob(job, receiptCollector);
   stampJobToolHash(job);
+  stampJobClaimsSoftRetry(job, softRetryBudget, claimsGate);
   job.receiptCollector = job.receiptCollector || receiptCollector;
   attachReceiptCollectorToJob(job, {
     agentResult,

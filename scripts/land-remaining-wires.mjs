@@ -48,31 +48,36 @@ function applied(e) {
   return e.needles.every((n) => t.includes(n));
 }
 
-let need = 0;
-let appliedN = 0;
-for (const e of REMAINING_WIRES) {
-  if (applied(e)) {
-    console.error(`[land-wires] OK ${e.file}`);
-    appliedN += 1;
-    continue;
+// Only run the lander when invoked directly; importing REMAINING_WIRES must
+// not apply patches or call process.exit (it killed the test process).
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  let need = 0;
+  let appliedN = 0;
+  for (const e of REMAINING_WIRES) {
+    if (applied(e)) {
+      console.error(`[land-wires] OK ${e.file}`);
+      appliedN += 1;
+      continue;
+    }
+    if (check) {
+      console.error(`[land-wires] NEED ${e.file}`);
+      need += 1;
+      continue;
+    }
+    const r = spawnSync("git", ["apply", "--whitespace=nowarn", path.join(root, e.file)], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    if (r.status === 0 || applied(e)) {
+      console.error(`[land-wires] APPLIED ${e.file}`);
+      appliedN += 1;
+    } else {
+      console.error(`[land-wires] FAIL ${e.file}: ${(r.stderr || "").slice(0, 240)}`);
+      process.exit(1);
+    }
   }
-  if (check) {
-    console.error(`[land-wires] NEED ${e.file}`);
-    need += 1;
-    continue;
-  }
-  const r = spawnSync("git", ["apply", "--whitespace=nowarn", path.join(root, e.file)], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  if (r.status === 0 || applied(e)) {
-    console.error(`[land-wires] APPLIED ${e.file}`);
-    appliedN += 1;
-  } else {
-    console.error(`[land-wires] FAIL ${e.file}: ${(r.stderr || "").slice(0, 240)}`);
-    process.exit(1);
-  }
+  if (check && need) process.exit(1);
+  console.error(`[land-wires] done applied=${appliedN} need=${need}`);
+  process.exit(0);
 }
-if (check && need) process.exit(1);
-console.error(`[land-wires] done applied=${appliedN} need=${need}`);
-process.exit(0);

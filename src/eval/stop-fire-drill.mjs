@@ -239,6 +239,12 @@ export async function runStopFireDrill(opts = {}) {
     await fireDrillPostOffline(),
     fireDrillDrainAuthMethod(),
   ];
+  // Guard: the offline-POST probe is the one step that proves the CLI reports
+  // a dead gateway instead of a false success. If it ever drops out of the
+  // list the drill must fail loudly rather than pass with fewer steps.
+  if (!steps.some((s) => s?.name === "post_offline")) {
+    steps.push({ name: "post_offline", ok: false, error: "post_offline step missing" });
+  }
   const failed = steps.filter((s) => !s.ok);
   return {
     ok: failed.length === 0,

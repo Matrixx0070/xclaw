@@ -18,10 +18,19 @@ const STRUCTURED_RE =
  */
 export function parseStructuredClaims(text) {
   const raw = String(text || "");
+  let payload = null;
   const m = raw.match(STRUCTURED_RE);
-  if (!m) return null;
+  if (m) {
+    payload = m[1];
+  } else {
+    // Models often emit the claims object bare on the last line instead of in
+    // a fenced block; accept that form too.
+    const bare = raw.match(/\n*(\{\s*"claims"\s*:[\s\S]*?\})\s*$/i);
+    if (bare) payload = bare[1];
+  }
+  if (!payload) return null;
   try {
-    const j = JSON.parse(m[1]);
+    const j = JSON.parse(payload);
     if (!j || typeof j !== "object") return null;
     const claims = Array.isArray(j.claims) ? j.claims.map(String) : [];
     const evidence_ids = Array.isArray(j.evidence_ids)
