@@ -64,5 +64,19 @@
       ],
       "budgets": { "maxTurns": 12 }
     }
+  },
+  {
+    "id": "a4-G15-browser-form-fill",
+    "tags": ["autonomy", "a4", "horizon", "g15", "browser"],
+    "fixture": "g15-form",
+    "prompt": "Open form.html, fill name=Ada and email=ada@example.com, submit the form, write result.txt containing SUBMITTED-OK. No user questions.",
+    "maxTurns": 12,
+    "timeoutMs": 180000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "result.txt", "contains": "SUBMITTED-OK" }
+      ],
+      "budgets": { "maxTurns": 12 }
+    }
   }
 ]

@@ -13,6 +13,7 @@ export async function doctorHorizon(cfg = {}) {
     ok: horizon.length >= 5,
     horizonCaseCount: horizon.length,
     ids: horizon.map((c) => c.id),
+    hasG15: horizon.some((c) => String(c.id).includes("G15")),
     passTotal: getHorizonPassTotal(),
     metrics: renderHorizonMetrics(),
     at: new Date().toISOString(),
