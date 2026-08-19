@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 3.141.0 — talked to the agent through WebChat and used every feature (2026-08-19)
+
+Held a real conversation in the WebChat UI and exercised each capability the
+agent is given, rather than reading the code. Two defects.
+
+- **Duplicate approval card showing `{}`.** The agent loop emits
+  `approval_required` twice — once when the pending is created (with arguments)
+  and again as a state update when authorize times out (without them). Telegram
+  already deduped this; WebChat rendered both, so a second card appeared with
+  empty arguments and you could not tell what you were approving. Cards are now
+  keyed by `pendingId`: a repeat marks the existing card timed out instead of
+  adding a new one.
+- **Allowlisted tools that do not exist were dropped in silence.** The profile
+  allows `xclaw_file_list`/`list_dir`, but neither materialises, so the model was
+  handed four tools and only discovered the gap mid-turn — it replied "there is
+  no xclaw_file_list tool in this session". The filter now reports
+  `missingAllowed` on the `tools/filtered` event and emits a `tools/allow_missing`
+  warning. Aliases are not a gap: `x` and `xclaw_x` count as one capability, so
+  listing both spellings reports nothing.
+
+Verified working end to end through the UI: `xclaw_bash`, `xclaw_file_write`,
+`xclaw_file_read`, `xclaw_skill`; the approval flow (card → Allow → "✓ allowed"
+→ file actually written on disk); the abort button (mid-turn stop → "— stopped
+—"); slash commands (`/help` listing all nine, `/pending`); markdown, code
+blocks with copy, tool cards with timings, and suggestion chips.
+
 ## 3.140.2 — audited every control in the Control UI (2026-08-19)
 
 Clicked all 313 visible controls across the 20 views (skipping the destructive

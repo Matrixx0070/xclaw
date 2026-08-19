@@ -60,3 +60,29 @@ export function filterToolDefs(tools, filter) {
   if (!filter) return tools;
   return tools.filter((t) => filter.match(t?.function?.name));
 }
+
+/**
+ * Allowlist entries that name a tool which does not exist this run.
+ *
+ * These used to be dropped in silence, so an operator could allow
+ * `xclaw_file_list` and believe the agent could list directories while the
+ * model was never given the tool. Aliases are not a gap: `x` and `xclaw_x`
+ * count as one capability, so listing both spellings reports nothing.
+ *
+ * @param {string[]} patterns allowlist patterns
+ * @param {string[]} availableNames tool names present before filtering
+ * @returns {string[]} literal patterns that matched no available capability
+ */
+export function missingAllowedTools(patterns = [], availableNames = []) {
+  const capability = (n) => String(n).replace(/^xclaw_/, "");
+  const available = new Set(availableNames.filter(Boolean));
+  const haveCaps = new Set([...available].map(capability));
+  return (patterns || []).filter(
+    (pat) =>
+      typeof pat === "string" &&
+      pat &&
+      !/[*?]/.test(pat) &&
+      !available.has(pat) &&
+      !haveCaps.has(capability(pat))
+  );
+}

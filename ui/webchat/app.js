@@ -197,7 +197,23 @@ function endToolCard(card, { preview, error } = {}) {
 }
 
 // approval cards
-function addApprovalCard(ctx, { pendingId, name, args }) {
+// One card per pending. The agent loop emits approval_required twice: once when
+// the pending is created (with args) and again as a state update when authorize
+// times out (no args). WebChat rendered both, so a second card appeared showing
+// "{}" — you could not tell what you were approving. Telegram already deduped
+// this; WebChat did not.
+const approvalCards = new Map();
+
+function addApprovalCard(ctx, { pendingId, name, args, timedOut }) {
+  const existing = pendingId && approvalCards.get(pendingId);
+  if (existing) {
+    if (timedOut) {
+      const st = existing.querySelector(".apr-state");
+      if (st) st.textContent = "timed out";
+      existing.classList.add("stale");
+    }
+    return existing;
+  }
   const card = el("div", "apr");
   const cmd = args?.command || JSON.stringify(args || {});
   card.innerHTML =
@@ -207,6 +223,7 @@ function addApprovalCard(ctx, { pendingId, name, args }) {
     `<button class="apr-btn apr-allow">Allow</button>` +
     `<button class="apr-btn apr-deny">Deny</button>` +
     `<span class="apr-state"></span></div>`;
+  if (pendingId) approvalCards.set(pendingId, card);
   const state = card.querySelector(".apr-state");
   const resolve = async (approved) => {
     state.textContent = "…";
@@ -434,7 +451,12 @@ async function sendMessage(raw) {
       }
       if (type === "security" && phase === "approval_required") {
         setThinking(ctx, "Waiting for your approval…");
-        addApprovalCard(ctx, { pendingId: data.pendingId, name: data.name, args: data.args });
+        addApprovalCard(ctx, {
+          pendingId: data.pendingId,
+          name: data.name,
+          args: data.args,
+          timedOut: data.timedOut,
+        });
         return;
       }
       if (type === "security" && (phase === "approved" || phase === "plan_revalidated")) {

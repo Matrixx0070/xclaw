@@ -46,7 +46,7 @@ import {
 } from "../sessions/transcript.mjs";
 import { revalidatePlan, isExecTool } from "../security/system-run-plan.mjs";
 import { createRunBudget } from "./run-budget.mjs";
-import { compileToolFilter, filterToolDefs } from "./tool-filter.mjs";
+import { compileToolFilter, filterToolDefs, missingAllowedTools } from "./tool-filter.mjs";
 import { resolveProviderRoute, resolveProviderRouteAsync } from "../providers/router.mjs";
 import { createSpawnTool, spawnSubagent } from "../agents/spawn.mjs";
 import { createSwarmRunTool } from "../agents/swarm-run.mjs";
@@ -608,14 +608,29 @@ export async function runAgentLoop(options) {
     tools.push(...mcpTools.toolDefs);
     if (toolFilter) {
       const before = tools.length;
+      const available = new Set(tools.map((t) => t.function?.name).filter(Boolean));
       tools = filterToolDefs(tools, toolFilter);
+      // An allowlist entry naming a tool that does not exist was dropped in
+      // silence: the model was told it could list directories (xclaw_file_list)
+      // while the tool never materialised, and only discovered that mid-turn.
+      // Aliases are not a gap, so `x` and `xclaw_x` count as one capability.
+      const missingAllowed = missingAllowedTools(toolFilter.patterns, [...available]);
       onEvent({
         type: "tools",
         phase: "filtered",
         allow: toolFilter.patterns,
         before,
         after: tools.length,
+        missingAllowed,
       });
+      if (missingAllowed.length) {
+        onEvent({
+          type: "tools",
+          phase: "allow_missing",
+          missingAllowed,
+          message: `allowlisted tool(s) not available this run: ${missingAllowed.join(", ")}`,
+        });
+      }
     }
     onEvent({
       type: "tools",
