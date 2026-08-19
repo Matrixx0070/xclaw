@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { signAuditEvent } from "./compact-audit-hmac.mjs";
 
 const MAX = 10 * 1024 * 1024;
 
@@ -24,15 +25,18 @@ export function appendCompactAudit(cfg = {}, event = {}) {
   } catch {
     /* */
   }
-  const line = JSON.stringify({
-    at: new Date().toISOString(),
-    region: event.region || "local",
-    owner: event.owner || null,
-    fence: event.fence ?? null,
-    compacted: event.compacted ?? false,
-    dropped: event.dropped ?? 0,
-  });
-  fs.appendFileSync(fp, line + "\n");
+  const ev = signAuditEvent(
+    {
+      at: new Date().toISOString(),
+      region: event.region || "local",
+      owner: event.owner || null,
+      fence: event.fence ?? null,
+      compacted: event.compacted ?? false,
+      dropped: event.dropped ?? 0,
+    },
+    cfg
+  );
+  fs.appendFileSync(fp, JSON.stringify(ev) + "\n");
   return fp;
 }
 
