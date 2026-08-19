@@ -40,6 +40,7 @@ export async function recordJob(cfg, job) {
     wallMs: job.wallMs,
     model: job.model,
     error: job.error || null,
+    costBlocked: job.costBlocked || false,
     quotaEscalate: job.quotaEscalate || null,
     quotaHardCircuit: job.quotaHardCircuit || null,
     textPreview: String(job.text || "").slice(0, 400),

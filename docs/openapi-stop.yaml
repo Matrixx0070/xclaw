@@ -115,3 +115,14 @@ components:
       type: apiKey
       in: header
       name: X-XClaw-Stop-Sig
+
+x-dry-run-response:
+  description: Runtime payload when body.dryRun=true
+  type: object
+  required: [ok, dryRun, killedSessions]
+  properties:
+    ok: { type: boolean, example: true }
+    dryRun: { type: boolean, example: true }
+    killedSessions: { type: array, items: { type: string }, maxItems: 0 }
+    authMethod: { type: string }
+    message: { type: string }
