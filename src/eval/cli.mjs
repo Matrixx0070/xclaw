@@ -6,6 +6,10 @@ import { loadConfig } from "../config/load.mjs";
 import { runEvalSuite, formatEvalReport } from "./runner.mjs";
 
 export async function evalMain(args = []) {
+  if (args[0] === "horizon") {
+    const { main: horizonMain } = await import("./horizon-cli.mjs");
+    return horizonMain(args.slice(1));
+  }
   const tag = argValue(args, "--tag");
   const id = argValue(args, "--id");
   const out = argValue(args, "--out");
@@ -15,7 +19,6 @@ export async function evalMain(args = []) {
   const failOnRegress = args.includes("--fail-on-regress");
 
   const cfg = await loadConfig();
-  // eval profile
   cfg.security = { ...(cfg.security || {}), autoApprove: true };
   cfg.agent = { ...(cfg.agent || {}), maxTurns: cfg.agent?.maxTurns || 8 };
 
