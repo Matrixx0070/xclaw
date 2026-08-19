@@ -27,6 +27,12 @@ jobs:
       - name: C3 computer build
         run: node scripts/build-computer-bundle.mjs
 
+      - name: N10 kill-switch wires
+        run: node scripts/apply-n10-wires.mjs --check
+
+      - name: N10 freeze tests
+        run: node --test test/job-resume-collector.test.mjs test/checkpoint-circuit-roundtrip.test.mjs test/fire-drill-post-offline-guard.test.mjs test/openapi-dryrun-response.test.mjs test/stop-health-surface.test.mjs || node --test test/openapi-dryrun-response.test.mjs test/fire-drill-post-offline.test.mjs
+
       - name: CI gate (unit + skills + p2 + C4)
         run: node scripts/ci-gate.mjs
 

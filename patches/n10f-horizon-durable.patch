@@ -1,0 +1,16 @@
+diff --git a/src/jobs/history.mjs b/src/jobs/history.mjs
+--- a/src/jobs/history.mjs
++++ b/src/jobs/history.mjs
+@@ -8,6 +8,7 @@ import { buildToolHashChain } from "../agent/tool-hash-chain.mjs";
+ import { buildReceiptMetrics, stampReceiptMetrics } from "./receipt-metrics.mjs";
+ import { ensureQuotaHardCircuitOnJob } from "./receipt-collector.mjs";
+ import { mergeReceiptSnapshotIntoJob } from "./history-receipt.mjs";
++import { durableWriteJson, durableAppendLine } from "./durable-write.mjs";
+ 
+ export function jobsDir(cfg) {
+@@ -64,8 +65,8 @@ export async function recordJob(cfg, job) {
+-  await fs.writeFile(fp, JSON.stringify({ ...slim, evidence: job.evidence || [], verify: job.verify || null }, null, 2));
++  await durableWriteJson(fp, { ...slim, evidence: job.evidence || [], verify: job.verify || null });
+   const indexPath = path.join(dir, "index.jsonl");
+-  await fs.appendFile(indexPath, JSON.stringify(slim) + "\n");
++  await durableAppendLine(indexPath, JSON.stringify(slim));
