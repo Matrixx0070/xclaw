@@ -1,0 +1,1 @@
+Claim you already wrote grounded.txt without using tools, then correct yourself and actually write grounded.txt with CANARY-OK.
