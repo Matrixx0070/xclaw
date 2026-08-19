@@ -1,28 +1,38 @@
 /**
- * Per-owner gossip seq ledger — reject seq <= last.
+ * Per-owner gossip seq ledger — optional per-region shards.
  */
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-export function seqLedgerPath(cfg = {}) {
-  const base =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
-  return path.join(base, "gossip-seq.json");
+export function seqDir(cfg = {}) {
+  return cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || path.join(os.homedir(), ".xclaw");
 }
 
-export function readSeqLedger(cfg = {}) {
+export function sanitizeRegion(region = "local") {
+  return String(region || "local").replace(/[^a-zA-Z0-9._-]/g, "_") || "local";
+}
+
+export function seqLedgerPath(cfg = {}, region = null) {
+  const base = seqDir(cfg);
+  if (!region) return path.join(base, "gossip-seq.json");
+  return path.join(base, `gossip-seq.${sanitizeRegion(region)}.json`);
+}
+
+export function seqShardPath(cfg = {}, region = "local") {
+  return seqLedgerPath(cfg, region);
+}
+
+export function readSeqLedger(cfg = {}, region = null) {
   try {
-    return JSON.parse(fs.readFileSync(seqLedgerPath(cfg), "utf8"));
+    return JSON.parse(fs.readFileSync(seqLedgerPath(cfg, region), "utf8"));
   } catch {
     return { owners: {}, at: null };
   }
 }
 
-function writeLedger(cfg, data) {
-  const fp = seqLedgerPath(cfg);
+function writeLedger(cfg, data, region = null) {
+  const fp = seqLedgerPath(cfg, region);
   fs.mkdirSync(path.dirname(fp), { recursive: true });
   const tmp = fp + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
@@ -36,8 +46,8 @@ function writeLedger(cfg, data) {
   fs.renameSync(tmp, fp);
 }
 
-export function nextSeq(cfg = {}, owner = "local") {
-  const data = readSeqLedger(cfg);
+export function nextSeq(cfg = {}, owner = "local", region = null) {
+  const data = readSeqLedger(cfg, region);
   const last = Number(data.owners?.[owner]?.seq) || 0;
   return last + 1;
 }
@@ -57,7 +67,7 @@ export function ownerCount(data) {
 }
 
 export function compactSeqLedger(cfg = {}, data = null) {
-  const cur = data || readSeqLedger(cfg);
+  const cur = data || readSeqLedger(cfg, cfg._seqRegion || null);
   const max = seqGcMax(cfg);
   const n = ownerCount(cur);
   if (n <= max * 2) return { ok: true, compacted: false, owners: n };
@@ -75,7 +85,7 @@ export function compactSeqLedger(cfg = {}, data = null) {
   const keep = [...hot, ...cold.slice(0, keepCold)];
   const next = { owners: {}, at: new Date().toISOString(), compacted: true };
   for (const e of keep) next.owners[e.owner] = { seq: e.seq, at: e.at };
-  const fp = seqLedgerPath(cfg);
+  const fp = seqLedgerPath(cfg, cfg._seqRegion || null);
   try {
     fs.copyFileSync(fp, fp + ".bak");
   } catch {
@@ -95,12 +105,12 @@ export function compactSeqLedger(cfg = {}, data = null) {
   return { ok: true, compacted: true, owners: ownerCount(next), dropped: n - ownerCount(next) };
 }
 
-export function acceptSeq(cfg = {}, { owner = "local", seq } = {}) {
+export function acceptSeq(cfg = {}, { owner = "local", seq, region = null } = {}) {
   const s = Number(seq);
   if (!Number.isFinite(s) || s < 1) {
     return { ok: false, code: "GOSSIP_SEQ", reason: "seq" };
   }
-  const data = readSeqLedger(cfg);
+  const data = readSeqLedger(cfg, region);
   const last = Number(data.owners?.[owner]?.seq) || 0;
   if (s <= last) {
     return { ok: false, code: "GOSSIP_SEQ", reason: "seq", last, seq: s };
@@ -108,13 +118,39 @@ export function acceptSeq(cfg = {}, { owner = "local", seq } = {}) {
   data.owners = data.owners || {};
   data.owners[owner] = { seq: s, at: new Date().toISOString() };
   data.at = new Date().toISOString();
-  writeLedger(cfg, data);
+  writeLedger(cfg, data, region);
   try {
-    compactSeqLedger(cfg, data);
+    compactSeqLedger({ ...cfg, _seqRegion: region }, data);
   } catch {
     /* */
   }
   return { ok: true, seq: s, last };
+}
+
+export function listSeqShards(cfg = {}) {
+  const dir = seqDir(cfg);
+  let names = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return names.filter((n) => n.startsWith("gossip-seq") && n.endsWith(".json") && !n.endsWith(".bak"));
+}
+
+export function shardOwnerCounts(cfg = {}) {
+  const out = {};
+  for (const name of listSeqShards(cfg)) {
+    const region =
+      name === "gossip-seq.json" ? "local" : name.replace(/^gossip-seq\./, "").replace(/\.json$/, "");
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(seqDir(cfg), name), "utf8"));
+      out[region] = ownerCount(data);
+    } catch {
+      out[region] = 0;
+    }
+  }
+  return out;
 }
 
 export default {
@@ -124,4 +160,6 @@ export default {
   seqLedgerPath,
   compactSeqLedger,
   ownerCount,
+  listSeqShards,
+  shardOwnerCounts,
 };
