@@ -1,7 +1,8 @@
 /**
- * Cluster coordinator stub — followers proxy reserve to primary.
+ * Cluster coordinator — followers proxy reserve to primary with generation fence.
  */
 import { reserveUsdAsync } from "../tokens/swarm-ledger.mjs";
+import { bumpGeneration, acceptGeneration, readGeneration } from "./generation.mjs";
 
 export function coordinatorUrl(cfg = {}) {
   return (
@@ -32,6 +33,10 @@ export async function proxyReserve(cfg, opts = {}) {
     if (!r.ok) {
       return { ok: false, code: "COORDINATOR_ERROR", status: r.status, ...j };
     }
+    if (j && j.generation != null) {
+      const acc = acceptGeneration(cfg, j.generation);
+      if (!acc.ok) return { ok: false, ...acc, upstream: j };
+    }
     return j;
   } catch (e) {
     return {
@@ -46,7 +51,19 @@ export async function handleClusterReserve(cfg, body = {}) {
   if (!isCoordinator(cfg)) {
     return { ok: false, code: "NOT_COORDINATOR" };
   }
-  return reserveUsdAsync(cfg, body);
+  const gen = readGeneration(cfg);
+  const result = await reserveUsdAsync(cfg, body);
+  return { ...result, generation: gen.generation || 0 };
 }
 
-export default { proxyReserve, handleClusterReserve, isCoordinator, coordinatorUrl };
+export function claimCoordinator(cfg, { owner = null } = {}) {
+  return bumpGeneration(cfg, { owner });
+}
+
+export default {
+  proxyReserve,
+  handleClusterReserve,
+  isCoordinator,
+  coordinatorUrl,
+  claimCoordinator,
+};
