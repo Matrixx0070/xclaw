@@ -1,7 +1,12 @@
 /**
- * Deferred per-region seq compact queue.
+ * Deferred per-region seq compact queue with lease.
  */
 import { compactSeqLedger } from "./gossip-seq.mjs";
+import {
+  acquireCompactLease,
+  releaseCompactLease,
+  renewCompactLease,
+} from "./compact-lease.mjs";
 
 const pending = new Set();
 let draining = false;
@@ -28,9 +33,20 @@ export function drainCompactQueue(cfg = {}) {
   const results = [];
   try {
     for (const region of regions) {
-      results.push(
-        compactSeqLedger({ ...cfg, _seqRegion: region === "local" ? null : region })
-      );
+      const lease = acquireCompactLease(cfg, region);
+      if (!lease.ok) {
+        results.push({ ok: false, skipped: true, ...lease });
+        pending.add(region);
+        continue;
+      }
+      try {
+        renewCompactLease(cfg, region, { owner: lease.owner });
+        results.push(
+          compactSeqLedger({ ...cfg, _seqRegion: region === "local" ? null : region })
+        );
+      } finally {
+        releaseCompactLease(cfg, region, { owner: lease.owner });
+      }
     }
   } finally {
     draining = false;
