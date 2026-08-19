@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 3.142.0 — Control UI reads like a product, not a debug view (2026-08-19)
+
+Looked at the console the way someone opening it for the first time would, at a
+normal desktop width rather than the narrow pane it had been reviewed in.
+
+- **Engine internals no longer lead the front page.** The Overview opened with
+  "Eviction / LRU — policy hybrid, LRU mode size_weighted", context-window tuning
+  that means nothing to a new user. It now lives in Health & Ops as **Context
+  window**, with a line explaining what it is, and the Overview is a balanced
+  four-card grid of the things that actually matter: gateway, computer, channels,
+  profile.
+- **Raw values humanised.** `eval cron on (86400000ms)` reads `every 24h`;
+  `autoApprove true` reads `yes` and is coloured amber, because auto-approving is
+  a permissive setting worth noticing; six-figure limits carry thousands
+  separators (`120,000`, `2,000`).
+
+Swept the rest of the console for the same class of problem — remaining
+`String()` values are small integer counts, and other intervals already route
+through the schedule formatter.
+
 ## 3.141.1 — state the approval rule once, instead of per channel (2026-08-19)
 
 3.141.0 fixed the duplicate approval card in WebChat — the same bug Telegram had

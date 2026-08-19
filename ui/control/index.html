@@ -97,10 +97,6 @@
           <div class="kv" id="profileKv" style="margin-top:0.5rem;">—</div>
         </section>
 
-        <section class="card" id="cardEviction">
-          <h2>Eviction / LRU</h2>
-          <div class="kv" id="evictionKv">Loading…</div>
-        </section>
       </div>
     </div>
 
@@ -455,6 +451,13 @@
     <!-- ═══ Health & Ops ═══ -->
     <div class="view" data-view="ops">
       <div class="grid">
+        <section class="card" id="cardEviction">
+          <h2>Context window</h2>
+          <p class="muted">How much conversation the agent keeps before it starts
+            evicting older turns.</p>
+          <div class="kv" id="evictionKv">Loading…</div>
+        </section>
+
         <section class="card" id="cardKillSwitch">
           <h2>Kill switch</h2>
           <p class="muted">Abort every running agent session and drain the WebSocket and SSE

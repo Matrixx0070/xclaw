@@ -95,9 +95,9 @@ async function loadConfigEviction() {
     const e = info.eviction || {};
     $("evictionKv").innerHTML = kvHtml([
       ["Policy", e.policy || "hybrid"],
-      ["Max messages", e.maxMessages ?? "—"],
-      ["Max chars", e.maxChars ?? "—"],
-      ["Tool max", e.toolMaxChars ?? "—"],
+      ["Max messages", fmtNum(e.maxMessages)],
+      ["Max chars", fmtNum(e.maxChars)],
+      ["Tool max", fmtNum(e.toolMaxChars)],
       ["LRU mode", e.lruMode || "size_weighted"],
       ["LRU dynamic", e.lruDynamic ? "on" : "off", e.lruDynamic ? "good" : ""],
     ]);
@@ -1083,9 +1083,9 @@ async function loadProfile() {
     const p = await getJSON("/profile");
     $("profileKv").innerHTML = kvHtml([
       ["Active", p.active || "—"],
-      ["autoApprove", String(p.autoApprove)],
-      ["maxTurns", String(p.maxTurns ?? "—")],
-      ["eval cron", p.evalCron?.enabled ? `on (${p.evalCron.everyMs || "?"}ms)` : "off"],
+      ["autoApprove", fmtBool(p.autoApprove), p.autoApprove ? "warn" : "good"],
+      ["maxTurns", fmtNum(p.maxTurns)],
+      ["eval cron", p.evalCron?.enabled ? `every ${fmtDuration(p.evalCron.everyMs)}` : "off"],
     ]);
   } catch (e) {
     $("profileKv").innerHTML = kvHtml([["Error", String(e.message || e), "warn"]]);
@@ -1552,6 +1552,26 @@ const _provLiveModels = {}; // provider id -> [modelId] (live-fetched)
 
 // Escape untrusted values before HTML interpolation (model ids, base URLs,
 // provider names all come from config/remote APIs — never trust them in HTML).
+/**
+ * Presentation helpers. Raw engine values were reaching the screen — an
+ * interval as "86400000ms", booleans as "true"/"false", and six-figure limits
+ * with no separators. Fine in a log, wrong on an operator console.
+ */
+const fmtBool = (v) => (v ? "yes" : "no");
+const fmtNum = (n) => (n == null || n === "" ? "—" : Number(n).toLocaleString());
+function fmtDuration(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  const s = Math.round(n / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = n / 3_600_000;
+  if (h < 48) return `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
+  const d = h / 24;
+  return `${Number.isInteger(d) ? d : d.toFixed(1)}d`;
+}
+
 const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
