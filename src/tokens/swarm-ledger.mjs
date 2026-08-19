@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { acquireLease } from "./ledger-lease.mjs";
+import { acquireLeaseViaBackend } from "./lease-backend.mjs";
 
 function dayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
@@ -59,8 +60,8 @@ export function leaseRequired(cfg = {}) {
   );
 }
 
-export function reserveUsd(cfg, { swarmId, childId, usd = 0, leaseOwner = null } = {}) {
-  if (leaseRequired(cfg)) {
+export function reserveUsd(cfg, { swarmId, childId, usd = 0, leaseOwner = null, skipLease = false } = {}) {
+  if (leaseRequired(cfg) && !skipLease) {
     const lease = acquireLease(cfg, { owner: leaseOwner || `gw-${process.pid}` });
     if (!lease.ok) {
       return {
@@ -117,4 +118,33 @@ export function ledgerSnapshot(cfg = {}) {
   return rollover(load(cfg));
 }
 
-export default { reserveUsd, settleUsd, ledgerSnapshot, ledgerPath, dailyHardUsd, leaseRequired };
+/**
+ * Async reserve — supports Redis lease backend.
+ */
+export async function reserveUsdAsync(cfg, opts = {}) {
+  const { leaseOwner = null } = opts;
+  if (leaseRequired(cfg)) {
+    const lease = await acquireLeaseViaBackend(cfg, {
+      owner: leaseOwner || `gw-${process.pid}`,
+    });
+    if (!lease.ok) {
+      return {
+        ok: false,
+        code: lease.code || "SWARM_LEDGER_LEASE_HELD",
+        message: lease.message || `swarm ledger lease held by ${lease.owner || "other"}`,
+        lease,
+      };
+    }
+  }
+  return reserveUsd(cfg, { ...opts, skipLease: true });
+}
+
+export default {
+  reserveUsd,
+  reserveUsdAsync,
+  settleUsd,
+  ledgerSnapshot,
+  ledgerPath,
+  dailyHardUsd,
+  leaseRequired,
+};
