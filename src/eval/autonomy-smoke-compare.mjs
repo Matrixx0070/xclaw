@@ -5,6 +5,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { smokeArtifactPath } from "./autonomy-smoke-artifact.mjs";
 import { hardBlockRateCeilingVerdict } from "./autonomy-metrics.mjs";
+import { assertLastDrainChannel } from "./stop-channel-assert.mjs";
+
+export function compareStopChannel(current) {
+  const drain = current?.lastDrain || current?.stop?.lastDrain;
+  if (!drain || drain.channel == null) return { ok: true, skipped: true };
+  const ch = assertLastDrainChannel(drain);
+  return { ok: ch.ok, channel: ch, reason: ch.ok ? null : "stop_channel_invalid" };
+}
 
 export function previousSmokePath(root) {
   return path.join(root, "reports", "autonomy", "prev-smoke.json");
@@ -53,6 +61,12 @@ export function compareAutonomySmoke(root, opts = {}) {
   if (!current) {
     return { ok: false, reason: "missing_current", current: null, previous };
   }
+  {
+    const ch = compareStopChannel(current);
+    if (!ch.ok) {
+      return { ok: false, reason: "stop_channel_invalid", current, previous, channel: ch };
+    }
+  }
   if (!previous) {
     const ceiling = hardBlockRateCeiling(current, opts);
     if (ceiling.exceeded) {
@@ -93,4 +107,11 @@ export function rotateSmokeBaseline(root) {
   return { rotated: true, previousPath: prev };
 }
 
-export default { compareAutonomySmoke, rotateSmokeBaseline, previousSmokePath, hardBlockRateJump, hardBlockRateCeiling };
+export default {
+  compareAutonomySmoke,
+  rotateSmokeBaseline,
+  previousSmokePath,
+  hardBlockRateJump,
+  hardBlockRateCeiling,
+  compareStopChannel,
+};
