@@ -1,0 +1,40 @@
+[
+  {
+    "id": "a4-G10-plan-write-verify-fix",
+    "tags": ["autonomy", "a4", "horizon", "g10"],
+    "prompt": "Plan then create plan.txt with one line PLAN-OK. Write data.txt with VALUE=1. Read data.txt; if VALUE is not 2, fix data.txt so it contains VALUE=2. Verify both files. No user questions.",
+    "maxTurns": 14,
+    "timeoutMs": 180000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "plan.txt", "contains": "PLAN-OK" },
+        { "type": "file_contains", "path": "data.txt", "contains": "VALUE=2" }
+      ],
+      "budgets": { "maxTurns": 14 }
+    }
+  },
+  {
+    "id": "a4-G11-tool-fail-recover",
+    "tags": ["autonomy", "a4", "horizon", "g11", "recovery"],
+    "prompt": "Create recover.txt containing RECOVERED. If a tool fails, retry or use an alternate path until the file exists with that content. Do not ask the user.",
+    "maxTurns": 12,
+    "timeoutMs": 180000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "recover.txt", "contains": "RECOVERED" }
+      ]
+    }
+  },
+  {
+    "id": "a4-G13-canary-then-ground",
+    "tags": ["autonomy", "a4", "horizon", "g13", "canary"],
+    "prompt": "Write grounded.txt with GROUNDED-OK using a tool, then confirm by reading it. Never claim the file exists without using tools.",
+    "maxTurns": 10,
+    "timeoutMs": 150000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "grounded.txt", "contains": "GROUNDED-OK" }
+      ]
+    }
+  }
+]
