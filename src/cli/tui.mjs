@@ -213,9 +213,14 @@ export function wrapLine(text, width, indent = "") {
       continue;
     }
     let first = true;
-    while (line.length > w) {
-      let cut = line.lastIndexOf(" ", w);
-      if (cut <= 0) cut = w;
+    const indentCells = visibleWidth(indent);
+    for (;;) {
+      const budget = first ? w : Math.max(4, w - indentCells);
+      if (visibleWidth(line) <= budget) break;
+      // prefer a word break inside the cell budget; fall back to a hard cut
+      const head = sliceCells(line, budget)[0];
+      let cut = head.lastIndexOf(" ");
+      if (cut <= 0) cut = head.length;
       out.push((first ? "" : indent) + line.slice(0, cut));
       line = line.slice(cut).replace(/^\s+/, "");
       first = false;
@@ -304,7 +309,36 @@ export function renderMarkdownLines(text, opts = {}) {
   return lines;
 }
 
-/** Printable cell count, ignoring SGR sequences. */
+/**
+ * Terminal cell width of a single code point. CJK, Hangul, and most emoji
+ * occupy two cells; combining marks occupy none. Counting JavaScript string
+ * length instead misaligns every rule, wrap and caret once such a character
+ * appears.
+ */
+export function charWidth(cp) {
+  if (cp === 0) return 0;
+  // combining marks and variation selectors
+  if ((cp >= 0x0300 && cp <= 0x036f) || cp === 0xfe0f || cp === 0x200d) return 0;
+  if (cp < 0x1100) return 1;
+  if (
+    (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
+    (cp >= 0x2e80 && cp <= 0xa4cf) || // CJK radicals .. Yi
+    (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul syllables
+    (cp >= 0xf900 && cp <= 0xfaff) || // CJK compatibility ideographs
+    (cp >= 0xfe30 && cp <= 0xfe6f) || // CJK compatibility forms
+    (cp >= 0xff00 && cp <= 0xff60) || // fullwidth forms
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1f64f) || // emoji
+    (cp >= 0x1f900 && cp <= 0x1f9ff) ||
+    (cp >= 0x1fa70 && cp <= 0x1faff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+/** Printable cell count, ignoring SGR sequences and honouring wide glyphs. */
 export function visibleWidth(text) {
   const s = String(text);
   let cells = 0;
@@ -317,10 +351,35 @@ export function visibleWidth(text) {
         continue;
       }
     }
-    cells += 1;
-    i += 1;
+    const cp = s.codePointAt(i);
+    cells += charWidth(cp);
+    i += cp > 0xffff ? 2 : 1;
   }
   return cells;
+}
+
+/** Split plain text into segments of at most `w` terminal cells. */
+export function sliceCells(text, w) {
+  const s = String(text);
+  const out = [];
+  let cur = "";
+  let cells = 0;
+  let i = 0;
+  while (i < s.length) {
+    const cp = s.codePointAt(i);
+    const ch = String.fromCodePoint(cp);
+    const cw = charWidth(cp);
+    if (cells + cw > w) {
+      out.push(cur);
+      cur = "";
+      cells = 0;
+    }
+    cur += ch;
+    cells += cw;
+    i += cp > 0xffff ? 2 : 1;
+  }
+  if (cur) out.push(cur);
+  return out.length ? out : [""];
 }
 
 /** Clamp a footer to the terminal width, counting only printable cells. */
@@ -341,14 +400,16 @@ export function fitToWidth(text, width) {
         continue;
       }
     }
+    const cp = s.codePointAt(i);
+    const cw = charWidth(cp);
     // reserve the last cell for the ellipsis so the result never exceeds `w`
-    if (cells + 1 > w - 1) {
+    if (cells + cw > w - 1) {
       const needsReset = out.includes(ESC);
       return out + (needsReset ? C.reset : "") + "…";
     }
-    out += s[i];
-    cells += 1;
-    i += 1;
+    out += String.fromCodePoint(cp);
+    cells += cw;
+    i += cp > 0xffff ? 2 : 1;
   }
   return out;
 }
@@ -446,7 +507,7 @@ export function renderChatScreen(state = {}, opts = {}) {
 
   const budget = Math.max(1, rows - head.length - foot.length - 1);
   let body = state.transcript || [];
-  if (!body.length && state.hint) body = ["", dim(`  ${state.hint}`)];
+  if (!body.length && state.hint) body = ["", fitToWidth(dim(`  ${state.hint}`), cols)];
   const maxScroll = Math.max(0, body.length - budget);
   const scroll = Math.max(0, Math.min(state.scroll || 0, maxScroll));
   const end = body.length - scroll;
@@ -623,7 +684,7 @@ async function chatLoop(cfg, opts) {
     busy: false,
     spinner: spinnerFrame(0),
     busyLabel: "working",
-    hint: "ask for anything — try: what is running on this box?   /help for commands",
+    hint: "ask anything · /help for commands",
     notice: info.ok
       ? `${dim("gateway ready")}${pendingN ? p(` · ${pendingN} approval(s) pending`, C.yellow) : ""}`
       : p(`gateway unreachable at ${base} — start it with: xclaw gateway`, C.red),
@@ -918,6 +979,8 @@ async function chatLoop(cfg, opts) {
 export default {
   runTui,
   visibleWidth,
+  charWidth,
+  sliceCells,
   renderMarkdownLines,
   fitToWidth,
   decodeKeys,

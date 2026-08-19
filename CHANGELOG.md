@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 3.138.1 — TUI width correctness, and a real deflake (2026-08-19)
+
+- **Wide characters no longer break the layout.** Width was counted in
+  JavaScript string length, so one CJK character, emoji or surrogate pair threw
+  off every rule, wrap and caret. `charWidth`/`visibleWidth`/`sliceCells` now
+  count terminal cells: two for CJK/Hangul/emoji, zero for combining marks and
+  variation selectors.
+- Wrapping keeps continuation lines inside the budget *including* their indent —
+  an indented wrap previously overflowed by the width of the indent.
+- `fitToWidth` advances by cell width, so a line of emoji clamps correctly
+  instead of overflowing the pane.
+- The empty-state hint is clamped like the footer; it was running off the edge
+  in a narrow pane.
+
+**`approval SLA under load` deflaked.** It slept a fixed 30ms and then asserted
+20 pending approvals; under full-suite parallelism only 17 had registered. It
+now polls to a deadline, and the decide-latency budget has headroom for a loaded
+box. Three consecutive isolated runs green, full suite green.
+
 ## 3.138.0 — the TUI renders markdown (2026-08-19)
 
 Screenshotting the running TUI mid-conversation showed what testing it with

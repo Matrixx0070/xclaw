@@ -8,6 +8,8 @@ import {
   renderMarkdownLines,
   fitToWidth,
   visibleWidth,
+  charWidth,
+  sliceCells,
   collectTuiSnapshot,
   formatToolCall,
   wrapLine,
@@ -313,5 +315,41 @@ describe("tui width fitting", () => {
 
   it("does not introduce ANSI into plain text", () => {
     assert.ok(!fitToWidth("abcdefghijklmnop", 10).includes(ESC));
+  });
+});
+
+describe("tui terminal cell width", () => {
+  it("counts wide glyphs as two cells", () => {
+    assert.equal(visibleWidth("abc"), 3);
+    assert.equal(visibleWidth("日本語"), 6);
+    assert.equal(visibleWidth("🦞"), 2);
+    assert.equal(visibleWidth("a🦞b"), 4);
+  });
+
+  it("ignores colour codes and combining marks", () => {
+    assert.equal(visibleWidth(ESC + "[31mabc" + ESC + "[0m"), 3);
+    assert.equal(charWidth(0x0301), 0);
+  });
+
+  it("wraps wide text without overflowing the budget, indent included", () => {
+    const out = wrapLine("日本語のテキストです、これは長い行", 10, "  ");
+    assert.ok(out.length > 1);
+    for (const l of out) {
+      assert.ok(visibleWidth(l) <= 10, `${JSON.stringify(l)} is ${visibleWidth(l)} cells`);
+    }
+  });
+
+  it("clamps wide text to the width including the ellipsis", () => {
+    for (const [t, w] of [["🦞🦞🦞🦞🦞🦞", 10], ["日本語のテキストです", 12]]) {
+      const r = fitToWidth(t, w);
+      assert.ok(visibleWidth(r) <= w, `${JSON.stringify(r)} is ${visibleWidth(r)} > ${w}`);
+      assert.ok(r.endsWith("…"));
+    }
+  });
+
+  it("splits into cell-bounded segments", () => {
+    for (const seg of sliceCells("日本語abc🦞", 4)) {
+      assert.ok(visibleWidth(seg) <= 4, seg);
+    }
   });
 });
