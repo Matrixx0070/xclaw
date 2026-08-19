@@ -26,6 +26,7 @@
       <a class="nav-item" href="#/ops" data-view="ops"><span class="ni-ico">♥</span>Health &amp; Ops</a>
       <a class="nav-item" href="#/cost" data-view="cost"><span class="ni-ico">¢</span>Cost &amp; Evals</a>
       <a class="nav-item" href="#/memory" data-view="memory"><span class="ni-ico">◈</span>Memory</a>
+      <a class="nav-item" href="#/ledger" data-view="ledger"><span class="ni-ico">▦</span>Ledger</a>
     </div>
 
     <div class="nav-group">
@@ -454,6 +455,18 @@
     <!-- ═══ Health & Ops ═══ -->
     <div class="view" data-view="ops">
       <div class="grid">
+        <section class="card" id="cardKillSwitch">
+          <h2>Kill switch</h2>
+          <p class="muted">Abort every running agent session and drain the WebSocket and SSE
+            streams. <strong>Dry run</strong> reports what would be stopped without touching
+            anything; <strong>Stop all</strong> does it for real and asks first.</p>
+          <div class="row" style="gap:0.5rem;">
+            <button class="btn ghost" id="btnStopDry">Dry run</button>
+            <button class="btn danger" id="btnStopAll">Stop all</button>
+          </div>
+          <pre id="stopOut" class="log placeholder" style="max-height:200px;">no output yet</pre>
+        </section>
+
         <section class="card span2" id="cardDash">
           <h2>Dashboard</h2>
           <button class="btn ghost" id="btnDash">Refresh</button>
@@ -1033,6 +1046,45 @@
       </div>
     </div>
 
+    <div class="view" data-view="ledger">
+      <div class="grid">
+        <section class="card" id="cardLedgerStats">
+          <h2>Ledger</h2>
+          <p class="muted">Append-only record of every tool call, decision and mission event.
+            This is the audit trail the CLI reads with <code>xclaw ledger</code>.</p>
+          <button class="btn ghost" id="btnLedgerRefresh">Refresh</button>
+          <div class="kv" id="ledgerStats" style="margin-top:0.5rem;"></div>
+        </section>
+
+        <section class="card" id="cardWhoTouched">
+          <h2>Who touched a path</h2>
+          <p class="muted">Every recorded write or command that referenced a file.</p>
+          <div class="row" style="gap:0.5rem;">
+            <input id="whoPath" class="input" placeholder="package.json" style="flex:1;" />
+            <button class="btn primary" id="btnWhoTouched">Look up</button>
+          </div>
+          <div class="table-wrap" style="max-height:240px;margin-top:0.5rem;">
+            <table id="whoTable">
+              <thead><tr><th>When</th><th>Via</th><th>Status</th><th>Session</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span2" id="cardLedgerEvents">
+          <h2>Recent events</h2>
+          <p class="muted">Newest first. Click a row to see the full record.</p>
+          <div class="table-wrap" style="max-height:320px;">
+            <table id="ledgerTable">
+              <thead><tr><th>When</th><th>Kind</th><th>Actor</th><th>Summary</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <pre id="ledgerOut" class="log placeholder" style="max-height:280px;">no output yet</pre>
+        </section>
+      </div>
+    </div>
+
     </main>
   </div>
   </div>
@@ -1047,6 +1099,7 @@
         automations: "Automations", alerts: "Alerts", skills: "Skills",
         mcp: "MCP", media: "Images", sessions: "Sessions",
         subagents: "Subagents", memory: "Memory", hooks: "Hooks",
+        ledger: "Ledger",
         missions: "Mission Control",
       };
       const views = [...document.querySelectorAll(".view")];

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 3.140.0 — Control UI: kill switch and ledger (2026-08-19)
+
+Comparing the gateway's route surface and the CLI against the Control UI's 19
+views showed capabilities with no operator surface at all.
+
+- **Kill switch.** `POST /stop` has existed and worked, but the console had no
+  button for it — the most safety-critical control in the product was CLI-only.
+  Health & Ops now leads with it: **Dry run** reports what would be stopped
+  without touching anything, **Stop all** confirms first and then drains, both
+  reporting sessions killed, WebSockets and SSE subscribers closed.
+- **Ledger view.** The append-only audit trail behind `xclaw ledger` had no UI.
+  New view with segment/size/writer stats, the 60 most recent events (click one
+  for the full record), and a *who touched a path* lookup — every recorded
+  command or write that referenced a file, with when, via, status and session.
+
+Still CLI-only, and honestly so: `timeline`, `evolve`, `self-deploy` and
+`harness` have no HTTP routes at all, so surfacing them needs gateway work
+rather than a view.
+
+Also: `.kv` blocks expect each pair wrapped in a row element; emitting flat
+siblings made key and value stack instead of sitting either side of the card.
+
 ## 3.139.2 — the same serializer bug in the integrity hash (2026-08-19)
 
 3.139.0 fixed `redactValue` reporting shared references as cycles. Auditing for

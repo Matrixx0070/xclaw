@@ -3574,3 +3574,141 @@ $("btnCfgReload")?.addEventListener("click", async () => {
     el.className = r.ok === false ? "bad" : "good";
   } catch (e) { el.textContent = String(e.message || e); el.className = "bad"; }
 });
+
+// ——— Kill switch ——————————————————————————————————————————————————————
+// POST /stop existed and worked, but the operator console had no button for it:
+// the most safety-critical control was CLI-only.
+
+async function runStop(dryRun) {
+  const out = $("stopOut");
+  if (out) {
+    out.classList.remove("placeholder");
+    out.textContent = dryRun ? "dry run…" : "stopping…";
+  }
+  try {
+    const r = await fetch("/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dryRun ? { dryRun: true } : {}),
+    });
+    const j = await r.json();
+    const drain = j.drain || {};
+    const lines = [
+      dryRun ? "DRY RUN — nothing was stopped" : "STOPPED",
+      `sessions before : ${drain.sessionsBefore ?? "—"}`,
+      `sessions killed : ${drain.sessionsKilled ?? 0}`,
+      `websockets      : ${drain.wsClosed ?? 0}`,
+      `sse subscribers : ${drain.sseClosed ?? 0}`,
+      `auth            : ${j.authMethod || "—"}`,
+    ];
+    if (out) out.textContent = lines.join("\n");
+  } catch (e) {
+    if (out) out.textContent = `failed: ${e.message || e}`;
+  }
+}
+
+if ($("btnStopDry")) $("btnStopDry").onclick = () => runStop(true);
+if ($("btnStopAll")) {
+  $("btnStopAll").onclick = () => {
+    if (!confirm("Abort every running agent session and drain all streams?")) return;
+    runStop(false);
+  };
+}
+
+// ——— Ledger ————————————————————————————————————————————————————————————
+
+function ledgerSummary(ev) {
+  const d = ev?.data || {};
+  if (ev?.kind === "tool") {
+    const arg = d.argsSummary || d.command || d.path || "";
+    return `${d.name || "tool"}${arg ? " · " + String(arg).slice(0, 60) : ""}${d.status ? " → " + d.status : ""}`;
+  }
+  return String(d.summary || d.message || d.goal || d.name || ev?.kind || "").slice(0, 80);
+}
+
+async function loadLedger() {
+  try {
+    const stats = await getJSON("/ledger/stats");
+    const kv = $("ledgerStats");
+    if (kv) {
+      const w = stats.writer || {};
+      kv.innerHTML = [
+        ["Segments", stats.segments ?? "—"],
+        ["Days", `${stats.firstDay || "—"} → ${stats.lastDay || "—"}`],
+        ["Size", stats.bytes != null ? `${(stats.bytes / 1024 / 1024).toFixed(2)} MB` : "—"],
+        ["Writer", w.enabled ? "on" : "off"],
+        ["Append errors", w.appendErrors ?? 0],
+      ]
+        .map(([k, v]) => `<div><span class="k">${esc(k)}</span><span class="v">${esc(String(v))}</span></div>`)
+        .join("");
+    }
+  } catch (e) {
+    const kv = $("ledgerStats");
+    if (kv) kv.innerHTML = `<div><span class="k muted">${esc(e.message || e)}</span><span class="v"></span></div>`;
+  }
+
+  const tbody = $("ledgerTable")?.querySelector("tbody");
+  if (!tbody) return;
+  try {
+    const data = await getJSON("/ledger?limit=60");
+    const events = (data.events || []).slice().reverse();
+    tbody.innerHTML = "";
+    if (!events.length) showEmptyRow(tbody, "No ledger events yet");
+    for (const ev of events) {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td style="font-size:0.7rem;" title="${esc(ev.ts || "")}">${esc(fmtWhen(ev.ts))}</td>` +
+        `<td><span class="pill">${esc(ev.kind || "—")}</span></td>` +
+        `<td style="font-size:0.75rem;">${esc(ev.actor || "—")}</td>` +
+        `<td style="font-size:0.75rem;">${esc(ledgerSummary(ev))}</td>`;
+      tr.onclick = () => {
+        const out = $("ledgerOut");
+        if (out) {
+          out.classList.remove("placeholder");
+          out.textContent = JSON.stringify(ev, null, 2);
+        }
+      };
+      tbody.appendChild(tr);
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+
+async function loadWhoTouched() {
+  const tbody = $("whoTable")?.querySelector("tbody");
+  if (!tbody) return;
+  const path = ($("whoPath")?.value || "").trim();
+  if (!path) {
+    tbody.innerHTML = "";
+    showEmptyRow(tbody, "Enter a path to look up");
+    return;
+  }
+  tbody.innerHTML = `<tr><td colspan="4" class="muted">searching…</td></tr>`;
+  try {
+    const data = await getJSON(`/ledger/who-touched?path=${encodeURIComponent(path)}`);
+    const hits = data.hits || [];
+    tbody.innerHTML = "";
+    if (!hits.length) showEmptyRow(tbody, `Nothing in the ledger touched ${path}`);
+    for (const h of hits.slice(-100).reverse()) {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        `<td style="font-size:0.7rem;" title="${esc(h.ts || "")}">${esc(fmtWhen(h.ts))}</td>` +
+        `<td style="font-size:0.75rem;">${esc(h.via || "—")}</td>` +
+        `<td><span class="pill ${h.status === "ok" ? "ok" : "warn"}">${esc(h.status || "—")}</span></td>` +
+        `<td style="font-size:0.7rem;"><code>${esc((h.ids?.sessionId || "").slice(0, 14))}</code></td>`;
+      tbody.appendChild(tr);
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message || e)}</td></tr>`;
+  }
+}
+
+if ($("btnLedgerRefresh")) $("btnLedgerRefresh").onclick = () => loadLedger();
+if ($("btnWhoTouched")) $("btnWhoTouched").onclick = () => loadWhoTouched();
+if ($("whoPath")) {
+  $("whoPath").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") loadWhoTouched();
+  });
+}
+if ($("ledgerTable")) loadLedger().catch(() => {});
