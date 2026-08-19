@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * xclaw eval horizon --offline
+ * xclaw eval horizon --offline [--g12|--all]
  */
 import os from "node:os";
 import path from "node:path";
@@ -12,7 +12,8 @@ export async function main(argv = process.argv.slice(2)) {
   const offline = argv.includes("--offline") || !argv.includes("--live");
   resetHorizonMetrics();
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-horizon-"));
-  const r = await runHorizonSuiteOffline({ workspace });
+  const includeG12 = argv.includes("--g12") || argv.includes("--all");
+  const r = await runHorizonSuiteOffline({ workspace, includeG12 });
   const out = { offline, ...r };
   console.log(JSON.stringify(out, null, 2));
   process.exitCode = r.ok ? 0 : 1;

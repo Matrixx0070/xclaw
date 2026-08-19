@@ -1,5 +1,5 @@
 /**
- * Offline long-horizon graders for G10/G11/G13 synthetic jobs.
+ * Offline long-horizon graders for G10/G11/G12/G13 synthetic jobs.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -104,6 +104,24 @@ export async function syntheticG13Job(workspace) {
   };
 }
 
+export async function syntheticG12Job(workspace) {
+  await fs.mkdir(workspace, { recursive: true });
+  await fs.writeFile(path.join(workspace, "budget.txt"), "BUDGET-OK\n");
+  return {
+    text: "Finished under budget with BUDGET-OK",
+    turns: 2,
+    toolTrace: [
+      { name: "xclaw_file_write", status: "ok" },
+      { name: "xclaw_file_read", status: "ok" },
+    ],
+    toolCalls: 2,
+    toolErrors: 0,
+    wallMs: 25,
+    status: "succeeded",
+    workspace,
+  };
+}
+
 export async function runHorizonSuiteOffline(opts = {}) {
   const workspace = opts.workspace;
   const jobs = { ...(opts.jobs || {}) };
@@ -122,11 +140,17 @@ export async function runHorizonSuiteOffline(opts = {}) {
       path.join(workspace, "g13")
     );
   }
+  if (!jobs["a4-G12-budget-near-limit"] && workspace && opts.includeG12) {
+    jobs["a4-G12-budget-near-limit"] = await syntheticG12Job(
+      path.join(workspace, "g12")
+    );
+  }
   return runHorizonOffline({
     ids: opts.ids || [
       "a4-G10-plan-write-verify-fix",
       "a4-G11-tool-fail-recover",
       "a4-G13-canary-then-ground",
+      ...(opts.includeG12 ? ["a4-G12-budget-near-limit"] : []),
     ],
     jobs,
   });
@@ -138,4 +162,5 @@ export default {
   syntheticG10Job,
   syntheticG11Job,
   syntheticG13Job,
+  syntheticG12Job,
 };
