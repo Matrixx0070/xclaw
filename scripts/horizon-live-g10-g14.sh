@@ -11,6 +11,8 @@ mkdir -p "$EV"
 if [[ "${XCLAW_SOAK_CONFIRM:-0}" == "1" ]]; then
   node src/eval/horizon-cli.mjs --live --confirm-live --soak-job nightly \
     | tee "$EV/last-live-nightly.json"
+  node scripts/horizon-live-notify.mjs "$EV/last-live-report.json" || true
+  node scripts/horizon-live-notify.mjs "$EV/last-live-nightly.json" || true
 else
   node src/eval/horizon-cli.mjs --live \
     | tee "$EV/last-soak-dry.json"
