@@ -35,6 +35,15 @@ export function gossipHmacSecret(cfg = {}) {
   );
 }
 
+export function gossipHmacSecrets(cfg = {}) {
+  const list = cfg?.cluster?.gossipHmacSecrets;
+  if (Array.isArray(list) && list.length) return list.filter(Boolean);
+  const one = gossipHmacSecret(cfg);
+  const prev =
+    cfg?.cluster?.gossipHmacSecretPrevious || process.env.XCLAW_GOSSIP_HMAC_SECRET_PREVIOUS || "";
+  return [one, prev].filter(Boolean);
+}
+
 function stablePayload({ generation, owner, region, at }) {
   return JSON.stringify({
     at: at || "",
@@ -45,7 +54,8 @@ function stablePayload({ generation, owner, region, at }) {
 }
 
 export function signGossip(payload = {}, cfg = {}) {
-  const secret = gossipHmacSecret(cfg);
+  const secrets = gossipHmacSecrets(cfg);
+  const secret = secrets[0] || gossipHmacSecret(cfg);
   const body = stablePayload(payload);
   if (!secret) return { ...payload, body, sig: null };
   const sig = createHmac("sha256", secret).update(body).digest("hex");
@@ -72,7 +82,8 @@ export function verifyGossip(payload = {}, cfg = {}) {
       return { ok: false, code: "GOSSIP_REPLAY", reason: "replay" };
     }
   }
-  const secret = gossipHmacSecret(cfg);
+  const secrets = gossipHmacSecrets(cfg);
+  const secret = secrets[0] || gossipHmacSecret(cfg);
   if (!secret) {
     if (prod) {
       incGossipReject(1, "required");
@@ -81,21 +92,25 @@ export function verifyGossip(payload = {}, cfg = {}) {
     return { ok: true, authMethod: "lab" };
   }
   const body = payload.body || stablePayload(payload);
-  const expected = createHmac("sha256", secret).update(body).digest("hex");
   const sig = String(payload.sig || payload.signature || "");
   const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    incGossipReject(1, "invalid");
-    return { ok: false, code: "GOSSIP_HMAC_INVALID", reason: "invalid" };
+  const trySecrets = secrets.length ? secrets : [secret];
+  for (let i = 0; i < trySecrets.length; i++) {
+    const expected = createHmac("sha256", trySecrets[i]).update(body).digest("hex");
+    const b = Buffer.from(expected);
+    if (a.length === b.length && timingSafeEqual(a, b)) {
+      return { ok: true, authMethod: "hmac", rotated: i > 0 };
+    }
   }
-  return { ok: true, authMethod: "hmac" };
+  incGossipReject(1, "invalid");
+  return { ok: false, code: "GOSSIP_HMAC_INVALID", reason: "invalid" };
 }
 
 export default {
   signGossip,
   verifyGossip,
   gossipHmacSecret,
+  gossipHmacSecrets,
   getGossipRejectTotal,
   getGossipRejectReasons,
 };
