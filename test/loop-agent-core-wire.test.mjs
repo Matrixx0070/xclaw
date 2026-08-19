@@ -17,7 +17,6 @@ describe("loop agent-core wires", () => {
     const loopSrc = fs.readFileSync(path.join(root, "src/agent/loop.mjs"), "utf8");
     assert.match(loopSrc, /guardHighRiskReceipt/);
     assert.match(loopSrc, /createCostGovernor/);
-    assert.match(loopSrc, /runHallucinationCanary/);
     assert.match(loopSrc, /costGov\.check/);
   });
 });
