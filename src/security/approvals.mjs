@@ -270,7 +270,7 @@ export function createApprovalGate(cfg = {}) {
   /**
    * @returns {Promise<{ok, approved?, reason?, message?, mode?, pendingId?, plan?, planFingerprint?}>}
    */
-  async function authorize(name, args, { timeoutMs = 120_000, onPending, forceHuman = false, riskWorkingDir = null } = {}) {
+  async function authorize(name, args, { timeoutMs = 120_000, onPending, forceHuman = false, riskWorkingDir = null, job = null } = {}) {
     if (!isToolAllowed(name)) {
       return {
         ok: false,
@@ -285,17 +285,24 @@ export function createApprovalGate(cfg = {}) {
         message: `Command for ${name} is not on the exec allowlist.`,
       };
     }
-    const quotaCheck = await authorizeQuotaPreflight(name, args, {
-      cfg,
-      workingDir: riskWorkingDir,
-    });
-    if (!quotaCheck.ok) {
-      return {
-        ok: false,
-        reason: quotaCheck.reason || "WORKSPACE_QUOTA_EXCEEDED",
-        message: quotaCheck.message,
-        quota: quotaCheck.quota,
-      };
+    try {
+      const q = await authorizeQuotaPreflight(name, args, {
+        cfg,
+        workingDir: riskWorkingDir || args?.cwd || args?.workingDir || planRoot,
+        job,
+        hubs: cfg?._hubs || {},
+      });
+      if (q && q.ok === false) {
+        return {
+          ok: false,
+          reason: q.reason || "WORKSPACE_QUOTA_EXCEEDED",
+          message: q.message || "workspace quota exceeded",
+          quota: q.quota || null,
+          escalatedFromSoft: Boolean(q.escalatedFromSoft),
+        };
+      }
+    } catch {
+      /* quota optional */
     }
     // A2: deterministic risk assessment for every action. Never throws —
     // assessment failure degrades to null (pre-A2 behavior), not to a block.

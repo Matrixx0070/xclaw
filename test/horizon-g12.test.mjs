@@ -25,6 +25,8 @@ describe("horizon G12", () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-g12s-"));
     const r = await runHorizonSuiteOffline({ workspace, includeG12: true });
     assert.equal(r.ok, true, JSON.stringify(r));
-    assert.equal(r.results.filter((x) => x.ok).length, 4);
+    // Count grew with the later G15-G20 packs; assert all pass and G12 is in.
+    assert.equal(r.results.filter((x) => x.ok).length, r.results.length);
+    assert.ok(r.results.some((x) => String(x.id || "").includes("G12")), JSON.stringify(r.results.map((x) => x.id)));
   });
 });

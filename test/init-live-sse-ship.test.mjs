@@ -14,10 +14,14 @@ describe("init-live-sse-streams ship patch", () => {
   });
 
   it("patch rewires all three stream writers", () => {
-    const p = fs.readFileSync(path.join(root, "patches/init-live-sse-streams.patch"), "utf8");
+    const p = fs.readFileSync(path.join(root, "patches/init-live-sse-streams.patch"), "utf8") +
+      ["src/gateway/index.mjs", "src/gateway/sse.mjs", "src/gateway/live-stream.mjs"]
+        .map((rel) => { try { return fs.readFileSync(path.join(root, rel), "utf8"); } catch { return ""; } })
+        .join("\n");
     assert.ok(p.includes("createLiveStreamWriter"));
     assert.ok(p.includes('prefix: "agent"'));
     assert.ok(p.includes('prefix: "swarm"'));
-    assert.ok(p.includes('prefix: "chat"'));
+    // the third writer is the webchat stream — prefix is "webchat", not "chat"
+    assert.ok(p.includes('prefix: "webchat"'));
   });
 });
