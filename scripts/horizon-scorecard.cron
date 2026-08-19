@@ -1,0 +1,4 @@
+# XClaw nightly autonomy scorecard
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+0 4 * * * root cd /opt/xclaw && /opt/xclaw/scripts/horizon-scorecard.sh >> /var/log/xclaw-scorecard.log 2>&1
