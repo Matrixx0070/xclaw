@@ -12,7 +12,7 @@ import { runVerifyChecks } from "./verify.mjs";
 import { recordJob } from "./history.mjs";
 import { stampJobToolHash } from "./stamp-tool-hash.mjs";
 import { rememberJob } from "../memory/durable.mjs";
-import { attachReceiptCollectorToJob } from "./finalize-receipt.mjs";
+import { attachReceiptCollectorToJob, ensureJobReceiptCollector } from "./finalize-receipt.mjs";
 import { proposeSkillFromFailure, proposeSkillFromSuccess } from "../skills/propose.mjs";
 import { saveCheckpoint, saveMidRunCheckpoint } from "./checkpoint.mjs";
 import { recordJobCost, estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
@@ -108,7 +108,12 @@ export async function runJob(opts) {
     },
   };
 
-  const receiptCollector = createReceiptCollector();
+  // Always-on receipt collector so force-stop still persists quotaHardCircuit;
+  // seeded from opts.receiptCollector when a caller supplies one.
+  const receiptCollector = ensureJobReceiptCollector(
+    { id },
+    opts.receiptCollector || opts.collector || createReceiptCollector()
+  );
   try {
     agentResult = await runAgentLoop({
       userMessage: goal,
@@ -328,8 +333,10 @@ export async function runJob(opts) {
   };
   copyCollectorOntoJob(job, receiptCollector);
   stampJobToolHash(job);
+  job.receiptCollector = job.receiptCollector || receiptCollector;
   attachReceiptCollectorToJob(job, {
     agentResult,
+    collector: receiptCollector,
   });
 
   push({ type: "job", phase: "end", id, status, pass: job.pass, wallMs: job.wallMs });

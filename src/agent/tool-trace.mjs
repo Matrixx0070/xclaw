@@ -1,3 +1,5 @@
+import { stampToolEntryHash, GENESIS_HASH } from "./tool-hash-chain.mjs";
+
 /**
  * Normalized toolTrace entries for grounded suggestions, metrics, audit.
  * Backward compatible: keeps legacy `result` string + `blocked` boolean.
@@ -639,6 +641,13 @@ export function finalizeToolTraceEntry(partial, opts = {}) {
   const structuredResult = entry.result;
   entry.resultView = structuredResult;
   entry.result = structuredResult.text; // legacy string
+
+  // Optional hash-chain stamp for receipt/replay (opts.prevHash or GENESIS)
+  if (opts.hashChain !== false) {
+    const prev = opts.prevHash || opts.chainTip || GENESIS_HASH;
+    const stamped = stampToolEntryHash(entry, prev);
+    return stamped.entry;
+  }
 
   return entry;
 }
