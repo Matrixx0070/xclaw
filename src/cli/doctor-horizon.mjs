@@ -11,6 +11,9 @@ import { loadSoakPolicy } from "../eval/horizon-soak-policy.mjs";
 import { renderSoakMetrics } from "../eval/horizon-soak-metrics.mjs";
 import { listSoakJobs } from "../eval/horizon-soak-checkpoint.mjs";
 import { renderSoakResumeMetrics } from "../eval/horizon-soak-resume-metrics.mjs";
+import { listHeldSoakLeases } from "../eval/horizon-soak-lease.mjs";
+import { soakLeaseBackend } from "../eval/horizon-soak-lease-select.mjs";
+import { renderSoakLeaseMetrics } from "../eval/horizon-soak-lease-metrics.mjs";
 
 const EXPECTED = [
   "G10",
@@ -55,6 +58,9 @@ export async function doctorHorizon(cfg = {}) {
     soakJobs,
     soakJobCount: soakJobs.length,
     lastCheckpointAt: soakJobs[0]?.updatedAt || null,
+    leaseBackend: soakLeaseBackend({}),
+    heldLeases: listHeldSoakLeases({}),
+    metricsLease: renderSoakLeaseMetrics(),
     at: new Date().toISOString(),
   };
 }
