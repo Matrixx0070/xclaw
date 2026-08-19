@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 3.141.1 — state the approval rule once, instead of per channel (2026-08-19)
+
+3.141.0 fixed the duplicate approval card in WebChat — the same bug Telegram had
+fixed months earlier. Both channels rediscovered it the same way: a user saw a
+bogus second prompt. The rule lived in a code comment, so each new consumer was
+going to repeat it.
+
+- The post-timeout re-emission now carries **`restate: true`** on the event
+  itself, so a consumer can tell an ask from a state update with one field and
+  no knowledge of the history.
+- `src/security/approval-events.mjs` states the rule once —
+  `isNewApprovalAsk()` / `isApprovalRestate()` — with the reason it exists.
+  Telegram gates on it; WebChat (browser-side) mirrors it on `data.restate` and
+  updates the existing card instead of adding one.
+- Tripwires extended: the loop must mark the re-emission, and both channels must
+  gate on it.
+
 ## 3.141.0 — talked to the agent through WebChat and used every feature (2026-08-19)
 
 Held a real conversation in the WebChat UI and exercised each capability the

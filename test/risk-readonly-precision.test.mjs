@@ -78,17 +78,27 @@ describe("read-only exec precision (live-derived)", () => {
 // approval_required as a timeout state update; telegram must not re-prompt —
 // live-observed identical prompts exactly 120s apart).
 describe("approval prompt dedupe wiring", () => {
-  it("loop marks the timeout re-emission", async () => {
+  it("loop marks the timeout re-emission, and marks it as a restate", async () => {
     const src = await fs.readFile(new URL("../src/agent/loop.mjs", import.meta.url), "utf8");
     assert.match(src, /timedOut: auth\.reason === "timeout"/);
+    // the re-emission must say what it is on the event itself, so a consumer
+    // does not have to know the history to avoid a bogus second prompt
+    assert.match(src, /restate: true/);
   });
-  it("telegram skips timedOut updates and dedupes by pendingId", async () => {
+  it("telegram gates on the shared reader and dedupes by pendingId", async () => {
     const src = await fs.readFile(new URL("../src/channels/telegram/index.mjs", import.meta.url), "utf8");
-    assert.match(src, /if \(!e\.timedOut\)/);
+    assert.match(src, /isNewApprovalAsk\(e\)/);
+    assert.match(src, /!e\.timedOut/);
     assert.match(src, /promptedApprovals\.has\(item\.id\)/);
     // latch only after a successful send — failed sends stay re-promptable
     const latchIdx = src.indexOf("promptedApprovals.add(item.id)");
     const logIdx = src.indexOf("approval prompt ${item.id}");
     assert.ok(latchIdx > logIdx && logIdx > 0, "latch must follow successful delivery");
+  });
+
+  it("webchat gates on restate too (it shipped a duplicate card without it)", async () => {
+    const src = await fs.readFile(new URL("../ui/webchat/app.js", import.meta.url), "utf8");
+    assert.match(src, /data\.restate/);
+    assert.match(src, /approvalCards/);
   });
 });

@@ -449,6 +449,12 @@ async function sendMessage(raw) {
         toolCards.delete(data.name);
         return;
       }
+      // `restate` marks a state update on a pending that was already announced
+      // (see src/security/approval-events.mjs) — never prompt again on it
+      if (type === "security" && phase === "approval_required" && data.restate) {
+        addApprovalCard(ctx, { pendingId: data.pendingId, timedOut: true });
+        return;
+      }
       if (type === "security" && phase === "approval_required") {
         setThinking(ctx, "Waiting for your approval…");
         addApprovalCard(ctx, {

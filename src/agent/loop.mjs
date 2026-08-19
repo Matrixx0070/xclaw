@@ -1343,9 +1343,13 @@ export async function runAgentLoop(options) {
             reason: auth.reason,
             pendingId,
             // authorize already emitted approval_required via onPending when
-            // the pending was created; this second emission after a timeout
-            // is a state update, not a new ask — consumers that prompt a
-            // human (telegram) must not re-prompt on it
+            // the pending was created; this second emission after a timeout is
+            // a STATE UPDATE, not a new ask. `restate` says so on the event
+            // itself so a consumer does not have to know this history —
+            // telegram and webchat each had to rediscover it and dedupe by
+            // hand, months apart. Anything that prompts a human should gate on
+            // isNewApprovalAsk().
+            restate: true,
             timedOut: auth.reason === "timeout",
             message: msg,
           });

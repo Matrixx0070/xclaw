@@ -2,6 +2,7 @@
  * Telegram channel — deepened with OpenClaw allow-from + session bindings.
  */
 import { replyWithAgent, truncate } from "../base.mjs";
+import { isNewApprovalAsk } from "../../security/approval-events.mjs";
 import { processInbound, fromTelegramUpdate } from "../runtime.mjs";
 import { createChannelPolicy, workspaceForChat } from "../policy.mjs";
 import { resolveBinding, touchSession } from "../../sessions/router.mjs";
@@ -745,9 +746,9 @@ export function createTelegramChannel(cfg) {
             streamer.setPartial(e.accumulated).catch(() => {});
             recordTelegramStreamDelta();
           } else if (e.type === "security" && e.phase === "approval_required") {
-            // timedOut re-emissions are state updates on an already-prompted
-            // pending — never a fresh ask
-            if (!e.timedOut) {
+            // restate/timedOut re-emissions are state updates on an
+            // already-prompted pending — never a fresh ask
+            if (isNewApprovalAsk(e) && !e.timedOut) {
               notifyOwnerApproval({
                 id: e.pendingId,
                 tool: e.name,
