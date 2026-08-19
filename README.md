@@ -83,8 +83,8 @@ export XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
 
 | Knob | Env / config | Notes |
 |------|----------------|-------|
-| Egress | `XCLAW_EGRESS=deny\|allow\|allowlist` | Prod default deny for shell network patterns |
-| OS sandbox | `XCLAW_OS_SANDBOX=auto\|bwrap\|off` | Uses **bubblewrap** when installed & usable |
+| Egress | `XCLAW_EGRESS=deny\\|allow\\|allowlist` | Prod default deny for shell network patterns |
+| OS sandbox | `XCLAW_OS_SANDBOX=auto\\|bwrap\\|off` | Uses **bubblewrap** when installed & usable |
 | Spawn plan | `XCLAW_SPAWN_ENFORCE` | Exact approved command at bash spawn |
 | Kill | `xclaw stop-all` | Abort sessions + stop computer |
 
@@ -162,8 +162,8 @@ export XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
 
 | Knob | Env / config | Notes |
 |------|----------------|-------|
-| Egress | `XCLAW_EGRESS=deny\|allow\|allowlist` | Prod default deny for shell network patterns |
-| OS sandbox | `XCLAW_OS_SANDBOX=auto\|bwrap\|off` | Uses **bubblewrap** when installed & usable |
+| Egress | `XCLAW_EGRESS=deny\\|allow\\|allowlist` | Prod default deny for shell network patterns |
+| OS sandbox | `XCLAW_OS_SANDBOX=auto\\|bwrap\\|off` | Uses **bubblewrap** when installed & usable |
 | Spawn plan | `XCLAW_SPAWN_ENFORCE` | Exact approved command at bash spawn |
 | Kill | `xclaw stop-all` | Abort sessions + stop computer |
 
@@ -303,4 +303,4 @@ Deep / historical design notes live under `docs/`—prefer this README + XCLAW.m
 
 ## License
 
-MIT — see [THIRD_PARTY.md](./THIRD_PARTY.md) for bundled components.
+XClaw is licensed under the MIT License. See [LICENSE](./LICENSE).
