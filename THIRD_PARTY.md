@@ -1,5 +1,9 @@
 # Third-party notices
 
+XClaw itself is MIT-licensed by the XClaw authors. See [LICENSE](./LICENSE).
+
+The notices below apply only to adapted third-party portions.
+
 ## OpenClaw
 
 Portions of tool-loop detection under `src/agent/openclaw-loop/` are adapted from
@@ -58,4 +62,3 @@ copies or substantial portions of the Software.
 ## OpenClaw pairing
 
 - `src/pairing/pairing-store.mjs` adapted from OpenClaw pairing-store / pairing-messages (MIT).
-
