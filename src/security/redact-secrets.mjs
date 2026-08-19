@@ -49,24 +49,32 @@ export function redactValue(value, seen = new WeakSet()) {
   if (typeof value === "string") return redactString(value);
   if (typeof value !== "object") return value;
   if (seen.has(value)) return "[Circular]";
+  // Track the ANCESTOR path, not every object ever visited: a value reachable
+  // twice from different branches is a shared reference, not a cycle. Leaving
+  // it in `seen` turned the second occurrence into the string "[Circular]" —
+  // webchat's suggestion chips rendered that string one character at a time.
   seen.add(value);
-  if (Array.isArray(value)) {
-    return value.map((v) => redactValue(v, seen));
-  }
-  const out = {};
-  for (const [k, v] of Object.entries(value)) {
-    const keyLower = k.toLowerCase();
-    if (
-      /^(api[_-]?key|token|secret|password|authorization|access[_-]?token|refresh[_-]?token)$/i.test(
-        keyLower
-      )
-    ) {
-      out[k] = typeof v === "string" && v.length > 0 ? REDACTED : v;
-      continue;
+  try {
+    if (Array.isArray(value)) {
+      return value.map((v) => redactValue(v, seen));
     }
-    out[k] = redactValue(v, seen);
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      const keyLower = k.toLowerCase();
+      if (
+        /^(api[_-]?key|token|secret|password|authorization|access[_-]?token|refresh[_-]?token)$/i.test(
+          keyLower
+        )
+      ) {
+        out[k] = typeof v === "string" && v.length > 0 ? REDACTED : v;
+        continue;
+      }
+      out[k] = redactValue(v, seen);
+    }
+    return out;
+  } finally {
+    seen.delete(value);
   }
-  return out;
 }
 
 export function redactToolTraceEntry(entry) {

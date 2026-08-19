@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 3.139.0 — WebChat polish, and a serializer bug behind it (2026-08-19)
+
+Driving a real WebChat conversation (rather than looking at the idle screen)
+surfaced four broken suggestion chips reading `[`, `C`, `i`, `r`.
+
+- **`redactValue` misreported shared references as cycles.** It added every
+  object it visited to a `seen` set and never removed it, so a value reachable
+  twice from *different branches* — not an ancestor cycle — was replaced with the
+  string `"[Circular]"`. The webchat result carries `suggestions` and
+  `reply.suggestions` as the same array, so the top-level copy arrived at the
+  browser as that string and the UI rendered one chip per character. The walker
+  now tracks the ancestor path, so genuine cycles are still caught and shared
+  references survive. This affected any payload containing a repeated object,
+  not only suggestions.
+- **Tool cards show the argument that matters** — `xclaw_bash  uname -r` instead
+  of a truncated blob of raw JSON. The full arguments remain in the expandable
+  body, now pretty-printed.
+- Suggestion chips ignore anything that is not an array, and fall back to the
+  copy nested under `reply`, so a malformed payload degrades to no chips rather
+  than nonsense.
+
 ## 3.138.1 — TUI width correctness, and a real deflake (2026-08-19)
 
 - **Wide characters no longer break the layout.** Width was counted in

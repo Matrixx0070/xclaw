@@ -158,13 +158,22 @@ function setThinking(ctx, label) {
 }
 
 // tool cards
+/** The argument worth showing in a collapsed tool card header. */
+function toolSummary(args) {
+  const a = args && typeof args === "object" ? args : {};
+  const primary = a.command ?? a.path ?? a.file_path ?? a.url ?? a.query ?? a.goal ?? null;
+  if (primary != null) return String(primary).replace(/\s+/g, " ").slice(0, 120);
+  const keys = Object.keys(a);
+  return keys.length ? `${keys.length} argument${keys.length > 1 ? "s" : ""}` : "";
+}
+
 function addToolCard(ctx, name, args) {
   const card = el("div", "tcard");
-  const argsStr = args ? JSON.stringify(args) : "";
+  const argsStr = args ? JSON.stringify(args, null, 2) : "";
   card.innerHTML =
     `<div class="tcard-head"><span class="tdot run"></span>` +
     `<span class="tname">${escapeHtml(name)}</span>` +
-    `<span class="targ">${escapeHtml(argsStr.slice(0, 140))}</span>` +
+    `<span class="targ">${escapeHtml(toolSummary(args))}</span>` +
     `<span class="tdur"></span></div>` +
     `<div class="tcard-body">${escapeHtml(argsStr)}</div>`;
   card.querySelector(".tcard-head").addEventListener("click", () => card.classList.toggle("open"));
@@ -308,7 +317,9 @@ function recordChipFeedback(s, event) {
 }
 
 function renderSuggestionChips(ctx, items) {
-  if (!items?.length) return;
+  // a non-array here (the server once sent the string "[Circular]") would be
+  // iterated character by character into one chip per letter
+  if (!Array.isArray(items) || !items.length) return;
   const wrap = el("div", "chip-row");
   for (const it of items.slice(0, 4)) {
     const s = typeof it === "string" ? { prompt: it } : it;
@@ -481,7 +492,10 @@ async function sendMessage(raw) {
       model: result.model || result.reply?.model,
       userText: text,
     });
-    renderSuggestionChips(ctx, result.suggestions);
+    renderSuggestionChips(
+      ctx,
+      Array.isArray(result.suggestions) ? result.suggestions : result.reply?.suggestions
+    );
     await renderImages(ctx, traceImagePaths(result.reply?.toolTrace));
     scrollDown();
   } catch (e) {
