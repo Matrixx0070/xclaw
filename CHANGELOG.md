@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## 3.142.1 — say who can spawn a subagent (2026-08-19)
+
+Asked the agent in WebChat to spawn three subagents for independent parallel
+audits. It answered:
+
+> Subagents: I cannot spawn them. Only file/shell/skill tools are available
+> here — no subagent / spawn API — so the three audits cannot run as
+> independent agents.
+
+That is accurate. The agent is given four tools (`xclaw_bash`,
+`xclaw_file_read`, `xclaw_file_write`, `xclaw_skill`); no spawn or delegate tool
+exists in the registry, and no bundled skill provides one. `/subagents` stayed
+empty before and after. Subagents and swarm are **operator-initiated** — from
+the Control UI, the CLI, or the swarm API.
+
+The Subagents view described what a subagent is but never said who can start
+one, so a reader would reasonably assume the agent delegates when it would help.
+It now says plainly that the chat agent cannot spawn them and where delegation
+does happen.
+
+Giving the agent a spawn tool is a real capability change — fan-out, cost and
+recursion all follow from it — so it is left as a decision rather than assumed.
+
 ## 3.142.0 — Control UI reads like a product, not a debug view (2026-08-19)
 
 Looked at the console the way someone opening it for the first time would, at a

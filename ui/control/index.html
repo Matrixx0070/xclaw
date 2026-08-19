@@ -828,6 +828,9 @@
           <p class="muted">Spawn an isolated worker for a task (own worktree when in a git repo);
             merge its changes back after review. Swarm coordinates many of these — this is the
             single-worker control.</p>
+          <p class="muted"><strong>Operator-initiated.</strong> The chat agent cannot spawn these
+            itself — it is given file, shell and skill tools only, so delegation happens from here,
+            <code>xclaw</code> on the CLI, or the swarm API.</p>
           <div class="row" style="flex-wrap:wrap;gap:0.4rem;">
             <input id="saTask" placeholder="task for the subagent…" style="flex:2;min-width:220px;" />
             <input id="saTurns" placeholder="maxTurns" style="width:90px;" />
