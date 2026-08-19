@@ -19,6 +19,7 @@ export function writeAutonomySmokeArtifact(root, result = {}) {
   const quotaEscalate = normalizeQuotaEscalate(
     result.quotaEscalate || loadJobIndexQuota(root, result.jobsDir) || emptyQuotaEscalate()
   );
+  const lastDrain = result.lastDrain || result.stop?.lastDrain || null;
   const payload = {
     at: new Date().toISOString(),
     ok: result.ok !== false && Number(result.status ?? 0) === 0,
@@ -27,6 +28,7 @@ export function writeAutonomySmokeArtifact(root, result = {}) {
     mode: result.mode || "offline",
     env: { smoke: process.env.XCLAW_AUTONOMY_SMOKE || null },
     quotaEscalate,
+    lastDrain,
   };
   const fp = smokeArtifactPath(root);
   const tmp = fp + ".tmp";
