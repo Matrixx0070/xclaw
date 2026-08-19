@@ -25,3 +25,6 @@ eval/fixtures/wc/**
 eval/fixtures/wc/wc-05_*/**
 .xclaw_mail_state.json
 tmp-live/
+reports/release/
+.xclaw-evidence/
+eval/baselines/last-*.json
