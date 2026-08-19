@@ -3,6 +3,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { appendCompactAudit } from "./compact-audit.mjs";
 
 const reject = { cas_reject_total: 0 };
 
@@ -44,7 +45,28 @@ export function casWriteShard(fp, next, { fence = 0 } = {}) {
     /* */
   }
   fs.renameSync(tmp, fp);
+  try {
+    appendCompactAudit(cfgFromPath(fp), {
+      fence: body.fence,
+      compacted: true,
+      region: regionFromPath(fp),
+    });
+  } catch {
+    /* */
+  }
   return { ok: true, fence: body.fence };
+}
+
+function regionFromPath(fp) {
+  const b = path.basename(fp);
+  if (b.startsWith("gossip-seq.") && b.endsWith(".json") && b !== "gossip-seq.json") {
+    return b.slice("gossip-seq.".length, -".json".length);
+  }
+  return "local";
+}
+
+function cfgFromPath(fp) {
+  return { paths: { configDir: path.dirname(fp) } };
 }
 
 export default { casWriteShard, getCasRejectTotal, incCasReject, resetCasReject };
