@@ -1,0 +1,17 @@
+[
+  {
+    "id": "a4-G20-cost-stop-resume",
+    "tags": ["autonomy", "a4", "horizon", "g20", "budget"],
+    "fixture": "g20-cost",
+    "prompt": "You hit a cost governor stop. After budget is raised, write final.txt containing COST-RESUME-OK and stop.json with blocked:true then resumed:true. No user questions.",
+    "maxTurns": 10,
+    "timeoutMs": 180000,
+    "expect": {
+      "success": [
+        { "type": "file_contains", "path": "final.txt", "contains": "COST-RESUME-OK" },
+        { "type": "file_contains", "path": "stop.json", "contains": "true" }
+      ],
+      "budgets": { "maxTurns": 10 }
+    }
+  }
+]
