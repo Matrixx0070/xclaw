@@ -182,6 +182,18 @@ export async function runHorizonLive(opts = {}) {
             results.push({ id: g.id, ok: false, error: "empty_goal" });
             continue;
           }
+          // Per-turn guards (cost governor + canary) were imported but never
+          // invoked, so a live loop ran with no cost/hallucination brake.
+          const pre = await beforeLiveTurn({
+            ...opts,
+            goalId: g.id,
+            maxUsd: policy.maxUsd,
+            soakJobId,
+          });
+          if (pre && pre.ok === false) {
+            results.push({ id: g.id, ok: false, error: pre.code || "turn_guard" });
+            break;
+          }
           live = await runAgent({
             ...opts,
             goal: g.prompt,
@@ -197,6 +209,16 @@ export async function runHorizonLive(opts = {}) {
             ok: live?.ok !== false && live?.error !== "empty_goal",
             error: live?.error || null,
           });
+          const post = await afterLiveTurn({
+            ...opts,
+            goalId: g.id,
+            result: live,
+            soakJobId,
+          });
+          if (post && post.ok === false) {
+            results.push({ id: g.id, ok: false, error: post.code || "turn_guard_post" });
+            break;
+          }
           if (live?.error === "empty_goal") {
             break;
           }

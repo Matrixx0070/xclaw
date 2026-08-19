@@ -61,7 +61,12 @@ const SHIP_PATCHES = [
     file: "job-claims-gate-wire.patch",
     isApplied: (rootDir) => {
       const t = read(rootDir, "src/jobs/job.mjs");
-      return t.includes("gateStructuredClaims") && t.includes("claims_soft_retry");
+      // the gate is reached via runClaimsGateWithSoftRetry now; the inline
+      // gateStructuredClaims call it used to add lives in that runner.
+      return (
+        t.includes("runClaimsGateWithSoftRetry") ||
+        (t.includes("gateStructuredClaims") && t.includes("claims_soft_retry"))
+      );
     },
   },
   {

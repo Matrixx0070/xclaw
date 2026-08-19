@@ -24,6 +24,11 @@ import {
   listProviders,
 } from "./registry.mjs";
 import { isTransientError } from "../utils/backoff.mjs";
+import {
+  transferBudgetOnFailover,
+  isBudgetExhausted,
+  remainingBudget,
+} from "./failover-budget.mjs";
 
 /**
  * Build ordered list of model refs to try.
@@ -135,6 +140,8 @@ export async function createProviderForRef(cfg, modelRef, opts = {}) {
   provider.route = route;
   return { provider, route };
 }
+
+export { transferBudgetOnFailover, isBudgetExhausted, remainingBudget };
 
 /**
  * Create a provider facade that failovers across the model chain.
@@ -248,7 +255,31 @@ export async function createFailoverProvider(cfg = {}, opts = {}) {
           willFailover: fb && i < clients.length - 1,
         });
         if (!fb || i === clients.length - 1) throw err;
-        // else try next
+        // Carry the remaining budget across the hop so a failover cannot
+        // silently reset spend, and stop the chain once it is exhausted.
+        if (opts.budget && !isBudgetExhausted(opts.budget)) {
+          const transferred = transferBudgetOnFailover(opts.budget, {
+            fromRef: route.modelRef,
+            toRef: clients[i + 1]?.route?.modelRef,
+            reason: String(err.message || err.status || "failover"),
+          });
+          Object.assign(opts.budget, transferred);
+          onEvent({
+            type: "router",
+            phase: "budget_transfer",
+            from: route.modelRef,
+            to: clients[i + 1]?.route?.modelRef,
+            remaining: remainingBudget(opts.budget),
+            transfer: opts.budget.transfer,
+          });
+        } else if (opts.budget && isBudgetExhausted(opts.budget)) {
+          onEvent({
+            type: "router",
+            phase: "budget_exhausted",
+            modelRef: route.modelRef,
+          });
+          throw err;
+        }
       }
     }
     throw lastErr || new Error("failover chain exhausted");
@@ -315,4 +346,7 @@ export default {
   createProviderForRef,
   createFailoverProvider,
   listRoutableProviders,
+  transferBudgetOnFailover,
+  isBudgetExhausted,
+  remainingBudget,
 };

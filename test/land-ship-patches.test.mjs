@@ -11,7 +11,7 @@ describe("land remaining ship patches", () => {
     // The wires are what must exist; whether they arrived via this combined
     // patch or were landed directly is not a property worth asserting.
     const p = fs.readFileSync(path.join(root, "patches/land-remaining-ship.patch"), "utf8") +
-      ["src/jobs/job.mjs", "src/security/approvals.mjs", "src/memory/durable.mjs",
+      ["src/jobs/job.mjs", "src/jobs/claims-soft-retry-run.mjs", "src/security/approvals.mjs", "src/memory/durable.mjs",
        "src/tokens/cost-governor.mjs", "src/cli/doctor.mjs", "src/agent/goal-loop.mjs"]
         .map((rel) => { try { return fs.readFileSync(path.join(root, rel), "utf8"); } catch { return ""; } })
         .join("\n");

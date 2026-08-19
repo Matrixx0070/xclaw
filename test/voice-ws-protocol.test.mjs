@@ -127,15 +127,23 @@ describe("voice config has one source of truth", () => {
 
 describe("wake readiness reflects hardware, not just tooling", () => {
   it("an installed arecord with no capture device is not ready", async () => {
-    const src = await fs.readFile(
-      new URL("../src/voice/wake/index.mjs", import.meta.url),
-      "utf8"
-    );
     // `arecord --version` succeeds on any host with alsa-utils; `arecord -l`
     // exits 0 while printing "no soundcards found". Wake capture needs a real
-    // device, so the probe must inspect the device listing.
-    assert.match(src, /arecord", \["-l"\]/);
-    assert.match(src, /card \\d\+/);
+    // device, so the probe must inspect the device listing and fail closed.
+    // The listing check now lives in the multi-backend capture probe rather
+    // than inline in wake/index.mjs, so assert the behaviour, not the file.
+    const probeSrc = await fs.readFile(
+      new URL("../src/voice/capture-probe.mjs", import.meta.url),
+      "utf8"
+    );
+    assert.match(probeSrc, /arecord", \["-l"\]/);
+    const { parseArecordList } = await import("../src/voice/capture-parsers.mjs");
+    assert.deepEqual(parseArecordList("no soundcards found..."), []);
+    const real =
+      "card 1: PCH [HDA Intel PCH], device 0: ALC257 Analog [ALC257 Analog]";
+    const cards = parseArecordList(real);
+    assert.equal(cards.length, 1);
+    assert.equal(cards[0].card, 1);
   });
 });
 
