@@ -1,5 +1,5 @@
 /**
- * Doctor: horizon / soak / SIEM snapshot.
+ * Doctor: horizon / soak / SIEM / S3 snapshot.
  */
 import { loadCases } from "../eval/runner.mjs";
 import {
@@ -19,6 +19,11 @@ import {
   renderSoakSiemMetrics,
   readSoakEvents,
 } from "../eval/horizon-soak-siem.mjs";
+import {
+  lastSoakS3Key,
+  getSoakS3SinkFailTotal,
+  renderSoakS3Metrics,
+} from "../eval/horizon-soak-s3.mjs";
 
 const EXPECTED = [
   "G10",
@@ -70,6 +75,9 @@ export async function doctorHorizon(cfg = {}) {
     metricsSiem: renderSoakSiemMetrics(),
     siemHmacFail: getSoakSiemHmacFailTotal(),
     lastSiemEvent: siemEvents.at(-1) || null,
+    lastS3Key: lastSoakS3Key(),
+    s3SinkFail: getSoakS3SinkFailTotal(),
+    metricsS3: renderSoakS3Metrics(),
     at: new Date().toISOString(),
   };
 }
