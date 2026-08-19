@@ -20,7 +20,7 @@ describe("audit s3 retry", () => {
     const put = async ({ key }) => {
       n += 1;
       if (n === 1) throw new Error("boom");
-      assert.match(key, /^audit\/acme\/\d+\.json$/);
+      assert.match(key, /^audit\/acme\/\d+-\d+-[a-f0-9]{12}\.json$/);
     };
     const r = await exportAndPutS3(cfg, put);
     assert.equal(r.ok, true);

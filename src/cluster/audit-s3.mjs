@@ -1,6 +1,8 @@
 /**
  * S3 audit put with decorrelated jitter retry.
  */
+import { idempotentS3Key, noteIdempotentKey } from "./audit-s3-idempotent.mjs";
+
 const stats = { s3_retry_total: 0, lastKey: null, lastRetries: 0 };
 
 export function getS3RetryTotal() {
@@ -23,8 +25,14 @@ export function nextSleep(prev, { min = 10, max = 200 } = {}) {
 export async function putS3WithRetry(put, bundle, cfg = {}) {
   const maxAttempts = Number(cfg?.cluster?.s3Retries ?? 3);
   const account = cfg?.cluster?.auditAccount || "default";
+  const from = bundle?.header?.from ?? 0;
   const to = bundle?.header?.to ?? 0;
-  const key = s3Key({ account, to });
+  const lines = bundle?.lines || [];
+  const key =
+    cfg?.cluster?.idempotentS3 === false
+      ? s3Key({ account, to })
+      : idempotentS3Key({ account, from, to, lines });
+  noteIdempotentKey(key);
   let sleep = 20;
   let lastErr = null;
   let retries = 0;
