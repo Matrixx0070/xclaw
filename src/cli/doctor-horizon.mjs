@@ -24,6 +24,7 @@ import {
   getSoakS3SinkFailTotal,
   renderSoakS3Metrics,
 } from "../eval/horizon-soak-s3.mjs";
+import { readLastScorecard } from "../eval/horizon-scorecard-last.mjs";
 
 const EXPECTED = [
   "G10",
@@ -48,6 +49,7 @@ export async function doctorHorizon(cfg = {}) {
   const packComplete = missing.length === 0;
   const soakJobs = await listSoakJobs({});
   const siemEvents = await readSoakEvents({});
+  const lastCard = await readLastScorecard({});
   const out = {
     ok: horizon.length >= 5,
     horizonCaseCount: horizon.length,
@@ -78,6 +80,9 @@ export async function doctorHorizon(cfg = {}) {
     lastS3Key: lastSoakS3Key(),
     s3SinkFail: getSoakS3SinkFailTotal(),
     metricsS3: renderSoakS3Metrics(),
+    lastScorecardPath: lastCard.path,
+    lastScorecardAge: lastCard.age,
+    lastScorecardOk: lastCard.scorecard?.ok ?? null,
     at: new Date().toISOString(),
   };
   out.scorecard = {
