@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { getModelMeta } from "../providers/registry.mjs";
+import { stampJobCostEvent } from "../jobs/job-cost-attribution.mjs";
 
 function dayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
@@ -26,7 +27,35 @@ async function loadLedger(cfg) {
 async function saveLedger(cfg, ledger) {
   const fp = ledgerPath(cfg);
   await fs.mkdir(path.dirname(fp), { recursive: true });
-  await fs.writeFile(fp, JSON.stringify(ledger, null, 2));
+  const tmp = `${fp}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
+  await fs.writeFile(tmp, JSON.stringify(ledger, null, 2));
+  await fs.rename(tmp, fp);
+}
+
+/** Exclusive lock for ledger read-modify-write (concurrent recordJobCost). */
+async function withLedgerLock(cfg, fn) {
+  const lockPath = ledgerPath(cfg) + ".lock";
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  const maxAttempts = 100;
+  for (let i = 0; i < maxAttempts; i++) {
+    let fh;
+    try {
+      fh = await fs.open(lockPath, "wx");
+    } catch (e) {
+      if (e?.code === "EEXIST") {
+        await new Promise((r) => setTimeout(r, 5 + Math.floor(Math.random() * 20)));
+        continue;
+      }
+      throw e;
+    }
+    try {
+      return await fn();
+    } finally {
+      try { await fh.close(); } catch { /* */ }
+      try { await fs.unlink(lockPath); } catch { /* */ }
+    }
+  }
+  throw new Error("cost-governor: ledger lock timeout");
 }
 
 export function getCostLimits(cfg) {
@@ -143,7 +172,7 @@ function bandFor(spent, lim, paused, economyAt) {
   return "normal";
 }
 
-export async function recordJobCost(cfg, { usd = 0, jobId = null, estimated = false } = {}) {
+async function recordJobCostUnlocked(cfg, { usd = 0, jobId = null, estimated = false, result = {} } = {}) {
   let ledger = await loadLedger(cfg);
   if (ledger.day !== dayKey()) {
     ledger = {
@@ -170,7 +199,7 @@ export async function recordJobCost(cfg, { usd = 0, jobId = null, estimated = fa
   ledger.jobs += 1;
   ledger.events = [
     ...(ledger.events || []).slice(-50),
-    { at: new Date().toISOString(), usd, jobId },
+    stampJobCostEvent({ usd, jobId, estimated, result }),
   ];
   if (ledger.spentUsd >= lim.dailyHardUsd && lim.pauseQueueOnHard) {
     ledger.paused = true;
@@ -189,6 +218,10 @@ export async function recordJobCost(cfg, { usd = 0, jobId = null, estimated = fa
   }
   await saveLedger(cfg, ledger);
   return ledger;
+}
+
+export async function recordJobCost(cfg, opts = {}) {
+  return withLedgerLock(cfg, () => recordJobCostUnlocked(cfg, opts));
 }
 
 /** Owner-visible band-transition fanout: alerter (DM) + WS + ops ledger. */

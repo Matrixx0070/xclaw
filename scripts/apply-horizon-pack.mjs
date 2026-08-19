@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { writeSourceIfChanged } from "./lib/atomic-source-write.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const chain = [
@@ -85,5 +86,5 @@ if (!ho.includes('includeG15 ? ["a4-G15-browser-form-fill"]')) {
       '      ...(includeG16 ? ["a4-G16-swarm-ballot-merge"] : []),' 
   );
 }
-fs.writeFileSync(fp, ho);
+writeSourceIfChanged(fp, ho);
 console.log(JSON.stringify({ ok: true, applied: results.length, results }, null, 2));

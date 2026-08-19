@@ -21,6 +21,15 @@ import {
   incSoakResume,
   renderSoakResumeMetrics,
 } from "./horizon-soak-resume-metrics.mjs";
+import { beforeLiveTurn, afterLiveTurn, renderLiveTurnMetrics, noteLastLiveRun } from "./horizon-live-turn.mjs";
+import {
+  acquireSoakLeaseSelected,
+  releaseSoakLeaseSelected,
+} from "./horizon-soak-lease-select.mjs";
+import {
+  incSoakLeaseDenied,
+  renderSoakLeaseMetrics,
+} from "./horizon-soak-lease-metrics.mjs";
 import { resolveLiveGoals } from "./horizon-live-goals.mjs";
 import {
   writeLiveSoakReport,
@@ -43,10 +52,30 @@ export async function runHorizonLive(opts = {}) {
   const key = hasLiveKey(opts.cfg);
   const soakJobId = opts.soakJobId || opts.jobId || null;
   let checkpoint = null;
+  let lease = null;
   if (soakJobId) {
     checkpoint = await loadSoakCheckpoint(soakJobId, { base: opts.soakBase });
     if (checkpoint.turns > 0 || checkpoint.usedUsd > 0) {
       incSoakResume();
+    }
+    lease = await acquireSoakLeaseSelected(soakJobId, {
+      base: opts.soakBase,
+      owner: opts.leaseOwner,
+      redis: opts.redis,
+      backend: opts.leaseBackend,
+      ttlMs: opts.leaseTtlMs,
+    });
+    if (!lease.ok) {
+      incSoakLeaseDenied();
+      return {
+        ok: false,
+        mode: "lease_denied",
+        code: lease.code,
+        lease,
+        soakJobId,
+        metricsLive: renderHorizonLiveMetrics(),
+        metricsLease: renderSoakLeaseMetrics(),
+      };
     }
   }
   const policy = loadSoakPolicy({

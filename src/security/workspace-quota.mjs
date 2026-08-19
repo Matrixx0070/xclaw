@@ -90,13 +90,15 @@ export function evaluateQuota(usage, quota, delta = {}) {
   return { ok: !hard, hard, soft, bytes, files, reasons, quota };
 }
 
-export async function preflightWriteQuota(workspaceRoot, cfg = {}, delta = {}) {
+export async function preflightWriteQuota(workspaceRoot, cfg = {}, delta = {}, opts = {}) {
   const quota = resolveQuota(cfg);
   if (!quota.enabled) return { ok: true, disabled: true };
   const root = path.resolve(workspaceRoot || process.cwd());
-  let usage;
+  // opts.usage lets a caller supply an already-measured workspace so the hot
+  // authorize() path does not re-walk the tree on every single write call.
+  let usage = opts.usage;
   try {
-    usage = await measureWorkspace(root, { maxWalkEntries: quota.maxWalkEntries });
+    if (!usage) usage = await measureWorkspace(root, { maxWalkEntries: quota.maxWalkEntries });
   } catch (e) {
     return {
       ok: false,

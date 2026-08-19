@@ -1669,6 +1669,25 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       break;
     }
 
+    case "stop":
+    case "stop-sign": {
+      // xclaw stop --sign | xclaw stop-sign  → mint X-XClaw-Stop-Sig
+      const rest = args.slice(1);
+      if (cmd === "stop-sign" || rest.includes("--sign") || rest[0] === "sign") {
+        const { stopSignMain } = await import("../src/cli/stop-sign.mjs");
+        const cleaned = rest.filter((a) => a !== "--sign" && a !== "sign");
+        await stopSignMain(cleaned);
+        break;
+      }
+      // default: same as stop-all for convenience
+      const { loadConfig } = await import("../src/config/load.mjs");
+      const { killAll, listActiveSessions } = await import("../src/agent/session-control.mjs");
+      const cfg = await loadConfig();
+      const before = listActiveSessions();
+      const r = await killAll({ stopComputer: !rest.includes("--keep-computer"), cfg });
+      console.log(JSON.stringify({ ...r, before }, null, 2));
+      break;
+    }
     case "stop-all":
     case "kill-all": {
       const { loadConfig } = await import("../src/config/load.mjs");
@@ -2876,6 +2895,8 @@ Commands:
   doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
   self-test            Fast unit smoke (autonomy, sandbox, fabric, …)
   stop-all             Abort agent sessions + stop computer
+  stop --sign          Mint X-XClaw-Stop-Sig (JSON; add --print-curl)
+  stop-sign            Alias of stop --sign
   automations          list|add|pause|resume|run|results|delete
   providers            list | setup (wizard) | set | oauth | use [X] [model]
   channels             list | setup (wizard) | set | enable X | disable X

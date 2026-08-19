@@ -93,9 +93,11 @@ export async function writeLockfile(cwd, data) {
 export function resolveIntegrityMode(cfg = {}, hasLockfile = false) {
   const explicit = String(cfg?.skills?.integrity || "").toLowerCase();
   if (["off", "warn", "enforce"].includes(explicit)) return explicit;
-  if (!hasLockfile) return "off";
   const profile = String(cfg?.profile || "").toLowerCase();
-  return profile === "prod" ? "enforce" : "warn";
+  // Prod always enforces — missing lockfile means refuse unpinned injection
+  if (profile === "prod") return "enforce";
+  if (!hasLockfile) return "off";
+  return "warn";
 }
 
 /**
@@ -135,7 +137,29 @@ const warned = new Set();
 export async function applyIntegrity(skills, { cwd, cfg } = {}) {
   const { data } = await readLockfile(cwd);
   const mode = resolveIntegrityMode(cfg, Boolean(data));
-  if (mode === "off" || !data) return { skills, mode, report: null };
+  if (mode === "off") return { skills, mode, report: null };
+  // Enforce without lockfile: refuse all unpinned skills (prod default)
+  if (mode === "enforce" && !data) {
+    const key = "__no_lockfile__";
+    if (!warned.has(key)) {
+      warned.add(key);
+      console.warn(
+        `[xclaw] skill integrity enforce: no ${LOCKFILE_NAME} — excluding all skills` +
+          ` (run: xclaw skills lock)`
+      );
+    }
+    return {
+      skills: [],
+      mode,
+      report: {
+        excluded: (skills || []).map((s) => s?.name).filter(Boolean),
+        missing: [],
+        total: (skills || []).length,
+        reason: "no_lockfile",
+      },
+    };
+  }
+  if (!data) return { skills, mode, report: null };
 
   const { evaluated, missing } = await evaluateSkills(skills, data);
   const kept = [];

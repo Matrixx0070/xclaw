@@ -22,6 +22,7 @@ import {
   EXEC_TOOLS,
   isExecTool,
 } from "./system-run-plan.mjs";
+import { authorizeQuotaPreflight } from "./authorize-quota.mjs";
 
 const pending = new Map(); // id -> { tool, args, plan, resolve, at, deadline }
 let slaTimer = null;
@@ -282,6 +283,18 @@ export function createApprovalGate(cfg = {}) {
         ok: false,
         reason: "exec_not_allowlisted",
         message: `Command for ${name} is not on the exec allowlist.`,
+      };
+    }
+    const quotaCheck = await authorizeQuotaPreflight(name, args, {
+      cfg,
+      workingDir: riskWorkingDir,
+    });
+    if (!quotaCheck.ok) {
+      return {
+        ok: false,
+        reason: quotaCheck.reason || "WORKSPACE_QUOTA_EXCEEDED",
+        message: quotaCheck.message,
+        quota: quotaCheck.quota,
       };
     }
     // A2: deterministic risk assessment for every action. Never throws —

@@ -18,6 +18,9 @@ import { runHorizonLive, hasLiveKey } from "./horizon-live.mjs";
 import { loadSoakPolicy } from "./horizon-soak-policy.mjs";
 import { renderSoakMetrics } from "./horizon-soak-metrics.mjs";
 import { renderSoakResumeMetrics } from "./horizon-soak-resume-metrics.mjs";
+import { renderSoakLeaseMetrics } from "./horizon-soak-lease-metrics.mjs";
+import { soakLeaseBackend } from "./horizon-soak-lease-select.mjs";
+import { writeLiveSoakReport, DEFAULT_LIVE_IDS } from "./horizon-live-report.mjs";
 
 export async function main(argv = process.argv.slice(2)) {
   const wantLive = argv.includes("--live");
@@ -47,6 +50,8 @@ export async function main(argv = process.argv.slice(2)) {
       metricsPack: renderHorizonPackMetrics(),
       metricsSoak: renderSoakMetrics(),
       metricsResume: renderSoakResumeMetrics(),
+      metricsLease: renderSoakLeaseMetrics(),
+      leaseBackend: soakLeaseBackend({}),
     };
     console.log(JSON.stringify(dry, null, 2));
     process.exitCode = 0;
@@ -66,6 +71,19 @@ export async function main(argv = process.argv.slice(2)) {
     });
     r.policy = r.policy || policy;
     r.metricsSoak = r.metricsSoak || renderSoakMetrics();
+    const ids = includeAll ? undefined : DEFAULT_LIVE_IDS;
+    const written = await writeLiveSoakReport({
+      mode: r.mode || "live",
+      ok: r.ok !== false,
+      ids,
+      usedUsd: r.policy?.usedUsd ?? 0,
+      turns: r.policy?.turns ?? r.maxTurns ?? 0,
+      soakJobId,
+      canary: r.canary || { fail: 0 },
+      scorecard: r.scorecard || { ok: null },
+    });
+    r.liveReportPath = written.path;
+    r.liveReport = written.report;
     console.log(JSON.stringify(r, null, 2));
     process.exitCode = r.ok ? 0 : 1;
     return r;

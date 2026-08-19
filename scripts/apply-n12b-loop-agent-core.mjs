@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeSourceIfChanged } from "./lib/atomic-source-write.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fp = path.join(root, "src/agent/loop.mjs");
@@ -99,5 +100,5 @@ if (!t.includes("hallucinationCanary")) {
   }
 }
 
-fs.writeFileSync(fp, t);
+writeSourceIfChanged(fp, t);
 console.log(JSON.stringify({ ok: true, applied: n, path: fp }));

@@ -13,6 +13,8 @@
  *   { "type": "event", "channel": "admission"|"queue"|"eviction"|"swarm", "data": {...}, "at": ISO }
  *   { "type": "pong", "t": number }
  */
+import { redactEvent } from "../security/redact-secrets.mjs";
+
 
 import crypto from "node:crypto";
 import { createBoundedQueue, DropPolicy } from "../shared/bounded-queue.mjs";
@@ -288,7 +290,7 @@ function unconsumedTail(buf) {
 function sendJson(socket, obj) {
   if (!socket || socket.destroyed) return false;
   try {
-    socket.write(encodeTextFrame(JSON.stringify(obj)));
+    socket.write(encodeTextFrame(JSON.stringify(redactEvent(obj))));
     return true;
   } catch {
     return false;
@@ -376,12 +378,33 @@ export function sendClose(socket, code = 1000, reason = "", { graceMs = 0 } = {}
  * @param {import('http').Server} server
  * @param {{ path?: string, heartbeatMs?: number }} [opts]
  */
+
+/** @type {ReturnType<typeof attachWebSocketHub>|null} */
+let activeHub = null;
+
+export function getActiveWsHub() {
+  return activeHub;
+}
+
+export function closeAllWebSockets(reason = "kill_all") {
+  if (!activeHub) return { ok: true, closed: 0, reason };
+  const n = activeHub.clientCount?.() ?? 0;
+  try {
+    activeHub.closeAll();
+  } catch {
+    /* */
+  }
+  activeHub = null;
+  return { ok: true, closed: n, reason };
+}
+
 export function attachWebSocketHub(server, opts = {}) {
   const path = opts.path || "/ws/events";
   const heartbeatMs = Math.max(1000, Number(opts.heartbeatMs) || 25_000);
   const maxMessageBytes = Number(opts.maxMessageBytes) || DEFAULT_MAX_MESSAGE_BYTES;
   /** @type {(req) => {ok:boolean, protocol?:string, error?:string}} */
   const authorize = typeof opts.authorize === "function" ? opts.authorize : null;
+  const cfg = opts.cfg || {};
   const missThreshold = Math.max(1, Number(opts.missThreshold) || 2);
   const stats = {
     pingsSent: 0,
@@ -534,6 +557,27 @@ export function attachWebSocketHub(server, opts = {}) {
               channels: [...client.channels],
               at: new Date().toISOString(),
             });
+          } else if (
+            body.type === "stop" ||
+            body.type === "stop-all" ||
+            body.type === "stop_all" ||
+            body.type === "kill_switch"
+          ) {
+            import("./ws-stop-control.mjs")
+              .then(({ handleWsStopControl }) =>
+                handleWsStopControl(body, cfg, (payload) => sendJson(socket, payload))
+              )
+              .catch((e) => {
+                try {
+                  sendJson(socket, {
+                    type: "stop_result",
+                    ok: false,
+                    error: e.message || String(e),
+                  });
+                } catch {
+                  /* */
+                }
+              });
           }
         }
         if (error) {
@@ -578,7 +622,7 @@ export function attachWebSocketHub(server, opts = {}) {
   }, heartbeatMs);
   if (typeof hb.unref === "function") hb.unref();
 
-  return {
+  const hub = {
     path,
     heartbeatMs,
     missThreshold,
@@ -591,8 +635,11 @@ export function attachWebSocketHub(server, opts = {}) {
       }
       clients.clear();
       clearInterval(hb);
+      if (activeHub === hub) activeHub = null;
     },
   };
+  activeHub = hub;
+  return hub;
 }
 
 /**
@@ -605,7 +652,7 @@ export function broadcast(channel, data) {
   const envelope = {
     type: "event",
     channel: ch,
-    data,
+    data: redactEvent(data),
     at: new Date().toISOString(),
   };
   const frame = encodeTextFrame(JSON.stringify(envelope));
@@ -630,4 +677,4 @@ export function wsOutboundStats() {
   return { ...outboundStats, clients: clients.size };
 }
 
-export default { attachWebSocketHub, broadcast, wsClientCount, wsOutboundStats, encodeTextFrame, encodeBinaryFrame, decodeFrames, createFrameParser };
+export default { attachWebSocketHub, broadcast, wsClientCount, wsOutboundStats, encodeTextFrame, encodeBinaryFrame, decodeFrames, createFrameParser, getActiveWsHub, closeAllWebSockets };

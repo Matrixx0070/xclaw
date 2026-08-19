@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeSourceIfChanged } from "./lib/atomic-source-write.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fp = path.join(root, "src/eval/horizon-live.mjs");
@@ -57,7 +58,7 @@ if (!t.includes("acquireSoakLeaseSelected")) {
     t = t.replace(old, block);
     n++;
   }
-  fs.writeFileSync(fp, t);
+  writeSourceIfChanged(fp, t);
 }
 
 // CLI metricsLease
@@ -74,7 +75,7 @@ if (!c.includes("metricsLease")) {
     "metricsResume: renderSoakResumeMetrics(),",
     "metricsResume: renderSoakResumeMetrics(),\n      metricsLease: renderSoakLeaseMetrics(),\n      leaseBackend: soakLeaseBackend({}),"
   );
-  fs.writeFileSync(cfp, c);
+  writeSourceIfChanged(cfp, c);
   n++;
 }
 

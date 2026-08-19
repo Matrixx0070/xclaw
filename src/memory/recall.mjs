@@ -12,6 +12,7 @@ import {
   appendMemory,
   loadDurableMemoryFile,
 } from "./durable.mjs";
+import { expandRecallHits } from "./recall-provenance.mjs";
 
 function tokenize(q) {
   return String(q || "")
@@ -73,18 +74,30 @@ export async function recallMemory(cfg, workspacePath, opts = {}) {
     .slice(0, limit);
 
   const paths = memoryPaths(cfg, workspacePath);
+  const expanded = expandRecallHits(scored, events, opts.provenance || {});
   return {
     workspace: paths.workspace,
     memoryKey: paths.key,
     query,
-    hits: scored.map(({ ev, score }) => ({
+    hits: expanded.map(({ ev, score, provenance }) => ({
       score: Math.round(score * 100) / 100,
       at: ev.at,
       type: ev.type,
-      summary: ev.summary || ev.goal || null,
+      summary: ev.summary || ev.goal || ev.text || null,
       goal: ev.goal || null,
       jobId: ev.jobId || null,
       status: ev.status || null,
+      sourceIds: ev.sourceIds || ev.meta?.sourceIds || null,
+      provenance: provenance
+        ? {
+            ok: provenance.ok,
+            missing: provenance.missing,
+            sources: (provenance.sources || []).map((s) => ({
+              id: s.id,
+              text: String(s.text || s.summary || "").slice(0, 240),
+            })),
+          }
+        : null,
     })),
     hitCount: scored.length,
   };

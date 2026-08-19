@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeSourceIfChanged } from "./lib/atomic-source-write.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fp = path.join(root, "src/eval/horizon-cli.mjs");
@@ -35,7 +36,7 @@ if (!t.includes("writeLiveSoakReport")) {
     t = t.replace(old, neu);
     n++;
   }
-  fs.writeFileSync(fp, t);
+  writeSourceIfChanged(fp, t);
 }
 const dfp = path.join(root, "src/cli/doctor-horizon.mjs");
 let d = fs.readFileSync(dfp, "utf8");
@@ -48,7 +49,7 @@ if (!d.includes("readLiveSoakReport")) {
     "lastScorecardOk: lastCard.scorecard?.ok ?? null,",
     "lastScorecardOk: lastCard.scorecard?.ok ?? null,\n    lastLiveReport: await readLiveSoakReport({}),\n    metricsLiveReport: renderLiveReportMetrics(),"
   );
-  fs.writeFileSync(dfp, d);
+  writeSourceIfChanged(dfp, d);
   n++;
 }
 console.log(JSON.stringify({ ok: true, applied: n }));

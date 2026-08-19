@@ -8,6 +8,7 @@ import os from "node:os";
 import { runJob } from "./job.mjs";
 import { withBackoff } from "../utils/backoff.mjs";
 import { stampJobToolHash } from "./stamp-tool-hash.mjs";
+import { rehydrateReceiptFromCheckpoint } from "./checkpoint-receipt.mjs";
 
 /** Structured resume / lock error codes */
 export const RESUME_CODES = {
@@ -20,6 +21,87 @@ export const RESUME_CODES = {
   LOCK_IO: "CHECKPOINT_LOCK_IO",
   AGENT_FAILED: "CHECKPOINT_RESUME_AGENT_FAILED",
 };
+
+/** Frozen checkpoint document version (job recovery). */
+export const CHECKPOINT_SCHEMA_VERSION = 1;
+
+/**
+ * Contract for checkpoint JSON on disk.
+ * Legacy files without schemaVersion are migratable to v1.
+ */
+export const CHECKPOINT_SCHEMA_V1 = Object.freeze({
+  $id: "xclaw://job-checkpoint/v1",
+  schemaVersion: CHECKPOINT_SCHEMA_VERSION,
+  required: ["id", "goal", "status", "at", "schemaVersion"],
+  properties: {
+    schemaVersion: { type: "number", const: 1 },
+    id: { type: "string", minLength: 1 },
+    goal: { type: "string" },
+    workspace: { type: ["string", "null"] },
+    status: { type: "string" },
+    pass: { type: ["boolean", "null"] },
+    turns: { type: ["number", "null"] },
+    text: { type: ["string", "null"] },
+    error: {},
+    midRun: { type: ["boolean", "null"] },
+    checkpointTurn: { type: ["number", "null"] },
+    at: { type: "string", minLength: 1 },
+    maxTurns: { type: ["number", "null"] },
+    resumedBy: { type: ["string", "null"] },
+    resumedAt: { type: ["string", "null"] },
+    toolTrace: { type: ["array", "null"] },
+    evidence: { type: ["array", "null"] },
+  },
+});
+
+/**
+ * @returns {{ ok: boolean, errors: string[], schema: string }}
+ */
+export function validateCheckpointShape(doc) {
+  const errors = [];
+  const schema = CHECKPOINT_SCHEMA_V1;
+  if (doc == null || typeof doc !== "object" || Array.isArray(doc)) {
+    return { ok: false, errors: ["checkpoint must be a non-null object"], schema: schema.$id };
+  }
+  for (const key of schema.required) {
+    if (doc[key] === undefined || doc[key] === null || doc[key] === "") {
+      errors.push(`missing required field: ${key}`);
+    }
+  }
+  if (doc.schemaVersion != null && Number(doc.schemaVersion) !== CHECKPOINT_SCHEMA_VERSION) {
+    errors.push(`unsupported schemaVersion ${doc.schemaVersion} (want ${CHECKPOINT_SCHEMA_VERSION})`);
+  }
+  if (doc.id != null && typeof doc.id !== "string") {
+    errors.push("id must be string");
+  }
+  if (doc.at != null && typeof doc.at !== "string") {
+    errors.push("at must be string");
+  }
+  return { ok: errors.length === 0, errors, schema: schema.$id };
+}
+
+/**
+ * Migrate legacy checkpoint (no schemaVersion) → v1.
+ * @returns {{ receipt: object, migrated: boolean, from: number|null }}
+ */
+export function migrateCheckpoint(doc) {
+  if (doc == null || typeof doc !== "object") {
+    return { receipt: doc, migrated: false, from: null };
+  }
+  const from = doc.schemaVersion != null ? Number(doc.schemaVersion) : null;
+  if (from === CHECKPOINT_SCHEMA_VERSION) {
+    return { receipt: { ...doc }, migrated: false, from };
+  }
+  const next = {
+    ...doc,
+    schemaVersion: CHECKPOINT_SCHEMA_VERSION,
+    id: doc.id || `job_${Date.now()}`,
+    goal: doc.goal ?? "",
+    status: doc.status || "running",
+    at: doc.at || new Date().toISOString(),
+  };
+  return { receipt: next, migrated: true, from };
+}
 
 function dir(cfg) {
   return path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "checkpoints");
@@ -37,6 +119,7 @@ export async function saveCheckpoint(cfg, job) {
     toolHashVersion: job.toolHashVersion,
   });
   const slim = {
+    schemaVersion: CHECKPOINT_SCHEMA_VERSION,
     id: job.id,
     goal: job.goal,
     workspace: job.workspace,
@@ -57,6 +140,9 @@ export async function saveCheckpoint(cfg, job) {
     maxTurns: job.maxTurns,
     resumedBy: job.resumedBy || null,
     resumedAt: job.resumedAt || null,
+    quotaEscalate: job.quotaEscalate || job.receiptMetrics?.quotaEscalate || null,
+    receiptMetrics: job.receiptMetrics || null,
+    claimsSoftRetry: job.claimsSoftRetry || job.receiptMetrics?.claimsSoftRetry || null,
   };
   const tmp = fp + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(slim, null, 2));
@@ -94,8 +180,11 @@ export async function loadCheckpoint(cfg, jobId) {
     throw err;
   }
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    const { receipt } = migrateCheckpoint(parsed);
+    return receipt;
   } catch (e) {
+    if (e?.code === RESUME_CODES.CORRUPT) throw e;
     const err = new Error(`checkpoint corrupt: ${jobId}`);
     err.code = RESUME_CODES.CORRUPT;
     err.cause = e;
@@ -412,6 +501,7 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
       error: e.message || String(e),
     };
   }
+  rehydrateReceiptFromCheckpoint(cp, cp);
   if (cp.pass) {
     return {
       ...cp,
@@ -464,8 +554,12 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
   const plan = recoveryStrategyFor(kind, cp, opts);
   const goal = [cp.goal, "", plan.goalSuffix].filter(Boolean).join("\n\n");
 
+  rehydrateReceiptFromCheckpoint(cp, cp);
   const jobOpts = {
     id: `${cp.id}_resume_${Date.now().toString(36)}`,
+    receiptCollector: cp.receiptCollector || null,
+    quotaHardCircuit: cp.quotaHardCircuit || null,
+    quotaEscalate: cp.quotaEscalate || null,
     goal,
     cfg,
     workspace: cp.workspace,
@@ -477,6 +571,14 @@ export async function resumeJobFromCheckpoint(cfg, jobId, opts = {}) {
     onEvent: opts.onEvent,
     persistRun: true,
   };
+  try {
+    const { receiptFromCheckpoint } = await import("./checkpoint-restore-receipt.mjs");
+    jobOpts.receiptCollector = receiptFromCheckpoint(cp);
+    jobOpts.job = jobOpts.receiptCollector;
+    jobOpts.quotaEscalate = jobOpts.receiptCollector.quotaEscalate;
+  } catch {
+    /* */
+  }
 
   const resumeRetries =
     opts.retries ??

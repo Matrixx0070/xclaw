@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { writeSourceIfChanged } from "./lib/atomic-source-write.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pack = path.join(root, "scripts/apply-horizon-pack.mjs");
@@ -55,6 +56,6 @@ if (!t.includes("beforeLiveTurn")) {
           mode: "live",
         });`;
   if (t.includes(old)) t = t.replace(old, neu);
-  fs.writeFileSync(fp, t);
+  writeSourceIfChanged(fp, t);
 }
 console.log(JSON.stringify({ ok: true }));

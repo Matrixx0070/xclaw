@@ -25,6 +25,7 @@ import {
   renderSoakS3Metrics,
 } from "../eval/horizon-soak-s3.mjs";
 import { readLastScorecard } from "../eval/horizon-scorecard-last.mjs";
+import { readLiveSoakReport, renderLiveReportMetrics } from "../eval/horizon-live-report.mjs";
 
 const EXPECTED = [
   "G10",
@@ -83,6 +84,8 @@ export async function doctorHorizon(cfg = {}) {
     lastScorecardPath: lastCard.path,
     lastScorecardAge: lastCard.age,
     lastScorecardOk: lastCard.scorecard?.ok ?? null,
+    lastLiveReport: await readLiveSoakReport({}),
+    metricsLiveReport: renderLiveReportMetrics(),
     at: new Date().toISOString(),
   };
   out.scorecard = {

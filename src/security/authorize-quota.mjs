@@ -6,6 +6,8 @@ import {
   isWriteTool,
   estimateWriteDelta,
   preflightWriteQuota,
+  measureWorkspace,
+  resolveQuota,
 } from "./workspace-quota.mjs";
 import { maybeEmitQuotaSoft, maybeEmitQuotaHard } from "./quota-soft-warn.mjs";
 import {
@@ -19,7 +21,11 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
     return { ok: true, skipped: true };
   }
   const cfg = ctx.cfg || {};
-  if (cfg.workspace?.quota?.enabled === false) {
+  const quotaCfg = cfg.workspace?.quota;
+  // Opt-in. Without explicit workspace.quota config this preflight is inert:
+  // it fails closed on a full-tree walk, so an on-by-default 512MB/50k ceiling
+  // would deny every write in any workspace carrying a node_modules.
+  if (!quotaCfg || quotaCfg.enabled === false) {
     return { ok: true, skipped: true, disabled: true };
   }
   const root =
@@ -29,7 +35,8 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
     cfg.workspace?.root ||
     process.cwd();
   const delta = estimateWriteDelta(name, args);
-  let r = await preflightWriteQuota(root, cfg, delta);
+  const usage = await measureCached(root, resolveQuota(cfg), quotaCfg);
+  let r = await preflightWriteQuota(root, cfg, delta, { usage });
 
   if (r.ok && r.soft && shouldEscalateSoftToHard(r, cfg)) {
     r = escalateSoftResult(r, { tool: name, root });
@@ -46,6 +53,7 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
       const { recordHardBlock } = await import("../agent/quota-hard-circuit.mjs");
       const trip = recordHardBlock(ctx.job || ctx.collector, {
         cfg,
+        collector: ctx.collector,
         code: r.code || "WORKSPACE_QUOTA_EXCEEDED",
         escalatedFromSoft: Boolean(r.escalatedFromSoft),
       });
@@ -81,6 +89,33 @@ export async function authorizeQuotaPreflight(name, args = {}, ctx = {}) {
     });
   }
   return { ok: true, soft: r.soft, quota: r, warn };
+}
+
+// measureWorkspace walks the tree and stats every file (bounded by
+// maxWalkEntries). Re-running that per authorize() cost seconds per tool call,
+// so the measurement is memoised for a short TTL; set workspace.quota.measureTtlMs
+// to 0 to always measure fresh.
+const measureCache = new Map();
+
+async function measureCached(root, quota, quotaCfg) {
+  const ttl = Number(quotaCfg?.measureTtlMs ?? 1500);
+  if (!(ttl > 0)) return undefined;
+  const hit = measureCache.get(root);
+  const now = Date.now();
+  if (hit && now - hit.at < ttl) return hit.usage;
+  const usage = await measureWorkspace(root, { maxWalkEntries: quota.maxWalkEntries });
+  measureCache.set(root, { usage, at: now });
+  if (measureCache.size > 64) {
+    for (const k of measureCache.keys()) {
+      if (measureCache.size <= 64) break;
+      measureCache.delete(k);
+    }
+  }
+  return usage;
+}
+
+export function _resetQuotaMeasureCache() {
+  measureCache.clear();
 }
 
 function recordEscalate(ctx, event) {

@@ -11,6 +11,7 @@ import { buildStopControlMessage } from "../gateway/stop-control-auth.mjs";
 import { recordLastDrain, getLastDrain } from "../gateway/last-drain.mjs";
 import { tryHandleGatewayStop } from "../gateway/stop-proxy.mjs";
 import { isStopPath, handleStopAll } from "../gateway/stop-route.mjs";
+import { postStopSigned, buildStopSignResult } from "../cli/stop-sign.mjs";
 
 export function fireDrillHttpToken() {
   const cfg = { gateway: { token: "drill-token" } };
@@ -201,6 +202,28 @@ export function fireDrillDrainAuthMethod() {
 /**
  * @param {{ root?: string }} opts
  */
+
+export async function fireDrillPostOffline() {
+  const signed = buildStopSignResult(
+    { gateway: { token: "drill-token", host: "127.0.0.1", port: 9 } },
+    { dryRun: true }
+  );
+  const live = await postStopSigned(signed, {
+    timeoutMs: 200,
+    fetchImpl: async () => {
+      const e = new Error("fetch failed");
+      e.cause = { code: "ECONNREFUSED" };
+      throw e;
+    },
+  });
+  return {
+    name: "post_offline",
+    ok: live.ok === false && live.code === "GATEWAY_OFFLINE",
+    code: live.code,
+    error: live.error,
+  };
+}
+
 export async function runStopFireDrill(opts = {}) {
   const root = opts.root || process.cwd();
   const steps = [
@@ -213,6 +236,7 @@ export async function runStopFireDrill(opts = {}) {
     fireDrillPaths(),
     await fireDrillNonPost405(),
     await fireDrillDryRun(),
+    await fireDrillPostOffline(),
     fireDrillDrainAuthMethod(),
   ];
   const failed = steps.filter((s) => !s.ok);

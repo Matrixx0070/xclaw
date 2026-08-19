@@ -14,6 +14,7 @@ import { tryHandleLedgerRoute } from "./routes/ledger.mjs";
 import { tryHandleEvalQueueRoute } from "./routes/eval-queue.mjs";
 import { tryHandleTokensRoute } from "./routes/tokens.mjs";
 import { tryHandleSessionsRoute } from "./routes/sessions.mjs";
+import { tryHandleStopRoute } from "./routes/stop.mjs";
 import { tryHandleSubagentsRoute } from "./routes/subagents.mjs";
 import { tryHandleMcpRoute } from "./routes/mcp.mjs";
 import { tryHandleMediaRoute } from "./routes/media.mjs";
@@ -38,6 +39,7 @@ import {
   stopComputer,
 } from "../computer/manager.mjs";
 import { startComputerWatchdog, stopComputerWatchdog } from "../computer/watchdog.mjs";
+import { proxyComputerRequest, isComputerProxyEnabled } from "./computer-proxy.mjs";
 import {
   startChannelHealthWatchdog,
   stopChannelHealthWatchdog,
@@ -51,6 +53,7 @@ import {
   createChatSession,
 } from "../channels/webchat/index.mjs";
 import { initSSE, sendSSE, closeSSE, isSSEOpen, bindSSEAbort, onAbort, createStreamWriter, prefersNdjson } from "./sse.mjs";
+import { createLiveStreamWriter } from "./sse-live.mjs";
 import {
   parseLastEventId,
   resolveStreamResume,
@@ -97,6 +100,7 @@ import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
 import { takePending } from "../connected/oauth-pending.mjs";
 import { setAppToken } from "../connected/token-store.mjs";
 import { ensureDoctorCronJob } from "../cron/doctor-job.mjs";
+import { ensureApprovalDigestCronJob } from "../cron/approval-digest-job.mjs";
 import { ensureEvalCronJob } from "../cron/eval-job.mjs";
 import { startQueueWorker } from "../jobs/queue.mjs";
 import { gracefulShutdown } from "./shutdown.mjs";
@@ -213,8 +217,11 @@ function noteEviction(e, source = "agent") {
 async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} }) {
   const controller = new AbortController();
   const so = streamOpts(cfg);
-  const writer = createStreamWriter(req, res, {
+  const writer = createLiveStreamWriter(req, res, {
     heartbeatMs: so.heartbeatMs,
+    prefix: "agent",
+    sessionId: body.sessionId,
+    jobId: body.jobId,
   });
   const cleanup = writer.bindAbort(controller);
   const push = (eventName, payload) => {
@@ -408,8 +415,10 @@ async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} })
 async function streamSwarmRun(req, res, { body, cfg }) {
   const controller = new AbortController();
   const so = streamOpts(cfg);
-  const writer = createStreamWriter(req, res, {
+  const writer = createLiveStreamWriter(req, res, {
     heartbeatMs: so.heartbeatMs,
+    prefix: "swarm",
+    sessionId: body.sessionId || body.swarmId,
   });
   const cleanup = writer.bindAbort(controller);
   let swarmIdSeen = null;
@@ -714,8 +723,10 @@ async function streamSwarmRun(req, res, { body, cfg }) {
 async function streamWebChatMessage(req, res, { message, sessionId, cfg, mode, verify, body = {} }) {
   const controller = new AbortController();
   const so = streamOpts(cfg);
-  const writer = createStreamWriter(req, res, {
+  const writer = createLiveStreamWriter(req, res, {
     heartbeatMs: so.heartbeatMs,
+    prefix: "webchat",
+    sessionId,
   });
   const cleanup = writer.bindAbort(controller);
   const push = (eventName, payload) => {
@@ -1012,6 +1023,19 @@ export async function startGateway({ root } = {}) {
     console.log(`[xclaw] doctor cron every ${everyMs}ms id=${docJob.id}`);
   }
 
+  if (cfg.security?.digestCron !== false) {
+    try {
+      const digestJob = ensureApprovalDigestCronJob({
+        cfg,
+        enabled: true,
+        everyMs: cfg.security?.digestEveryMs || cfg.security?.digestIntervalMs,
+      });
+      console.log(`[xclaw] approval digest cron id=${digestJob.id}`);
+    } catch (err) {
+      console.warn("[xclaw] approval digest cron:", err.message);
+    }
+  }
+
   if (cfg.eval?.cron?.enabled !== false) {
     try {
       const ej = ensureEvalCronJob({ cfg });
@@ -1134,6 +1158,11 @@ export async function startGateway({ root } = {}) {
 
   const { server, tls: tlsOn } = createHttpServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${cfg.gateway.host}`);
+    // Single external port: /computer/proxy/* and /xclaw/computer/* → computer plane
+    if (isComputerProxyEnabled(cfg)) {
+      const proxied = await proxyComputerRequest(req, res, cfg, url);
+      if (proxied) return;
+    }
     let p = url.pathname;
     // API versioning: /v1/<route> is an alias for every route (clients can pin
     // a version prefix today; a breaking v2 surface can then coexist later).
@@ -1171,6 +1200,7 @@ export async function startGateway({ root } = {}) {
       if (await tryHandleJwksRoute(routeArgs)) return;
       if (await tryHandleTokensRoute(routeArgs)) return;
       if (await tryHandleSessionsRoute(routeArgs)) return;
+      if (await tryHandleStopRoute(routeArgs)) return;
       if (await tryHandleSubagentsRoute(routeArgs)) return;
       if (await tryHandleMcpRoute({ ...routeArgs, mcpClient, mcpServer })) return;
       if (await tryHandleMediaRoute(routeArgs)) return;
@@ -2410,7 +2440,7 @@ export async function startGateway({ root } = {}) {
         res.end();
       }
     }
-  });
+  }, cfg);
 
   await new Promise((resolve, reject) => {
     server.listen(cfg.gateway.port, cfg.gateway.host, (err) =>
@@ -2423,6 +2453,7 @@ export async function startGateway({ root } = {}) {
   const wsHub = attachWebSocketHub(server, {
     path: cfg.gateway?.wsPath || "/ws/events",
     heartbeatMs: cfg.gateway?.wsHeartbeatMs || 25_000,
+    cfg,
     // Reject unauthorized upgrades whenever a token is set or requireAuth (prod)
     authorize: (req) => gatewayAuth.authorizeWebSocket(req),
   });

@@ -118,6 +118,12 @@ if (!quick) {
     return { code: r.code };
   }, { required: true });
 
+  await step("stop-fire-drill", async () => {
+    const r = await run(process.execPath, ["scripts/stop-fire-drill.mjs"], { quiet: true });
+    console.log((r.out + r.err).slice(-500));
+    return { code: r.code };
+  }, { required: true });
+
   await step("evidence", async () => {
     const env = strict ? { REQUIRE_SOAK: "1", XCLAW_RELEASE_STRICT: "1" } : {};
     const r = await run("npm", ["run", "evidence"], { env, quiet: true });
@@ -187,6 +193,69 @@ if (strict) {
     console.log((r.out + r.err).slice(-500));
     return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
   }, { required: true });
+
+  await step("land-batch-n1-check", async () => {
+    const script = path.join(root, "scripts/land-batch-n1.mjs");
+    if (!fsSync.existsSync(script)) {
+      console.error("[release-gate] land-batch-n1.mjs missing");
+      return { code: 1, detail: "missing land-batch-n1.mjs" };
+    }
+    const r = await run(process.execPath, [script, "--check"], { quiet: true });
+    console.log((r.out + r.err).slice(-500));
+    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
+  }, { required: true });
+
+  await step("land-batch-n2-check", async () => {
+    const script = path.join(root, "scripts/land-batch-n2.mjs");
+    if (!fsSync.existsSync(script)) {
+      console.error("[release-gate] land-batch-n2.mjs missing");
+      return { code: 1, detail: "missing land-batch-n2.mjs" };
+    }
+    const r = await run(process.execPath, [script, "--check"], { quiet: true });
+    console.log((r.out + r.err).slice(-500));
+    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
+  }, { required: true });
+
+  await step("land-batch3-check", async () => {
+    const r = await run(process.execPath, ["scripts/land-batch3.mjs", "--check"], { quiet: true });
+    console.log((r.out + r.err).slice(-400));
+    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-8) };
+  }, { required: true });
+
+  await step("land-batch-n1-check", async () => {
+    const script = path.join(root, "scripts/land-batch-n1.mjs");
+    if (!fsSync.existsSync(script)) {
+      console.error("[release-gate] land-batch-n1.mjs missing");
+      return { code: 1, detail: "missing land-batch-n1.mjs" };
+    }
+    const r = await run(process.execPath, [script, "--check"], { quiet: true });
+    console.log((r.out + r.err).slice(-500));
+    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
+  }, { required: true });
+
+  await step("land-batch-n2-check", async () => {
+    const script = path.join(root, "scripts/land-batch-n2.mjs");
+    if (!fsSync.existsSync(script)) {
+      console.error("[release-gate] land-batch-n2.mjs missing");
+      return { code: 1, detail: "missing land-batch-n2.mjs" };
+    }
+    const r = await run(process.execPath, [script, "--check"], { quiet: true });
+    console.log((r.out + r.err).slice(-500));
+    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
+  }, { required: true });
+}
+
+if (strict) {
+  await step("strict-extras", async () => {
+    const { listStrictExtraTests } = await import("../src/ci/release-gate-strict-extras.mjs");
+    const files = listStrictExtraTests(root);
+    if (!files.length) {
+      return { code: 1, detail: "no strict extra tests found" };
+    }
+    const r = await run(process.execPath, ["--test", ...files], { quiet: true });
+    console.log((r.out + r.err).split("\n").filter((l) => /tests |pass |fail /.test(l)).slice(-6).join("\n"));
+    return { code: r.code, detail: files };
+  }, { required: true });
 }
 
 if (live) {
@@ -222,6 +291,21 @@ const outDir = path.join(root, "eval/baselines");
 await fs.mkdir(outDir, { recursive: true });
 const outPath = path.join(outDir, "release-gate-latest.json");
 await fs.writeFile(outPath, JSON.stringify(report, null, 2));
+
+// N3 — stamp the kill-switch surface revision alongside the gate report so a
+// release can be tied to the exact stop/abort surface it was gated against.
+try {
+  const { computeStopSurfaceVersion } = await import("../src/ci/stop-surface-version.mjs");
+  const stopSurface = computeStopSurfaceVersion(root);
+  report.stopSurface = stopSurface;
+  await fs.writeFile(
+    path.join(outDir, "stopSurface.json"),
+    JSON.stringify(stopSurface, null, 2)
+  );
+  await fs.writeFile(outPath, JSON.stringify(report, null, 2));
+} catch (e) {
+  console.error("[release-gate] stopSurface.json skipped:", e?.message || e);
+}
 
 console.log("\n=== Release gate summary ===");
 console.log(JSON.stringify({ ok: report.ok, requiredFailed: report.requiredFailed, path: outPath }, null, 2));

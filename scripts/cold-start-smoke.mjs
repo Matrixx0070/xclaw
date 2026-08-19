@@ -6,6 +6,7 @@
  */
 import http from "node:http";
 import { performance } from "node:perf_hooks";
+import { persistColdStartReport } from "../src/ops/cold-start-persist.mjs";
 
 const maxMs = Number(process.env.XCLAW_COLD_START_MAX_MS) || 5000;
 const t0 = performance.now();
@@ -86,8 +87,9 @@ const report = {
   healthStatus: health.status,
 };
 
-log(JSON.stringify(report));
-console.log(JSON.stringify(report, null, 2));
+const saved = persistColdStartReport(report);
+log(JSON.stringify({ ...report, saved: saved.path }));
+console.log(JSON.stringify({ ...report, saved: saved.path }, null, 2));
 
 if (health.status !== 200) {
   log("health not 200");

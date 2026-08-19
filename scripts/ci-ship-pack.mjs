@@ -104,6 +104,16 @@ if (fs.existsSync(path.join(root, "scripts/land-all.mjs"))) {
   log("land-all SKIP (script missing)");
 }
 
+if (fs.existsSync(path.join(root, "scripts/land-kill-switch-wires.mjs"))) {
+  log("land-kill-switch-wires --check");
+  const ks = await run(process.execPath, ["scripts/land-kill-switch-wires.mjs", "--check"]);
+  if (ks.code !== 0) {
+    log("land-kill-switch-wires NEED");
+    process.exit(ks.code || 1);
+  }
+  log("land-kill-switch-wires OK");
+}
+
 log("land-batch --check (3/4/5)");
 const lb = runLandBatchChecks(root);
 if (!lb.ok) {
@@ -211,6 +221,19 @@ if (strict) {
     process.exit(2);
   }
   log("strict: doctor clean");
+}
+
+if (fs.existsSync(path.join(root, "scripts/stop-fire-drill.mjs"))) {
+  log("stop-fire-drill");
+  const fd = await run(process.execPath, ["scripts/stop-fire-drill.mjs"]);
+  if (fd.code !== 0) {
+    log("stop-fire-drill FAILED");
+    process.exit(fd.code || 1);
+  }
+  log("stop-fire-drill OK");
+} else if (strict) {
+  log("STRICT FAIL: stop-fire-drill script missing");
+  process.exit(2);
 }
 
 log("SHIP PACK OK");

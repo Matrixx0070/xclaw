@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { writeSourceIfChanged } from "./lib/atomic-source-write.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const g15 = path.join(root, "scripts/apply-n12i-g15.mjs");
@@ -89,5 +90,5 @@ if (!t.includes("includeG16")) {
   n++;
 }
 
-fs.writeFileSync(fp, t);
+writeSourceIfChanged(fp, t);
 console.log(JSON.stringify({ ok: true, applied: n }));

@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeSourceIfChanged } from "./lib/atomic-source-write.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
@@ -11,7 +12,7 @@ function read(rel) {
   return fs.readFileSync(path.join(root, rel), "utf8");
 }
 function write(rel, t) {
-  fs.writeFileSync(path.join(root, rel), t);
+  writeSourceIfChanged(path.join(root, rel), t);
 }
 
 function wireJob() {

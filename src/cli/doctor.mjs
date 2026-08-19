@@ -6,6 +6,9 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import http from "node:http";
+import { fileURLToPath } from "node:url";
+
+const DOCTOR_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
 import { validateConfig } from "../config/validate.mjs";
 import { isComputerRunning } from "../computer/manager.mjs";
@@ -166,15 +169,66 @@ export async function runDoctor(opts = {}) {
     push("security.egress", "warn", e.message || String(e));
   }
   try {
-    const { listActiveSessions } = await import("../agent/session-control.mjs");
-    const n = listActiveSessions().length;
-    push(
-      "security.killSwitch",
-      "ok",
-      `session kill-switch ready (activeSessions=${n}); use: xclaw stop-all`
-    );
+    const { pushDoctorOpsBundle } = await import("./doctor-ops-bundle.mjs");
+    await pushDoctorOpsBundle(push, cfg, opts);
   } catch (e) {
     push("security.killSwitch", "warn", e.message || String(e));
+  }
+
+  try {
+    const { pushPerfChecksEnsured } = await import("./doctor-perf-ensure.mjs");
+    await pushPerfChecksEnsured(push, cfg);
+  } catch (e) {
+    push("ops.perf", "warn", e.message || String(e));
+  }
+
+  try {
+    const { pushPerfChecks } = await import("./doctor-perf-checks.mjs");
+    pushPerfChecks(push, cfg);
+  } catch (e) {
+    push("ops.perf", "warn", e.message || String(e));
+  }
+
+  try {
+    const { pushAuthRefreshChecks } = await import("./doctor-auth-refresh.mjs");
+    await pushAuthRefreshChecks(push, cfg);
+  } catch (e) {
+    push("ops.auth_refresh", "warn", e.message || String(e));
+  }
+
+  try {
+    const { pushPerfChecks } = await import("./doctor-perf-checks.mjs");
+    pushPerfChecks(push, cfg);
+  } catch (e) {
+    push("ops.perf", "warn", e.message || String(e));
+  }
+
+  try {
+    const { pushReceiptMetricsChecks } = await import("./doctor-receipt-metrics.mjs");
+    await pushReceiptMetricsChecks(push, cfg);
+  } catch (e) {
+    push("ops.receipt_metrics", "warn", e.message || String(e));
+  }
+
+  try {
+    const { pushSinglePortChecks } = await import("./doctor-single-port.mjs");
+    pushSinglePortChecks(push, cfg);
+  } catch (e) {
+    push("gateway.singlePort", "warn", e.message || String(e));
+  }
+
+  try {
+    const { pushSmokeCompareChecks } = await import("./doctor-smoke-compare.mjs");
+    pushSmokeCompareChecks(push, opts.root || process.cwd());
+  } catch (e) {
+    push("ops.smoke_compare", "warn", e.message || String(e));
+  }
+
+  try {
+    const { pushStopRouteChecks } = await import("./doctor-stop-route.mjs");
+    await pushStopRouteChecks(push, cfg);
+  } catch (e) {
+    push("gateway.stopRoute", "warn", e.message || String(e));
   }
 
   // F — prod honesty (defaults must match the label)
@@ -715,38 +769,10 @@ export async function runDoctor(opts = {}) {
       "ok",
       n ? `${n} draft proposal(s) in skill-proposals/` : "no skill drafts pending"
     );
-    // Manifest-first skill integrity (skills.lock.json)
+    // Manifest-first skill integrity (skills.lock.json) — prod missing lock = error
     try {
-      const integrity = await import("../skills/integrity.mjs");
-      const { loadAllSkills } = await import("../skills/loader.mjs");
-      const { path: lockPath, data } = await integrity.readLockfile(process.cwd());
-      const prod = String(cfg.profile || "").toLowerCase() === "prod";
-      if (!data) {
-        push(
-          "skills.integrity",
-          prod ? "warn" : "ok",
-          prod
-            ? `no ${integrity.LOCKFILE_NAME} — prod injects unpinned skills (run: xclaw skills lock)`
-            : `no ${integrity.LOCKFILE_NAME} (integrity off — optional: xclaw skills lock)`
-        );
-      } else {
-        const rawCfg = { ...cfg, skills: { ...(cfg.skills || {}), integrity: "off" } };
-        const skills = await loadAllSkills({
-          configDir: cfg.paths?.configDir,
-          cwd: process.cwd(),
-          cfg: rawCfg,
-        });
-        const { evaluated, missing } = await integrity.evaluateSkills(skills, data);
-        const drift = evaluated.filter((e) => e.status !== "verified").length + missing.length;
-        const mode = integrity.resolveIntegrityMode(cfg, true);
-        push(
-          "skills.integrity",
-          drift ? "warn" : "ok",
-          drift
-            ? `${drift} skill(s) drifted from ${lockPath} (mode=${mode}) — xclaw skills verify`
-            : `${evaluated.length} skill(s) verified against lockfile (mode=${mode})`
-        );
-      }
+      const { pushSkillsIntegrity } = await import("./doctor-skills-integrity.mjs");
+      await pushSkillsIntegrity(push, cfg);
     } catch (ie) {
       push("skills.integrity", "warn", ie?.message || String(ie));
     }
@@ -970,14 +996,10 @@ export async function runDoctor(opts = {}) {
   }
 
   try {
-    const { probeWakeStack } = await import("../voice/wake/index.mjs");
-    const w = await probeWakeStack(cfg);
-    push(
-      "voice.wake",
-      w.readyForW1 ? "ok" : "warn",
-      `phrases=${(w.phrases||[]).length} arecord=${w.arecord?.ok} stt=${w.stt?.ok} oww=${w.openWakeWord?.ok}`
-    );
+    const { pushVoiceWakeAndCapture } = await import("./doctor-voice-checks.mjs");
+    await pushVoiceWakeAndCapture(push, cfg);
   } catch (e) {
+    push("voice.capture", "warn", e.message || String(e));
     push("voice.wake", "warn", e.message || String(e));
   }
 
@@ -1739,9 +1761,24 @@ export async function runDoctor(opts = {}) {
     /* pm2 optional */
   }
 
-  return finish(checks, opts);
+  try {
+    const { mergePerfIntoChecks } = await import("./doctor-perf-ensure.mjs");
+    await mergePerfIntoChecks(checks, cfg);
+  } catch (e) {
+    push("ops.perf", "warn", e.message || String(e));
+  }
 
+  let stopExtras = {};
+  try {
+    const { attachStopSummaryWithSurface } = await import("./doctor-stop-summary.mjs");
+    const staged = { checks };
+    await attachStopSummaryWithSurface(staged, DOCTOR_ROOT);
+    if (staged.summary) stopExtras = { summary: staged.summary };
+  } catch (e) {
+    push("ops.stopSurface", "warn", e.message || String(e));
+  }
 
+  return finish(checks, opts, stopExtras);
 }
 
 /** Map check id → display group */
@@ -1787,7 +1824,7 @@ function doctorGroup(id) {
   return "Other";
 }
 
-function finish(checks, opts) {
+function finish(checks, opts, extras = {}) {
   const errors = checks.filter((c) => c.status === "error").length;
   const warns = checks.filter((c) => c.status === "warn").length;
   const exitCode = errors ? 2 : warns ? 1 : 0;
@@ -1810,6 +1847,7 @@ function finish(checks, opts) {
     groups: grouped,
     checks,
     at: new Date().toISOString(),
+    ...extras,
   };
   if (!opts.quiet) {
     if (opts.json) {

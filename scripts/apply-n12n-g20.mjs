@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { writeSourceIfChanged } from "./lib/atomic-source-write.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 for (const s of [
@@ -147,5 +148,5 @@ if (!t.includes('includeG20 ? ["a4-G20-cost-stop-resume"]')) {
   }
 }
 
-fs.writeFileSync(fp, t);
+writeSourceIfChanged(fp, t);
 console.log(JSON.stringify({ ok: true, applied: n }));

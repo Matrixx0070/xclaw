@@ -3,8 +3,11 @@
  */
 export function listRoutes() {
   return [
-    { method: "GET", path: "/health", group: "ops", desc: "Liveness" },
-    { method: "GET", path: "/ready", group: "ops", desc: "Readiness (computer + queue depth)" },
+    { method: "GET", path: "/health", group: "ops", desc: "Liveness + stop auth/HMAC readiness" },
+    { method: "GET", path: "/ready", group: "ops", desc: "Readiness (computer + queue + prod stop.ready)" },
+    { method: "POST", path: "/stop", group: "ops", desc: "Kill-switch: abort sessions, drain WS/SSE" },
+    { method: "POST", path: "/sessions/stop-all", group: "ops", desc: "Alias of POST /stop" },
+    { method: "POST", path: "/xclaw/stop", group: "ops", desc: "Alias of POST /stop" },
     { method: "GET", path: "/metrics", group: "ops", desc: "Prometheus text metrics" },
     { method: "GET", path: "/version", group: "ops", desc: "Version + uptime" },
     { method: "GET", path: "/dashboard", group: "ops", desc: "Aggregated ops snapshot" },

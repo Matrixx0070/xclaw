@@ -29,8 +29,15 @@ import {
   formatBlockedReply,
 } from "./turn-state.mjs";
 import { createLoopGuard } from "./loop-guards.mjs";
+import { guardHighRiskReceipt } from "./high-risk-receipt.mjs";
+import { createCostGovernor } from "./cost-governor.mjs";
+import { recordToolTokens } from "./token-cache-metrics.mjs";
+import { runHallucinationCanary } from "./hallucination-canary.mjs";
+import { softCanaryRecover } from "./canary-recover.mjs";
+import { incCanaryUngrounded } from "./canary-metrics.mjs";
+import { stampCostBlock } from "./cost-receipt.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
-import { checkCostBudget, checkJobCostBudget } from "../tokens/cost-governor.mjs";
+import { checkLoopCostBudget, checkJobCostBudget } from "../tokens/loop-cost-check.mjs";
 import { saveAgentRun } from "./run-store.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
@@ -445,7 +452,7 @@ export async function runAgentLoop(options) {
 
   // Cost governor pre-check — refuse before computer/session when hard-capped
   try {
-    const { checkCostBudget } = await import("../tokens/cost-governor.mjs");
+    const { checkLoopCostBudget: checkCostBudget } = await import("../tokens/loop-cost-check.mjs");
     const budget = await checkCostBudget(cfg);
     if (!budget.ok) {
       onEvent({
@@ -806,6 +813,7 @@ export async function runAgentLoop(options) {
   }
 
   const guard = createLoopGuard(cfg.agent?.loopGuard || {});
+  const costGov = createCostGovernor(cfg, options.job || options.jobState || {});
   const approvalGate = options.approvalGate || getSharedApprovalGate(cfg);
   const toolTrace = [];
   let llmSummarizer; // B2: lazily resolved once per run (undefined = not yet)
@@ -853,9 +861,21 @@ export async function runAgentLoop(options) {
     for (turns = 0; !hookAbort && turns < maxTurns; turns++) {
       if (signal?.aborted) throw new Error("aborted");
 
+      try {
+        const cg = costGov.check({ toolCalls: toolTrace.length });
+        if (cg.blocked) {
+          onEvent({ type: "cost", phase: "governor_blocked", ...cg });
+          try { stampCostBlock(options.job || options.jobState || {}, cg); } catch { /* */ }
+          finalText = finalText || `COST_GOVERNOR: ${cg.reason}`;
+          budgetStop = true;
+          aborted = true;
+          break;
+        }
+      } catch { /* */ }
+
       // Feature 3 — cost governor hard stop (no provider call when over budget)
       try {
-        const budget = await checkCostBudget(cfg);
+        const budget = await checkLoopCostBudget(cfg);
         if (!budget.ok) {
           const msg = budget.message || "BUDGET_EXCEEDED";
           onEvent({
@@ -1220,6 +1240,25 @@ export async function runAgentLoop(options) {
           onEvent({ type: "guard", ...verdict });
         }
 
+        // Quota hard-block circuit: refuse further tools after N hard denies.
+        try {
+          const { guardToolAgainstHardCircuit } = await import("./quota-hard-circuit.mjs");
+          const circ = guardToolAgainstHardCircuit(options.job || options.receiptCollector);
+          if (circ && circ.ok === false) {
+            onEvent({ type: "security", phase: "quota_hard_circuit", reason: circ.reason });
+            messages.push(
+              makeToolMessage({
+                tool_call_id: call.id,
+                content: circ.message || "QUOTA_HARD_CIRCUIT",
+                source: "quota_circuit",
+              })
+            );
+            return "stop";
+          }
+        } catch {
+          /* circuit optional */
+        }
+
         // Security: allowlist + optional human approval.
         // Bind the plan against this run's workingDir — the shared gate's
         // planRoot is the gateway's process.cwd(), and a plan pinned there
@@ -1229,7 +1268,9 @@ export async function runAgentLoop(options) {
             ? { ...args, cwd: workingDir }
             : args;
         const auth = await approvalGate.authorize(name, authArgs, {
+          job: options.job || options.receiptCollector || null,
           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
+          job: options.job || options.receiptCollector || null,
           // risk scope must resolve against THIS run's workspace (session dir
           // or mission worktree), not the gateway's cwd — without this, file
           // tools' targets scoped against the wrong root (live blind spot)
@@ -1442,6 +1483,15 @@ export async function runAgentLoop(options) {
           return;
         }
 
+        const riskR = guardHighRiskReceipt(name, options.job || options.jobState || { evidence: options.evidence, receipt: options.receipt, toolTrace }, cfg);
+        if (!riskR.ok) {
+          const msg = riskR.message || "RECEIPT_REQUIRED";
+          onEvent({ type: "security", phase: "receipt_required", name, ...riskR });
+          messages.push(makeToolMessage({ tool_call_id: call.id, content: msg, source: "receipt" }));
+          recordTrace(finalizeToolTraceEntry(beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }), { resultText: msg, blocked: true, policy: { phase: "receipt", decision: "deny", reason: riskR.code || "RECEIPT_REQUIRED" } }));
+          return;
+        }
+
         onEvent({ type: "tool", phase: "start", name, args });
         const tracePartial = beginToolTraceEntry({
           name,
@@ -1643,6 +1693,14 @@ export async function runAgentLoop(options) {
           thrown: toolThrown || Boolean(result?.isError),
         });
         recordTrace(traceEntry);
+        try {
+          const u = result?.usage || result?.tokenUsage || {};
+          recordToolTokens(name, {
+            prompt: Number(u.prompt_tokens || u.prompt || 0),
+            completion: Number(u.completion_tokens || u.completion || 0),
+            cached: Number(u.cached_tokens || u.cached || 0),
+          });
+        } catch { /* */ }
         onEvent({
           type: "tool",
           phase: "end",
@@ -2047,8 +2105,28 @@ export async function runAgentLoop(options) {
     onEvent({ type: "session", phase: "persist_fail", error: e?.message || String(e) });
   }
 
+  let hallucinationCanary = null;
+  try {
+    const softOnce = options._canarySoftUsed !== true;
+    if (softOnce) {
+      const soft = softCanaryRecover({ text: finalText, toolTrace, messages });
+      hallucinationCanary = soft.canary;
+      if (soft.recovered) {
+        options._canarySoftUsed = true;
+        onEvent({ type: "canary", phase: "soft_recover", ...soft.canary });
+      }
+    } else {
+      hallucinationCanary = runHallucinationCanary({ text: finalText, toolTrace });
+      if (hallucinationCanary && !hallucinationCanary.ok) {
+        incCanaryUngrounded(1);
+        onEvent({ type: "canary", phase: "ungrounded", ...hallucinationCanary });
+      }
+    }
+  } catch { /* */ }
+
   return {
     text: stripClaimsBlock(finalText) || "(no response)",
+    canary: hallucinationCanary,
     turns,
     toolTrace,
     model: provider?.model,

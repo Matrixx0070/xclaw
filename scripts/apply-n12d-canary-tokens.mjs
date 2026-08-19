@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { writeSourceIfChanged } from "./lib/atomic-source-write.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 spawnSync(process.execPath, [path.join(root, "scripts/apply-n12b-loop-agent-core.mjs")], {
@@ -51,5 +52,5 @@ if (!t.includes("recordToolTokens(name,")) {
   }
 }
 
-fs.writeFileSync(fp, t);
+writeSourceIfChanged(fp, t);
 console.log(JSON.stringify({ ok: true, applied: n, path: fp }));
