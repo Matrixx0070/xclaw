@@ -1,20 +1,69 @@
 #!/usr/bin/env node
 /**
- * xclaw eval horizon --offline [--g12|--all]
+ * xclaw eval horizon --offline [--all]
+ * xclaw eval horizon --live (dry-run unless --confirm-live)
  */
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { runHorizonSuiteOffline } from "./horizon-offline.mjs";
 import { resetHorizonMetrics } from "./horizon-metrics.mjs";
+import {
+  incHorizonPackPass,
+  renderHorizonPackMetrics,
+  resetHorizonPackMetrics,
+} from "./horizon-pack-metrics.mjs";
+import { runHorizonLive, hasLiveKey } from "./horizon-live.mjs";
 
 export async function main(argv = process.argv.slice(2)) {
-  const offline = argv.includes("--offline") || !argv.includes("--live");
+  const wantLive = argv.includes("--live");
+  const confirmLive = argv.includes("--confirm-live");
+  const includeAll =
+    argv.includes("--all") || argv.includes("--offline-all");
+
   resetHorizonMetrics();
+  resetHorizonPackMetrics();
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-horizon-"));
-  const includeG12 = argv.includes("--g12") || argv.includes("--all");
-  const r = await runHorizonSuiteOffline({ workspace, includeG12 });
-  const out = { offline, ...r };
+
+  if (wantLive && !confirmLive) {
+    const dry = {
+      ok: true,
+      mode: "live_dry_run",
+      hasKey: hasLiveKey({}),
+      note: "Pass --confirm-live to spend against the provider",
+      wouldRun: includeAll ? "G10-G20" : "default suite",
+      metricsPack: renderHorizonPackMetrics(),
+    };
+    console.log(JSON.stringify(dry, null, 2));
+    process.exitCode = 0;
+    return dry;
+  }
+
+  if (wantLive && confirmLive) {
+    const r = await runHorizonLive({
+      workspace,
+      includeAll,
+      all: includeAll,
+      requireLive: true,
+    });
+    console.log(JSON.stringify(r, null, 2));
+    process.exitCode = r.ok ? 0 : 1;
+    return r;
+  }
+
+  const r = await runHorizonSuiteOffline({
+    workspace,
+    includeAll,
+    all: includeAll,
+    includeG12: includeAll || argv.includes("--g12"),
+  });
+  if (r.ok && includeAll) incHorizonPackPass();
+  const out = {
+    offline: true,
+    includeAll,
+    ...r,
+    metricsPack: renderHorizonPackMetrics(),
+  };
   console.log(JSON.stringify(out, null, 2));
   process.exitCode = r.ok ? 0 : 1;
   return out;
