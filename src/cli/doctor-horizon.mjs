@@ -1,5 +1,5 @@
 /**
- * Doctor: horizon case count / pack completeness / soak policy / checkpoints.
+ * Doctor: horizon / soak / SIEM snapshot.
  */
 import { loadCases } from "../eval/runner.mjs";
 import {
@@ -14,6 +14,11 @@ import { renderSoakResumeMetrics } from "../eval/horizon-soak-resume-metrics.mjs
 import { listHeldSoakLeases } from "../eval/horizon-soak-lease.mjs";
 import { soakLeaseBackend } from "../eval/horizon-soak-lease-select.mjs";
 import { renderSoakLeaseMetrics } from "../eval/horizon-soak-lease-metrics.mjs";
+import {
+  getSoakSiemHmacFailTotal,
+  renderSoakSiemMetrics,
+  readSoakEvents,
+} from "../eval/horizon-soak-siem.mjs";
 
 const EXPECTED = [
   "G10",
@@ -37,6 +42,7 @@ export async function doctorHorizon(cfg = {}) {
   );
   const packComplete = missing.length === 0;
   const soakJobs = await listSoakJobs({});
+  const siemEvents = await readSoakEvents({});
   return {
     ok: horizon.length >= 5,
     horizonCaseCount: horizon.length,
@@ -61,6 +67,9 @@ export async function doctorHorizon(cfg = {}) {
     leaseBackend: soakLeaseBackend({}),
     heldLeases: listHeldSoakLeases({}),
     metricsLease: renderSoakLeaseMetrics(),
+    metricsSiem: renderSoakSiemMetrics(),
+    siemHmacFail: getSoakSiemHmacFailTotal(),
+    lastSiemEvent: siemEvents.at(-1) || null,
     at: new Date().toISOString(),
   };
 }
