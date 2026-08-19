@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 3.139.1 — Control UI: empty states and readable time (2026-08-19)
+
+Looking at each view with real data showed the same gap repeatedly — a table
+with nothing in it rendered a blank bar under the headers, with no explanation.
+Some views said "No entries"; most said nothing.
+
+- Six tables gained an empty state: job history, queue, approvals, checkpoints,
+  swarm runs and merge proposals now say what is missing instead of showing a
+  blank strip.
+- `pending=—` on the approvals header now reads `pending=0`.
+- Timestamps are relative in live tables — `2h ago`, `5d ago` — with the exact
+  local time on hover, falling back to a date past 30 days. An absolute locale
+  stamp made it hard to see at a glance what was recent.
+- Output panes that had never been written to showed a lone em-dash in a box,
+  which reads as a broken widget; they now say "no output yet".
+- The cost governor showed `Paused false`; it reads `no` (the colour already
+  carried the state).
+
 ## 3.139.0 — WebChat polish, and a serializer bug behind it (2026-08-19)
 
 Driving a real WebChat conversation (rather than looking at the idle screen)

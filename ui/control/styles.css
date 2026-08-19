@@ -422,3 +422,10 @@ textarea {
 .ul-prov-row .track { height: 10px; background: var(--panel-2); border-radius: 99px; overflow: hidden; }
 .ul-prov-row .fill { height: 100%; border-radius: 99px; min-width: 2px; transition: width 0.25s ease; }
 .ul-prov-row .usd { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+/* Output panes start with a placeholder em-dash; an empty box with a dash in it
+   reads as a broken widget rather than "nothing has happened yet". */
+.log.placeholder {
+  color: var(--muted);
+  font-style: italic;
+}

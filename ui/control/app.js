@@ -129,7 +129,7 @@ async function loadCostGovernor() {
         ["Band", mode, mode === "halt" ? "bad" : mode === "economy" ? "warn" : "ok"],
         ["Spent today", `$${Number(spent).toFixed(4)}`, g.hard ? "bad" : g.soft ? "warn" : "ok"],
         ["Soft / Hard", `$${soft} / $${hard}`],
-        ["Paused", String(Boolean(g.paused)), g.paused ? "bad" : "ok"],
+        ["Paused", g.paused ? "yes" : "no", g.paused ? "bad" : "ok"],
         ["Jobs", g.jobs ?? "—"],
         ["Soft pressure", softPct + "%"],
       ];
@@ -176,7 +176,7 @@ async function loadCost() {
       .slice(0, 25)
       .map((e) => {
         const when = e.at || e.ts || e.time || "";
-        const d = when ? new Date(when).toLocaleString() : "—";
+        const d = fmtWhen(when);
         const est = e.hasRealUsage === false ? ' <span class="muted" title="estimated (no provider usage in response)">~</span>' : "";
         return `<tr>
           <td>${d}</td>
@@ -206,7 +206,7 @@ async function loadSessions() {
         return `<tr>
           <td><code>${id}</code></td>
           <td>${title}</td>
-          <td>${updated ? new Date(updated).toLocaleString() : "—"}</td>
+          <td title="${updated ? esc(new Date(updated).toLocaleString()) : ""}">${fmtWhen(updated)}</td>
           <td><a class="btn ghost" href="/chat/?sessionId=${encodeURIComponent(id)}">Open</a></td>
         </tr>`;
       })
@@ -554,7 +554,7 @@ async function loadPairing() {
         <td>pending</td>
         <td><code>${p.id}</code></td>
         <td><code>${p.code}</code></td>
-        <td>${p.createdAt ? new Date(p.createdAt).toLocaleString() : "—"}</td>
+        <td title="${p.createdAt ? esc(new Date(p.createdAt).toLocaleString()) : ""}">${fmtWhen(p.createdAt)}</td>
         <td><button class="btn ghost pair-apr" data-code="${p.code}">Approve</button></td>
       </tr>`);
     }
@@ -708,6 +708,7 @@ async function loadJobHistory() {
     const tbody = $("jobHistory")?.querySelector("tbody");
     if (!tbody) return;
     tbody.innerHTML = "";
+    if (!(data.jobs || []).length) showEmptyRow(tbody, "No jobs yet");
     for (const j of data.jobs || []) {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td>${(j.at || "").replace("T", " ").slice(0, 19)}</td>
@@ -795,6 +796,7 @@ async function loadQueue() {
     const tbody = $("queueTable")?.querySelector("tbody");
     if (!tbody) return;
     tbody.innerHTML = "";
+    if (!(data.queue || []).length) showEmptyRow(tbody, "Queue is empty");
     for (const q of data.queue || []) {
       const tr = document.createElement("tr");
       const st = q.status || "—";
@@ -1175,18 +1177,29 @@ $("btnDash")?.addEventListener("click", loadDashboard);
 loadDashboard();
 
 
+/**
+ * Tables cleared to empty rendered a blank bar under the headers with no
+ * explanation. Some views said "No entries"; most said nothing at all.
+ */
+function showEmptyRow(tbody, message) {
+  if (!tbody || tbody.children.length) return;
+  const cols = tbody.closest("table")?.querySelectorAll("thead th").length || 4;
+  tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${esc(message)}</td></tr>`;
+}
+
 async function loadApprovals() {
   try {
     const pol = await getJSON("/security/policy").catch(() => ({}));
     if ($("aprPolicy")) {
       $("aprPolicy").textContent = pol.autoApprove
         ? "autoApprove ON"
-        : `policy=${pol.approvalPolicy || "risky"} pending=${pol.pending ?? "—"}`;
+        : `policy=${pol.approvalPolicy || "risky"} pending=${pol.pending ?? 0}`;
     }
     const data = await getJSON("/security/pending");
     const tbody = $("aprTable")?.querySelector("tbody");
     if (!tbody) return;
     tbody.innerHTML = "";
+    if (!(data.pending || []).length) showEmptyRow(tbody, "No pending approvals");
     for (const p of data.pending || []) {
       const tr = document.createElement("tr");
       const originBadge =
@@ -1250,6 +1263,7 @@ async function loadCheckpoints() {
     const tbody = $("cpTable")?.querySelector("tbody");
     if (!tbody) return;
     tbody.innerHTML = "";
+    if (!(data.checkpoints || []).length) showEmptyRow(tbody, "No checkpoints");
     for (const c of data.checkpoints || []) {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td style="font-size:0.7rem">${c.id}</td><td>${c.status}</td><td>${(c.goal||"").slice(0,40)}</td>
@@ -1294,13 +1308,25 @@ $("btnCostResume")?.addEventListener("click", async () => {
 /* ── Phase D3: Swarm control panel ─────────────────────────────── */
 let swarmAbort = null;
 
+/**
+ * Relative time for live tables ("5m ago"), falling back to an absolute stamp
+ * once something is old enough that "37d ago" stops being useful. An absolute
+ * locale string alone made it hard to see at a glance what was recent.
+ */
 function fmtWhen(iso) {
   if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return String(iso).slice(0, 19);
-  }
+  const t = typeof iso === "number" ? iso : Date.parse(iso);
+  if (!Number.isFinite(t)) return String(iso).slice(0, 19);
+  const ms = Date.now() - t;
+  if (ms < 0) return new Date(t).toLocaleString();
+  if (ms < 60_000) return "just now";
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d <= 30) return `${d}d ago`;
+  return new Date(t).toLocaleDateString();
 }
 
 async function loadSwarmRuns() {
@@ -1315,6 +1341,7 @@ async function loadSwarmRuns() {
       const active = runs.filter((r) => r.status === "running" || r.status === "pending").length;
       $("swarmLiveStatus").textContent = n ? `${n} runs · ${active} active` : "empty";
     }
+    if (!runs.length) showEmptyRow(tbody, "No swarm runs");
     for (const r of runs) {
       const tr = document.createElement("tr");
       const id = r.id || r.swarmId || "";
@@ -1356,6 +1383,7 @@ async function loadMerges() {
   try {
     const data = await getJSON("/swarm/merges?limit=40");
     tbody.innerHTML = "";
+    if (!(data.proposals || []).length) showEmptyRow(tbody, "No merge proposals");
     for (const m of data.proposals || []) {
       const tr = document.createElement("tr");
       const id = m.id || "";
@@ -2909,7 +2937,7 @@ async function loadSessAdmin() {
         <td style="font-size:0.7rem;"><code>${esc((s.id || "").slice(0, 12))}</code></td>
         <td style="font-size:0.75rem;">${esc(s.sessionKey || "—")}</td>
         <td>${esc(s.channel || "—")}</td>
-        <td style="font-size:0.7rem;">${s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "—"}</td>
+        <td style="font-size:0.7rem;" title="${s.updatedAt ? esc(new Date(s.updatedAt).toLocaleString()) : ""}">${fmtWhen(s.updatedAt)}</td>
       </tr>`)
       .join("") || `<tr><td colspan="4" class="muted">No live sessions (they appear as channels talk).</td></tr>`;
   } catch (e) {

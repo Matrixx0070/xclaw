@@ -295,7 +295,7 @@
           <div id="swarmCanvas" style="overflow-x:auto;min-height:40px;"></div>
           <pre id="swarmNodeTail" class="log" style="max-height:200px;display:none;"></pre>
           <h3 class="subhead">Live stream</h3>
-          <pre id="swarmStreamOut" class="log" style="max-height:220px;">—</pre>
+          <pre id="swarmStreamOut" class="log placeholder" style="max-height:220px;">no output yet</pre>
           <pre id="swarmDetailOut" class="log" style="max-height:160px;display:none;"></pre>
         </section>
 
@@ -433,7 +433,7 @@
           <button class="btn ghost" id="btnEvalBase">Load baseline</button>
           <button class="btn ghost" id="btnEvalHist">History</button>
           <button class="btn ghost" id="btnEvalSpend">Spend</button>
-          <pre id="evalBaseOut" class="log" style="max-height:180px;">—</pre>
+          <pre id="evalBaseOut" class="log placeholder" style="max-height:180px;">no output yet</pre>
         </section>
 
         <section class="card" id="cardSkills">
@@ -446,7 +446,7 @@
         <section class="card span2" id="cardScoreboard">
           <h2>Autonomy scoreboard</h2>
           <button class="btn ghost" id="btnScoreboard">Refresh</button>
-          <pre id="scoreOut" class="log" style="max-height:200px;">—</pre>
+          <pre id="scoreOut" class="log placeholder" style="max-height:200px;">no output yet</pre>
         </section>
       </div>
     </div>
@@ -457,7 +457,7 @@
         <section class="card span2" id="cardDash">
           <h2>Dashboard</h2>
           <button class="btn ghost" id="btnDash">Refresh</button>
-          <pre id="dashOut" class="log" style="max-height:220px;">—</pre>
+          <pre id="dashOut" class="log placeholder" style="max-height:220px;">no output yet</pre>
         </section>
 
         <section class="card" id="cardDoctor">
@@ -576,13 +576,13 @@
               <tbody></tbody>
             </table>
           </div>
-          <pre id="autoOut" class="log" style="max-height:160px;">—</pre>
+          <pre id="autoOut" class="log placeholder" style="max-height:160px;">no output yet</pre>
         </section>
 
         <section class="card span2" id="cardAutoLogs">
           <h2>Cron activity</h2>
           <button class="btn ghost" id="btnAutoLogs">Refresh</button>
-          <pre id="autoLogOut" class="log" style="max-height:240px;margin-top:0.5rem;">—</pre>
+          <pre id="autoLogOut" class="log placeholder" style="max-height:240px;margin-top:0.5rem;">no output yet</pre>
         </section>
       </div>
     </div>
@@ -612,7 +612,7 @@
               <tbody></tbody>
             </table>
           </div>
-          <pre id="alertOut" class="log" style="max-height:140px;">—</pre>
+          <pre id="alertOut" class="log placeholder" style="max-height:140px;">no output yet</pre>
         </section>
 
         <section class="card span2" id="cardPagerDuty">
@@ -627,7 +627,7 @@
             <button class="btn ghost" id="btnPdLevelsDiff">Levels diff</button>
             <button class="btn ghost" id="btnPdHooks">Recent webhooks</button>
           </div>
-          <pre id="pdOut" class="log" style="max-height:300px;margin-top:0.5rem;">—</pre>
+          <pre id="pdOut" class="log placeholder" style="max-height:300px;margin-top:0.5rem;">no output yet</pre>
         </section>
       </div>
     </div>
@@ -648,7 +648,7 @@
             </table>
           </div>
           <h3 class="subhead">Outcome stats</h3>
-          <pre id="sklStatsOut" class="log" style="max-height:160px;">—</pre>
+          <pre id="sklStatsOut" class="log placeholder" style="max-height:160px;">no output yet</pre>
         </section>
 
         <section class="card span2" id="cardSkillProposals">
@@ -661,7 +661,7 @@
               <tbody></tbody>
             </table>
           </div>
-          <pre id="sklOut" class="log" style="max-height:160px;">—</pre>
+          <pre id="sklOut" class="log placeholder" style="max-height:160px;">no output yet</pre>
         </section>
       </div>
     </div>
@@ -691,7 +691,7 @@
             </table>
           </div>
           <div id="mcpOauthFlow" style="display:none;margin-top:0.5rem;" class="muted"></div>
-          <pre id="mcpSrvOut" class="log" style="max-height:180px;">—</pre>
+          <pre id="mcpSrvOut" class="log placeholder" style="max-height:180px;">no output yet</pre>
         </section>
 
         <section class="card span2" id="cardMcpTools">
@@ -714,7 +714,7 @@
             <button class="btn primary" id="btnMcpCall">Call</button>
           </div>
           <textarea id="mcpArgs" rows="4" placeholder='arguments JSON, e.g. {"path": "/tmp"}' style="margin-top:0.5rem;">{}</textarea>
-          <pre id="mcpOut" class="log" style="max-height:280px;">—</pre>
+          <pre id="mcpOut" class="log placeholder" style="max-height:280px;">no output yet</pre>
         </section>
 
         <section class="card span2" id="cardMcpResources">
@@ -729,7 +729,7 @@
               <tbody><tr><td colspan="3" class="muted">List resources or prompts to browse what connected servers expose.</td></tr></tbody>
             </table>
           </div>
-          <pre id="mcpResOut" class="log" style="max-height:260px;">—</pre>
+          <pre id="mcpResOut" class="log placeholder" style="max-height:260px;">no output yet</pre>
         </section>
       </div>
     </div>
@@ -749,7 +749,7 @@
           <div id="mediaImgWrap" style="margin-top:0.75rem;display:none;">
             <img id="mediaImg" alt="generated image" style="max-width:100%;max-height:420px;border-radius:8px;border:1px solid #26303d;" />
           </div>
-          <pre id="mediaOut" class="log" style="max-height:180px;">—</pre>
+          <pre id="mediaOut" class="log placeholder" style="max-height:180px;">no output yet</pre>
         </section>
 
         <section class="card span2" id="cardMediaJobs">
@@ -786,7 +786,7 @@
               <tbody></tbody>
             </table>
           </div>
-          <pre id="sessOut" class="log" style="max-height:140px;">—</pre>
+          <pre id="sessOut" class="log placeholder" style="max-height:140px;">no output yet</pre>
         </section>
 
         <section class="card span2" id="cardTranscripts">
@@ -799,7 +799,7 @@
               <tbody></tbody>
             </table>
           </div>
-          <pre id="trOut" class="log" style="max-height:320px;">—</pre>
+          <pre id="trOut" class="log placeholder" style="max-height:320px;">no output yet</pre>
         </section>
       </div>
     </div>
@@ -829,7 +829,7 @@
               <tbody></tbody>
             </table>
           </div>
-          <pre id="saOut" class="log" style="max-height:260px;">—</pre>
+          <pre id="saOut" class="log placeholder" style="max-height:260px;">no output yet</pre>
         </section>
       </div>
     </div>
@@ -938,9 +938,9 @@
           </div>
           <div class="kv" id="msnDetailKv" style="margin-top:0.5rem;">—</div>
           <h3 class="subhead">Verification evidence</h3>
-          <pre id="msnVerify" class="log" style="max-height:180px;">—</pre>
+          <pre id="msnVerify" class="log placeholder" style="max-height:180px;">no output yet</pre>
           <h3 class="subhead">Plan</h3>
-          <pre id="msnPlan" class="log" style="max-height:200px;">—</pre>
+          <pre id="msnPlan" class="log placeholder" style="max-height:200px;">no output yet</pre>
           <h3 class="subhead">Timeline</h3>
           <div class="table-wrap" style="max-height:220px;">
             <table id="msnEvents">
@@ -997,7 +997,7 @@
               <tbody></tbody>
             </table>
           </div>
-          <pre id="hkOut" class="log" style="max-height:140px;">—</pre>
+          <pre id="hkOut" class="log placeholder" style="max-height:140px;">no output yet</pre>
         </section>
 
         <section class="card span2" id="cardHkHistory">
@@ -1028,7 +1028,7 @@
               <tbody></tbody>
             </table>
           </div>
-          <pre id="memOut" class="log" style="max-height:380px;">—</pre>
+          <pre id="memOut" class="log placeholder" style="max-height:380px;">no output yet</pre>
         </section>
       </div>
     </div>
