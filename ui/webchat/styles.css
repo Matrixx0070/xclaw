@@ -441,3 +441,5 @@ body {
 /* a pending whose turn already moved on — kept visible but clearly inert */
 .apr.stale { opacity: 0.55; }
 .apr.stale .apr-btn { pointer-events: none; }
+
+.apr-btn:disabled { opacity: 0.5; cursor: not-allowed; }

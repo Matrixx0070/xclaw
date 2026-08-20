@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 3.143.2 — you can read what you are approving (2026-08-20)
+
+Watching a long autonomous run in WebChat showed the approval card as it really
+looks in use.
+
+- **A `file_write` approval printed the whole args object as escaped JSON** —
+  the entire file body on one line — so the one thing you are meant to judge was
+  unreadable. It now reads `/tmp/note.txt  (289 bytes)`: the target and the size.
+  Shell approvals still show the command.
+- **A timed-out approval kept live-looking Allow/Deny buttons.** They were inert
+  (`pointer-events: none`) but still looked clickable, so a click did nothing and
+  said nothing. They are now genuinely disabled and the state reads
+  "timed out — no longer actionable".
+
 ## 3.143.0 — the agent can delegate, and decides for itself (2026-08-20)
 
 Sent the agent a normal user request in WebChat asking for three independent

@@ -202,6 +202,28 @@ function endToolCard(card, { preview, error } = {}) {
 // times out (no args). WebChat rendered both, so a second card appeared showing
 // "{}" — you could not tell what you were approving. Telegram already deduped
 // this; WebChat did not.
+/**
+ * What is actually being approved, in one readable line.
+ *
+ * A file_write approval used to print the entire args object as escaped JSON —
+ * the whole file body on one line — so the thing you were meant to judge was
+ * unreadable. Show the target and the size instead; the full args stay in the
+ * event stream.
+ */
+function approvalSummary(args) {
+  const a = args && typeof args === "object" ? args : {};
+  if (a.command) return String(a.command);
+  const path = a.file_path || a.path;
+  if (path) {
+    const bytes = a.content == null ? null : String(a.content).length;
+    return bytes == null ? String(path) : `${path}  (${bytes.toLocaleString()} bytes)`;
+  }
+  const keys = Object.keys(a);
+  if (!keys.length) return "(no arguments)";
+  const flat = JSON.stringify(a);
+  return flat.length > 200 ? `${flat.slice(0, 200)}…` : flat;
+}
+
 const approvalCards = new Map();
 
 function addApprovalCard(ctx, { pendingId, name, args, timedOut }) {
@@ -209,13 +231,19 @@ function addApprovalCard(ctx, { pendingId, name, args, timedOut }) {
   if (existing) {
     if (timedOut) {
       const st = existing.querySelector(".apr-state");
-      if (st) st.textContent = "timed out";
+      // the buttons are inert once the pending expires; leaving them looking
+      // clickable means a click does nothing and says nothing
+      if (st) st.textContent = "timed out — no longer actionable";
+      existing.querySelectorAll(".apr-btn").forEach((b) => {
+        b.disabled = true;
+        b.setAttribute("aria-disabled", "true");
+      });
       existing.classList.add("stale");
     }
     return existing;
   }
   const card = el("div", "apr");
-  const cmd = args?.command || JSON.stringify(args || {});
+  const cmd = approvalSummary(args);
   card.innerHTML =
     `<div class="apr-title">Approval required — <code>${escapeHtml(name)}</code></div>` +
     `<div class="apr-cmd">${escapeHtml(String(cmd))}</div>` +
