@@ -70,6 +70,11 @@ export const TOOL_PLANE = {
 
   // Agent-loop meta (not dispatched via computer)
   xclaw_spawn_subagent: "agent",
+  // xclaw_spawn_agent is a LOCAL registry tool that calls spawnSubagent
+  // in-process. Without this explicit entry inferPlane's /spawn|subagent/ rule
+  // sent it to the "agent" plane, which has no handler — every call failed in
+  // about a millisecond and the model fell back to sequential shell commands.
+  xclaw_spawn_agent: "local",
   xclaw_recall: "agent",
   recall: "agent",
 };

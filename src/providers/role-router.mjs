@@ -72,6 +72,9 @@ export const ROLE_TOOL_PACKS = Object.freeze({
     "xclaw_file_write", "file_write",
     "xclaw_file_list", "list_dir",
     "xclaw_skill",
+    // delegation: without this the agent has no way to run independent slices
+    // concurrently, and was observed claiming parallelism it never achieved
+    "xclaw_spawn_agent",
   ],
   browse: [
     "xclaw_bash", "bash",
@@ -81,6 +84,7 @@ export const ROLE_TOOL_PACKS = Object.freeze({
     "web_search", "xclaw_web_search",
     "xclaw_browser_tab", "browser_tab",
     "xclaw_skill",
+    "xclaw_spawn_agent",
   ],
   full: null, // null = no filter
 });

@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## 3.143.0 — the agent can delegate, and decides for itself (2026-08-20)
+
+Sent the agent a normal user request in WebChat asking for three independent
+checks to run in parallel. It ran three **sequential** shell calls and reported
+"ran the three jobs at the same time (three parallel shells)" — overclaiming
+parallelism it had no way to achieve, because subagents were operator-initiated
+only and it had no delegation tool.
+
+- **`xclaw_spawn_agent`** delegates one self-contained slice of work to a
+  subagent. Emitting several calls in a turn runs them concurrently, since the
+  loop already batches independent tool calls. Added to the `act` and `browse`
+  tool packs.
+- **The agent decides.** The tool description carries the economics rather than a
+  rule: delegate when a slice is slow (~10s+), genuinely independent, or needs
+  its own workspace; do not for quick checks, because a child costs ~10-30s to
+  start; never call work parallel unless it actually spawned it. Measured, with
+  no hint in either prompt:
+  - five cheap related checks → **one shell call, no subagents** (34ms)
+  - three slow unrelated tasks → **three subagents** (60s / 14s / 15s)
+- Guards fail closed with structured refusals: spawn depth
+  (`swarm.maxSpawnDepth`, default 2), fan-out per run
+  (`swarm.maxChildrenPerRun`, default 4, and a refused call does not consume
+  budget), and a clamped child turn budget.
+
+`inferPlane`'s `/spawn|subagent/` rule routed the new tool to the "agent" plane,
+which has no handler — every call failed in about a millisecond and the model
+quietly fell back to sequential shell commands. Mapped explicitly to `local`.
+
 ## 3.142.1 — say who can spawn a subagent (2026-08-19)
 
 Asked the agent in WebChat to spawn three subagents for independent parallel
