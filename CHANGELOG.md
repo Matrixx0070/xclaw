@@ -1,6 +1,71 @@
 # Changelog
 
-## Unreleased
+## 3.145.0 — the TUI, ready for public use (2026-08-20)
+
+### TUI — Claude Code surface (original code)
+
+The live Claude Code TUI on display :10 is the UX target. XClaw now matches the
+parts that matter, without Ink and without touching the proprietary binary.
+
+- Welcome box on an empty transcript (version, model, cwd, slash hints).
+- `>` prompt, MCP banner from `GET /mcp/status`, Shift+Tab permission overlay
+  (session-only, tighten-only: bypass → auto → ask). Overlay flags ride
+  `/agent/run/stream` as `forceHuman` / `ignoreBypass` and never rewrite
+  `security.bypassApprovals`.
+- Token streaming (`model`/`delta`) painted live; `sessionId` kept across turns.
+- `/mcp` `/model` `/approvals`, bracketed paste, emacs keys (Ctrl+A/E/U/W/K).
+- Alternate screen buffer (`ESC[?1049h`): the frame owns an exactly-sized screen
+  and the shell's scrollback returns untouched on exit, so a clipped footer can
+  only ever mean the terminal really is that short.
+- Fixed: the raw `model`/`delta` stream carries the internal grounding scaffold
+  (```json {"claims":…}```), so the TUI typed it out live even though the final
+  `result.text` is stripped. `stripLiveScaffold` now hides it as it arrives,
+  including a half-arrived block, while leaving real code blocks alone. The
+  rules moved to `src/agent/claims-scaffold.mjs` so streaming clients share one
+  source of truth with the agent loop.
+
+### TUI — public-release hardening
+
+Driven by a PTY audit of the shipped build. Every item below was reproduced
+against a real terminal before it was fixed, and re-driven afterwards.
+
+- **Fixed: the terminal was left broken on exit.** The TUI entered the alternate
+  screen but only restored it on the clean `/quit` path — a SIGTERM, a crash, or
+  an unhandled rejection left the caller's shell with no cursor, no scrollback
+  and bracketed paste still armed. Restore now runs from `exit`, `SIGTERM`,
+  `SIGHUP`, `SIGQUIT`, `uncaughtException` and `unhandledRejection`, and writes
+  with `writeSync` because nothing async can flush on the `exit` path.
+- **Fixed: multi-line paste corrupted the frame.** The input was one string
+  written into one absolutely-positioned row, so a pasted newline wrapped the
+  terminal and shifted every row below it. The input line is now a real
+  multi-line block: `chunkCells` wraps by display cells and `layoutInput` splits
+  on newlines, windows around the caret, and reports where the caret landed.
+  Alt+Enter inserts a newline; a trailing backslash continues the line.
+- **Fixed: "ask before every tool" was a dead end.** Shift+Tab advertised the
+  mode, then told you to go approve in Telegram or the Control UI. Approvals are
+  now answered in place — `y` approve, `n` deny, `a` always allow that tool for
+  the session — over `POST /approvals/approve|deny`. Concurrent asks queue.
+  `a` is deliberately absent at the `critical` tier, matching `/trust`: a
+  blanket grant tops out at `risky`. Restated events are filtered through
+  `isNewApprovalAsk`, so a pending that times out cannot prompt twice.
+- **Fixed: narrow and wide-character terminals corrupted the frame.** The width
+  floor was 40 columns, so anything narrower overflowed; CJK input was counted
+  in code points rather than cells. Every emitted row is now clamped through
+  `fitToWidth`, the floor is 20 columns, and the header drops to a compact two
+  lines below 46 columns.
+- Session persistence: the session id, cwd and last 200 input lines are written
+  to `<configDir>/tui-session.json`; `xclaw tui --continue` (`-c`) resumes.
+- The transcript is capped at 5000 lines, so a long-running session no longer
+  grows without bound.
+- Ctrl+D exits on an empty prompt and forward-deletes otherwise; Ctrl+L redraws;
+  Ctrl+R searches input history; PgUp/PgDn scroll and now say how many lines lie
+  in *both* directions.
+- New `/cost` (today's spend against the daily cap) and `/session` (session id
+  and where it is stored).
+- Docs: the README never mentioned the TUI at all — there is now a "Terminal
+  chat" section, a row in the capability table and a line in Common commands.
+  `xclaw --help` still called it a "Live operator dashboard", which is what
+  `--status` does; the top-level line now describes the chat UI.
 
 ## 3.144.0 — full autonomy mode (2026-08-20)
 

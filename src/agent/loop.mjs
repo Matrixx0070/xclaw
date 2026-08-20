@@ -95,13 +95,8 @@ import { inferEffects } from "../agents/swarm-receipt.mjs";
 import { afterBrowserToolTruth } from "../browser/truth.mjs";
 import { beforeNavigate, beforeInput } from "../browser/hooks.mjs";
 import { resolveRole } from "../browser/role-binding.mjs";
+import { stripClaimsBlock } from "./claims-scaffold.mjs";
 
-/**
- * The model is asked to append a ```json {"claims":…,"evidence_ids":…} ``` block
- * for internal grounding — strip it (and a bare trailing claims object) from the
- * user-facing reply so channels don't show the verification scaffold. The raw
- * finalText is kept for internal consumers; only the presented `text` is cleaned.
- */
 /**
  * Assistant message content → plain text. Providers may return a string or a
  * parts array ({type:"text", text} / {text}); empty/unknown parts collapse to "".
@@ -118,14 +113,10 @@ export function normalizeAssistantContent(content) {
   return String(content);
 }
 
-export function stripClaimsBlock(text) {
-  let s = String(text ?? "");
-  // fenced ```json { "claims": … } ``` at the end
-  s = s.replace(/\n*```(?:json)?\s*\{[\s\S]*?"claims"[\s\S]*?\}\s*```\s*$/i, "");
-  // bare trailing {"claims":…,"evidence_ids":…} object (no fence)
-  s = s.replace(/\n*\{\s*"claims"\s*:[\s\S]*?"evidence_ids"\s*:[\s\S]*?\}\s*$/i, "");
-  return s.trimEnd();
-}
+// Grounding scaffold rules live in their own module so the TUI can share them
+// without importing the loop. Re-exported: the raw finalText is kept for
+// internal consumers, only the presented `text` is cleaned.
+export { stripClaimsBlock };
 
 const BASE_SYSTEM_PROMPT = `You are XClaw, a personal AI assistant with a real computer.
 When stating what you did, prefer a final structured block:
@@ -1294,7 +1285,12 @@ export async function runAgentLoop(options) {
           // policy. "allow" only pre-answers when a human WOULD have been
           // asked — it never bypasses allowlists or exec pattern checks
           // (hookAllow currently informational; deny>ask>allow already merged).
-          forceHuman: hookForceHuman && !hookAllow,
+          // options.forceHuman: session overlay (TUI Shift+Tab "ask") — every
+          // tool pends for this run even when the machine is in bypass.
+          // options.ignoreBypass: overlay "auto" — drop bypass for this run
+          // but keep autoApprove. Overlay can only tighten, never loosen.
+          forceHuman: (hookForceHuman && !hookAllow) || Boolean(options.forceHuman),
+          ignoreBypass: Boolean(options.ignoreBypass),
           onPending: (info) => {
             onEvent({
               type: "security",

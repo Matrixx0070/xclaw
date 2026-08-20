@@ -381,6 +381,13 @@ async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} })
         : Array.isArray(body?.messages)
           ? body.messages
           : [],
+      // Stream endpoint: prefer token deltas so the TUI can paint live.
+      stream: true,
+      // TUI Shift+Tab overlay: tighten this run only. Never loosens the
+      // machine flag. `ask` → every tool pends; `auto` → drop bypass but
+      // keep autoApprove; `bypass` / omitted → honour cfg as-is.
+      forceHuman: body?.forceHuman === true,
+      ignoreBypass: body?.ignoreBypass === true,
       onEvent: (e) => {
         noteEviction(e, "agent/stream");
         produce(e.type || "message", e);

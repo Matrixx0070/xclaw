@@ -2898,7 +2898,7 @@ Commands:
   agent <message>      One agent turn (CLI)
   run <message>        Stream via gateway (--ndjson, --resume)
   status [--json]      Gateway + computer + active sessions
-  tui                  Live operator dashboard (sessions, approvals, cost)
+  tui [-c|--continue]  Interactive terminal chat (streaming, inline approvals)
   doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
   self-test            Fast unit smoke (autonomy, sandbox, fabric, …)
   stop-all             Abort agent sessions + stop computer

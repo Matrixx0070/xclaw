@@ -208,7 +208,7 @@ export function createApprovalGate(cfg = {}) {
     return { ...trustWindow };
   }
 
-  function needsApproval(name, risk = null) {
+  function needsApproval(name, risk = null, { ignoreBypass = false } = {}) {
     const n = normalizeToolName(name);
     const critical = risk?.tier === "critical";
     // Full autonomy, the equivalent of Claude Code's bypassPermissions: nothing
@@ -216,7 +216,9 @@ export function createApprovalGate(cfg = {}) {
     // flag rather than a tier setting, because it is not a bound — it removes
     // the gate. The gateway logs it at boot and doctor reports it, so a machine
     // running this way says so out loud.
-    if (security.bypassApprovals === true) return false;
+    // ignoreBypass: a session overlay (TUI Shift+Tab "auto") can drop bypass
+    // for one run without rewriting the machine flag. Overlay never loosens.
+    if (security.bypassApprovals === true && !ignoreBypass) return false;
     if (autoApprove) {
       // Blanket autoApprove no longer covers critical actions — the one
       // deliberate behavior change of A2 (criticalOverride:"legacy" reverts).
@@ -276,7 +278,7 @@ export function createApprovalGate(cfg = {}) {
   /**
    * @returns {Promise<{ok, approved?, reason?, message?, mode?, pendingId?, plan?, planFingerprint?}>}
    */
-  async function authorize(name, args, { timeoutMs = 120_000, onPending, forceHuman = false, riskWorkingDir = null, job = null } = {}) {
+  async function authorize(name, args, { timeoutMs = 120_000, onPending, forceHuman = false, ignoreBypass = false, riskWorkingDir = null, job = null } = {}) {
     if (!isToolAllowed(name)) {
       return {
         ok: false,
@@ -346,7 +348,7 @@ export function createApprovalGate(cfg = {}) {
 
     // forceHuman: a pre_tool_use hook returned decision:"ask" — escalate to a
     // human even when policy would auto-approve.
-    if (!forceHuman && !needsApproval(name, risk)) {
+    if (!forceHuman && !needsApproval(name, risk, { ignoreBypass })) {
       // Auto path: still optionally bind a plan for downstream audit, but do not block.
       let plan = null;
       if (bindSystemRunPlan && isExecTool(name)) {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   renderTuiFrame,
   renderChatScreen,
+  renderWelcomeBox,
   decodeKeys,
   spinnerFrame,
   renderMarkdownLines,
@@ -14,6 +15,9 @@ import {
   formatToolCall,
   wrapLine,
   tuiHelp,
+  overlayFlags,
+  cycleOverlay,
+  overlayLabel,
 } from "../src/cli/tui.mjs";
 
 const UP = {
@@ -86,6 +90,18 @@ describe("tui frame", () => {
     for (const flag of ["--once", "--json", "--interval", "--no-colour", "--status"]) {
       assert.ok(h.includes(flag), flag);
     }
+    for (const cmd of ["/mcp", "/model", "/approvals", "Shift+Tab"]) {
+      assert.ok(h.includes(cmd), cmd);
+    }
+    for (const cmd of ["/mcp", "/model", "/approvals", "Shift+Tab"]) {
+      assert.ok(h.includes(cmd), cmd);
+    }
+    for (const cmd of ["/mcp", "/model", "/approvals", "Shift+Tab"]) {
+      assert.ok(h.includes(cmd), cmd);
+    }
+    for (const cmd of ["/mcp", "/model", "/approvals", "Shift+Tab"]) {
+      assert.ok(h.includes(cmd), cmd);
+    }
   });
 });
 
@@ -113,7 +129,7 @@ describe("tui chat screen", () => {
     assert.match(text, /xclaw_bash\(whoami\)/);
     // input block: rule, caret + typed text, rule, footer
     assert.match(frame.at(-4), /^ ─+$/);
-    assert.match(frame.at(-3), /▌ what is up/);
+    assert.match(frame.at(-3), /> what is up/);
     assert.match(frame.at(-2), /^ ─+$/);
     assert.match(frame.at(-1), /Enter send/);
     assert.ok(!text.includes("\u001b"), "colour:false must emit no ANSI");
@@ -183,6 +199,18 @@ describe("tui key decoding", () => {
   it("treats a bare escape as escape and swallows unknown sequences", () => {
     assert.deepEqual(decodeKeys(ESC), [{ name: "escape" }]);
     assert.deepEqual(decodeKeys(ESC + "[200~"), []);
+  });
+
+  it("decodes Shift+Tab as backtab", () => {
+    assert.deepEqual(decodeKeys(ESC + "[Z"), [{ name: "backtab" }]);
+  });
+
+  it("reassembles a bracketed paste across chunks", () => {
+    const carry = { paste: null };
+    assert.deepEqual(decodeKeys(ESC + "[200~hel", carry), []);
+    assert.equal(carry.paste, "hel");
+    assert.deepEqual(decodeKeys("lo" + ESC + "[201~", carry), [{ paste: "hello" }]);
+    assert.equal(carry.paste, null);
   });
 
   it("spinner animates and never indexes out of range", () => {
@@ -351,5 +379,72 @@ describe("tui terminal cell width", () => {
     for (const seg of sliceCells("日本語abc🦞", 4)) {
       assert.ok(visibleWidth(seg) <= 4, seg);
     }
+  });
+});
+
+describe("tui welcome + overlay", () => {
+  it("draws a welcome box on an empty transcript", () => {
+    const box = renderWelcomeBox(
+      { version: "3.144.0", model: "xai/grok-4.6", profile: "lab", cwd: "/root/xclaw" },
+      { colour: false, columns: 80 }
+    );
+    const text = box.join("\n");
+    assert.match(text, /╭/);
+    assert.match(text, /XClaw/);
+    assert.match(text, /3\.144\.0/);
+    assert.match(text, /Welcome/);
+    assert.match(text, /xai\/grok-4\.6/);
+    assert.match(text, /\/root\/xclaw/);
+    assert.match(text, /Shift\+Tab/);
+  });
+
+  it("shows the MCP banner and a > prompt", () => {
+    const frame = renderChatScreen(
+      {
+        version: "3.144.0",
+        model: "xai/grok-4.6",
+        cwd: "/root/xclaw",
+        transcript: ["hi"],
+        input: "next",
+        mcpBanner: "2 MCP servers need authentication · /mcp",
+        overlay: "bypass",
+      },
+      { colour: false, columns: 80, rows: 24 }
+    );
+    const text = frame.join("\n");
+    assert.match(text, /2 MCP servers need authentication/);
+    assert.match(frame.at(-3), /> next/);
+    assert.match(text, /bypass permissions on/);
+  });
+
+  it("paints live tokens in the transcript while keeping the prompt", () => {
+    const frame = renderChatScreen(
+      {
+        version: "3.144.0",
+        model: "xai/grok-4.6",
+        cwd: "/root/xclaw",
+        transcript: ["> ping"],
+        live: "pong from the model",
+        busy: true,
+        input: "",
+      },
+      { colour: false, columns: 80, rows: 24 }
+    );
+    const text = frame.join("\n");
+    assert.match(text, /pong from the model/);
+    assert.match(frame.at(-3), /> /);
+    assert.ok(!/esc to cancel/.test(frame.at(-3)));
+  });
+
+  it("cycles the overlay tighten-only", () => {
+    assert.equal(cycleOverlay("bypass"), "auto");
+    assert.equal(cycleOverlay("auto"), "ask");
+    assert.equal(cycleOverlay("ask"), "bypass");
+    assert.equal(cycleOverlay("auto", { machineBypass: false }), "ask");
+    assert.equal(cycleOverlay("ask", { machineBypass: false }), "auto");
+    assert.deepEqual(overlayFlags("ask"), { forceHuman: true, ignoreBypass: false });
+    assert.deepEqual(overlayFlags("auto"), { forceHuman: false, ignoreBypass: true });
+    assert.deepEqual(overlayFlags("bypass"), { forceHuman: false, ignoreBypass: false });
+    assert.match(overlayLabel("bypass"), /bypass permissions on/);
   });
 });

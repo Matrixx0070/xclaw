@@ -11,10 +11,25 @@
  *
  * Zero dependencies — plain ANSI, same rule as the Control UI.
  */
+import { writeSync } from "node:fs";
+import fsp from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { stripLiveScaffold } from "../agent/claims-scaffold.mjs";
+import { isNewApprovalAsk } from "../security/approval-events.mjs";
+
 
 const ESC = "\u001b";
 const KEY_CTRL_C = "\u0003";
 const KEY_BACKSPACE = "\u007f";
+const KEY_CTRL_A = "\u0001";
+const KEY_CTRL_E = "\u0005";
+const KEY_CTRL_K = "\u000b";
+const KEY_CTRL_U = "\u0015";
+const KEY_CTRL_W = "\u0017";
+const KEY_CTRL_D = "\u0004";
+const KEY_CTRL_L = "\u000c";
+const KEY_CTRL_R = "\u0012";
 
 const C = {
   reset: `${ESC}[0m`,
@@ -415,41 +430,221 @@ export function fitToWidth(text, width) {
 }
 
 /**
+ * Split text into rows of at most `width` CELLS, keeping each row's offsets in
+ * the source string. Character counting is not enough: one CJK glyph occupies
+ * two cells, so a row measured in characters overflows the terminal and the
+ * absolute-cursor repaint then writes over a line it does not own.
+ */
+export function chunkCells(text, width) {
+  const w = Math.max(1, width);
+  const s = String(text);
+  const out = [];
+  let start = 0;
+  let cur = "";
+  let cells = 0;
+  let i = 0;
+  while (i < s.length) {
+    const cp = s.codePointAt(i);
+    const size = cp > 0xffff ? 2 : 1;
+    const cw = charWidth(cp);
+    if (cur && cells + cw > w) {
+      out.push({ text: cur, from: start, to: i });
+      start = i;
+      cur = "";
+      cells = 0;
+    }
+    cur += s.slice(i, i + size);
+    cells += cw;
+    i += size;
+  }
+  out.push({ text: cur, from: start, to: s.length });
+  return out;
+}
+
+/** Character offset inside `text` that sits at terminal cell column `col`. */
+export function indexAtCell(text, col) {
+  const s = String(text);
+  let cells = 0;
+  let i = 0;
+  while (i < s.length) {
+    const cp = s.codePointAt(i);
+    const cw = charWidth(cp);
+    if (cells + cw > col) break;
+    cells += cw;
+    i += cp > 0xffff ? 2 : 1;
+  }
+  return i;
+}
+
+/** Previous whole code point, so a surrogate pair is never bisected. */
+export function prevCharIndex(text, i) {
+  const s = String(text);
+  const at = Math.min(Math.max(0, i), s.length);
+  if (at <= 0) return 0;
+  const cp = at >= 2 ? s.codePointAt(at - 2) : null;
+  return at - (cp != null && cp > 0xffff ? 2 : 1);
+}
+
+/** Next whole code point. */
+export function nextCharIndex(text, i) {
+  const s = String(text);
+  const at = Math.min(Math.max(0, i), s.length);
+  if (at >= s.length) return s.length;
+  return at + (s.codePointAt(at) > 0xffff ? 2 : 1);
+}
+
+/**
+ * Lay the input buffer out as terminal rows.
+ *
+ * The buffer is no longer assumed to be one short line: a paste or Alt+Enter
+ * can put newlines in it, and wide glyphs cost two cells. Rows are split on
+ * newlines, wrapped by cells, and then windowed so the caret is always on a
+ * visible row. Returns the caret's row/column in that window.
+ */
+export function layoutInput(input, cursor, width, maxRows = 6) {
+  const s = String(input ?? "");
+  const w = Math.max(4, width);
+  const caret = Math.min(Math.max(0, cursor ?? s.length), s.length);
+  const all = [];
+  let cursorRowAbs = 0;
+  let cursorCol = 0;
+  let found = false;
+  let base = 0;
+  for (const logical of s.split("\n")) {
+    for (const c of chunkCells(logical, w)) {
+      const from = base + c.from;
+      const to = base + c.to;
+      if (!found && caret >= from && caret <= to) {
+        cursorRowAbs = all.length;
+        cursorCol = visibleWidth(c.text.slice(0, caret - from));
+        found = true;
+      }
+      all.push({ text: c.text, from, to });
+    }
+    base += logical.length + 1; // the newline itself
+  }
+  const cap = Math.max(1, maxRows);
+  let first = 0;
+  if (all.length > cap) {
+    first = Math.min(Math.max(0, cursorRowAbs - cap + 1), all.length - cap);
+  }
+  const view = all.slice(first, first + cap);
+  return {
+    all,
+    rows: view.map((r) => r.text),
+    first,
+    total: all.length,
+    hidden: all.length - view.length,
+    cursorRowAbs,
+    cursorRow: cursorRowAbs - first,
+    cursorCol,
+  };
+}
+
+/** Caret index one visual row up (-1) or down (+1); null when there is none. */
+export function moveCaretByRow(input, cursor, width, delta) {
+  const l = layoutInput(input, cursor, width, Number.MAX_SAFE_INTEGER);
+  const target = l.cursorRowAbs + delta;
+  if (target < 0 || target >= l.all.length) return null;
+  const row = l.all[target];
+  return row.from + indexAtCell(row.text, l.cursorCol);
+}
+
+/** Keep a growing line buffer bounded, in place. An all-day session must not grow forever. */
+export function trimLines(lines, max) {
+  const cap = Math.max(1, max);
+  if (lines.length > cap) lines.splice(0, lines.length - cap);
+  return lines;
+}
+
+/**
  * Decode a raw stdin chunk into key events. Without this, arrow keys arrive as
  * an escape sequence and their tail ("[A", "[D") is typed into the input.
+ *
+ * Also understands Shift+Tab (`CSI Z`) and bracketed paste (`CSI 200~` … `CSI 201~`).
+ * Pass the same `carry` object across chunks so a paste that arrives split is
+ * reassembled instead of being typed as raw CSI.
  */
-export function decodeKeys(buf) {
+export function decodeKeys(buf, carry = null) {
   const NAMED = { A: "up", B: "down", C: "right", D: "left", H: "home", F: "end" };
   const TILDE = { 1: "home", 3: "delete", 4: "end", 5: "pageup", 6: "pagedown" };
   const keys = [];
   let i = 0;
+  let pasting = Boolean(carry && carry.paste != null);
+  let pasteAcc = pasting ? String(carry.paste) : "";
+  const flushPaste = () => {
+    if (pasteAcc) keys.push({ paste: pasteAcc });
+    pasteAcc = "";
+    pasting = false;
+    if (carry) carry.paste = null;
+  };
   while (i < buf.length) {
     const ch = buf[i];
-    if (ch !== ESC) {
-      keys.push({ ch });
+    if (ch === ESC) {
+      const rest = buf.slice(i + 1);
+      let m = rest.match(/^\[200~/);
+      if (m) {
+        pasting = true;
+        pasteAcc = "";
+        i += 1 + m[0].length;
+        continue;
+      }
+      m = rest.match(/^\[201~/);
+      if (m) {
+        if (pasting) flushPaste();
+        i += 1 + m[0].length;
+        continue;
+      }
+      if (pasting) {
+        pasteAcc += ch;
+        i += 1;
+        continue;
+      }
+      // Alt+Enter arrives as ESC + CR/LF — insert a newline instead of sending
+      m = rest.match(/^[\r\n]/);
+      if (m) {
+        keys.push({ name: "altenter" });
+        i += 1 + m[0].length;
+        continue;
+      }
+      m = rest.match(/^\[Z/);
+      if (m) {
+        keys.push({ name: "backtab" });
+        i += 1 + m[0].length;
+        continue;
+      }
+      m = rest.match(/^\[([ABCDHF])/);
+      if (m) {
+        keys.push({ name: NAMED[m[1]] });
+        i += 1 + m[0].length;
+        continue;
+      }
+      m = rest.match(/^\[([0-9]+)~/);
+      if (m && TILDE[m[1]]) {
+        keys.push({ name: TILDE[m[1]] });
+        i += 1 + m[0].length;
+        continue;
+      }
+      m = rest.match(/^\[[0-9;]*[A-Za-z~]/);
+      if (m) {
+        i += 1 + m[0].length;
+        continue;
+      }
+      keys.push({ name: "escape" });
       i += 1;
       continue;
     }
-    const rest = buf.slice(i + 1);
-    let m = rest.match(/^\[([ABCDHF])/);
-    if (m) {
-      keys.push({ name: NAMED[m[1]] });
-      i += 1 + m[0].length;
+    if (pasting) {
+      pasteAcc += ch;
+      i += 1;
       continue;
     }
-    m = rest.match(/^\[([0-9]+)~/);
-    if (m && TILDE[m[1]]) {
-      keys.push({ name: TILDE[m[1]] });
-      i += 1 + m[0].length;
-      continue;
-    }
-    m = rest.match(/^\[[0-9;]*[A-Za-z~]/);
-    if (m) {
-      i += 1 + m[0].length;
-      continue;
-    }
-    keys.push({ name: "escape" });
+    keys.push({ ch });
     i += 1;
+  }
+  if (pasting) {
+    if (carry) carry.paste = pasteAcc;
+    else if (pasteAcc) keys.push({ paste: pasteAcc });
   }
   return keys;
 }
@@ -460,61 +655,190 @@ export function spinnerFrame(tick) {
   return SPINNER[Math.abs(Math.trunc(tick || 0)) % SPINNER.length];
 }
 
+/** Session overlay: tighten this run only. Never loosens the machine flag. */
+export const OVERLAY_MODES = ["bypass", "auto", "ask"];
+
+export function overlayFlags(mode) {
+  if (mode === "ask") return { forceHuman: true, ignoreBypass: false };
+  if (mode === "auto") return { forceHuman: false, ignoreBypass: true };
+  return { forceHuman: false, ignoreBypass: false };
+}
+
+export function cycleOverlay(mode, { machineBypass = true } = {}) {
+  const order = machineBypass ? ["bypass", "auto", "ask"] : ["auto", "ask"];
+  const i = order.indexOf(mode);
+  return order[i < 0 ? 0 : (i + 1) % order.length];
+}
+
+export function overlayLabel(mode) {
+  if (mode === "ask") return "ask before every tool";
+  if (mode === "auto") return "auto-approve (bypass off)";
+  return "bypass permissions on";
+}
+
+function padCells(text, width) {
+  const w = visibleWidth(text);
+  if (w >= width) return fitToWidth(text, width);
+  return text + " ".repeat(width - w);
+}
+
+/**
+ * Welcome card shown on an empty transcript — version, model, cwd, tips.
+ * Pure so tests can assert the box without a terminal.
+ */
+export function renderWelcomeBox(state = {}, opts = {}) {
+  const colour = opts.colour !== false;
+  const cols = Math.max(40, opts.columns || 80);
+  const p = (t, c) => paint(t, c, colour);
+  const dim = (t) => p(t, C.grey);
+  const acc = (t) => p(t, C.accent);
+  const inner = Math.max(32, cols - 4);
+  const title = `${p("XClaw", C.bold)} ${dim("v" + (state.version || "?"))}`;
+  const titleCells = visibleWidth(` XClaw v${state.version || "?"} `);
+  const dash = Math.max(2, inner - titleCells - 1);
+  const top = ` ${acc("╭")} ${title} ${acc("─".repeat(dash))}${acc("╮")}`;
+  const bottom = ` ${acc("╰")}${acc("─".repeat(inner))}${acc("╯")}`;
+  const rows = [
+    "Welcome.",
+    `${state.model || "no model"}${state.profile ? " · " + state.profile : ""}`,
+    state.cwd || "",
+    "/mcp · /model · /approvals · Shift+Tab cycles permissions",
+  ];
+  const body = [];
+  for (let i = 0; i < MASCOT.length; i += 1) {
+    const left = acc(MASCOT[i]);
+    const right = i < rows.length ? (i === 0 ? p(rows[i], C.bold) : dim(rows[i])) : "";
+    const content = `${left}  ${right}`;
+    body.push(` ${acc("│")}${padCells(content, inner)}${acc("│")}`);
+  }
+  return [top, ...body, bottom];
+}
+
+/**
+ * Inline approval prompt. Before this the TUI told the user to go and approve
+ * the tool call in Telegram or the Control UI, which made Shift+Tab's "ask
+ * before every tool" mode a dead end on a machine with no other channel wired.
+ */
+export function renderApprovalPrompt(approval = {}, opts = {}) {
+  const colour = opts.colour !== false;
+  const cols = Math.max(20, opts.columns || 80);
+  const p = (t, c) => paint(t, c, colour);
+  const dim = (t) => p(t, C.grey);
+  const tier = String(approval.riskTier || "unknown");
+  const call = formatToolCall(approval.name || "tool", approval.args || {});
+  // "always allow" is deliberately absent for critical calls: the rest of the
+  // codebase (see /trust) never lets a blanket grant cover that tier.
+  const keys = tier === "critical"
+    ? `${p("y", C.accent)} approve   ${p("n", C.red)} deny`
+    : `${p("y", C.accent)} approve   ${p("n", C.red)} deny   ${p("a", C.accent)} always allow this tool`;
+  return [
+    ` ${p("▲", C.yellow)} ${p(`approval required · ${tier}`, C.yellow)}`,
+    `   ${call}`,
+    ` ${p(">", C.accent)} ${keys}${dim("   esc cancels the run")}`,
+  ];
+}
+
 /**
  * Render the whole chat screen. Pure: state in, lines out, so the layout can be
  * asserted without a terminal.
+ *
+ * Every returned line is clamped to `cols` on the way out. The draw loop paints
+ * with absolute cursor positioning, so a single over-wide line would wrap and
+ * shift every row below it — the frame must never contain one.
  */
 export function renderChatScreen(state = {}, opts = {}) {
   const colour = opts.colour !== false;
-  const cols = Math.max(40, opts.columns || 80);
-  const rows = Math.max(14, opts.rows || 24);
+  const cols = Math.max(20, opts.columns || 80);
+  const rows = Math.max(8, opts.rows || 24);
   const p = (t, c) => paint(t, c, colour);
   const dim = (t) => p(t, C.grey);
   const acc = (t) => p(t, C.accent);
   const cursorOn = (t) => (colour ? `${ESC}[7m${t}${ESC}[0m` : `[${t}]`);
+  // below this the mascot column plus any useful text no longer fits
+  const narrow = cols < 46;
 
+  const empty = !(state.transcript && state.transcript.length) && !state.live;
   const head = [];
-  const meta = [
-    `${p("XClaw", C.bold)} ${dim("v" + (state.version || "?"))}`,
-    dim(`${state.model || "no model"}${state.profile ? " · " + state.profile : ""}`),
-    dim(state.cwd || ""),
-    "",
-  ];
-  for (let i = 0; i < MASCOT.length; i += 1) {
-    head.push(`${acc(MASCOT[i])}${meta[i] ? "  " + meta[i] : ""}`);
+  if (narrow) {
+    head.push(`${p("XClaw", C.bold)} ${dim("v" + (state.version || "?"))}`);
+    head.push(dim(`${state.model || "no model"}${state.profile ? " · " + state.profile : ""}`));
+  } else if (empty) {
+    head.push(...renderWelcomeBox(state, { colour, columns: cols }));
+  } else {
+    const meta = [
+      `${p("XClaw", C.bold)} ${dim("v" + (state.version || "?"))}`,
+      dim(`${state.model || "no model"}${state.profile ? " · " + state.profile : ""}`),
+      dim(state.cwd || ""),
+      "",
+    ];
+    for (let i = 0; i < MASCOT.length; i += 1) {
+      head.push(`${acc(MASCOT[i])}${meta[i] ? "  " + meta[i] : ""}`);
+    }
   }
   head.push("");
-  if (state.notice) head.push(fitToWidth(` ${acc(CHEV)} ${state.notice}`, cols));
+  if (state.notice) head.push(` ${acc(CHEV)} ${state.notice}`);
+  if (state.mcpBanner) head.push(` ${p("▲", C.yellow)} ${p(state.mcpBanner, C.yellow)}`);
   head.push("");
 
-  const rule = dim("─".repeat(Math.max(10, cols - 2)));
-  const typed = state.input || "";
-  const caret = Math.min(Math.max(0, state.cursor ?? typed.length), typed.length);
-  const room = Math.max(10, cols - 6);
-  const from = caret > room ? caret - room : 0;
-  const vis = typed.slice(from, from + room);
-  const vcur = caret - from;
-  const inputLine = state.busy
-    ? ` ${acc(state.spinner || SPINNER[0])} ${dim(state.busyLabel || "working")}${dim("  esc to cancel")}`
-    : ` ${acc("▌")} ${vis.slice(0, vcur)}${cursorOn(vis.slice(vcur, vcur + 1) || " ")}${vis.slice(vcur + 1)}`;
+  const rule = dim("─".repeat(Math.max(6, cols - 2)));
+  // " > " prefix plus a spare cell so the caret at end-of-row still fits
+  const inputWidth = Math.max(8, cols - 4);
+  let block;
+  if (state.approval) {
+    block = renderApprovalPrompt(state.approval, { colour, columns: cols });
+  } else if (state.busy && !state.live) {
+    block = [` ${acc(state.spinner || SPINNER[0])} ${dim(state.busyLabel || "working")}${dim("  esc to cancel")}`];
+  } else if (state.search) {
+    const q = state.search.query || "";
+    block = [` ${acc("?")} ${dim(`(reverse-i-search)\`${q}': `)}${state.search.match || ""}`];
+  } else {
+    const maxInputRows = Math.max(1, Math.min(8, rows - 10));
+    const l = layoutInput(state.input || "", state.cursor, inputWidth, maxInputRows);
+    block = l.rows.map((line, i) => {
+      const prefix = i === 0 && l.first === 0 ? ` ${acc(">")} ` : "   ";
+      if (i !== l.cursorRow) return `${prefix}${line}`;
+      const at = indexAtCell(line, l.cursorCol);
+      const end = nextCharIndex(line, at);
+      const under = line.slice(at, end) || " ";
+      return `${prefix}${line.slice(0, at)}${cursorOn(under)}${line.slice(end)}`;
+    });
+    if (l.hidden > 0) block.push(dim(`   … ${l.hidden} more line(s)`));
+  }
 
+  const perm = overlayLabel(state.overlay || "bypass");
+  const defaultFooter = `${perm} (shift+tab) · Enter send · /help`;
   const foot = [
     ` ${rule}`,
-    inputLine,
+    ...block,
     ` ${rule}`,
-    fitToWidth(` ${acc(CHEV + CHEV)} ${state.footer || dim("Enter send · /help · Ctrl+C quit")}`, cols),
+    ` ${acc(CHEV + CHEV)} ${state.footer || dim(defaultFooter)}`,
   ];
 
   const budget = Math.max(1, rows - head.length - foot.length - 1);
-  let body = state.transcript || [];
-  if (!body.length && state.hint) body = ["", fitToWidth(dim(`  ${state.hint}`), cols)];
+  let body = [...(state.transcript || [])];
+  if (state.live) {
+    const liveLines = wrapLine(state.live, Math.max(12, cols - 6), "  ");
+    body.push(`${acc(MARK)} ${liveLines[0] ?? ""}`);
+    for (const l of liveLines.slice(1)) body.push(l ? `  ${l}` : "");
+  }
+  if (!body.length && state.hint) body = ["", dim(`  ${state.hint}`)];
   const maxScroll = Math.max(0, body.length - budget);
+  // the draw loop needs the real body budget to page by; computing it a second
+  // time in the caller is how PgUp and the frame drifted out of step before
+  if (typeof opts.onLayout === "function") opts.onLayout({ budget, maxScroll, bodyLength: body.length });
   const scroll = Math.max(0, Math.min(state.scroll || 0, maxScroll));
   const end = body.length - scroll;
   const out = body.slice(Math.max(0, end - budget), end);
   while (out.length < budget) out.push("");
-  if (scroll > 0) out[0] = dim(`  ↓ ${scroll} more line(s) below · PgDn`);
-  return [...head, ...out, ...foot];
+  // only while scrolled back: at the live tail these would eat a content row
+  // for no information. Both directions are labelled — "below" alone left the
+  // user with no clue that PgUp had more.
+  if (scroll > 0) {
+    const above = Math.max(0, end - budget);
+    if (out.length > 1) out[0] = dim(`  ↑ ${above} more line(s) above · PgUp`);
+    out[out.length - 1] = dim(`  ↓ ${scroll} more line(s) below · PgDn`);
+  }
+  return [...head, ...out, ...foot].map((line) => fitToWidth(line, cols));
 }
 
 export function tuiHelp() {
@@ -522,9 +846,10 @@ export function tuiHelp() {
     "xclaw tui — conversational terminal UI for the gateway",
     "",
     "Usage:",
-    "  xclaw tui [--status] [--once] [--json] [--no-colour]",
+    "  xclaw tui [--continue] [--status] [--once] [--json] [--no-colour]",
     "",
     "Options:",
+    "  --continue   resume the last chat session (alias -c)",
     "  --status     operator dashboard instead of the chat UI",
     "  --once       render one frame and exit (status view)",
     "  --json       print the raw status snapshot and exit",
@@ -534,13 +859,29 @@ export function tuiHelp() {
     "",
     "In the chat UI:",
     "  /status      gateway, sessions, approvals, cost",
+    "  /mcp         MCP servers and auth",
+    "  /model       current provider / model",
+    "  /approvals   permission overlay (Shift+Tab cycles)",
+    "  /cost        today's spend against the daily cap",
+    "  /session     current session id and where it is stored",
     "  /clear       clear the transcript",
     "  /help        this help",
-    "  /quit        exit (or Ctrl+C)",
+    "  /quit        exit (or Ctrl+C, or Ctrl+D on an empty line)",
+    "",
+    "Keys:",
+    "  Shift+Tab    cycle permissions: bypass → auto → ask",
+    "  Alt+Enter    newline (or end the line with a backslash)",
+    "  Ctrl+A/E     start / end of line",
+    "  Ctrl+U/K/W   kill to start / end / previous word",
+    "  Ctrl+R       search input history",
+    "  Ctrl+L       redraw the screen",
+    "  PgUp/PgDn    scroll the transcript",
+    "",
+    "When a tool needs approval: y approve · n deny · a always allow that tool.",
   ].join("\n");
 }
 
-async function streamAgent(base, token, message, onEvent, signal) {
+async function streamAgent(base, token, message, onEvent, signal, extra = {}) {
   const res = await fetch(`${base}/agent/run/stream`, {
     method: "POST",
     signal,
@@ -549,7 +890,13 @@ async function streamAgent(base, token, message, onEvent, signal) {
       accept: "application/x-ndjson",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ message, channel: "tui" }),
+    body: JSON.stringify({
+      message,
+      channel: "tui",
+      sessionId: extra.sessionId || undefined,
+      forceHuman: extra.forceHuman === true,
+      ignoreBypass: extra.ignoreBypass === true,
+    }),
   });
   if (!res.ok || !res.body) return { ok: false, error: `HTTP ${res.status}` };
   const reader = res.body.getReader();
@@ -608,8 +955,41 @@ export async function runTui(cfg = {}, opts = {}) {
   return chatLoop(cfg, { ...opts, base, token, colour });
 }
 
+let rawActive = false;
+let guardsInstalled = false;
+
+/**
+ * Put the terminal back however we leave. Without this the alternate screen,
+ * the hidden cursor and bracketed paste all survive the process: closing the
+ * window, `kill`, or any uncaught throw left the user typing blind until they
+ * ran `reset`. Idempotent, and safe to call from a synchronous exit handler.
+ */
+function installExitGuards() {
+  if (guardsInstalled) return;
+  guardsInstalled = true;
+  process.on("exit", leaveRaw);
+  for (const sig of ["SIGTERM", "SIGHUP", "SIGQUIT"]) {
+    process.on(sig, () => {
+      leaveRaw();
+      process.exit(0);
+    });
+  }
+  const die = (err) => {
+    leaveRaw();
+    console.error(err?.stack || String(err));
+    process.exit(1);
+  };
+  process.on("uncaughtException", die);
+  process.on("unhandledRejection", die);
+}
+
 function enterRaw() {
-  process.stdout.write(`${ESC}[?25l`);
+  // Alternate screen: the frame owns an exactly-sized screen and the shell's
+  // scrollback comes back untouched on exit, so a clipped footer can only ever
+  // mean the terminal really is that short.
+  installExitGuards();
+  rawActive = true;
+  process.stdout.write(`${ESC}[?1049h${ESC}[?25l${ESC}[?2004h`);
   try {
     if (process.stdin.isTTY) process.stdin.setRawMode(true);
   } catch {
@@ -618,14 +998,25 @@ function enterRaw() {
   process.stdin.resume();
 }
 
-function leaveRaw(clear) {
+function leaveRaw() {
+  if (!rawActive) return;
+  rawActive = false;
   try {
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
   } catch {
     /* not a tty */
   }
-  process.stdin.pause();
-  process.stdout.write(`${ESC}[?25h` + (clear ? `${ESC}[2J${ESC}[H` : "\n"));
+  try {
+    process.stdin.pause();
+  } catch {
+    /* already gone */
+  }
+  // writeSync, not stdout.write: on the "exit" path nothing async can flush
+  try {
+    writeSync(1, `${ESC}[?2004l${ESC}[?25h${ESC}[?1049l`);
+  } catch {
+    /* stdout closed */
+  }
 }
 
 async function statusLoop(cfg, opts, { colour, intervalMs }) {
@@ -640,7 +1031,7 @@ async function statusLoop(cfg, opts, { colour, intervalMs }) {
     if (stopped) return;
     stopped = true;
     if (timer) clearInterval(timer);
-    leaveRaw(false);
+    leaveRaw();
   };
   enterRaw();
   process.stdin.on("data", (b) => {
@@ -661,6 +1052,54 @@ async function statusLoop(cfg, opts, { colour, intervalMs }) {
   return { ok: true };
 }
 
+/** Where the TUI keeps its own session — same convention as the other stores. */
+function tuiStatePath(cfg) {
+  const dir = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
+  return path.join(dir, "tui-session.json");
+}
+
+async function loadTuiState(cfg) {
+  try {
+    const raw = await fsp.readFile(tuiStatePath(cfg), "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    // missing or truncated file: start fresh rather than refuse to open
+    return {};
+  }
+}
+
+async function saveTuiState(cfg, patch) {
+  // best-effort: a read-only home must never take the UI down with it
+  try {
+    const file = tuiStatePath(cfg);
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    const next = { ...(await loadTuiState(cfg)), ...patch, updatedAt: new Date().toISOString() };
+    const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+    await fsp.writeFile(tmp, JSON.stringify(next, null, 2));
+    await fsp.rename(tmp, file);
+  } catch {
+    /* persistence is a convenience, not a requirement */
+  }
+}
+
+async function postJson(url, token, body) {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body || {}),
+    });
+    const parsed = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, body: parsed };
+  } catch (e) {
+    return { ok: false, status: 0, body: { error: String(e?.message || e) } };
+  }
+}
+
 async function chatLoop(cfg, opts) {
   const { base, token, colour } = opts;
   const p = (t, c) => paint(t, c, colour);
@@ -669,8 +1108,13 @@ async function chatLoop(cfg, opts) {
 
   const info = await getJson(`${base}/info`, token);
   const approvals = await getJson(`${base}/approvals`, token);
+  const mcp = await getJson(`${base}/mcp/status`, token);
   const agent = info.body?.agent || {};
   const pendingN = approvals.body?.pending?.length || 0;
+  const machineBypass = cfg.security?.bypassApprovals === true;
+  const mcpServers = mcp.body?.servers || [];
+  const mcpNeedAuth = mcpServers.filter((s) => s && s.connected === false).length;
+  const mcpOk = mcpServers.filter((s) => s && s.connected).length;
 
   const state = {
     version: info.body?.version || "?",
@@ -682,16 +1126,26 @@ async function chatLoop(cfg, opts) {
     cursor: 0,
     scroll: 0,
     busy: false,
+    live: "",
+    overlay: machineBypass ? "bypass" : "auto",
     spinner: spinnerFrame(0),
     busyLabel: "working",
     hint: "ask anything · /help for commands",
     notice: info.ok
       ? `${dim("gateway ready")}${pendingN ? p(` · ${pendingN} approval(s) pending`, C.yellow) : ""}`
       : p(`gateway unreachable at ${base} — start it with: xclaw gateway`, C.red),
-    footer: dim("Enter send · /help · Ctrl+C quit"),
+    mcpBanner: mcpNeedAuth
+      ? `${mcpNeedAuth} MCP server${mcpNeedAuth === 1 ? "" : "s"} need authentication · /mcp`
+      : mcpOk
+        ? `${mcpOk} MCP server${mcpOk === 1 ? "" : "s"} connected`
+        : "",
+    footer: "",
   };
 
-  const history = [];
+  // input history outlives the process; the agent session only when asked
+  const saved = await loadTuiState(cfg);
+  const wantContinue = opts.args?.includes("--continue") || opts.args?.includes("-c");
+  const history = Array.isArray(saved.history) ? saved.history.filter((h) => typeof h === "string") : [];
   let histIdx = -1;
   let draft = "";
   let inFlight = null;
@@ -699,10 +1153,39 @@ async function chatLoop(cfg, opts) {
   let tick = 0;
   let lastFrame = [];
   let armedQuit = false;
+  const freshId = () => `tui_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const resumed = wantContinue && typeof saved.sessionId === "string" && saved.sessionId;
+  let sessionId = resumed || freshId();
+  if (resumed) state.notice = `${dim("resumed session")} ${acc(sessionId)}`;
+  const keyCarry = { paste: null };
+  // pendings arrive one at a time in practice, but never drop a second one
+  const approvalQueue = [];
+  const trustedTools = new Set();
+
+  const setFooter = (bits = []) => {
+    state.footer = dim(
+      [
+        overlayLabel(state.overlay) + " (shift+tab)",
+        "Enter send",
+        "/help",
+        trustedTools.size ? `${trustedTools.size} tool(s) trusted` : null,
+        ...bits.filter(Boolean),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    );
+  };
+  setFooter();
 
   const cols = () => process.stdout.columns || 80;
   const rowsN = () => process.stdout.rows || 24;
-  const push = (l) => state.transcript.push(l);
+  // an all-day session would otherwise keep every line forever, and each
+  // keystroke copies this array to render
+  const MAX_TRANSCRIPT = 5000;
+  const push = (l) => {
+    state.transcript.push(l);
+    trimLines(state.transcript, MAX_TRANSCRIPT);
+  };
   const pushWrapped = (text, indent = "  ") => {
     for (const l of wrapLine(text, cols() - 4, indent)) push(l);
   };
@@ -711,8 +1194,16 @@ async function chatLoop(cfg, opts) {
    * Repaint only the rows that changed. A full ESC[2J clear on every keystroke
    * made the whole screen flash while typing.
    */
+  let layout = { budget: 10, maxScroll: 0, bodyLength: 0 };
   const draw = () => {
-    const frame = renderChatScreen(state, { colour, columns: cols(), rows: rowsN() });
+    const frame = renderChatScreen(state, {
+      colour,
+      columns: cols(),
+      rows: rowsN(),
+      onLayout: (l) => {
+        layout = l;
+      },
+    });
     let out = `${ESC}[H`;
     for (let i = 0; i < frame.length; i += 1) {
       if (frame[i] === lastFrame[i]) continue;
@@ -746,12 +1237,45 @@ async function chatLoop(cfg, opts) {
     if (spinTimer) clearInterval(spinTimer);
     spinTimer = null;
     state.busy = false;
+    state.live = "";
+  };
+
+  /** POST one approval decision. The prompt has already left the screen. */
+  const sendDecision = async (ask, approve, note) => {
+    const res = await postJson(`${base}/approvals/${approve ? "approve" : "deny"}`, token, {
+      id: ask.id,
+      ...(approve ? {} : { reason: note || "Denied from the TUI" }),
+    });
+    if (res.ok) {
+      push(
+        approve
+          ? p(`  ${ELBOW} approved ${ask.name || "tool"}`, C.green)
+          : p(`  ${ELBOW} denied ${ask.name || "tool"}`, C.yellow)
+      );
+    } else {
+      const why = res.body?.error || res.body?.code || `HTTP ${res.status}`;
+      push(p(`  ${ELBOW} approval failed: ${why}`, C.red));
+    }
+  };
+
+  const answerCurrent = async (approve, note) => {
+    const ask = state.approval;
+    if (!ask) return;
+    state.approval = approvalQueue.shift() || null;
+    draw();
+    await sendDecision(ask, approve, note);
+    draw();
+  };
+
+  const persist = () => {
+    void saveTuiState(cfg, { sessionId, cwd: process.cwd(), history: history.slice(-200) });
   };
 
   const submit = async (text) => {
     history.push(text);
     histIdx = -1;
     state.scroll = 0;
+    persist();
     push("");
     pushWrapped(`${acc(">")} ${text}`);
     push("");
@@ -761,14 +1285,29 @@ async function chatLoop(cfg, opts) {
     const controller = new AbortController();
     inFlight = controller;
     let tools = 0;
+    let streamed = "";
     try {
+      const flags = overlayFlags(state.overlay);
       const out = await streamAgent(
         base,
         token,
         text,
         (ev) => {
           const kind = ev.type || ev.event;
-          if (kind === "tool" && ev.phase === "start") {
+          if (kind === "model" && ev.phase === "delta") {
+            streamed = String(ev.accumulated || streamed + (ev.content || ""));
+            // deltas are raw: hide the grounding scaffold as it arrives so it
+            // never types itself out in front of the user
+            state.live = stripLiveScaffold(streamed);
+            draw();
+          } else if (kind === "tool" && ev.phase === "start") {
+            if (state.live) {
+              const md = renderMarkdownLines(state.live, { colour, width: cols() - 6 });
+              push(`${acc(MARK)} ${md[0] ?? ""}`);
+              for (const l of md.slice(1)) push(l ? `  ${l}` : "");
+              state.live = "";
+              streamed = "";
+            }
             tools += 1;
             state.busyLabel = `running ${ev.name || "tool"}`;
             push(`${acc(MARK)} ${formatToolCall(ev.name, ev.args)}`);
@@ -787,14 +1326,35 @@ async function chatLoop(cfg, opts) {
           } else if (kind === "tool" && ev.phase === "blocked") {
             push(p(`  ${ELBOW} blocked: ${ev.reason || "policy"}`, C.yellow));
             draw();
-          } else if (kind === "security" && ev.phase === "pending") {
-            push(p(`  ${ELBOW} approval required — approve in Telegram or the Control UI`, C.yellow));
+          } else if (kind === "security" && isNewApprovalAsk(ev)) {
+            // the loop re-emits this event as a state update once authorize
+            // times out; isNewApprovalAsk keeps the restate from prompting twice
+            const ask = {
+              id: ev.pendingId || ev.id || null,
+              name: ev.name || ev.tool || "tool",
+              args: ev.args || {},
+              riskTier: ev.riskTier || null,
+            };
+            if (!ask.id) {
+              push(p(`  ${ELBOW} approval required — approve in the Control UI`, C.yellow));
+            } else if (trustedTools.has(ask.name) && ask.riskTier !== "critical") {
+              push(dim(`  ${ELBOW} auto-approved ${ask.name} — trusted this session`));
+              void sendDecision(ask, true, "");
+            } else if (state.approval) {
+              approvalQueue.push(ask);
+            } else {
+              state.approval = ask;
+            }
             draw();
           }
         },
-        controller.signal
+        controller.signal,
+        { sessionId, ...flags }
       );
-      const answer = out.result?.text || out.result?.finalText || "";
+      if (out.result?.sessionId) sessionId = out.result.sessionId;
+      // result.text is stripped server-side; finalText is raw, so clean either
+      const answer = stripLiveScaffold(out.result?.text || out.result?.finalText || "");
+      state.live = "";
       push("");
       if (answer) {
         const md = renderMarkdownLines(answer, { colour, width: cols() - 6 });
@@ -806,30 +1366,54 @@ async function chatLoop(cfg, opts) {
       }
       const usd = out.result?.usage?.costUsd;
       const turns = out.result?.turns;
-      state.footer = dim(
-        [
-          "Enter send · /help · Ctrl+C quit",
-          turns ? `${turns} turn(s)` : null,
-          tools ? `${tools} tool call(s)` : null,
-          usd != null ? `$${Number(usd).toFixed(4)}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      );
+      setFooter([
+        turns ? `${turns} turn(s)` : null,
+        tools ? `${tools} tool call(s)` : null,
+        usd != null ? `$${Number(usd).toFixed(4)}` : null,
+      ]);
     } catch (e) {
+      state.live = "";
       if (controller.signal.aborted) push(dim(`  ${ELBOW} cancelled`));
       else push(p(`  ${ELBOW} ${String(e?.message || e)}`, C.red));
     } finally {
       inFlight = null;
+      // the run is over: any prompt still on screen can no longer be answered
+      state.approval = null;
+      approvalQueue.length = 0;
       stopSpinner();
+      persist();
       draw();
     }
   };
 
   const slash = async (cmd) => {
     if (cmd === "/quit" || cmd === "/exit") {
-      leaveRaw(true);
+      persist();
+      leaveRaw();
       process.exit(0);
+    }
+    if (cmd === "/cost") {
+      const st = await getJson(`${base}/tokens/cost`, token);
+      const c = st.body || {};
+      push("");
+      push(acc("cost"));
+      if (!st.ok) {
+        push(dim(`  unavailable (HTTP ${st.status || 0})`));
+        return;
+      }
+      const today = c.today || c.daily || c;
+      const spend = today.usd ?? today.spendUsd ?? today.totalUsd;
+      push(`  ${dim("today")}      ${spend != null ? `$${Number(spend).toFixed(4)}` : "—"}`);
+      if (today.limitUsd != null) push(`  ${dim("daily cap")}  $${Number(today.limitUsd).toFixed(2)}`);
+      if (c.band) push(`  ${dim("band")}       ${c.band}`);
+      return;
+    }
+    if (cmd === "/session") {
+      push("");
+      push(`  ${acc("session")}  ${sessionId}`);
+      push(dim(`  ${resumed ? "resumed from" : "stored at"} ${tuiStatePath(cfg)}`));
+      push(dim("  start with --continue to resume this session next time"));
+      return;
     }
     if (cmd === "/clear") {
       state.transcript = [];
@@ -848,17 +1432,72 @@ async function chatLoop(cfg, opts) {
       for (const l of renderTuiFrame(snap, { colour }).split("\n")) push(l);
       return;
     }
+    if (cmd === "/mcp") {
+      const st = await getJson(`${base}/mcp/status`, token);
+      const servers = st.body?.servers || [];
+      push("");
+      push(acc("MCP servers"));
+      if (!servers.length) {
+        push(dim("  none configured"));
+        return;
+      }
+      for (const s of servers) {
+        const mark = s.connected ? p(DOT_ON, C.green) : p(DOT_OFF, C.yellow);
+        const extra = s.connected
+          ? dim(`${s.toolCount ?? 0} tools`)
+          : p(s.error || "needs authentication", C.yellow);
+        push(`  ${mark} ${s.name}  ${extra}`);
+      }
+      return;
+    }
+    if (cmd === "/model") {
+      push("");
+      push(`  ${acc("model")}  ${state.model || "—"}`);
+      push(`  ${dim("profile")}  ${state.profile || "—"}`);
+      return;
+    }
+    if (cmd === "/approvals" || cmd === "/permissions") {
+      push("");
+      push(`  ${acc("overlay")}  ${overlayLabel(state.overlay)}  (session only)`);
+      push(dim("  Shift+Tab cycles bypass → auto → ask. Never loosens the machine flag."));
+      return;
+    }
     push(dim(`  unknown command ${cmd} — try /help`));
   };
 
   const pageBy = (n) => {
-    const budget = Math.max(1, rowsN() - 14);
-    state.scroll = Math.max(0, state.scroll + n * budget);
+    const step = Math.max(1, layout.budget - 1);
+    state.scroll = Math.max(0, Math.min(state.scroll + n * step, layout.maxScroll));
+    draw();
+  };
+
+  const inputW = () => Math.max(8, cols() - 4);
+  const insert = (text) => {
+    state.input = state.input.slice(0, state.cursor) + text + state.input.slice(state.cursor);
+    state.cursor += text.length;
+  };
+  /** Newest history index at or below `start` matching `q`; -1 for none. */
+  const searchFrom = (start, q) => {
+    const needle = q.toLowerCase();
+    for (let i = Math.min(start, history.length - 1); i >= 0; i -= 1) {
+      if (!needle || history[i].toLowerCase().includes(needle)) return i;
+    }
+    return -1;
+  };
+  const endSearch = (accept) => {
+    const s = state.search;
+    state.search = null;
+    if (accept && s?.match) {
+      state.input = s.match;
+      state.cursor = state.input.length;
+    }
+    setFooter();
     draw();
   };
 
   const onKey = async (k) => {
     if (k.ch === KEY_CTRL_C) {
+      if (state.search) return endSearch(false);
       if (inFlight) {
         inFlight.abort();
         return;
@@ -876,10 +1515,53 @@ async function chatLoop(cfg, opts) {
         draw();
         return;
       }
-      leaveRaw(true);
+      persist();
+      leaveRaw();
       process.exit(0);
     }
     armedQuit = false;
+
+    // an approval owns the keyboard until it is answered — anything else typed
+    // here would land in the input box behind a prompt the user cannot see
+    if (state.approval) {
+      const c = (k.ch || "").toLowerCase();
+      if (c === "y") return answerCurrent(true, "");
+      if (c === "n") return answerCurrent(false, "Denied from the TUI");
+      if (c === "a" && state.approval.riskTier !== "critical") {
+        trustedTools.add(state.approval.name);
+        setFooter();
+        return answerCurrent(true, "");
+      }
+      if (k.name === "escape") {
+        if (inFlight) inFlight.abort();
+        return;
+      }
+      return;
+    }
+
+    if (state.search) {
+      if (k.name === "escape") return endSearch(false);
+      if (k.ch === "\r" || k.ch === "\n") return endSearch(true);
+      if (k.ch === KEY_CTRL_R) {
+        const next = searchFrom(state.search.idx - 1, state.search.query);
+        if (next >= 0) {
+          state.search.idx = next;
+          state.search.match = history[next];
+        }
+        return draw();
+      }
+      if (k.ch === KEY_BACKSPACE || k.ch === "\b") {
+        state.search.query = state.search.query.slice(0, -1);
+      } else if (k.ch && k.ch >= " ") {
+        state.search.query += k.ch;
+      } else {
+        return;
+      }
+      const hit = searchFrom(history.length - 1, state.search.query);
+      state.search.idx = hit;
+      state.search.match = hit >= 0 ? history[hit] : "";
+      return draw();
+    }
 
     if (k.name === "escape") {
       if (inFlight) inFlight.abort();
@@ -887,14 +1569,73 @@ async function chatLoop(cfg, opts) {
     }
     if (k.name === "pageup") return pageBy(1);
     if (k.name === "pagedown") return pageBy(-1);
+    if (k.name === "backtab") {
+      state.overlay = cycleOverlay(state.overlay, { machineBypass });
+      setFooter();
+      return draw();
+    }
+    if (k.paste != null) {
+      if (state.busy) return;
+      // newlines are kept: the input is a real multi-line buffer now, so a
+      // pasted block no longer has to be flattened to survive the frame
+      insert(String(k.paste).replace(/\r\n/g, "\n").replace(/\r/g, "\n"));
+      return draw();
+    }
+    if (k.ch === KEY_CTRL_L) return redrawAll();
     if (state.busy) return;
 
+    if (k.name === "altenter") {
+      insert("\n");
+      return draw();
+    }
+    if (k.ch === KEY_CTRL_R) {
+      // opens even with no history: a prompt that silently does nothing on a
+      // fresh install reads as a broken key, not as an empty history
+      const hit = searchFrom(history.length - 1, "");
+      state.search = { query: "", idx: hit, match: hit >= 0 ? history[hit] : "" };
+      state.footer = dim("Ctrl+R again for older · Enter accepts · Esc cancels");
+      return draw();
+    }
+    if (k.ch === KEY_CTRL_A) {
+      state.cursor = 0;
+      return draw();
+    }
+    if (k.ch === KEY_CTRL_E) {
+      state.cursor = state.input.length;
+      return draw();
+    }
+    if (k.ch === KEY_CTRL_K) {
+      state.input = state.input.slice(0, state.cursor);
+      return draw();
+    }
+    if (k.ch === KEY_CTRL_U) {
+      state.input = state.input.slice(state.cursor);
+      state.cursor = 0;
+      return draw();
+    }
+    if (k.ch === KEY_CTRL_W) {
+      const head = state.input.slice(0, state.cursor).replace(/\s+$/, "").replace(/\S+$/, "");
+      state.input = head + state.input.slice(state.cursor);
+      state.cursor = head.length;
+      return draw();
+    }
+    if (k.ch === KEY_CTRL_D) {
+      // shell convention: Ctrl+D on an empty prompt ends the session
+      if (!state.input) {
+        persist();
+        leaveRaw();
+        process.exit(0);
+      }
+      state.input = state.input.slice(0, state.cursor) + state.input.slice(nextCharIndex(state.input, state.cursor));
+      return draw();
+    }
+
     if (k.name === "left") {
-      state.cursor = Math.max(0, state.cursor - 1);
+      state.cursor = prevCharIndex(state.input, state.cursor);
       return draw();
     }
     if (k.name === "right") {
-      state.cursor = Math.min(state.input.length, state.cursor + 1);
+      state.cursor = nextCharIndex(state.input, state.cursor);
       return draw();
     }
     if (k.name === "home") {
@@ -906,10 +1647,17 @@ async function chatLoop(cfg, opts) {
       return draw();
     }
     if (k.name === "delete") {
-      state.input = state.input.slice(0, state.cursor) + state.input.slice(state.cursor + 1);
+      state.input = state.input.slice(0, state.cursor) + state.input.slice(nextCharIndex(state.input, state.cursor));
       return draw();
     }
     if (k.name === "up") {
+      // inside a multi-line buffer the arrows move between rows; only at the
+      // top row do they fall through to history
+      const up = moveCaretByRow(state.input, state.cursor, inputW(), -1);
+      if (up != null) {
+        state.cursor = up;
+        return draw();
+      }
       if (!history.length) return;
       if (histIdx === -1) draft = state.input;
       histIdx = histIdx === -1 ? history.length - 1 : Math.max(0, histIdx - 1);
@@ -918,6 +1666,11 @@ async function chatLoop(cfg, opts) {
       return draw();
     }
     if (k.name === "down") {
+      const down = moveCaretByRow(state.input, state.cursor, inputW(), 1);
+      if (down != null) {
+        state.cursor = down;
+        return draw();
+      }
       if (histIdx === -1) return;
       histIdx += 1;
       if (histIdx >= history.length) {
@@ -933,12 +1686,23 @@ async function chatLoop(cfg, opts) {
     const ch = k.ch;
     if (ch === undefined) return;
     if (ch === "\r" || ch === "\n") {
+      // trailing backslash continues onto the next line, as in a shell
+      if (state.cursor === state.input.length && state.input.endsWith("\\")) {
+        state.input = `${state.input.slice(0, -1)}\n`;
+        state.cursor = state.input.length;
+        return draw();
+      }
       const text = state.input.trim();
       state.input = "";
       state.cursor = 0;
       state.scroll = 0;
       if (!text) return draw();
       if (text.startsWith("/")) {
+        // slash commands belong in history too, and persisting here is what
+        // makes the session id survive a kill that never reaches an exit hook
+        if (history.at(-1) !== text) history.push(text);
+        histIdx = -1;
+        persist();
         await slash(text);
         return draw();
       }
@@ -946,28 +1710,29 @@ async function chatLoop(cfg, opts) {
     }
     if (ch === KEY_BACKSPACE || ch === "\b") {
       if (state.cursor > 0) {
-        state.input = state.input.slice(0, state.cursor - 1) + state.input.slice(state.cursor);
-        state.cursor -= 1;
+        const back = prevCharIndex(state.input, state.cursor);
+        state.input = state.input.slice(0, back) + state.input.slice(state.cursor);
+        state.cursor = back;
       }
       return draw();
     }
     if (ch < " ") return;
-    state.input = state.input.slice(0, state.cursor) + ch + state.input.slice(state.cursor);
-    state.cursor += 1;
+    insert(ch);
     draw();
   };
 
   enterRaw();
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", async (chunk) => {
-    for (const k of decodeKeys(String(chunk))) await onKey(k);
+    for (const k of decodeKeys(String(chunk), keyCarry)) await onKey(k);
   });
   process.on("SIGINT", () => {
     if (inFlight) {
       inFlight.abort();
       return;
     }
-    leaveRaw(true);
+    persist();
+    leaveRaw();
     process.exit(0);
   });
   process.stdout.on("resize", redrawAll);
@@ -988,7 +1753,19 @@ export default {
   collectTuiSnapshot,
   renderTuiFrame,
   renderChatScreen,
+  renderWelcomeBox,
+  overlayFlags,
+  cycleOverlay,
+  overlayLabel,
   formatToolCall,
   wrapLine,
   tuiHelp,
+  chunkCells,
+  indexAtCell,
+  prevCharIndex,
+  nextCharIndex,
+  layoutInput,
+  moveCaretByRow,
+  trimLines,
+  renderApprovalPrompt,
 };

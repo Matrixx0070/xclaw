@@ -55,6 +55,28 @@ More install detail: [INSTALL.md](./INSTALL.md)
 
 ---
 
+## Terminal chat
+
+```bash
+node bin/xclaw.mjs gateway &        # the TUI talks to the gateway
+node bin/xclaw.mjs tui              # interactive chat in your terminal
+node bin/xclaw.mjs tui --continue   # resume the last session (alias -c)
+node bin/xclaw.mjs tui --status     # the operator dashboard instead
+```
+
+Replies stream token by token. **Shift+Tab** cycles the permission overlay
+(`bypass → auto → ask`) for the current session only — it can tighten what the
+config allows, never loosen it. When a tool needs approval you answer in place:
+`y` approve, `n` deny, `a` always allow that tool for this session (`a` is not
+offered at the `critical` tier, matching `/trust`). `Alt+Enter` inserts a
+newline, `Ctrl+R` searches input history, `PgUp`/`PgDn` scroll, and `Ctrl+D` on
+an empty prompt exits.
+
+`/help` lists the slash commands (`/status` `/mcp` `/model` `/approvals` `/cost`
+`/session` `/clear`). Full flag list: `xclaw tui --help`.
+
+---
+
 ## Secrets
 
 Full checklist: [docs/SECRETS.md](./docs/SECRETS.md)
@@ -238,6 +260,7 @@ Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
 |------|------------|
 | **Agent** | Multi-provider loop, tools, loop guards, role routing, transcripts |
 | **Computer** | Bash / files / browser (native); optional full CDP bundle |
+| **Terminal** | `xclaw tui` — streaming chat, inline approvals, resumable sessions |
 | **Security** | Approvals, plan binding + spawn enforce, egress, optional bwrap, kill-switch |
 | **Swarm** | DAG, receipts, merge policy (prod should not silent-auto-merge) |
 | **Ops** | `/health`, `/ready`, doctor, CI unit / media / sandbox |
@@ -250,6 +273,7 @@ Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
 node bin/xclaw.mjs doctor
 node bin/xclaw.mjs status
 node bin/xclaw.mjs agent "your goal"
+node bin/xclaw.mjs tui
 node bin/xclaw.mjs gateway
 node bin/xclaw.mjs stop-all
 node bin/xclaw.mjs automations list

@@ -46,6 +46,30 @@ describe("security.bypassApprovals", () => {
     }
   });
 
+  it("ignoreBypass overlay drops bypass for this call only", async () => {
+    const gate = createApprovalGate({
+      security: { bypassApprovals: true, bindSystemRunPlan: false },
+    });
+    const tightened = await gate.authorize("xclaw_bash", CRITICAL, {
+      timeoutMs: 200,
+      ignoreBypass: true,
+    });
+    assert.equal(tightened.ok, false, "auto overlay must still ask on critical");
+    const honour = await gate.authorize("xclaw_bash", CRITICAL, { timeoutMs: 200 });
+    assert.equal(honour.ok, true, "the next call without the overlay is bypass again");
+  });
+
+  it("forceHuman overlay asks even when bypass is on", async () => {
+    const gate = createApprovalGate({
+      security: { bypassApprovals: true, bindSystemRunPlan: false },
+    });
+    const r = await gate.authorize("xclaw_bash", CRITICAL, {
+      timeoutMs: 200,
+      forceHuman: true,
+    });
+    assert.equal(r.ok, false);
+  });
+
   it("a machine running this way says so at startup", () => {
     const out = validateConfig({ security: { bypassApprovals: true } });
     assert.ok(
