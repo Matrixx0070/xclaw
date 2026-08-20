@@ -1084,6 +1084,9 @@ async function loadProfile() {
     $("profileKv").innerHTML = kvHtml([
       ["Active", p.active || "—"],
       ["autoApprove", fmtBool(p.autoApprove), p.autoApprove ? "warn" : "good"],
+      ...(p.bypassApprovals
+        ? [["approvals", "BYPASSED — nothing asks", "bad"]]
+        : []),
       ["maxTurns", fmtNum(p.maxTurns)],
       ["eval cron", p.evalCron?.enabled ? `every ${fmtDuration(p.evalCron.everyMs)}` : "off"],
     ]);

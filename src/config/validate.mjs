@@ -181,6 +181,12 @@ export function validateConfig(cfg) {
   }
 
   // Security
+  if (cfg.security?.bypassApprovals === true) {
+    // A machine that never asks should say so every time it starts.
+    warnings.push(
+      "security.bypassApprovals=true — FULL AUTONOMY: no tool call will ever ask for approval, at any risk tier"
+    );
+  }
   if (cfg.security?.autoApprove === true && Array.isArray(cfg.security?.requireApproval) && cfg.security.requireApproval.length) {
     warnings.push(
       "security.autoApprove=true with requireApproval list — approvals may be auto-granted"

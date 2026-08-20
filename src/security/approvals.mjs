@@ -211,6 +211,12 @@ export function createApprovalGate(cfg = {}) {
   function needsApproval(name, risk = null) {
     const n = normalizeToolName(name);
     const critical = risk?.tier === "critical";
+    // Full autonomy, the equivalent of Claude Code's bypassPermissions: nothing
+    // is ever asked, at any risk tier. Off by default and deliberately its own
+    // flag rather than a tier setting, because it is not a bound — it removes
+    // the gate. The gateway logs it at boot and doctor reports it, so a machine
+    // running this way says so out loud.
+    if (security.bypassApprovals === true) return false;
     if (autoApprove) {
       // Blanket autoApprove no longer covers critical actions — the one
       // deliberate behavior change of A2 (criticalOverride:"legacy" reverts).

@@ -60,6 +60,7 @@ export async function tryHandleOpsRoute({
     json(res, 200, {
       active: cfg.profile || "dev",
       autoApprove: cfg.security?.autoApprove,
+      bypassApprovals: cfg.security?.bypassApprovals === true,
       maxTurns: cfg.agent?.maxTurns,
       evalCron: cfg.eval?.cron,
       profiles: listProfiles(),

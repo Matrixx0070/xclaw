@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 3.144.0 — full autonomy mode (2026-08-20)
+
+`security.bypassApprovals: true` makes XClaw work the way Claude Code does under
+`bypassPermissions`: no tool call ever asks, at any risk tier. It just does the
+work.
+
+- **Off by default.** A public install keeps the existing tiered approvals, and
+  `bypassApprovals` only counts when it is literally `true` — not `"true"`, not
+  `1`.
+- **Its own flag, not a tier.** `autoApproveMaxTier: "critical"` deliberately
+  still asks on critical actions, so raising a bound could never express this.
+  Removing the gate is a different decision and now says so by name.
+- **A machine running this way announces it.** The gateway logs
+  "FULL AUTONOMY: no tool call will ever ask for approval, at any risk tier" at
+  every boot, `/profile` reports it, and the Control UI Overview shows
+  `approvals — BYPASSED — nothing asks` in red.
+
+Verified through WebChat: a `file_write` that previously pended for 120s and
+then timed out now runs in 30ms with zero approval cards.
+
+Worth stating plainly: this removes a real safety control. The gate it removes
+was already reachable around — `xclaw_bash` can write any file without a
+file-write approval — so on this machine it was closer to friction than
+protection, but on a machine where that hole is closed, this flag is the whole
+difference.
+
 ## 3.143.2 — you can read what you are approving (2026-08-20)
 
 Watching a long autonomous run in WebChat showed the approval card as it really
