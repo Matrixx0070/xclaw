@@ -57,15 +57,24 @@ describe("Strategy C computer policy", () => {
   });
 
   it("build:computer stub exits 0 and writes stamp", () => {
-    const r = spawnSync(
-      process.execPath,
-      [path.join(root, "scripts/build-computer-bundle.mjs")],
-      { encoding: "utf8", cwd: root }
-    );
-    assert.equal(r.status, 0, r.stderr || r.stdout);
-    const stamp = JSON.parse(
-      fs.readFileSync(path.join(root, "src/computer/build-stamp.json"), "utf8")
-    );
+    // The build script writes a fresh `builtAt` into a tracked file, so running
+    // the suite used to leave the working tree dirty. Snapshot and restore it:
+    // the assertion is about what the script produced, not about the timestamp
+    // surviving the test.
+    const stampPath = path.join(root, "src/computer/build-stamp.json");
+    const before = fs.existsSync(stampPath) ? fs.readFileSync(stampPath) : null;
+    let stamp;
+    try {
+      const r = spawnSync(
+        process.execPath,
+        [path.join(root, "scripts/build-computer-bundle.mjs")],
+        { encoding: "utf8", cwd: root }
+      );
+      assert.equal(r.status, 0, r.stderr || r.stdout);
+      stamp = JSON.parse(fs.readFileSync(stampPath, "utf8"));
+    } finally {
+      if (before) fs.writeFileSync(stampPath, before);
+    }
     assert.equal(stamp.strategy, "C");
     assert.ok(["C1","C2","C3"].includes(stamp.phase));
     assert.equal(stamp.fullRebuild, false);
