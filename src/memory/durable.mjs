@@ -35,6 +35,12 @@ export async function appendMemory(cfg, workspacePath, event) {
   await fs.mkdir(p.dir, { recursive: true });
   const line = redactEvent({
     at: new Date().toISOString(),
+    // S7: every event gets a durable id — the addressable unit for
+    // provenance links (sourceIds) and for forgetMemory. Caller-supplied
+    // ids/sourceIds pass through untouched.
+    id:
+      event.id ||
+      `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     ...event,
   });
   await fs.appendFile(p.jsonl, JSON.stringify(line) + "\n");
@@ -132,4 +138,52 @@ export async function rememberJob(cfg, job, extra = {}) {
     proposal: extra.proposal || job.proposal || null,
     jobId: job.id,
   });
+}
+
+/**
+ * S7 — forget: remove matching events from the workspace memory log and
+ * rebuild memory.md. Memory that cannot forget only accumulates; wrong or
+ * stale records must be deletable (audit 2026-08-23: no forget/delete API).
+ *
+ * Matchers (OR of provided fields is NOT the semantics — ALL provided
+ * fields must match, so callers can scope precisely):
+ *   { id, jobId, type, contains }  — contains matches summary/goal text.
+ * Returns { removed, kept }.
+ */
+export async function forgetMemory(cfg, workspacePath, match = {}) {
+  const p = memoryPaths(cfg, workspacePath);
+  let raw = "";
+  try {
+    raw = await fs.readFile(p.jsonl, "utf8");
+  } catch {
+    return { removed: 0, kept: 0 };
+  }
+  const hasAny =
+    match.id || match.jobId || match.type || match.contains;
+  if (!hasAny) return { removed: 0, kept: 0, reason: "no_matcher" };
+  const kept = [];
+  let removed = 0;
+  for (const line of raw.split("\n").filter(Boolean)) {
+    let ev = null;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      kept.push(line); // never drop unparseable lines silently
+      continue;
+    }
+    const text = `${ev.summary || ""} ${ev.goal || ""}`;
+    const hit =
+      (!match.id || String(ev.id) === String(match.id)) &&
+      (!match.jobId || String(ev.jobId) === String(match.jobId)) &&
+      (!match.type || ev.type === match.type) &&
+      (!match.contains || text.includes(match.contains));
+    if (hit) {
+      removed += 1;
+    } else {
+      kept.push(JSON.stringify(ev));
+    }
+  }
+  await fs.writeFile(p.jsonl, kept.length ? kept.join("\n") + "\n" : "");
+  await rebuildMemoryMd(cfg, workspacePath);
+  return { removed, kept: kept.length };
 }

@@ -436,6 +436,7 @@ export async function runJob(opts) {
     try {
       const prop = await proposeSkillFromSuccess(cfg, {
         caseId: job.id || job.caseId,
+        verdict: job.verdict,
         goal: job.goal || opts.goal,
         text: job.text,
         toolTrace: job.toolTrace || job.tools || [],

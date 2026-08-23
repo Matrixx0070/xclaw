@@ -1,5 +1,37 @@
 # Changelog
 
+## 3.150.0 — S7+S8: memory that changes behavior, escalation instead of stalling (2026-08-23)
+
+Seventh/eighth slices of the Master Evolution Directive.
+
+### Memory (S7) — addressable, forgettable, and actually read
+
+- Every memory event now carries a durable `id`; caller `sourceIds` pass
+  through — the addressable foundation the (reachable but starved)
+  recall-provenance expander needs.
+- New `forgetMemory(cfg, workspace, {id|jobId|type|contains})`: removes
+  matching events and rebuilds MEMORY.md. Refuses to run with no matcher.
+  Memory that cannot forget only accumulates wrong records.
+- Owner preferences were WRITE-ONLY — `extractPreferenceHints` recorded them
+  after every job and nothing ever read them back. They now join the loop's
+  context (lowest priority, `memory.preferences:false` to opt out).
+
+### Self-evolution (S8) — promotion requires evidence
+
+- Auto-promote previously force-installed the first N proposals regardless
+  of origin. It now installs ONLY proposals born from a VERIFIED success
+  (`source: success` + `sourceVerdict: verified`, stamped by the S2 verdict
+  pipeline); failure drafts and unverified successes stay in the review
+  queue with a `promote_skipped: unverified_evidence` action.
+
+### Routing (S8) — escalate-on-stuck
+
+- The `"strong"` role existed in `ROLES` but no code path ever selected it.
+  A loop-guard stagnation warning now routes the next N turns
+  (`agent.escalateTurns`, default 3) to the strong role when
+  `agent.roles.strong` is mapped — escalate the model instead of warning the
+  same stuck one. Kill-switch: `agent.escalateOnStuck:false`.
+
 ## 3.149.1 — S6a: prod break-glass covers bypassApprovals (2026-08-23)
 
 - `enforceProdHardening` forced `autoApprove` off in prod but let

@@ -20,6 +20,41 @@ describe("self-evolution / hands-free", () => {
     assert.equal(o.harness.groundHard, true);
   });
 
+  it("auto-promote installs ONLY verified-evidence proposals (S8)", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-promo-"));
+    const cfg = {
+      profile: "lab",
+      paths: { configDir: tmp },
+      autonomy: { level: "lab", evolve: { autoPromote: true } },
+      skills: { dir: path.join(tmp, "skills") },
+    };
+    // Seed the review queue: one failure draft, one unverified success, one
+    // verified success. Only the last may install.
+    const pdir = path.join(tmp, "skill-proposals");
+    await fs.mkdir(pdir, { recursive: true });
+    const mk = (name, fm) =>
+      fs.writeFile(
+        path.join(pdir, name),
+        `---\nname: ${name.replace(".md", "")}\nenabled: false\n${fm}\n---\n# draft\n`
+      );
+    await mk("a-fail.md", "source: failure");
+    await mk("b-unverified.md", "source: success\nsourceVerdict: unverified");
+    await mk("c-verified.md", "source: success\nsourceVerdict: verified");
+    const out = await runEvolutionTick(cfg, { autoPromote: true, ownerApproved: true });
+    const promoted = (out.actions || []).filter((a) => a.type === "promote");
+    const skipped = (out.actions || []).filter((a) => a.type === "promote_skipped");
+    assert.equal(skipped.length, 2, JSON.stringify(out.actions));
+    assert.ok(
+      skipped.every((a) => a.reason === "unverified_evidence"),
+      "skips labeled with the evidence reason"
+    );
+    assert.ok(
+      promoted.every((a) => String(a.path).includes("c-verified")),
+      "only the verified proposal may install: " + JSON.stringify(promoted)
+    );
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
   it("status returns structure", async () => {
     const st = await handsFreeStatus({
       profile: "lab",

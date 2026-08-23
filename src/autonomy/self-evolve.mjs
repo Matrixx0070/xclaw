@@ -251,9 +251,31 @@ export async function runEvolutionTick(cfg, opts = {}) {
     } catch {
       proposals = [];
     }
-    const toInstall = (proposals || [])
-      .filter((p) => p.path || p.id)
-      .slice(0, opts.maxPromote ?? evolve.maxPromote ?? 3);
+    // S8 (Master Evolution Directive): promotion requires EVIDENCE. Only
+    // proposals born from a VERIFIED success may auto-install; failure
+    // drafts and unverified successes stay in the review queue (previously
+    // the first N proposals were force-installed regardless of origin).
+    const { readFile } = await import("node:fs/promises");
+    const withEvidence = [];
+    for (const p of proposals || []) {
+      if (!(p.path || p.id)) continue;
+      let fm = "";
+      try {
+        fm = String(await readFile(p.path, "utf8")).slice(0, 600);
+      } catch {
+        /* unreadable → no evidence */
+      }
+      if (/^source:\s*success$/m.test(fm) && /^sourceVerdict:\s*verified$/m.test(fm)) {
+        withEvidence.push(p);
+      } else {
+        actions.push({
+          type: "promote_skipped",
+          path: p.path || p.id,
+          reason: "unverified_evidence",
+        });
+      }
+    }
+    const toInstall = withEvidence.slice(0, opts.maxPromote ?? evolve.maxPromote ?? 3);
     for (const prop of toInstall) {
       const propPath = prop.path || prop;
       if (opts.dryRun) {

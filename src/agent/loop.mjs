@@ -421,6 +421,30 @@ export async function runAgentLoop(options) {
         } catch {
           /* */
         }
+        try {
+          // S7: owner preferences were WRITE-ONLY — extractPreferenceHints
+          // recorded them after every job and nothing ever read them back.
+          // Memory that never changes behavior is not memory. Lowest
+          // priority (before durable), opt out via memory.preferences:false.
+          if (cfg.memory?.preferences !== false) {
+            const { loadPreferences } = await import("../memory/preferences.mjs");
+            const prefs = await loadPreferences(cfg);
+            if (prefs && prefs.trim() && prefs.trim().split("\n").length > 1) {
+              memoryFiles = [
+                {
+                  path: "preferences.md",
+                  name: "preferences.md",
+                  body: prefs.trim(),
+                  content: prefs.trim(),
+                  source: "preferences",
+                },
+                ...memoryFiles,
+              ];
+            }
+          }
+        } catch {
+          /* preferences are additive — never block the run */
+        }
       }
       onEvent({
         type: "context",
@@ -854,6 +878,10 @@ export async function runAgentLoop(options) {
   const goal = inferGoal(userMessage);
   let lastPendingApproval = null;
   let loopGuardStop = false;
+  // S8 escalate-on-stuck: a stagnation warning routes the next few turns to
+  // the "strong" role (when the role router maps one) instead of warning the
+  // same stuck model. Decremented per escalated turn.
+  let escalateTurnsLeft = 0;
   let toolHaltStop = false; // batch stopped by policy (approval/guard/quota) — run must end, not re-turn
   let aborted = false;
   let finalText = "";
@@ -1064,11 +1092,14 @@ export async function runAgentLoop(options) {
           }
         }
       }
+      const escalating = escalateTurnsLeft > 0;
+      if (escalating) escalateTurnsLeft -= 1;
       const turnRole =
         typeof provider.selectRoleForTurn === "function"
           ? provider.selectRoleForTurn({
               turn: turns,
               forceAct: turns > 0,
+              escalate: escalating,
             })
           : null;
       const roleForEffort = turnRole || "act";
@@ -1813,6 +1844,10 @@ export async function runAgentLoop(options) {
                 " Do not repeat the same tool call. Finish or change approach."
             )
           );
+          if (escalateTurnsLeft === 0 && cfg.agent?.escalateOnStuck !== false) {
+            escalateTurnsLeft = Number(cfg.agent?.escalateTurns ?? 3);
+            onEvent({ type: "router", phase: "escalate", reason: verdict.detector || "stagnation", turns: escalateTurnsLeft });
+          }
         }
       } // end processToolCall
 

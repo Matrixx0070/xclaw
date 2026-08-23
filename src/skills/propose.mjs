@@ -219,6 +219,7 @@ version: 1
 priority: 5
 enabled: false
 source: success
+sourceVerdict: ${opts.verdict || "unverified"}
 ---
 
 # Learned skill (REVIEW REQUIRED)

@@ -175,6 +175,11 @@ export function selectRole(ctx = {}, cfg = {}) {
   const policy = resolveRolePolicy(cfg);
   const turn = ctx.turn ?? 0;
 
+  // S8 escalate-on-stuck: stagnation routes to the STRONG role when one is
+  // mapped, instead of warning the same model that is already stuck. The
+  // "strong" tier existed in ROLES but no path ever selected it.
+  if (ctx.escalate && map.strong) return "strong";
+
   if (ctx.phase === "verify" && map.verify) return "verify";
   if (ctx.phase === "draft" && map.draft) return "draft";
 
@@ -203,7 +208,7 @@ export async function createRoleProviders(cfg = {}, opts = {}) {
   /** @type {Record<string, { provider: object, route: object, modelRef: string }>} */
   const byRole = {};
 
-  for (const role of ["draft", "act", "verify"]) {
+  for (const role of ["draft", "act", "verify", "strong"]) {
     const ref = map[role];
     if (!ref) continue;
     try {
