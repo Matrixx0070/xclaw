@@ -31,6 +31,7 @@ import {
 import { createLoopGuard } from "./loop-guards.mjs";
 import { guardHighRiskReceipt } from "./high-risk-receipt.mjs";
 import { createCostGovernor } from "./cost-governor.mjs";
+import { estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
 import { recordToolTokens } from "./token-cache-metrics.mjs";
 import { runHallucinationCanary } from "./hallucination-canary.mjs";
 import { softCanaryRecover } from "./canary-recover.mjs";
@@ -1180,6 +1181,27 @@ export async function runAgentLoop(options) {
           modelRef: provider.modelRef || provider.model || null,
         });
         if (entry) {
+          // Trust Sprint: feed the PER-RUN governor every turn. Before this,
+          // costGov.record() was never called anywhere — .check() compared
+          // spend against agent.budget.maxUsd while spentUsd stayed 0
+          // forever, so the per-run USD ceiling was inert (audit C#7).
+          try {
+            const pt = Number(entry.promptTokens) || 0;
+            const ct = Number(entry.completionTokens) || 0;
+            let usd = 0;
+            try {
+              usd = estimateUsdFromUsage(
+                { prompt_tokens: pt, completion_tokens: ct },
+                cfg,
+                { modelRef: provider.modelRef || provider.model || null }
+              );
+            } catch {
+              /* rate lookup optional */
+            }
+            costGov.record({ tokens: pt + ct, usd: usd > 0 ? usd : 0 });
+          } catch {
+            /* governor best-effort */
+          }
           onEvent({
             type: "tokens",
             phase: entry.estimated ? "estimate" : "usage",

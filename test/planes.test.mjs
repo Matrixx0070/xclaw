@@ -40,6 +40,31 @@ describe("T0 tool planes", () => {
     assert.equal(c.concurrency, "serial");
   });
 
+  it("local browser CUA tools route to the LOCAL plane (Trust Sprint fix)", () => {
+    // Before the explicit TOOL_PLANE entries, the /browser|…/ regex sent all
+    // 8 registered local browser tools to the computer plane, where no such
+    // tool exists — they were unreachable in every live run.
+    for (const n of [
+      "browser_screenshot",
+      "browser_snapshot",
+      "browser_clipboard",
+      "browser_pdf",
+      "browser_observe",
+      "browser_assert",
+      "browser_click",
+      "browser_type",
+    ]) {
+      assert.equal(getPlane(n), "local", `${n} must dispatch locally`);
+    }
+    // the true bundle browser tools stay on the computer plane
+    assert.equal(getPlane("browser_tab"), "computer");
+    assert.equal(getPlane("xclaw_browser_tab"), "computer");
+    assert.equal(getPlane("browser_network_details"), "computer");
+    // actuation stays serial
+    assert.equal(getConcurrencyClass("browser_click"), "serial");
+    assert.equal(getConcurrencyClass("browser_type"), "serial");
+  });
+
   it("inferPlane handles unknown browser-like names", () => {
     assert.equal(inferPlane("custom_browser_navigate"), "computer");
   });

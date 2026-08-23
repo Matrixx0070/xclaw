@@ -47,6 +47,21 @@ export const TOOL_PLANE = {
   computer_act: "computer",
 
   // Local (src/tools/*)
+  // Local browser CUA tools (src/tools/browser-tools.mjs) run IN-PROCESS.
+  // Before these entries, inferPlane's /browser|…/ regex sent every one of
+  // them to the "computer" plane — where no such tool exists — so all 8
+  // registered local browser tools were unreachable (2026-08-23 audit,
+  // live-corroborated: benchmark B fell back to an MCP browser). Explicit
+  // mapping outranks the regex. xclaw_browser_tab / browser_network_details
+  // stay "computer" above — those really are bundle tools.
+  browser_screenshot: "local",
+  browser_snapshot: "local",
+  browser_clipboard: "local",
+  browser_pdf: "local",
+  browser_observe: "local",
+  browser_assert: "local",
+  browser_click: "local",
+  browser_type: "local",
   xclaw_image_search: "local",
   xclaw_image_generate: "local",
   xclaw_view_x_video: "local",

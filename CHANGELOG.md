@@ -1,3 +1,25 @@
+## 3.155.0 — governor fed, browser tools reachable, bypass minus critical (2026-08-23)
+
+Three Trust Sprint guardrails, each closing a same-day audit finding:
+
+- **Per-run cost ceiling is live (C#7).** `costGov.record()` was never
+  called — `.check()` compared `agent.budget.maxUsd` against a spend that
+  stayed $0 forever. The loop now records every turn's tokens + estimated
+  USD (list rates, same estimator as the daily governor); the ceiling
+  blocks the next model turn with a typed `governor_blocked` event.
+  End-to-end mock-provider proof in test/loop-cost-record.test.mjs.
+- **Local browser tools reachable (C#6).** inferPlane's /browser|…/ regex
+  dispatched all 8 registered local browser_* tools to the computer plane —
+  where no such tool exists — so they were unreachable in every live run
+  (benchmark B silently fell back to an MCP browser). Explicit TOOL_PLANE
+  entries route them local; bundle browser_tab stays on computer.
+- **bypassApprovals no longer covers CRITICAL (C#2).** The same deliberate
+  change A2 made for blanket autoApprove: a machine running with the gate
+  removed still pends rm -rf /, force-pushes, /etc writes.
+  `criticalOverride:"legacy"` restores the old full bypass explicitly. And
+  bypass is no longer invisible to audit: risky+ actions that auto-ran only
+  because of bypass journal a `mode:"bypass"` policy row to the ops ledger.
+
 ## 3.154.0 — crash-interrupted objectives auto-resume at boot (2026-08-23)
 
 Live benchmark H: a kill -9 mid-mission left durable state intact and boot

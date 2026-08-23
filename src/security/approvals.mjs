@@ -222,7 +222,14 @@ export function createApprovalGate(cfg = {}) {
     // running this way says so out loud.
     // ignoreBypass: a session overlay (TUI Shift+Tab "auto") can drop bypass
     // for one run without rewriting the machine flag. Overlay never loosens.
-    if (security.bypassApprovals === true && !ignoreBypass) return false;
+    // Trust Sprint (2026-08-23): bypass no longer covers CRITICAL actions —
+    // the same deliberate change A2 made for blanket autoApprove. A machine
+    // running with the gate removed still pends the most dangerous class
+    // (rm -rf /, force-push, credential writes). criticalOverride:"legacy"
+    // restores the pre-3.155 full bypass explicitly.
+    if (security.bypassApprovals === true && !ignoreBypass) {
+      return critical && criticalOverride !== "legacy";
+    }
     if (autoApprove) {
       // Blanket autoApprove no longer covers critical actions — the one
       // deliberate behavior change of A2 (criticalOverride:"legacy" reverts).
@@ -359,6 +366,18 @@ export function createApprovalGate(cfg = {}) {
         const bound = tryBindPlan(name, args);
         if (bound.ok) plan = bound.plan;
         // Soft on auto path — never fail closed for unboundable exe unless caller forced it.
+      }
+      // Trust Sprint: bypass mode is no longer invisible to the decision
+      // journal. Risky-and-above actions that auto-ran ONLY because
+      // bypassApprovals removed the gate leave an audit row (safe/low are
+      // not journaled — volume, not signal).
+      if (
+        security.bypassApprovals === true &&
+        !ignoreBypass &&
+        risk &&
+        tierRank(risk.tier) >= tierRank("risky")
+      ) {
+        journalDecision(cfg, { tool: name, decision: "approve", mode: "bypass", risk }, "policy");
       }
       return {
         ok: true,

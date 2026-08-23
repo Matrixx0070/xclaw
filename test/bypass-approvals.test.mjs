@@ -4,6 +4,7 @@ import { createApprovalGate } from "../src/security/approvals.mjs";
 import { validateConfig } from "../src/config/validate.mjs";
 
 const CRITICAL = { command: "npm publish", cwd: "/tmp" };
+const RISKY = { command: "sed -i s/a/b/ notes.txt", cwd: "/tmp" };
 
 describe("security.bypassApprovals", () => {
   it("is off unless asked for — critical still pends by default", async () => {
@@ -12,28 +13,39 @@ describe("security.bypassApprovals", () => {
     assert.equal(r.ok, false, "a critical action must still ask by default");
   });
 
-  it("runs everything without asking when enabled", async () => {
-    // the operator equivalent of Claude Code's bypassPermissions
+  it("runs risky-and-below without asking when enabled", async () => {
+    // the operator equivalent of Claude Code's bypassPermissions — minus
+    // the critical tier (Trust Sprint, 2026-08-23)
     const gate = createApprovalGate({
       security: { bypassApprovals: true, bindSystemRunPlan: false },
     });
-    const r = await gate.authorize("xclaw_bash", CRITICAL, { timeoutMs: 200 });
+    const r = await gate.authorize("xclaw_bash", RISKY, { timeoutMs: 200 });
     assert.equal(r.ok, true);
     assert.equal(r.mode, "auto");
   });
 
-  it("covers every tier, not just the listed tools", async () => {
+  it("CRITICAL still pends under bypass (Trust Sprint — the gate-removal flag no longer covers the most dangerous class)", async () => {
     const gate = createApprovalGate({
       security: { bypassApprovals: true, bindSystemRunPlan: false },
     });
     for (const [tool, args] of [
+      ["xclaw_bash", CRITICAL],
       ["xclaw_bash", { command: "rm -rf /etc", cwd: "/tmp" }],
       ["xclaw_file_write", { file_path: "/etc/passwd", content: "x" }],
       ["xclaw_bash", { command: "git push --force origin main", cwd: "/tmp" }],
     ]) {
       const r = await gate.authorize(tool, args, { timeoutMs: 200 });
-      assert.equal(r.ok, true, `${tool} ${JSON.stringify(args)}`);
+      assert.equal(r.ok, false, `${tool} ${JSON.stringify(args)} must pend`);
     }
+  });
+
+  it('criticalOverride:"legacy" explicitly restores the full pre-3.155 bypass', async () => {
+    const gate = createApprovalGate({
+      security: { bypassApprovals: true, criticalOverride: "legacy", bindSystemRunPlan: false },
+    });
+    const r = await gate.authorize("xclaw_bash", CRITICAL, { timeoutMs: 200 });
+    assert.equal(r.ok, true);
+    assert.equal(r.mode, "auto");
   });
 
   it("only a literal true enables it", async () => {
@@ -50,12 +62,12 @@ describe("security.bypassApprovals", () => {
     const gate = createApprovalGate({
       security: { bypassApprovals: true, bindSystemRunPlan: false },
     });
-    const tightened = await gate.authorize("xclaw_bash", CRITICAL, {
+    const tightened = await gate.authorize("xclaw_bash", RISKY, {
       timeoutMs: 200,
       ignoreBypass: true,
     });
-    assert.equal(tightened.ok, false, "auto overlay must still ask on critical");
-    const honour = await gate.authorize("xclaw_bash", CRITICAL, { timeoutMs: 200 });
+    assert.equal(tightened.ok, false, "auto overlay must still ask");
+    const honour = await gate.authorize("xclaw_bash", RISKY, { timeoutMs: 200 });
     assert.equal(honour.ok, true, "the next call without the overlay is bypass again");
   });
 
