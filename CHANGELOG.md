@@ -1,3 +1,35 @@
+## 3.153.0 — fail-closed mission completion: "done" can no longer be narrated (2026-08-23)
+
+Live benchmark F (same-day audit) proved the hole: an objective launched via
+chat/API carried no verify checks, so `runDeterministicChecks` returned
+`{ok:true, ran:false}` and the E-A gate was a no-op — an agent that EDITED a
+rigged migration script to delete its failures reached `status: done` with
+nothing catching it. Completion collapsed to the model asserting its own
+criteria.
+
+- **Fail-closed gate (default ON, `objectives.requireChecked`).** A mission
+  may CLOSE only when trusted deterministic checks pass (`verdict:
+  verified`) or the owner explicitly approves. With no trusted evidence the
+  completion is HELD: `awaiting_human` + `pendingCompletion`; the owner
+  replies `approve` (→ `verdict: owner-approved`) or says what to verify
+  (the answer becomes the next segment's directive).
+- **Check provenance.** `api` (operator) and `runtime` checks are trusted;
+  `model` checks — proposed via a new `verify` field in the state block —
+  are sanitized (file assertions + READ-ONLY commands only, never an
+  approval-gate bypass), can REJECT a completion, and never close one.
+- **Runtime derivation + baseline arming.** At mission start the runtime
+  derives the project's own test/lint commands (npm/pytest/go/cargo) and
+  arms only checks that pass a baseline run — a suite already red before
+  the mission is the project's condition, not mission signal.
+- **Persisted recovery counters.** pushback/recovery/verify-gate/state
+  counters move INTO the objective JSON — a restart can never hand a
+  crash-looping mission a fresh retry budget (audit C#9).
+- **In-flight segment marker.** A segment interrupted mid-run is flagged to
+  the next segment ("partial work may exist on disk — verify, don't redo").
+
+13 new tests (test/objective-verify-gate.test.mjs); legacy narrated
+completion remains available via `objectives.requireChecked:false`.
+
 ## 3.152.3 — claims gate scores raw finalText; receipts stop lying about the retry budget (2026-08-23)
 
 Soak iteration 2 failed the same two campaign cases AFTER 3.152.2 — which

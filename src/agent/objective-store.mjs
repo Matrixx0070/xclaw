@@ -21,6 +21,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import { sanitizeModelVerifyChecks } from "./objective-verify.mjs";
 
 const ID_RE = /^[a-zA-Z0-9_-]+$/;
 
@@ -61,6 +62,23 @@ function unionCapped(base = [], add = [], { max = 200, itemMax = 500 } = {}) {
   return out.slice(-max);
 }
 
+/** Migrate pre-Trust-Sprint objective JSONs: counters + gate fields. */
+export function ensureCounters(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+  obj.counters = {
+    pushbacks: 0,
+    missingStateRetries: 0,
+    verifyGateFails: 0,
+    recoveries: 0,
+    verifierSegmentUsed: false,
+    ...(obj.counters && typeof obj.counters === "object" ? obj.counters : {}),
+  };
+  if (obj.pendingCompletion === undefined) obj.pendingCompletion = null;
+  if (obj.inFlightSegment === undefined) obj.inFlightSegment = null;
+  if (obj.verifyDeriveTried === undefined) obj.verifyDeriveTried = false;
+  return obj;
+}
+
 export function newObjective({
   objective,
   sessionKey = null,
@@ -97,7 +115,20 @@ export function newObjective({
     // NO done-path may complete the mission while any check fails — the
     // verdict is earned, not narrated (S2 semantics, wired here in E-A).
     verify: Array.isArray(verify) && verify.length ? verify : null,
-    verdict: null, // "verified" | "model-verified" | "unverified" — set at done
+    verifyDeriveTried: false, // Trust Sprint: runtime derivation attempted once
+    verdict: null, // "verified" | "model-verified" | "unverified" | "owner-approved" — set at done
+    // Completion held for owner approval (fail-closed gate, no trusted checks)
+    pendingCompletion: null, // { reason: "no_checks"|"model_checks_only", at }
+    // Recovery/pushback counters — PERSISTED so a restart can never reset
+    // them and loop forever on the same failure (audit C#9).
+    counters: {
+      pushbacks: 0,
+      missingStateRetries: 0,
+      verifyGateFails: 0,
+      recoveries: 0,
+      verifierSegmentUsed: false,
+    },
+    inFlightSegment: null, // { n, startedAt } while a segment is executing
     segments: [], // [{ n, turns, toolCalls, stopReason, status, at }]
     totals: { segments: 0, toolCalls: 0, turns: 0 },
     finalAnswer: null,
@@ -219,6 +250,14 @@ export function mergeStateUpdate(obj, update = {}) {
         itemMax: 300,
       });
     }
+  }
+  if (Array.isArray(update.verify)) {
+    // Model-proposed deterministic checks: sanitized (file assertions +
+    // READ-ONLY commands only), capped, stamped source:"model". They can
+    // reject a completion but never close one — see objective-verify.mjs.
+    const existing = Array.isArray(obj.verify) ? obj.verify : [];
+    const added = sanitizeModelVerifyChecks(update.verify, existing);
+    if (added.length) obj.verify = [...existing, ...added];
   }
   if (Array.isArray(update.failures)) {
     for (const f of update.failures.slice(0, 10)) {

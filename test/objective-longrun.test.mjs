@@ -21,7 +21,7 @@ import {
 
 async function cfgTmp() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-obj-"));
-  return { paths: { configDir: dir }, objectives: { progressEverySegments: 0 }, _dir: dir };
+  return { paths: { configDir: dir }, objectives: { progressEverySegments: 0, requireChecked: false, deriveChecks: false }, _dir: dir };
 }
 
 function block(state) {

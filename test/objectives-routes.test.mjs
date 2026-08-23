@@ -27,7 +27,7 @@ after(() => {
 
 async function cfgTmp() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-objrt-"));
-  return { paths: { configDir: dir }, objectives: { progressEverySegments: 0 }, _dir: dir };
+  return { paths: { configDir: dir }, objectives: { progressEverySegments: 0, requireChecked: false, deriveChecks: false }, _dir: dir };
 }
 
 function call({ p, method = "GET", cfg, body = {} }) {

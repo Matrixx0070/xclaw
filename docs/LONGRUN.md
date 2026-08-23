@@ -62,9 +62,18 @@ user objective
   `verify:[…]`), those run as a **deterministic gate**: no done-path may
   complete while a check fails. A failure is fed back to the actor as a fix
   directive (cap 2) then escalates to the human with the exact failing
-  checks. `objective.verdict` is `verified` only when real checks ran and
-  passed, `model-verified` when only the verifier segment approved, else
-  `unverified`.
+  checks.
+- **Completion is fail-closed (Trust Sprint, v3.153).** Checks carry
+  provenance: `api` (operator), `runtime` (auto-derived at mission start
+  from the project's own test/lint scripts, armed only if they pass a
+  baseline run), `model` (proposed by the model in its state block —
+  file assertions and READ-ONLY commands only). A mission CLOSES only when
+  trusted (api/runtime) checks pass → `verdict: verified`. With no trusted
+  evidence — no checks at all, or only model-proposed ones passing — the
+  completion is HELD: status `awaiting_human`, `pendingCompletion` set, and
+  the owner replies `approve` (→ `verdict: owner-approved`) or says what to
+  verify (the answer becomes the next segment's directive). Set
+  `objectives.requireChecked:false` to restore narrated completion.
 - **Decision classification.**
   - *Autonomous*: everything the model can infer — it is instructed the
     turn budget is never completion and to decide-and-record rather than
@@ -82,9 +91,14 @@ user objective
   with a resume hint, never silent death. Model/context = per-segment
   eviction/compaction (unchanged, now scoped to a segment). Execution =
   `maxTurns` per segment. Completion = criteria only.
-- **Restart survival.** Boot marks `running` objectives `interrupted`;
-  the owner's next message (or `/objective resume`) resumes with a
-  reconcile directive ("verify load-bearing claims, then continue").
+- **Restart survival.** Boot marks `running` objectives `interrupted`,
+  then **auto-resumes** them (Trust Sprint: `objectives.autoResume`, newest
+  first, cap `autoResumeMax:3`; notifications route WS + shared alerter).
+  The owner's next message (or `/objective resume`) still works. Recovery,
+  pushback, and verify-gate counters are PERSISTED in the objective, so a
+  restart can never hand a crash-looping mission a fresh retry budget; a
+  segment interrupted mid-flight is flagged to the next segment so partial
+  on-disk work is verified, not blindly redone.
 - **Auditability.** Every lifecycle event (started / segment / pushback /
   recovery / escalated / paused / done) journals to the ops ledger under
   the objective id.

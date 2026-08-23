@@ -30,6 +30,7 @@ import {
   saveObjective,
   loadObjective,
   mergeStateUpdate,
+  ensureCounters,
 } from "./objective-store.mjs";
 import { getSharedLedger } from "../ops/ledger.mjs";
 
@@ -97,13 +98,18 @@ End EVERY reply with exactly one fenced block:
   "openQuestions": ["..."],
   "inspected": {"files":["..."],"dirs":["..."],"components":["..."]},
   "failures": [{"what":"...","error":"...","recovery":"..."}],
+  "verify": [{"type":"file_contains","path":"...","text":"..."}],
   "humanQuestion": "REQUIRED when status=needs_human — one concrete question",
   "blockedReason": "REQUIRED when status=blocked"
 }
 \`\`\`
 Only include fields with new content (status is always required). Use
 status "done" ONLY when the completion criteria are satisfied (or provably
-unachievable — say so in findings).`;
+unachievable — say so in findings).
+"verify" may propose deterministic completion checks (file_exists /
+file_contains / file_equals / text_contains, or READ-ONLY "command" checks).
+The runtime executes them mechanically at completion: they can REJECT a
+done, but model-proposed checks alone never approve one.`;
 
 function fmtList(items = [], { max = 30, bullet = "- " } = {}) {
   const arr = items.slice(-max);
@@ -277,17 +283,103 @@ export async function runObjective(cfg, opts = {}) {
     if (opts.seed) mergeStateUpdate(obj, opts.seed);
     ledgerEvent(cfg, obj, "objective_started", { objective: obj.objective.slice(0, 200) });
   }
+  ensureCounters(obj);
+
+  // A restart mid-segment leaves inFlightSegment set: that segment's tool
+  // work happened on disk but was never recorded. Tell the next segment so
+  // it verifies instead of blindly redoing (or worse, double-applying).
+  if (opts.resumeId && obj.inFlightSegment) {
+    obj.failures = [
+      ...obj.failures,
+      {
+        at: new Date().toISOString(),
+        what: `segment ${obj.inFlightSegment.n} was interrupted mid-flight — its partial work may already exist on disk`,
+        error: null,
+        recovery: "verify what already exists before redoing it",
+      },
+    ].slice(-40);
+    obj.inFlightSegment = null;
+  }
+
+  // Trust Sprint: owner ruling on a completion held by the fail-closed gate.
+  if (opts.resumeId && obj.pendingCompletion) {
+    const approveRe = /^(approve|approved|accept|accepted|ok|okay|yes|lgtm|confirm|confirmed)\b/i;
+    if (pendingAnswer && approveRe.test(pendingAnswer.trim())) {
+      obj.pendingCompletion = null;
+      obj.status = "done";
+      obj.verdict = "owner-approved";
+      await saveObjective(cfg, obj);
+      ledgerEvent(cfg, obj, "objective_done", {
+        ownerApproved: true,
+        segments: obj.totals.segments,
+        toolCalls: obj.totals.toolCalls,
+      });
+      onEvent({ type: "objective", phase: "done", id: obj.id, ownerApproved: true });
+      await notify(
+        `✅ Mission ${obj.id} accepted by owner (verdict: owner-approved).` +
+          (obj.finalAnswer ? `\n\n${obj.finalAnswer.slice(0, 1500)}` : ""),
+        { kind: "done" }
+      );
+      return { status: obj.status, id: obj.id, objective: obj };
+    }
+    if (pendingAnswer) {
+      // Any non-approve answer clears the hold — the owner wants more work
+      // (often: what to verify). The answer already became the directive.
+      obj.pendingCompletion = null;
+      obj.verdict = null;
+    } else {
+      // Resumed without an answer: re-ask; never burn segments to re-derive
+      // the same held completion.
+      obj.status = "awaiting_human";
+      await saveObjective(cfg, obj);
+      await notify(
+        `⏸ Mission ${obj.id} is holding a finished-but-unverified result.\n` +
+          (obj.humanQuestion || 'Reply "approve" to accept it, or tell me what to verify.'),
+        { kind: "question" }
+      );
+      return { status: obj.status, id: obj.id, objective: obj };
+    }
+  }
+
+  // Trust Sprint: derive deterministic checks from the project ONCE, arming
+  // only the ones that pass a baseline run (a suite already red before the
+  // mission started is the project's condition, not mission signal).
+  if (
+    cfg.objectives?.deriveChecks !== false &&
+    !obj.verifyDeriveTried &&
+    !(Array.isArray(obj.verify) && obj.verify.length)
+  ) {
+    obj.verifyDeriveTried = true;
+    try {
+      const { deriveVerifyChecks, baselineArmChecks } = await import("./objective-verify.mjs");
+      const derived = await deriveVerifyChecks(obj.workingDir);
+      if (derived.length) {
+        const { armed, dropped } = await baselineArmChecks(obj.workingDir, derived);
+        if (armed.length) {
+          obj.verify = [...(obj.verify || []), ...armed];
+          obj.progress = [
+            ...obj.progress,
+            `Runtime armed ${armed.length} deterministic verification check(s) derived from the project (baseline-passing).`,
+          ];
+        }
+        ledgerEvent(cfg, obj, "verify_derived", { armed: armed.length, dropped: dropped.length });
+        onEvent({ type: "objective", phase: "verify_derived", id: obj.id, armed: armed.length, dropped: dropped.length });
+      }
+    } catch {
+      /* derivation is best-effort — the gate still fails CLOSED without checks */
+    }
+  }
   await saveObjective(cfg, obj);
   onEvent({ type: "objective", phase: "start", id: obj.id, resumed: Boolean(opts.resumeId) });
 
   const maxSegments = Number(cfg.objectives?.maxSegments) || DEFAULT_MAX_SEGMENTS;
   const progressEvery = Number(cfg.objectives?.progressEverySegments) || 5;
-  let pushbacks = 0;
-  let missingStateRetries = 0;
-  let verifierSegmentUsed = false; // S6b+: one independent verification segment per run
-  let verifyGateFails = 0; // E-A: deterministic-gate rejections fed back to the actor
   const VERIFY_GATE_CAP = 2;
-  let recoveries = 0;
+  // Trust Sprint: recovery/pushback counters live IN the objective and are
+  // persisted with every save. As runObjective locals they reset on every
+  // resume — a crash-looping mission could burn its recovery budget forever
+  // without ever escalating (audit C#9).
+  const ctr = obj.counters;
   let directive = pendingAnswer
     ? `The owner answered your question: "${pendingAnswer.slice(0, 500)}". Incorporate it and continue.`
     : null;
@@ -297,17 +389,57 @@ export async function runObjective(cfg, opts = {}) {
    * mission may close (verdict recorded), "continue" when a deterministic
    * failure was fed back as a directive, "escalated" when the cap is spent.
    */
-  const deterministicGate = async (fallbackVerdict) => {
+  const deterministicGate = async (fallbackVerdict, { finalAnswer = null } = {}) => {
     const gate = await runDeterministicChecks(obj);
     if (gate.ok) {
-      obj.verdict = gate.ran ? "verified" : fallbackVerdict;
-      return null;
+      const checks = Array.isArray(obj.verify) ? obj.verify : [];
+      // "Trusted" = operator-provided (api / no source stamp) or
+      // runtime-derived. Model-proposed checks can reject but never close:
+      // a model that gamed the work can just as easily propose a check that
+      // passes on the gamed state.
+      const trusted = gate.ran && checks.some((c) => c.source !== "model");
+      if (trusted) {
+        obj.verdict = "verified";
+        return null;
+      }
+      obj.verdict = gate.ran ? "model-verified" : fallbackVerdict;
+      if (cfg.objectives?.requireChecked === false) return null;
+      // Fail-closed (Trust Sprint): no trusted deterministic evidence
+      // exists, so hold the completion for the owner instead of narrating
+      // success — the exact hole live benchmark F drove through.
+      if (finalAnswer) obj.finalAnswer = String(finalAnswer).slice(0, 12000);
+      obj.pendingCompletion = {
+        reason: gate.ran ? "model_checks_only" : "no_checks",
+        at: new Date().toISOString(),
+      };
+      obj.status = "awaiting_human";
+      obj.humanQuestion =
+        obj.pendingCompletion.reason === "model_checks_only"
+          ? 'The work passed only model-proposed checks — no trusted verification exists. Reply "approve" to accept, or tell me what to verify.'
+          : 'No deterministic verification exists for this mission. Reply "approve" to accept the result as-is, or tell me what to verify.';
+      await saveObjective(cfg, obj);
+      ledgerEvent(cfg, obj, "verify_gate_hold", {
+        reason: obj.pendingCompletion.reason,
+        verdict: obj.verdict,
+      });
+      onEvent({ type: "objective", phase: "awaiting_human", id: obj.id, reason: obj.pendingCompletion.reason });
+      await notify(
+        `🔒 Mission ${obj.id} finished its work but has no trusted verification (` +
+          (obj.pendingCompletion.reason === "model_checks_only"
+            ? "only model-proposed checks passed"
+            : "no deterministic checks exist") +
+          `).` +
+          (obj.finalAnswer ? `\n\nResult:\n${obj.finalAnswer.slice(0, 1200)}` : "") +
+          `\n\nReply "approve" to accept, or tell me what to verify.`,
+        { kind: "question" }
+      );
+      return "escalated";
     }
     const what = gate.summary || gate.error || "checks failed";
-    if (verifyGateFails < VERIFY_GATE_CAP) {
-      verifyGateFails += 1;
+    if (ctr.verifyGateFails < VERIFY_GATE_CAP) {
+      ctr.verifyGateFails += 1;
       directive = `Deterministic verification REJECTED completion — these checks fail: ${what}. Fix exactly these, then finish again.`;
-      ledgerEvent(cfg, obj, "verify_gate_reject", { fails: verifyGateFails, what: what.slice(0, 300) });
+      ledgerEvent(cfg, obj, "verify_gate_reject", { fails: ctr.verifyGateFails, what: what.slice(0, 300) });
       onEvent({ type: "objective", phase: "verify_gate_reject", id: obj.id, what });
       await saveObjective(cfg, obj);
       return "continue";
@@ -355,6 +487,12 @@ export async function runObjective(cfg, opts = {}) {
     directive = null;
     reconcile = false;
     onEvent({ type: "objective", phase: "segment_start", id: obj.id, segment: n });
+    // Mark the segment in-flight BEFORE running it: if the process dies
+    // mid-segment, resume sees the marker and warns the next segment that
+    // unrecorded partial work may exist (audit: benchmark H lost in-flight
+    // work silently).
+    obj.inFlightSegment = { n, startedAt: new Date().toISOString() };
+    await saveObjective(cfg, obj);
 
     let seg;
     try {
@@ -371,10 +509,10 @@ export async function runObjective(cfg, opts = {}) {
         at: new Date().toISOString(),
         what: `segment ${n} crashed`,
         error: String(e?.message || e).slice(0, 300),
-        recovery: recoveries < RECOVERY_CAP ? "retrying segment" : "paused for operator",
+        recovery: ctr.recoveries < RECOVERY_CAP ? "retrying segment" : "paused for operator",
       });
-      if (recoveries < RECOVERY_CAP) {
-        recoveries += 1;
+      if (ctr.recoveries < RECOVERY_CAP) {
+        ctr.recoveries += 1;
         await saveObjective(cfg, obj);
         continue;
       }
@@ -385,6 +523,7 @@ export async function runObjective(cfg, opts = {}) {
       return { status: obj.status, id: obj.id, objective: obj };
     }
 
+    obj.inFlightSegment = null;
     // A /objective stop lands on DISK while the segment runs — our in-memory
     // copy would clobber it on the next save (the automations lost-update
     // class). Re-sync the flag before any post-segment save.
@@ -412,7 +551,7 @@ export async function runObjective(cfg, opts = {}) {
 
     if (update) {
       mergeStateUpdate(obj, update);
-      missingStateRetries = 0;
+      ctr.missingStateRetries = 0;
     } else {
       // No parseable state block. Distinguish the model CHOOSING to end its
       // turn (stopReason "natural"/"hook") from the runtime CUTTING IT OFF
@@ -427,7 +566,7 @@ export async function runObjective(cfg, opts = {}) {
       const openCriteria = obj.criteria.filter((c) => !c.done);
       if (modelEndedTurn && prose.length >= 40 && !openCriteria.length) {
         {
-          const g = await deterministicGate("unverified");
+          const g = await deterministicGate("unverified", { finalAnswer: prose });
           if (g === "continue") continue;
           if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
         }
@@ -452,8 +591,8 @@ export async function runObjective(cfg, opts = {}) {
 
       // Otherwise: one reminder segment, then hand the model's answer to the
       // user (never loop blind, never bury it behind a runtime error).
-      if (missingStateRetries < MISSING_STATE_RETRY_CAP && seg?.stopReason !== "aborted") {
-        missingStateRetries += 1;
+      if (ctr.missingStateRetries < MISSING_STATE_RETRY_CAP && seg?.stopReason !== "aborted") {
+        ctr.missingStateRetries += 1;
         directive =
           `Your previous segment did not end with a parseable ${STATE_FENCE} block. ` +
           `Re-emit the full state block now (status continue/done/needs_human/blocked) and continue.`;
@@ -470,7 +609,7 @@ export async function runObjective(cfg, opts = {}) {
       // pause a genuinely finished mission — the exact friction seen live.)
       if (modelEndedTurn && prose.length >= 40) {
         {
-          const g = await deterministicGate("unverified");
+          const g = await deterministicGate("unverified", { finalAnswer: prose });
           if (g === "continue") continue;
           if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
         }
@@ -499,8 +638,8 @@ export async function runObjective(cfg, opts = {}) {
       // against the objective and emits the state block. Deterministic
       // evidence beats prose-length heuristics; the human stays the
       // fallback, not the first resort. One attempt per run.
-      if (!verifierSegmentUsed && seg?.stopReason !== "aborted") {
-        verifierSegmentUsed = true;
+      if (!ctr.verifierSegmentUsed && seg?.stopReason !== "aborted") {
+        ctr.verifierSegmentUsed = true;
         ledgerEvent(cfg, obj, "verify_segment_start", { segment: n });
         onEvent({ type: "objective", phase: "verify_segment", id: obj.id });
         try {
@@ -538,7 +677,9 @@ ${(prose || "(empty)").slice(0, 1200)}
           });
           if (vUpdate && String(vUpdate.status || "").toLowerCase() === "done") {
             {
-              const g = await deterministicGate("model-verified");
+              const g = await deterministicGate("model-verified", {
+                finalAnswer: prose || stripStateBlocks(vText).trim() || "Verified complete.",
+              });
               if (g === "continue") continue;
               if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
             }
@@ -642,8 +783,8 @@ ${missing || JSON.stringify(vUpdate).slice(0, 800)}`;
     }
 
     if (status === "blocked") {
-      if (recoveries < RECOVERY_CAP) {
-        recoveries += 1;
+      if (ctr.recoveries < RECOVERY_CAP) {
+        ctr.recoveries += 1;
         directive =
           `You reported blocked: "${String(update.blockedReason || "").slice(0, 300)}". ` +
           "Diagnose the blocker with tools, attempt a reasonable recovery or an alternate approach, and continue. Escalate with needs_human + a concrete question ONLY if recovery is truly impossible.";
@@ -660,9 +801,9 @@ ${missing || JSON.stringify(vUpdate).slice(0, 800)}`;
 
     if (status === "done") {
       const open = obj.criteria.filter((c) => !c.done);
-      if (open.length && pushbacks < CRITERIA_PUSHBACK_CAP) {
+      if (open.length && ctr.pushbacks < CRITERIA_PUSHBACK_CAP) {
         // anti-drift: done without satisfied criteria gets bounded pushback
-        pushbacks += 1;
+        ctr.pushbacks += 1;
         directive =
           `You reported done, but these completion criteria are NOT satisfied:\n` +
           open.map((c) => `- ${c.text}`).join("\n") +
@@ -672,7 +813,7 @@ ${missing || JSON.stringify(vUpdate).slice(0, 800)}`;
         continue;
       }
       {
-        const g = await deterministicGate("unverified");
+        const g = await deterministicGate("unverified", { finalAnswer: stripStateBlocks(text) });
         if (g === "continue") continue;
         if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
       }

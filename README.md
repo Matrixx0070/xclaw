@@ -241,9 +241,14 @@ A high-level objective survives context, turn, and restart boundaries as a
 durable mission (state at `~/.xclaw/objectives/<id>.json`). The runtime runs
 it in **fresh-context segments** rebuilt from state, drives to explicit
 completion criteria (a turn cap is a checkpoint, never "done"), and runs an
-independent verifier — plus optional deterministic `verify` checks (file
-assertions + command exits) that gate completion. A crash or reboot parks the
-mission `interrupted`; it resumes where it left off.
+independent verifier. Completion is **fail-closed** (v3.153): a mission may
+close only when trusted deterministic `verify` checks pass (operator-provided
+via the API, or auto-derived from the project's own test/lint scripts and
+baseline-filtered) — otherwise it holds `awaiting_human` until you reply
+`approve`. Model-proposed checks can reject a completion but never close one.
+A crash or reboot parks the mission `interrupted`, then the gateway
+**auto-resumes** it at boot (`objectives.autoResume`, cap 3); recovery
+counters persist in the mission state, so restarts never reset them.
 
 ```bash
 # Chat command (WebChat / Telegram): start · check · resume · stop

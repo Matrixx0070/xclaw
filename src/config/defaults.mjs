@@ -169,6 +169,19 @@ export const DEFAULT_CONFIG = {
     requireStructuredClaims: false,
     structuredClaimsOnTags: ["campaign", "long", "campaign-v2"],
   },
+  // Long-run objectives (docs/LONGRUN.md). requireChecked is the Trust
+  // Sprint fail-closed completion gate: a mission with NO trusted
+  // deterministic checks (api- or runtime-derived) cannot silently close —
+  // it pauses awaiting the owner's explicit approve. Set false to restore
+  // the pre-3.153 narrated-completion behavior.
+  objectives: {
+    maxSegments: 40,
+    progressEverySegments: 5,
+    requireChecked: true,
+    deriveChecks: true, // derive npm test/lint (etc.) checks at mission start
+    autoResume: true, // boot: auto-resume objectives interrupted by a crash
+    autoResumeMax: 3,
+  },
   cost: {
     dailySoftUsd: 5,
     dailyHardUsd: 15,
