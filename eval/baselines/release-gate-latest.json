@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-23T20:26:14.112Z",
+  "at": "2026-08-23T23:45:21.370Z",
   "quick": false,
   "strict": false,
   "live": false,
@@ -8,17 +8,17 @@
       "name": "unit tests",
       "ok": true,
       "required": true,
-      "ms": 45362,
-      "detail": "# tests 2864 | # pass 2859 | # fail 0",
+      "ms": 46505,
+      "detail": "# tests 2835 | # pass 2830 | # fail 0",
       "code": 0
     },
     {
       "name": "security-audit",
       "ok": true,
       "required": true,
-      "ms": 43,
+      "ms": 57,
       "detail": {
-        "at": "2026-08-23T20:26:11.956Z",
+        "at": "2026-08-23T23:45:18.846Z",
         "ok": true,
         "errors": 0,
         "warnings": 1,
@@ -67,7 +67,7 @@
       "name": "sandbox-redteam",
       "ok": true,
       "required": true,
-      "ms": 105,
+      "ms": 109,
       "detail": null,
       "code": 0
     },
@@ -75,7 +75,7 @@
       "name": "fire-drill",
       "ok": true,
       "required": true,
-      "ms": 1610,
+      "ms": 1988,
       "detail": null,
       "code": 0
     },
@@ -83,7 +83,7 @@
       "name": "stop-fire-drill",
       "ok": true,
       "required": true,
-      "ms": 64,
+      "ms": 60,
       "detail": null,
       "code": 0
     },
@@ -91,7 +91,7 @@
       "name": "evidence",
       "ok": true,
       "required": false,
-      "ms": 196,
+      "ms": 181,
       "detail": null,
       "code": 0
     },
@@ -99,7 +99,7 @@
       "name": "a-enforcement",
       "ok": true,
       "required": false,
-      "ms": 132,
+      "ms": 137,
       "detail": " | Summary: 0 fail(s), 0 warning(s) — exit 0 | [xclaw] config: security.bypassApprovals=true — FULL AUTONOMY: no tool call will ever ask for approval, at any risk tier | [xclaw] config: security.autoApprove=true with requireApproval list — approvals may be auto-granted | ",
       "code": 0
     },
@@ -107,7 +107,7 @@
       "name": "bundle-markers",
       "ok": true,
       "required": false,
-      "ms": 44,
+      "ms": 43,
       "detail": [
         "A2: driver hooks",
         "A4: humanized CDP motor",
@@ -129,6 +129,6 @@
       "docs/STOP.md",
       "docs/openapi-stop.yaml"
     ],
-    "at": "2026-08-23T20:26:14.116Z"
+    "at": "2026-08-23T23:45:21.375Z"
   }
 }

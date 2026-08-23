@@ -1,3 +1,18 @@
+# Session State — COMPLETE (2026-08-24): TRUST SPRINT shipped v3.153.0→v3.156.0 (fail-closed completion + auto-resume + guardrails + deletions), all live-proven
+
+Frank ordered the audit's 7-day plan executed in one run ("RUN THIS FULL WEEK GOAL"). Shipped, HEAD b050019 + docs commit, CI 4/4 green, releases published, gateway deployed:
+- v3.153.0 FAIL-CLOSED COMPLETION: missions close only via trusted checks (api/runtime provenance; runtime = derived npm/pytest/go/cargo + baseline-armed) → verdict verified, or owner "approve" → owner-approved; otherwise HELD awaiting_human w/ pendingCompletion (no_checks|model_checks_only). Model state-block "verify" checks: sanitized read-only, can reject never close. Recovery counters PERSISTED in objective JSON; inFlightSegment marker tells resumed segment to verify partial work. Escape: objectives.requireChecked:false. LIVE: benchmark-F spec-gaming rerun now HOLDS (was done); approve→owner-approved proven; A-fixture → verified with zero taps.
+- v3.154.0 BOOT AUTO-RESUME: interrupted objectives auto-resume (cap objectives.autoResumeMax:3, alerter DM). LIVE: kill -9 mid-segment → auto-resumed ~2s, no manual resume, 12/12 files.
+- v3.155.0 GUARDRAILS: costGov.record() per turn (per-run maxUsd ceiling was inert — e2e mock test proves record→block); planes.mjs explicit local entries un-dead-route 8 browser_* tools; bypassApprovals now EXCLUDES critical (criticalOverride:"legacy" reverts) + journals mode:"bypass" risky+ rows. LIVE: /etc file_write pended tier:critical under live bypass (denied, no file); bypass rows in ledger/2026-08-23.jsonl; NOTE rm -rf was denied by a HOST HOOK before the gate (defense-in-depth; approvals-layer critical-pend live proof used file_write instead).
+- v3.156.0 DELETIONS: src/cluster (40 files) + doctor-cluster + 41 tests deleted; mock tools gated (tools.mockTools / XCLAW_MOCK_TOOLS=1). Suite 2833/2828/0/5.
+
+LIVE BEHAVIOR CHANGES Frank will notice: unverifiable chat missions end with ONE "approve" tap; critical actions pend to Telegram even in lab bypass. Test objectives obj_mt6g* deleted after proofs; evidence at scratchpad trust-sprint-results.md. Soak untouched (02:43Z cron drives runEvalSuite — unaffected by the objective gate; suite+release-gate green pre-push).
+
+NEXT (30-day plan from the audit, artifact 762c8c9c): W2 stage runAgentLoop + finish gateway route extraction (−600 dead LOC); W3 learning write-path + objective schema (assumptions/plan-version/deadline/budget); W4 collapse orchestrators (job/swarm as modes; delete missions/ after salvage), bwrap default engine, 24h soak.
+
+
+---- PRIOR STATE (ARC-1..5, 2026-08-23) ----
+
 # Session State — v3.131.1 RECONCILE SHIPPED + LIVE-VERIFIED (2026-08-18): grok 3.77–3.80 line merged with 3.113–3.130 hardening, nothing lost
 
 ## REAL-TIME VERIFICATION (v3.131.1) — what driving the live gateway proved
