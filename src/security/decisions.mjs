@@ -113,3 +113,32 @@ export async function matchDecision(cfg, { tool, plan, tier }) {
   }
   return null;
 }
+
+/**
+ * S6b — the ONE PolicyDecision shape. Every security gate that blocks,
+ * pends, or allows a tool call describes the ruling with this constructor;
+ * the tool trace, security events, and run results all carry the same
+ * structure instead of five ad-hoc `policy:` literals (audit C15: "the
+ * agent gets prose, not a typed denial").
+ *
+ * @param {object} d
+ * @param {"approval"|"plan_revalidate"|"sandbox"|"egress"|"receipt"|"quota"|"guard"|string} d.phase — which gate ruled
+ * @param {"allow"|"deny"|"pending"} d.decision
+ * @param {string} [d.reason] — machine-usable slug/short reason
+ * @param {string} [d.tool]
+ * @param {string} [d.tier] — risk tier when the gate computed one
+ * @param {string} [d.pendingId]
+ * @param {string} [d.message] — human/model-facing explanation
+ */
+export function policyDecision(d = {}) {
+  return {
+    v: 1,
+    phase: d.phase || "policy",
+    decision: d.decision || "deny",
+    reason: d.reason ?? null,
+    tool: d.tool ?? null,
+    tier: d.tier ?? null,
+    pendingId: d.pendingId ?? null,
+    message: d.message ?? null,
+  };
+}

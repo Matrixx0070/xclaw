@@ -96,6 +96,10 @@ describe("mid-batch stop ends the run (loop.mjs stopTools honored)", () => {
     );
     assert.equal(out.stopReason, "approval");
     assert.ok(out.pendingApproval, "pendingApproval surfaced to orchestrators");
+    // S6b: the typed ruling rides the result — one shape for every gate.
+    assert.equal(out.policyDecision?.v, 1);
+    assert.equal(out.policyDecision?.phase, "approval");
+    assert.ok(out.policyDecision?.decision === "pending" || out.policyDecision?.decision === "deny");
     assert.ok(out.text, "user-visible blocked reply present");
   });
 

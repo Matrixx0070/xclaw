@@ -12,7 +12,7 @@ describe("land remaining ship patches", () => {
     // patch or were landed directly is not a property worth asserting.
     const p = fs.readFileSync(path.join(root, "patches/land-remaining-ship.patch"), "utf8") +
       ["src/jobs/job.mjs", "src/jobs/claims-soft-retry-run.mjs", "src/security/approvals.mjs", "src/memory/durable.mjs",
-       "src/tokens/cost-governor.mjs", "src/cli/doctor.mjs", "src/agent/goal-loop.mjs"]
+       "src/tokens/cost-governor.mjs", "src/cli/doctor.mjs"] // goal-loop deleted (S6b, 2026-08-23)
         .map((rel) => { try { return fs.readFileSync(path.join(root, rel), "utf8"); } catch { return ""; } })
         .join("\n");
     for (const m of [

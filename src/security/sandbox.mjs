@@ -2,6 +2,7 @@
  * Workspace sandbox — path allowlists, deny .. escapes, optional read-only roots.
  */
 import path from "node:path";
+import { STRICT_PATH_ARG_KEYS } from "./risk.mjs";
 
 /**
  * @param {object} cfg
@@ -60,7 +61,10 @@ export function guardToolPaths(cfg, workspace, toolName, args = {}) {
   const policy = getSandboxPolicy(cfg, workspace);
   if (!policy.enabled) return { ok: true, args };
   const next = { ...args };
-  const keys = ["path", "file", "filepath", "filename", "cwd", "directory", "dir"];
+  // Single-sourced from risk.mjs (S6b): the old local 7-key list missed
+  // file_path/filePath — the exact keys the file tools use — so writes
+  // outside the sandbox never hit this guard.
+  const keys = STRICT_PATH_ARG_KEYS;
   try {
     for (const k of keys) {
       if (next[k] != null && typeof next[k] === "string") {

@@ -1,5 +1,42 @@
 # Changelog
 
+## 3.151.0 — S6b: one policy shape, ground truth before humans, two dead programs gone (2026-08-23)
+
+### Security — single-sourced path keys + typed PolicyDecision
+
+- `guardToolPaths` (sandbox) kept its own 7-key list that missed
+  `file_path`/`filePath` — the exact keys the file tools use — so file
+  writes outside the sandbox never hit the guard (audit: "guardToolPaths
+  dead for file tools"). Path keys are now single-sourced from `risk.mjs`:
+  the broad read-only set for risk extraction, and a new
+  `STRICT_PATH_ARG_KEYS` rewrite-safe subset for the sandbox (excludes
+  `target`/`to`/`src`, which are selectors/recipients/URLs on non-file
+  tools). Runtime-proven both directions.
+- New canonical `policyDecision()` (security/decisions.mjs): all five
+  blocking gates (approval, plan-revalidate, sandbox, egress, receipt) now
+  build the same typed ruling; the run result surfaces `policyDecision` next
+  to `pendingApproval` so orchestrators get structure, not prose (audit C15).
+
+### Objectives — ask the ground truth before asking a human
+
+- When a mission ends without a machine-readable state block, the
+  orchestrator previously judged completion by PROSE LENGTH (a 40-char
+  threshold — the live obj_mt662lv3 escalation missed it by 3 characters).
+  It now runs ONE independent verification segment first: a fresh-context,
+  read-only run that inspects the working directory against the objective
+  and emits the state block. done → verified completion; gaps → fed back to
+  the actor as a directive; inconclusive → the human escalation, unchanged.
+
+### Deletions (migrate → verify → delete)
+
+- `goal-loop.mjs` + its patch + dedicated tests: legacy runner superseded by
+  objectives; zero production importers (grep-proven); ship-patch checker
+  updated and green.
+- Receipt-status migration framework (~547 lines of hooks/rollback/
+  idempotency in swarm-receipt.mjs + script + 4 test files): its migration
+  is COMPLETE — dry-run over the live store reported changed:0 invalid:0 —
+  and no production code ever imported it.
+
 ## 3.150.1 — CI gate unbroken (2026-08-23)
 
 - `scripts/ci-gate.mjs` kept invoking the parity/generated-build scripts

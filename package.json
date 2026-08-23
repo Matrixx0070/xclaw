@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.150.1",
+  "version": "3.151.0",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
@@ -65,8 +65,6 @@
     "ci:live": "XCLAW_CI_LIVE=1 node scripts/ci-gate.mjs --live",
     "ci-gate": "node scripts/ci-gate.mjs",
     "p2:swarm-fail": "node scripts/p2-swarm-fail.mjs",
-    "migrate:receipt-status": "node scripts/migrate-receipt-status.mjs",
-    "migrate:receipt-status:write": "node scripts/migrate-receipt-status.mjs --write",
     "c4:soak": "node scripts/c4-engine-soak.mjs",
     "verify:bundle": "node scripts/verify-computer-bundle.mjs",
     "verify:bundle:strict": "node scripts/verify-computer-bundle.mjs --require-sigstore",

@@ -254,6 +254,7 @@ export async function runObjective(cfg, opts = {}) {
   const progressEvery = Number(cfg.objectives?.progressEverySegments) || 5;
   let pushbacks = 0;
   let missingStateRetries = 0;
+  let verifierSegmentUsed = false; // S6b+: one independent verification segment per run
   let recoveries = 0;
   let directive = pendingAnswer
     ? `The owner answered your question: "${pendingAnswer.slice(0, 500)}". Incorporate it and continue.`
@@ -420,6 +421,95 @@ export async function runObjective(cfg, opts = {}) {
           { kind: "done" }
         );
         return { status: obj.status, id: obj.id, objective: obj };
+      }
+      // S6b+ (Master Evolution Directive): before asking a HUMAN, ask the
+      // GROUND TRUTH. A fresh-context verification segment — a different
+      // conversation from the actor — inspects the working directory
+      // against the objective and emits the state block. Deterministic
+      // evidence beats prose-length heuristics; the human stays the
+      // fallback, not the first resort. One attempt per run.
+      if (!verifierSegmentUsed && seg?.stopReason !== "aborted") {
+        verifierSegmentUsed = true;
+        ledgerEvent(cfg, obj, "verify_segment_start", { segment: n });
+        onEvent({ type: "objective", phase: "verify_segment", id: obj.id });
+        try {
+          const vSeg = await runSegment({
+            prompt:
+              `You are VERIFYING a mission another agent claims to have finished — you are not doing the work.
+` +
+              `Objective: ${obj.objective}
+` +
+              `Working directory: ${obj.workingDir || "(current)"}
+` +
+              `The actor's final answer was:
+${(prose || "(empty)").slice(0, 1200)}
+
+` +
+              `Inspect the working directory READ-ONLY (list/read files; run no writes) and decide whether the objective is FULLY satisfied.
+` +
+              `Then emit ONLY the ${STATE_FENCE} fenced state block: status "done" with one criterion per requirement marked with its evidence, or status "continue" listing exactly what is missing, or "blocked" if you cannot verify.`,
+            rescuePrompt: SEGMENT_RESCUE_PROMPT,
+            sessionId: `objective-${obj.id}-verify`,
+            objectiveId: obj.id,
+            segment: n + 1,
+          });
+          const vText = vSeg?.text || "";
+          const vUpdate = parseStateBlock(vText);
+          obj.totals.segments += 1;
+          obj.totals.turns += vSeg?.turns || 0;
+          obj.segments.push({
+            n: obj.totals.segments,
+            turns: vSeg?.turns || 0,
+            toolCalls: (vSeg?.toolTrace || []).length,
+            stopReason: vSeg?.stopReason || null,
+            status: "verify",
+            at: new Date().toISOString(),
+          });
+          if (vUpdate && String(vUpdate.status || "").toLowerCase() === "done") {
+            obj.status = "done";
+            obj.finalAnswer =
+              (prose || stripStateBlocks(vText).trim() || "Verified complete.").slice(0, 12000);
+            if (Array.isArray(vUpdate.criteria) && vUpdate.criteria.length) {
+              obj.criteria = vUpdate.criteria.map((c) =>
+                typeof c === "string" ? { text: c, done: true } : { ...c, done: true }
+              );
+            }
+            if (Array.isArray(obj.progress)) {
+              obj.progress.push(
+                "Completed via independent verification segment (fresh context, read-only inspection)."
+              );
+            }
+            await saveObjective(cfg, obj);
+            ledgerEvent(cfg, obj, "objective_done", {
+              segments: obj.totals.segments,
+              toolCalls: obj.totals.toolCalls,
+              viaVerifier: true,
+            });
+            onEvent({ type: "objective", phase: "done", id: obj.id, viaVerifier: true });
+            await notify(
+              `✅ Mission complete — independently verified (${obj.totals.segments} segments).
+
+${obj.finalAnswer}`,
+              { kind: "done" }
+            );
+            return { status: obj.status, id: obj.id, objective: obj };
+          }
+          if (vUpdate && String(vUpdate.status || "").toLowerCase() === "continue") {
+            // The verifier found concrete gaps — feed them back to the actor.
+            const missing = stripStateBlocks(vText).trim().slice(0, 1000);
+            directive =
+              `An independent verification found the objective NOT yet satisfied. Address exactly these gaps, then emit the ${STATE_FENCE} block:
+${missing || JSON.stringify(vUpdate).slice(0, 800)}`;
+            ledgerEvent(cfg, obj, "verify_segment_gaps", { segment: n });
+            await saveObjective(cfg, obj);
+            continue;
+          }
+          ledgerEvent(cfg, obj, "verify_segment_inconclusive", { segment: n });
+        } catch (e) {
+          ledgerEvent(cfg, obj, "verify_segment_error", {
+            error: String(e?.message || e).slice(0, 200),
+          });
+        }
       }
       // Genuine cutoff (maxTurns/budget/guard) or empty output → pause
       // resumable, with the model's actual answer surfaced (never a bare

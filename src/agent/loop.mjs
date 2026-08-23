@@ -83,6 +83,7 @@ import {
 import { analyzeCacheByTool } from "../tokens/cache-by-tool.mjs";
 import { truncateToolResult, truncationOptsFromConfig } from "./truncate.mjs";
 import { guardToolPaths } from "../security/sandbox.mjs";
+import { policyDecision } from "../security/decisions.mjs";
 import { guardToolEgress } from "../security/egress.mjs";
 import { registerSession, unregisterSession } from "./session-control.mjs";
 import { makeToolMessage, freezeRankSize } from "../tokens/rank-size.mjs";
@@ -883,6 +884,7 @@ export async function runAgentLoop(options) {
   // same stuck model. Decremented per escalated turn.
   let escalateTurnsLeft = 0;
   let toolHaltStop = false; // batch stopped by policy (approval/guard/quota) — run must end, not re-turn
+  let lastPolicyDecision = null; // S6b: typed ruling from the last blocking gate
   let aborted = false;
   let finalText = "";
   let turns = 0;
@@ -1450,12 +1452,14 @@ export async function runAgentLoop(options) {
               {
                 resultText: msg,
                 blocked: true,
-                policy: {
+                policy: (lastPolicyDecision = policyDecision({
                   phase: "approval",
                   decision: isPending ? "pending" : "deny",
                   reason: auth.reason || (isPending ? "pending" : "denied"),
+                  tool: name,
                   pendingId,
-                },
+                  message: msg,
+                })),
               }
             )
           );
@@ -1518,11 +1522,12 @@ export async function runAgentLoop(options) {
                 {
                   resultText: msg,
                   blocked: true,
-                  policy: {
+                  policy: (lastPolicyDecision = policyDecision({
                     phase: "plan_revalidate",
                     decision: "deny",
                     reason: rv.reason || "plan_drift",
-                  },
+                    tool: name,
+                  })),
                 }
               )
             );
@@ -1559,7 +1564,7 @@ export async function runAgentLoop(options) {
               {
                 resultText: msg,
                 blocked: true,
-                policy: { phase: "sandbox", decision: "deny", reason: msg },
+                policy: (lastPolicyDecision = policyDecision({ phase: "sandbox", decision: "deny", reason: msg, tool: name, message: msg })),
               }
             )
           );
@@ -1585,7 +1590,7 @@ export async function runAgentLoop(options) {
               {
                 resultText: msg,
                 blocked: true,
-                policy: { phase: "egress", decision: "deny", reason: msg },
+                policy: (lastPolicyDecision = policyDecision({ phase: "egress", decision: "deny", reason: msg, tool: name, message: msg })),
               }
             )
           );
@@ -1598,7 +1603,7 @@ export async function runAgentLoop(options) {
           const msg = riskR.message || "RECEIPT_REQUIRED";
           onEvent({ type: "security", phase: "receipt_required", name, ...riskR });
           messages.push(makeToolMessage({ tool_call_id: call.id, content: msg, source: "receipt" }));
-          recordTrace(finalizeToolTraceEntry(beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }), { resultText: msg, blocked: true, policy: { phase: "receipt", decision: "deny", reason: riskR.code || "RECEIPT_REQUIRED" } }));
+          recordTrace(finalizeToolTraceEntry(beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }), { resultText: msg, blocked: true, policy: (lastPolicyDecision = policyDecision({ phase: "receipt", decision: "deny", reason: riskR.code || "RECEIPT_REQUIRED", tool: name })) }));
           guard.record(name, args, "DENIED: " + msg);
           return;
         }
@@ -2292,6 +2297,9 @@ export async function runAgentLoop(options) {
     // Surfaced so orchestrators can resume the blocked action after a human
     // decision without digging into turnState internals.
     pendingApproval: lastPendingApproval,
+    // S6b: the typed ruling from the last blocking gate (null when nothing
+    // blocked) — one shape across approval/sandbox/egress/plan/receipt.
+    policyDecision: lastPolicyDecision,
     stopReason,
     context: {
       skills: (skills || []).map((s) => s.name),

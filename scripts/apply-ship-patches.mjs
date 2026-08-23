@@ -70,13 +70,6 @@ const SHIP_PATCHES = [
     },
   },
   {
-    file: "goal-receipt-hash.patch",
-    isApplied: (rootDir) => {
-      const t = read(rootDir, "src/agent/goal-loop.mjs");
-      return t.includes("toolHashTip") && t.includes("buildToolHashChain");
-    },
-  },
-  {
     file: "authorize-quota.patch",
     isApplied: (rootDir) => {
       const t = read(rootDir, "src/security/approvals.mjs");

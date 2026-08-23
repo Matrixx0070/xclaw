@@ -253,6 +253,22 @@ export const PATH_ARG_KEYS = [
   "old_path", "new_path", "oldPath", "newPath", "source", "src",
 ];
 
+/**
+ * S6b: the subset of PATH_ARG_KEYS that is SAFE TO REWRITE (sandbox path
+ * resolution mutates args). Excludes keys that are only sometimes paths —
+ * "target" (browser selectors), "to" (message recipients), "source"/"src"
+ * (media URLs), bare "output"/"out" — rewriting those corrupts non-file
+ * tools. The sandbox guard previously kept its OWN 7-key list that missed
+ * file_path/filePath entirely, so file tools escaped the guard (audit
+ * 2026-08-23: "guardToolPaths dead for file tools"). Single-sourced here.
+ */
+export const STRICT_PATH_ARG_KEYS = [
+  "path", "file", "filepath", "file_path", "filePath", "filename", "fileName",
+  "dir", "directory", "cwd", "workingDir",
+  "old_path", "new_path", "oldPath", "newPath",
+  "dest", "destination", "outputPath",
+];
+
 function extractPaths(args = {}) {
   const out = [];
   for (const k of PATH_ARG_KEYS) {

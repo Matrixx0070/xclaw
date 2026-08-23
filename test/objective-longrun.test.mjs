@@ -243,7 +243,9 @@ describe("long-run orchestrator — the 20-30-tool-call failure, reproduced and 
       notify: async (t, m) => notes.push({ t, kind: m?.kind }),
     });
     assert.equal(out.status, "awaiting_human");
-    assert.equal(calls, 2);
+    // S6b+: a third, independent VERIFIER segment now runs before the human
+    // escalation (it also gets no parseable block here → inconclusive).
+    assert.equal(calls, 3);
     assert.ok(notes.at(-1).t.includes("Should I continue with this approach?"), "model text surfaced, not swallowed");
     await fs.rm(cfg._dir, { recursive: true, force: true });
   });
@@ -456,5 +458,86 @@ describe("promotion: affirmation continuation gets a real objective title", () =
     // affirmation with no usable summary falls back to the raw text (no crash)
     assert.equal(deriveObjectiveText("yes", { text: "" }), "yes");
     assert.equal(deriveObjectiveText("ok", {}), "ok");
+  });
+});
+
+describe("independent verifier segment (S6b+)", () => {
+  it("no state block + short prose → verifier segment confirms done (was awaiting_human)", async () => {
+    const cfg = await cfgTmp();
+    const prompts = [];
+    const notifications = [];
+    const runSegment = async ({ prompt }) => {
+      prompts.push(prompt);
+      if (/You are VERIFYING/.test(prompt)) {
+        // fresh-context verifier: inspects and emits the block the actor skipped
+        return {
+          text:
+            "Inspected the directory; every requirement is satisfied.\n" +
+            block({
+              status: "done",
+              criteria: [{ id: "c1", text: "files created", done: true, evidence: "read back" }],
+            }),
+          turns: 2,
+          toolTrace: fakeTrace(3),
+          stopReason: "natural",
+        };
+      }
+      // Actor: does the work but NEVER emits the state block, with prose
+      // under the 40-char heuristic — the exact live obj_mt662lv3 shape.
+      return {
+        text: "All files created and verified.", // 31 chars — under 40
+        turns: 2,
+        toolTrace: fakeTrace(8),
+        stopReason: "natural",
+      };
+    };
+    const out = await runObjective(cfg, {
+      objective: "create the files",
+      runSegment,
+      notify: async (t, meta) => notifications.push({ t, kind: meta?.kind }),
+    });
+    assert.equal(out.status, "done", `status: ${out.status} (${out.objective?.humanQuestion || ""})`);
+    assert.ok(
+      prompts.some((p) => /You are VERIFYING/.test(p)),
+      "verifier segment ran"
+    );
+    assert.ok(out.objective.criteria.length >= 1, "verifier criteria adopted");
+    assert.ok(
+      out.objective.segments.some((s) => s.status === "verify"),
+      "verify segment recorded in durable state"
+    );
+  });
+
+  it("verifier finds gaps → actor continues with the gap directive", async () => {
+    const cfg = await cfgTmp();
+    let actorRuns = 0;
+    const runSegment = async ({ prompt }) => {
+      if (/You are VERIFYING/.test(prompt)) {
+        return {
+          text: "beta.txt is missing.\n" + block({ status: "continue" }),
+          turns: 1,
+          toolTrace: fakeTrace(2),
+          stopReason: "natural",
+        };
+      }
+      actorRuns += 1;
+      if (/independent verification found the objective NOT yet satisfied/.test(prompt)) {
+        // post-gap segment finishes properly with a state block
+        return {
+          text: "fixed.\n" + block({ status: "done", criteria: [{ id: "c1", text: "all files", done: true }] }),
+          turns: 2,
+          toolTrace: fakeTrace(4),
+          stopReason: "natural",
+        };
+      }
+      return { text: "did stuff", turns: 2, toolTrace: fakeTrace(4), stopReason: "natural" };
+    };
+    const out = await runObjective(cfg, {
+      objective: "create the files",
+      runSegment,
+      notify: async () => {},
+    });
+    assert.equal(out.status, "done");
+    assert.ok(actorRuns >= 2, "actor re-ran after the verifier's gap report");
   });
 });
