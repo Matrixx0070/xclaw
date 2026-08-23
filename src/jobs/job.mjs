@@ -8,6 +8,7 @@ import { runAgentLoop } from "../agent/loop.mjs";
 import { createEvidenceLog } from "./evidence.mjs";
 import { scoreClaimsAgainstEvidence } from "./claims.mjs";
 import { runClaimsGateWithSoftRetry, stampJobClaimsSoftRetry } from "./claims-soft-retry-run.mjs";
+import { resolveClaimsPolicy } from "../agent/claims-gate.mjs";
 import { runVerifyChecks } from "./verify.mjs";
 import { recordJob } from "./history.mjs";
 import { stampJobToolHash } from "./stamp-tool-hash.mjs";
@@ -35,6 +36,27 @@ import { createReceiptCollector, copyCollectorOntoJob } from "./receipt-collecto
  * @param {AbortSignal} [opts.signal]
  * @param {(e: object) => void} [opts.onEvent]
  */
+
+// The base system prompt only says to PREFER the structured claims block, but
+// jobs gated by requireStructuredClaims hard-fail without one — the model was
+// never told the block is mandatory (2026-08-23 soak night 1: two campaign
+// jobs completed verified work, answered correctly, omitted the block, and
+// hard-failed). When the resolved claims policy requires the block, say so.
+const REQUIRED_CLAIMS_NOTE =
+  "MANDATORY: end your final answer with a structured claims block:\n" +
+  '```json\n{"claims":["short factual claim"],"evidence_ids":["tool name or evidence id"]}\n```\n' +
+  "Only claim actions supported by tool results in this run. " +
+  "A final answer without this block fails the job.";
+
+export function buildJobSystemNotes(opts, jobCfg, cfg) {
+  const base = opts.systemNotes || jobCfg.agent?.systemNotes;
+  const notes = Array.isArray(base) ? [...base] : base ? [base] : [];
+  if (resolveClaimsPolicy(cfg, opts).requireStructured) {
+    notes.push(REQUIRED_CLAIMS_NOTE);
+  }
+  return notes;
+}
+
 export async function runJob(opts) {
   const {
     goal,
@@ -172,7 +194,7 @@ export async function runJob(opts) {
       provider: opts.provider,
       signal: ac.signal,
       ledgerIds: { jobId: id },
-      systemNotes: opts.systemNotes || jobCfg.agent?.systemNotes,
+      systemNotes: buildJobSystemNotes(opts, jobCfg, cfg),
       // Jobs persist their run snapshot by default: every job already has a
       // durable id, and the snapshot is what makes `xclaw runs` and resume
       // usable. Callers opt out with persistRun:false.

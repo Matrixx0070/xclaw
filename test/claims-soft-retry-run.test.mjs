@@ -81,3 +81,81 @@ describe("claims soft-retry run", () => {
     assert.ok(loops <= r.softRetryBudget.max);
   });
 });
+
+// 2026-08-23 soak night 1 regression: two campaign jobs completed verified
+// work but omitted the structured claims block; the gate refused and the
+// retry loop demanded !refuse, so the budget sat unused and the jobs
+// hard-failed. The retry must fire on a refusing gate, stay bounded, and
+// heal only when the restated claims ground in real evidence.
+describe("soft retry fires on a refusing gate (soak night-1 fix)", () => {
+  const toolEvidence = [
+    { id: "ev_1", source: "tool", summary: "bash: node src/run.js -> RESULT=4" },
+    { id: "ev_2", source: "tool", summary: "write_file: src/calc.js" },
+  ];
+  const mkEvidence = () => ({
+    snapshot: () => toolEvidence,
+    add() {},
+    fromToolTrace() {},
+  });
+  const refuseOpts = { groundHard: true, requireStructuredClaims: true, goal: "fix the bug" };
+
+  it("missing-block refusal triggers one retry and heals on an honest restate", async () => {
+    let rescues = 0;
+    const r = await runClaimsGateWithSoftRetry({
+      agentResult: { text: "Fixed src/calc.js. node src/run.js prints RESULT=4.", toolTrace: [] },
+      evidence: mkEvidence(),
+      cfg: { profile: "lab", jobs: {} },
+      opts: refuseOpts,
+      push() {},
+      runAgentLoop: async (o) => {
+        rescues += 1;
+        assert.match(String(o.userMessage), /structured block/);
+        return {
+          text:
+            'Fixed src/calc.js; node src/run.js prints RESULT=4.\n```json\n{"claims":["fixed src/calc.js so run.js prints RESULT=4"],"evidence_ids":["ev_1","ev_2"]}\n```',
+          toolTrace: [],
+          turns: 1,
+        };
+      },
+    });
+    assert.equal(rescues, 1);
+    assert.equal(r.groundingFailed, false);
+    assert.equal(r.error, null);
+    assert.equal(r.softRetryBudget.used, 1);
+  });
+
+  it("a restate that still omits the block stays failed and bounded", async () => {
+    let rescues = 0;
+    const r = await runClaimsGateWithSoftRetry({
+      agentResult: { text: "Done.", toolTrace: [] },
+      evidence: mkEvidence(),
+      cfg: { profile: "lab", jobs: {} },
+      opts: refuseOpts,
+      push() {},
+      runAgentLoop: async () => {
+        rescues += 1;
+        return { text: "Still no block.", toolTrace: [], turns: 1 };
+      },
+    });
+    assert.equal(rescues, 1); // default budget max 1 — bounded
+    assert.equal(r.groundingFailed, true);
+    assert.equal(r.softRetryBudget.used, 1);
+    assert.equal(r.softRetryBudget.remaining, 0);
+  });
+
+  it("a restate claiming an untouched path is still refused (no fabrication laundering)", async () => {
+    const r = await runClaimsGateWithSoftRetry({
+      agentResult: { text: "Fixed things.", toolTrace: [] },
+      evidence: mkEvidence(),
+      cfg: { profile: "lab", jobs: {} },
+      opts: refuseOpts,
+      push() {},
+      runAgentLoop: async () => ({
+        text: 'Done.\n```json\n{"claims":["rewrote src/secret.js"],"evidence_ids":["ev_9"]}\n```',
+        toolTrace: [],
+        turns: 1,
+      }),
+    });
+    assert.equal(r.groundingFailed, true);
+  });
+});

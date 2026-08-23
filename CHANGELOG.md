@@ -1,3 +1,25 @@
+## 3.152.2 — claims soft retry fires on refuse + mandatory-block instruction (2026-08-23)
+
+Soak night 1 (the first real multi-night soak iteration) failed two campaign
+cases whose work was complete and verified (`verify.ok:true`, correct final
+answers) — both hard-failed only on a missing structured claims JSON block.
+Two defects, both fixed:
+
+- **Soft retry never fired on a refusing gate.** The retry loop demanded
+  `!claimsGate.refuse`, but a missing claims block under `groundHard` refuses
+  immediately — so the budget (max 1) sat unused in the exact case it was
+  built for. The bounded retry now fires on refuse too; the re-gate still
+  scores restated claims against real tool evidence, so fabrication cannot
+  pass by retrying (test-proven: honest restate heals, stubborn restate stays
+  failed, untouched-path claims stay refused).
+- **The model was never told the block is mandatory.** The base system prompt
+  says to *prefer* the block; jobs gated by `requireStructuredClaims` now
+  inject a systemNote stating the block is MANDATORY and that an answer
+  without it fails the job (`buildJobSystemNotes`, exported + tested).
+
+Repro'd against live cfg before the fix (rescueCalled:0 → hard fail) and
+after (rescueCalled:1 → healed). 6 new tests; suite 2870/2865/0.
+
 # Changelog
 
 ## 3.152.1 — file_equals accepts `value`, fails loudly without an expected (2026-08-23)

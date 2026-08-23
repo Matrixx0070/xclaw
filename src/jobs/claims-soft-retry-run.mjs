@@ -44,10 +44,16 @@ export async function runClaimsGateWithSoftRetry(ctx = {}) {
   const softEnabled =
     opts.claimsSoftRetry !== false && cfg.jobs?.claimsSoftRetry !== false;
 
+  // A refusing gate is EXACTLY what the soft retry exists for: the dominant
+  // refusal in practice is "missing structured claims JSON block" on a job
+  // whose work already verified (2026-08-23 soak night 1 — two campaign jobs
+  // hard-failed with the retry budget sitting unused because this loop
+  // demanded !refuse). The retry stays bounded by the budget, and the re-gate
+  // still scores restated claims against real evidence, so fabrication cannot
+  // pass by retrying — it only gets one bounded chance to restate honestly.
   while (
     softEnabled &&
-    !claimsGate.refuse &&
-    claimsGate.warnings?.length > 0 &&
+    (claimsGate.refuse || claimsGate.warnings?.length > 0) &&
     budget.remaining > 0 &&
     typeof runAgentLoop === "function"
   ) {
@@ -72,7 +78,9 @@ export async function runClaimsGateWithSoftRetry(ctx = {}) {
         userMessage:
           (opts.goal || opts.message || "") +
           "\n\n[XClaw claims soft retry] Prior answer had grounding warnings. " +
-          "Cite real tool evidence_ids; do not invent results. Warnings:\n- " +
+          "Restate your final answer and END it with the structured block " +
+          '```json {"claims":[...],"evidence_ids":[...]}``` citing real tool ' +
+          "evidence_ids; do not invent results. Warnings:\n- " +
           claimsGate.warnings.slice(0, 8).join("\n- "),
         cfg,
         workingDir: workspace,
