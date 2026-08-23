@@ -1,3 +1,16 @@
+## 3.154.0 — crash-interrupted objectives auto-resume at boot (2026-08-23)
+
+Live benchmark H: a kill -9 mid-mission left durable state intact and boot
+reconcile marked it `interrupted` — then NOTHING resumed it until a manual
+POST /resume. A crash cost the mission the whole night, not a segment.
+
+- Boot reconcile now auto-resumes interrupted objectives (newest first, cap
+  `objectives.autoResumeMax:3`, skip stopRequested/awaiting_human), off via
+  `objectives.autoResume:false`.
+- Auto-resumed missions notify through the WS hub AND the shared alerter
+  (owner DM when alerting targets are wired) — a mission that finishes
+  headless is heard.
+
 ## 3.153.0 — fail-closed mission completion: "done" can no longer be narrated (2026-08-23)
 
 Live benchmark F (same-day audit) proved the hole: an objective launched via

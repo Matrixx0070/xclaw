@@ -37,7 +37,7 @@ function summarize(o) {
 }
 
 /** Gateway-side detached runner: default agent plumbing, WS notify. */
-async function startGatewayObjective(cfg, runOpts, { workingDir } = {}) {
+async function startGatewayObjective(cfg, runOpts, { workingDir, notify: notifyOverride } = {}) {
   const { replyWithAgent } = await import("../../channels/base.mjs");
   const { runObjective } = await import("../../agent/objective.mjs");
   const wd = workingDir || cfg.paths?.workspaces || process.cwd();
@@ -63,10 +63,42 @@ async function startGatewayObjective(cfg, runOpts, { workingDir } = {}) {
     } catch {
       /* hub optional */
     }
+    if (notifyOverride) {
+      try {
+        await notifyOverride(text, meta);
+      } catch {
+        /* override best-effort */
+      }
+    }
   };
   runObjective(cfg, { ...runOpts, workingDir: wd, runSegment, notify }).catch((err) => {
     console.warn("[xclaw:objectives] run error:", err?.message || err);
   });
+}
+
+/**
+ * Trust Sprint: boot auto-resume of crash-interrupted objectives. Before
+ * this, reconcile marked them "interrupted" and they sat idle until the
+ * owner's next chat message or a manual POST /resume (live benchmark H).
+ * Notifications route to the WS hub AND the shared alerter (owner DM when
+ * alerting targets are wired) so a mission that finishes headless is heard.
+ */
+export async function resumeObjectiveDetached(cfg, obj) {
+  const notify = async (text, meta) => {
+    try {
+      const { getSharedAlerter } = await import("../../alerting/alerts.mjs");
+      await getSharedAlerter(cfg).send({
+        key: `objective:${obj.id}:${meta?.kind || "info"}`,
+        severity: meta?.kind === "error" ? "error" : "info",
+        title: `Mission ${obj.id} (auto-resumed after restart)`,
+        body: String(text).slice(0, 1500),
+        meta: { objectiveId: obj.id, kind: meta?.kind || "info" },
+      });
+    } catch {
+      /* alerter optional */
+    }
+  };
+  await startGatewayObjective(cfg, { resumeId: obj.id }, { workingDir: obj.workingDir, notify });
 }
 
 export async function tryHandleObjectivesRoute({ p, method, req, cfg, res, json, readBody }) {

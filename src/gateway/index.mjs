@@ -1008,13 +1008,35 @@ export async function startGateway({ root } = {}) {
         }
       })
       .catch(() => {});
-    // long-run objectives: running → interrupted at boot; they auto-resume on
-    // the owner's next message in that chat (or /objective resume)
+    // long-run objectives: running → interrupted at boot, then (Trust
+    // Sprint) AUTO-RESUMED — a crash must cost a mission a segment, not the
+    // whole night waiting for the owner's next message (live benchmark H:
+    // durable state survived a kill -9 but nothing resumed it).
     import("../agent/objective-store.mjs")
       .then((m) => m.reconcileInterruptedObjectives(cfg))
-      .then((ids) => {
+      .then(async (ids) => {
         if (ids.length) {
           console.log(`[xclaw:objectives] marked ${ids.length} interrupted objective(s) resumable: ${ids.join(", ")}`);
+        }
+        if (!ids.length || cfg.objectives?.autoResume === false) return;
+        const max = Number(cfg.objectives?.autoResumeMax) || 3;
+        const store = await import("../agent/objective-store.mjs");
+        const { resumeObjectiveDetached } = await import("./routes/objectives.mjs");
+        let resumed = 0;
+        for (const id of ids) {
+          if (resumed >= max) {
+            console.log(`[xclaw:objectives] auto-resume cap (${max}) reached; remaining stay interrupted`);
+            break;
+          }
+          try {
+            const o = await store.loadObjective(cfg, id);
+            if (!o || o.status !== "interrupted" || o.stopRequested) continue;
+            resumed += 1;
+            console.log(`[xclaw:objectives] auto-resuming ${id} (${o.objective.slice(0, 80)})`);
+            await resumeObjectiveDetached(cfg, o);
+          } catch (e) {
+            console.warn(`[xclaw:objectives] auto-resume ${id} failed:`, e?.message || e);
+          }
         }
       })
       .catch(() => {});
