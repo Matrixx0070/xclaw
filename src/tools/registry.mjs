@@ -31,9 +31,17 @@ export function createAllLocalTools(ctx = {}) {
     ...createVideoTools({ workingDir }),
     ...createSkillTools({ workingDir, cfg }),
     ...createSpawnTools({ workingDir, cfg, runState: ctx.spawnState }),
-    ...createMockMailTools(workingDir),
-    ...createMockChatTools(workingDir),
-    ...createFastApiMockTools(),
+    // Eval-only mock tools (mail/chat/fastapi) are NOT part of the
+    // production tool surface: advertising xclaw_gmail_send etc. to the
+    // model in real runs invites it to "send email" into a mock
+    // (2026-08-23 audit C#5). Eval harnesses opt in explicitly.
+    ...(cfg.tools?.mockTools === true || process.env.XCLAW_MOCK_TOOLS === "1"
+      ? [
+          ...createMockMailTools(workingDir),
+          ...createMockChatTools(workingDir),
+          ...createFastApiMockTools(),
+        ]
+      : []),
   ];
   return tools;
 }

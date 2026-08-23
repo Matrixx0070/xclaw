@@ -32,6 +32,20 @@ describe("all local tools", () => {
     assert.ok(names.length >= 19);
   });
 
+  it("mock tools are OFF the production surface by default, opt-in for eval", () => {
+    // Trust Sprint: xclaw_gmail_send etc. are eval fixtures — advertising
+    // them to the model in real runs invited it to "send email" into a mock.
+    const prod = localToolNames(createAllLocalTools({ workingDir: process.cwd() }));
+    for (const n of prod) {
+      assert.ok(!/^xclaw_(mail|gmail|calendar|slack)_/.test(n), `mock leaked: ${n}`);
+    }
+    const evalNames = localToolNames(
+      createAllLocalTools({ workingDir: process.cwd(), cfg: { tools: { mockTools: true } } })
+    );
+    assert.ok(evalNames.length > prod.length, "opt-in adds the mock families");
+    assert.ok(evalNames.some((n) => /mail|chat|task|fastapi/i.test(n)), "mocks present when opted in");
+  });
+
   it("host_capabilities works", async () => {
     const tools = createAllLocalTools({ workingDir: process.cwd() });
     const r = await tools.find((t) => t.name === "host_capabilities").execute({});

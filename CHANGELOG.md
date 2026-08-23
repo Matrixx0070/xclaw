@@ -1,3 +1,18 @@
+## 3.156.0 — delete dead cluster subsystem; mock tools off the prod surface (2026-08-23)
+
+- **src/cluster/ deleted** (40 files, ~2,000 LOC) + doctor-cluster + its 41
+  test files. Fully unreachable from the product entrypoint: its only
+  importer was itself orphaned, and coordinator.mjs fetched /cluster/reserve
+  — an endpoint the gateway never served. The suite kept it green for
+  nothing ("tests as life support", audit K#4). cfg.cluster.enabled remains
+  a recognized-but-inert key (single-gateway detection untouched).
+- **Mock tools gated out of production** (audit C#5). xclaw_gmail_send /
+  mail / chat / fastapi mocks were registered unconditionally — the model
+  was advertised fake capabilities in every real run. Now opt-in only:
+  `tools.mockTools:true` or XCLAW_MOCK_TOOLS=1 (eval harnesses).
+
+Suite after deletion: 2833 tests / 2828 pass / 0 fail / 5 skip.
+
 ## 3.155.0 — governor fed, browser tools reachable, bypass minus critical (2026-08-23)
 
 Three Trust Sprint guardrails, each closing a same-day audit finding:
