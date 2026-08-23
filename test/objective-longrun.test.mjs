@@ -541,3 +541,78 @@ describe("independent verifier segment (S6b+)", () => {
     assert.ok(actorRuns >= 2, "actor re-ran after the verifier's gap report");
   });
 });
+
+describe("deterministic completion gate (E-A)", () => {
+  it("failing checks REJECT completion, feed back as a directive, then pass → done verified", async () => {
+    const cfg = await cfgTmp();
+    const os2 = await import("node:os");
+    const fsn = await import("node:fs");
+    const wd = fsn.mkdtempSync(path.join(os2.tmpdir(), "xclaw-ea-"));
+    let segRuns = 0;
+    const runSegment = async ({ prompt }) => {
+      segRuns += 1;
+      if (/Deterministic verification REJECTED/.test(prompt)) {
+        // second attempt: actually produce the artifact, then claim done
+        fsn.writeFileSync(path.join(wd, "out.txt"), "done");
+        return {
+          text: "made it.\n" + block({ status: "done", criteria: [{ id: "c1", text: "out.txt exists", done: true }] }),
+          turns: 2, toolTrace: fakeTrace(3), stopReason: "natural",
+        };
+      }
+      // first attempt: claims done but produced NOTHING
+      return {
+        text: "all finished, wrote out.txt.\n" + block({ status: "done", criteria: [{ id: "c1", text: "out.txt exists", done: true }] }),
+        turns: 2, toolTrace: fakeTrace(3), stopReason: "natural",
+      };
+    };
+    const out = await runObjective(cfg, {
+      objective: "produce out.txt",
+      workingDir: wd,
+      verify: [{ type: "file_exists", path: "out.txt" }],
+      runSegment,
+      notify: async () => {},
+    });
+    assert.equal(out.status, "done");
+    assert.equal(out.objective.verdict, "verified", "verdict earned by the checks");
+    assert.ok(segRuns >= 2, "first completion was rejected and fed back");
+    fsn.rmSync(wd, { recursive: true, force: true });
+  });
+
+  it("checks that keep failing escalate to a human after the cap", async () => {
+    const cfg = await cfgTmp();
+    const os2 = await import("node:os");
+    const fsn = await import("node:fs");
+    const wd = fsn.mkdtempSync(path.join(os2.tmpdir(), "xclaw-ea2-"));
+    const runSegment = async () => ({
+      // always claims done, never produces the file
+      text: "done!\n" + block({ status: "done", criteria: [{ id: "c1", text: "x", done: true }] }),
+      turns: 1, toolTrace: fakeTrace(2), stopReason: "natural",
+    });
+    const notes = [];
+    const out = await runObjective(cfg, {
+      objective: "produce missing.txt",
+      workingDir: wd,
+      verify: [{ type: "file_exists", path: "missing.txt" }],
+      runSegment,
+      notify: async (t, m) => notes.push({ t, kind: m?.kind }),
+    });
+    assert.equal(out.status, "awaiting_human");
+    assert.match(out.objective.humanQuestion || "", /verification still failing/i);
+    fsn.rmSync(wd, { recursive: true, force: true });
+  });
+
+  it("no checks defined → unchanged behavior, verdict unverified", async () => {
+    const cfg = await cfgTmp();
+    const runSegment = async () => ({
+      text: "Everything asked for is complete and confirmed in detail here.",
+      turns: 1, toolTrace: fakeTrace(2), stopReason: "natural",
+    });
+    const out = await runObjective(cfg, {
+      objective: "small thing",
+      runSegment,
+      notify: async () => {},
+    });
+    assert.equal(out.status, "done");
+    assert.equal(out.objective.verdict, "unverified");
+  });
+});

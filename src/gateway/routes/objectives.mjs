@@ -6,7 +6,8 @@
  * Paths (operator-token gated in BOTH auth modes via the core list):
  *   GET  /objectives            — summaries (newest first)
  *   GET  /objectives/:id        — full state
- *   POST /objectives            — {objective, workingDir?} start detached (gateway-run)
+ *   POST /objectives            — {objective, workingDir?, verify?} start detached (gateway-run);
+ *       verify = typed checks (jobs/verify.mjs shape) gating every done-path
  *   POST /objectives/:id/stop   — request stop at the next segment boundary
  *   POST /objectives/:id/resume — {answer?} resume interrupted/paused/awaiting/stopped
  */
@@ -86,7 +87,7 @@ export async function tryHandleObjectivesRoute({ p, method, req, cfg, res, json,
     }
     // create synchronously so the caller gets the id
     const store = await import("../../agent/objective-store.mjs");
-    const obj = store.newObjective({ objective, channel: "api", chatId: null, workingDir: body?.workingDir || null });
+    const obj = store.newObjective({ objective, channel: "api", chatId: null, workingDir: body?.workingDir || null, verify: Array.isArray(body?.verify) ? body.verify : null });
     await saveObjective(cfg, obj);
     await startGatewayObjective(cfg, { resumeId: obj.id }, { workingDir: body?.workingDir });
     json(res, 200, { ok: true, id: obj.id, status: "running" });

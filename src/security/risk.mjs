@@ -110,7 +110,7 @@ const JOURNALCTL_MUTATORS = /--(vacuum|rotate|flush)/;
  * only. Anything ambiguous (unterminated quote, subshell, remaining
  * redirect) → unsafe, fail closed.
  */
-function scanCommand(raw) {
+export function scanCommand(raw) {
   const segments = [];
   let cur = "";
   let inS = false;

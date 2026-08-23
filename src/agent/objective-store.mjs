@@ -67,6 +67,7 @@ export function newObjective({
   channel = null,
   chatId = null,
   workingDir = null,
+  verify = null,
 } = {}) {
   const now = new Date().toISOString();
   return {
@@ -92,6 +93,11 @@ export function newObjective({
     channel,
     chatId,
     workingDir,
+    // Deterministic completion checks (jobs/verify.mjs shape). When set,
+    // NO done-path may complete the mission while any check fails — the
+    // verdict is earned, not narrated (S2 semantics, wired here in E-A).
+    verify: Array.isArray(verify) && verify.length ? verify : null,
+    verdict: null, // "verified" | "model-verified" | "unverified" — set at done
     segments: [], // [{ n, turns, toolCalls, stopReason, status, at }]
     totals: { segments: 0, toolCalls: 0, turns: 0 },
     finalAnswer: null,

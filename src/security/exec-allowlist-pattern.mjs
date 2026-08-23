@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { scanCommand } from "./risk.mjs";
 
 const GLOB_REGEX_CACHE_LIMIT = 256;
 const globRegexCache = new Map();
@@ -111,19 +112,48 @@ export function matchesExecAllowlistPattern(pattern, target) {
 }
 
 /**
- * True if command string matches any exec allowlist pattern
- * (exact token or glob against full command / cwd paths).
+ * True if a single command segment matches any allowlist pattern
+ * (glob against the full segment, its cwd-joined form, or its binary name).
+ */
+function segmentMatchesAllowlist(segment, patterns, cwd) {
+  const seg = String(segment || "").trim();
+  if (!seg) return true; // empty segment (e.g. trailing separator) is a no-op
+  const bin = seg.split(/\s+/)[0];
+  for (const pat of patterns) {
+    if (matchesExecAllowlistPattern(pat, seg)) return true;
+    if (matchesExecAllowlistPattern(pat, path.join(cwd, seg))) return true;
+    if (bin && matchesExecAllowlistPattern(pat, bin)) return true;
+  }
+  return false;
+}
+
+/**
+ * True if a command is covered by the exec allowlist.
+ *
+ * A compound command (`a && b`, `a | b`, `a; b`) is only allowlisted when
+ * EVERY segment is allowlisted — the old first-token check allowlisted
+ * `safe-cmd && rm -rf /` on `safe-cmd` alone, letting the destructive tail
+ * auto-run. Segmentation reuses the single quote-aware parser in risk.mjs
+ * (one owner), and any construct it flags as unsafe (command substitution,
+ * backticks, subshells, redirects, unterminated quotes) fails closed —
+ * those cannot be reasoned about segment-by-segment, so they pend rather
+ * than auto-approve.
+ *
+ * Note there is deliberately no whole-command fast path: a wildcard pattern
+ * like `ls*` compiles to `ls[^/]*` and would otherwise swallow an entire
+ * compound (`ls | curl evil`) in one match. A single-segment command still
+ * gets the full glob/cwd-join/binary treatment through segmentMatchesAllowlist,
+ * so simple commands behave exactly as before.
  */
 export function commandMatchesExecAllowlist(command, patterns = [], opts = {}) {
   if (!patterns.length) return true; // open if unset
   const cmd = String(command || "").trim();
+  if (!cmd) return true;
   const cwd = opts.cwd || process.cwd();
-  for (const pat of patterns) {
-    if (matchesExecAllowlistPattern(pat, cmd)) return true;
-    if (matchesExecAllowlistPattern(pat, path.join(cwd, cmd))) return true;
-    // first token (binary name)
-    const bin = cmd.split(/\s+/)[0];
-    if (bin && matchesExecAllowlistPattern(pat, bin)) return true;
-  }
-  return false;
+
+  const { segments, unsafe } = scanCommand(cmd);
+  if (unsafe) return false; // fail closed on unreasonable constructs
+  const parts = segments.map((s) => s.trim()).filter(Boolean);
+  if (!parts.length) return false;
+  return parts.every((seg) => segmentMatchesAllowlist(seg, patterns, cwd));
 }

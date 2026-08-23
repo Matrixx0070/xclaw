@@ -200,6 +200,35 @@ function ledgerEvent(cfg, obj, phase, data = {}) {
  * @param {Function} [opts.onEvent]
  * @param {AbortSignal} [opts.signal]
  */
+/**
+ * E-A (Master Evolution Directive): deterministic completion gate. When the
+ * objective carries typed verify checks, NO done-path may complete while a
+ * check fails — command exits and file assertions outrank any narration
+ * (the actor's or the verifier segment's).
+ */
+async function runDeterministicChecks(obj) {
+  if (!Array.isArray(obj.verify) || !obj.verify.length) return { ok: true, ran: false };
+  try {
+    const { runVerifyChecks } = await import("../jobs/verify.mjs");
+    const res = await runVerifyChecks(obj.workingDir || process.cwd(), obj.verify);
+    const failing = (res.results || []).filter((r) => !r.pass);
+    return {
+      ok: res.ok,
+      ran: true,
+      failing,
+      summary:
+        failing
+          .map(
+            (r) =>
+              `${r.type}${r.path ? " " + r.path : ""}${r.cmd ? " " + r.cmd : ""}: FAIL${r.detail ? " (" + r.detail + ")" : ""}`
+          )
+          .join("; ") || null,
+    };
+  } catch (e) {
+    return { ok: false, ran: true, error: String(e?.message || e) };
+  }
+}
+
 export async function runObjective(cfg, opts = {}) {
   const {
     runSegment,
@@ -243,6 +272,7 @@ export async function runObjective(cfg, opts = {}) {
       channel: opts.channel || null,
       chatId: opts.chatId || null,
       workingDir: opts.workingDir || null,
+      verify: opts.verify || null,
     });
     if (opts.seed) mergeStateUpdate(obj, opts.seed);
     ledgerEvent(cfg, obj, "objective_started", { objective: obj.objective.slice(0, 200) });
@@ -255,10 +285,41 @@ export async function runObjective(cfg, opts = {}) {
   let pushbacks = 0;
   let missingStateRetries = 0;
   let verifierSegmentUsed = false; // S6b+: one independent verification segment per run
+  let verifyGateFails = 0; // E-A: deterministic-gate rejections fed back to the actor
+  const VERIFY_GATE_CAP = 2;
   let recoveries = 0;
   let directive = pendingAnswer
     ? `The owner answered your question: "${pendingAnswer.slice(0, 500)}". Incorporate it and continue.`
     : null;
+
+  /**
+   * E-A: every done-path calls this before completing. Returns null when the
+   * mission may close (verdict recorded), "continue" when a deterministic
+   * failure was fed back as a directive, "escalated" when the cap is spent.
+   */
+  const deterministicGate = async (fallbackVerdict) => {
+    const gate = await runDeterministicChecks(obj);
+    if (gate.ok) {
+      obj.verdict = gate.ran ? "verified" : fallbackVerdict;
+      return null;
+    }
+    const what = gate.summary || gate.error || "checks failed";
+    if (verifyGateFails < VERIFY_GATE_CAP) {
+      verifyGateFails += 1;
+      directive = `Deterministic verification REJECTED completion — these checks fail: ${what}. Fix exactly these, then finish again.`;
+      ledgerEvent(cfg, obj, "verify_gate_reject", { fails: verifyGateFails, what: what.slice(0, 300) });
+      onEvent({ type: "objective", phase: "verify_gate_reject", id: obj.id, what });
+      await saveObjective(cfg, obj);
+      return "continue";
+    }
+    obj.status = "awaiting_human";
+    obj.humanQuestion = `Deterministic verification still failing after ${VERIFY_GATE_CAP} fix attempts: ${what}`;
+    await saveObjective(cfg, obj);
+    ledgerEvent(cfg, obj, "verify_gate_escalate", { what: what.slice(0, 300) });
+    onEvent({ type: "objective", phase: "awaiting_human", id: obj.id });
+    await notify(`⚠️ Mission ${obj.id} paused — verification keeps failing: ${what}\n/objective resume to continue.`, { kind: "question" });
+    return "escalated";
+  };
 
   while (true) {
     // ── runtime control between segments ─────────────────────────────────
@@ -365,6 +426,11 @@ export async function runObjective(cfg, opts = {}) {
       const modelEndedTurn = seg?.stopReason === "natural" || seg?.stopReason === "hook";
       const openCriteria = obj.criteria.filter((c) => !c.done);
       if (modelEndedTurn && prose.length >= 40 && !openCriteria.length) {
+        {
+          const g = await deterministicGate("unverified");
+          if (g === "continue") continue;
+          if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
+        }
         obj.status = "done";
         obj.finalAnswer = prose.slice(0, 12000);
         if (Array.isArray(obj.progress)) {
@@ -403,6 +469,11 @@ export async function runObjective(cfg, opts = {}) {
       // never flipped the done flag, so a strict open-criteria gate would
       // pause a genuinely finished mission — the exact friction seen live.)
       if (modelEndedTurn && prose.length >= 40) {
+        {
+          const g = await deterministicGate("unverified");
+          if (g === "continue") continue;
+          if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
+        }
         obj.status = "done";
         obj.finalAnswer = prose.slice(0, 12000);
         if (Array.isArray(obj.progress)) {
@@ -466,6 +537,11 @@ ${(prose || "(empty)").slice(0, 1200)}
             at: new Date().toISOString(),
           });
           if (vUpdate && String(vUpdate.status || "").toLowerCase() === "done") {
+            {
+              const g = await deterministicGate("model-verified");
+              if (g === "continue") continue;
+              if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
+            }
             obj.status = "done";
             obj.finalAnswer =
               (prose || stripStateBlocks(vText).trim() || "Verified complete.").slice(0, 12000);
@@ -594,6 +670,11 @@ ${missing || JSON.stringify(vUpdate).slice(0, 800)}`;
         await saveObjective(cfg, obj);
         ledgerEvent(cfg, obj, "objective_pushback", { openCriteria: open.length });
         continue;
+      }
+      {
+        const g = await deterministicGate("unverified");
+        if (g === "continue") continue;
+        if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
       }
       obj.status = "done";
       obj.finalAnswer = stripStateBlocks(text).slice(0, 12000) || "(mission complete)";

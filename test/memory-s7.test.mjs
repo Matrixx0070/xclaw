@@ -92,3 +92,32 @@ describe("memory addressability + forget (S7)", () => {
     assert.equal(sawPrefs, true, "preferences reached the model context");
   });
 });
+
+describe("compaction provenance (E-B)", () => {
+  it("rotation writes a compact event; recall expands it back to archived sources", async () => {
+    const cfg = {
+      paths: { configDir: path.join(tmpHome, "c-eb") },
+      memory: { maxEventBytes: 3000, keepEventBytes: 1000 },
+    };
+    const ws = path.join(tmpHome, "ws-eb");
+    for (let i = 0; i < 40; i++) {
+      await appendMemory(cfg, ws, {
+        type: "note",
+        summary: `zebra event number ${i} — ${"x".repeat(100)}`,
+      });
+    }
+    const items = await listMemory(cfg, ws, { limit: 100 });
+    const compact = items.find((i) => i.type === "compact");
+    assert.ok(compact, "compact summary event written on rotation");
+    assert.ok(Array.isArray(compact.sourceIds) && compact.sourceIds.length > 0, "sourceIds recorded");
+    const { recallMemory } = await import("../src/memory/recall.mjs");
+    const r = await recallMemory(cfg, ws, { query: "archived events", provenance: { expand: true } });
+    const hit = (r.hits || []).find((h) => h.type === "compact");
+    assert.ok(hit, "compact event recallable");
+    assert.ok(hit.provenance, "provenance expansion ran");
+    assert.ok(
+      (hit.provenance.sources || []).length > 0,
+      `archived sources resolved (missing: ${JSON.stringify(hit.provenance?.missing || []).slice(0, 100)})`
+    );
+  });
+});

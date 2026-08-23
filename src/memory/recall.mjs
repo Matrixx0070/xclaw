@@ -74,7 +74,28 @@ export async function recallMemory(cfg, workspacePath, opts = {}) {
     .slice(0, limit);
 
   const paths = memoryPaths(cfg, workspacePath);
-  const expanded = expandRecallHits(scored, events, opts.provenance || {});
+  // E-B: provenance expansion indexes the ARCHIVE too — compact events'
+  // sourceIds point into events.jsonl.1 after rotation; without this the
+  // expander reported every archived source as missing.
+  let provStore = events;
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const head = await readFile(paths.jsonl + ".1", "utf8").catch(() => "");
+    if (head) {
+      const archived = [];
+      for (const ln of head.split("\n").filter(Boolean).slice(-2000)) {
+        try {
+          archived.push(JSON.parse(ln));
+        } catch {
+          /* torn line */
+        }
+      }
+      if (archived.length) provStore = [...archived, ...events];
+    }
+  } catch {
+    /* archive optional */
+  }
+  const expanded = expandRecallHits(scored, provStore, opts.provenance || {});
   return {
     workspace: paths.workspace,
     memoryKey: paths.key,

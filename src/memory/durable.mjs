@@ -50,10 +50,41 @@ export async function appendMemory(cfg, workspacePath, event) {
   // head ("<file>.1") loses nothing recall could see.
   try {
     const { rotateJsonlIfOversize } = await import("../ops/maintenance.mjs");
-    await rotateJsonlIfOversize(p.jsonl, {
+    const rot = await rotateJsonlIfOversize(p.jsonl, {
       maxBytes: cfg?.memory?.maxEventBytes ?? 1_000_000,
       keepBytes: cfg?.memory?.keepEventBytes ?? 500_000,
     });
+    // E-B: rotation writes a COMPACT summary event whose sourceIds point at
+    // the archived records — the provenance chain (recall-provenance) can
+    // then expand a compact note back into its sources on demand instead of
+    // the archive silently vanishing from recall's view.
+    if (rot?.rotated) {
+      const head = await fs.readFile(p.jsonl + ".1", "utf8").catch(() => "");
+      const ids = [];
+      const types = {};
+      for (const ln of head.split("\n").filter(Boolean).slice(-2000)) {
+        try {
+          const ev = JSON.parse(ln);
+          if (ev.id) ids.push(ev.id);
+          const t = ev.type || "note";
+          types[t] = (types[t] || 0) + 1;
+        } catch {
+          /* skip torn line */
+        }
+      }
+      if (ids.length) {
+        const compact = redactEvent({
+          at: new Date().toISOString(),
+          id: `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          type: "compact",
+          summary: `Archived ${ids.length} events (${Object.entries(types)
+            .map(([k, v]) => `${k}:${v}`)
+            .join(", ")}) to events.jsonl.1`,
+          sourceIds: ids.slice(0, 200),
+        });
+        await fs.appendFile(p.jsonl, JSON.stringify(compact) + "\n");
+      }
+    }
   } catch {
     /* rotation is best-effort */
   }

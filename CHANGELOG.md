@@ -1,5 +1,52 @@
 # Changelog
 
+## 3.152.0 — Deterministic mission verify, compaction provenance, one command parser (2026-08-23)
+
+Three enhancements finishing the Master Evolution Directive's ARC-3 tail —
+each closes a place where the runtime could *claim* completion or coverage it
+could not *prove*.
+
+### Objectives — deterministic verification gates completion (E-A)
+
+- An objective may now carry typed `verify` checks (command exits + file
+  assertions, same shape jobs use). No done-path — actor narration, empty
+  open-criteria, or the independent verifier segment — may close the mission
+  while a check fails. Ground truth outranks every prose signal.
+- `deterministicGate()` fronts all four completion sites: a failing check is
+  fed back to the actor as a fix directive (up to `VERIFY_GATE_CAP=2`), then
+  escalates to the human with the exact failing checks rather than reporting
+  success. Verdict is `verified` only when real checks ran and passed;
+  otherwise the prior `unverified`/`model-verified` fallback is preserved.
+- `POST /objectives` accepts `verify: [...]`; `objective-store` persists the
+  checks and a `verdict` field. Live finding this closes: obj_mt662lv3 had
+  deterministic ground truth available (4/4 files correct) yet escalated on a
+  40-char prose heuristic — the checks were never run.
+
+### Memory — compaction leaves a provenance trail (E-B)
+
+- When `events.jsonl` rotates, a `type:"compact"` summary event is written
+  whose `sourceIds` point at the archived records now in `events.jsonl.1`
+  (with a per-type count). Previously the archive simply left recall's view.
+- Recall's provenance expander now indexes the archive head too, so a compact
+  note expands back into its archived sources on demand instead of reporting
+  them all missing.
+
+### Security — the exec allowlist reasons about every segment (E-C)
+
+- `commandMatchesExecAllowlist` split the command with a quote-blind
+  `split(/\s+/)[0]` and checked only the first token, so
+  `safe-cmd && rm -rf /` allowlisted on `safe-cmd` and the destructive tail
+  auto-ran. It now segments via the one quote-aware parser in `risk.mjs`
+  (`scanCommand`, newly exported — single owner shared with the classifier)
+  and requires EVERY segment to be allowlisted.
+- Unsafe constructs the parser flags (command substitution, backticks,
+  subshells, redirects, unterminated quotes) fail closed → they pend for
+  approval rather than auto-run. The old whole-command fast path is gone: a
+  wildcard pattern like `ls*` compiles to `ls[^/]*` and would otherwise
+  swallow an entire compound (`ls | curl evil`) in one match. Single commands
+  are unchanged. New `test/exec-allowlist.test.mjs` (8 cases) pins all of it.
+
+
 ## 3.151.0 — S6b: one policy shape, ground truth before humans, two dead programs gone (2026-08-23)
 
 ### Security — single-sourced path keys + typed PolicyDecision
