@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.150.1 — CI gate unbroken (2026-08-23)
+
+- `scripts/ci-gate.mjs` kept invoking the parity/generated-build scripts
+  deleted in v3.148.0 — the S4 cleanup caught `.github/workflows/ci.yml`
+  but missed the gate script's OWN step list (a second wiring of the same
+  dead program: exactly the duplicate-owner disease). Every `ci` workflow
+  run from v3.148.0 to v3.150.0 failed on it; all other workflows stayed
+  green. Steps removed; gate exits 0 locally; found via red CI on GitHub.
+
 ## 3.150.0 — S7+S8: memory that changes behavior, escalation instead of stalling (2026-08-23)
 
 Seventh/eighth slices of the Master Evolution Directive.

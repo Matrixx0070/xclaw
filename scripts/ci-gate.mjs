@@ -53,16 +53,9 @@ const testFiles = listTestFiles();
 results.push(
   await run("unit tests", process.execPath, ["--test", ...testFiles])
 );
-results.push(
-  await run("C4 computer parity", process.execPath, [
-    "scripts/check-computer-parity.mjs",
-  ])
-);
-results.push(
-  await run("C3 computer build", process.execPath, [
-    "scripts/build-computer-bundle.mjs",
-  ])
-);
+// C3/C4 parity + generated-build steps removed with the generated engine
+// (S4, v3.148.0) — the gate kept invoking the deleted scripts and failed
+// every push from v3.148.0 until this fix (found via red CI on GitHub).
 results.push(
   await run("skills smoke", process.execPath, ["scripts/p2-skills-smoke.mjs"])
 );
