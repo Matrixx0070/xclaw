@@ -235,6 +235,29 @@ xclaw gateway   # ensureHeartbeat + queue worker + evolve on each HB tick
 
 Full playbook: **[docs/SELF_EVOLUTION.md](./docs/SELF_EVOLUTION.md)** · principles: **[docs/PRINCIPLES.md](./docs/PRINCIPLES.md)**
 
+### Long-running objectives
+
+A high-level objective survives context, turn, and restart boundaries as a
+durable mission (state at `~/.xclaw/objectives/<id>.json`). The runtime runs
+it in **fresh-context segments** rebuilt from state, drives to explicit
+completion criteria (a turn cap is a checkpoint, never "done"), and runs an
+independent verifier — plus optional deterministic `verify` checks (file
+assertions + command exits) that gate completion. A crash or reboot parks the
+mission `interrupted`; it resumes where it left off.
+
+```bash
+# Chat command (WebChat / Telegram): start · check · resume · stop
+/objective read, analyze, and summarize project X into notes/x.md
+
+# HTTP (gateway): detached start with deterministic acceptance checks
+curl -sX POST http://127.0.0.1:18790/objectives \
+  -H "Authorization: Bearer $XCLAW_GATEWAY_TOKEN" -H 'content-type: application/json' \
+  -d '{"objective":"write notes/x.md","verify":[{"type":"file_exists","path":"notes/x.md"}]}'
+# GET /objectives · GET /objectives/:id · POST /objectives/:id/{stop,resume}
+```
+
+Architecture + state contract: **[docs/LONGRUN.md](./docs/LONGRUN.md)**.
+
 ## Strategy C (computer)
 
 **Modules are the source of truth.** Do **not** hand-edit the ~16MB `xclaw-server.mjs` bundle.
@@ -317,6 +340,7 @@ See [OPS.md](./OPS.md) and `deploy/`.
 | [CHANGELOG.md](./CHANGELOG.md) | Version history |
 | [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md) | Computer source vs runtime |
 | [docs/API.md](./docs/API.md) | HTTP / gateway API |
+| [docs/LONGRUN.md](./docs/LONGRUN.md) | Long-running objectives / mission architecture |
 | [docs/APPROVALS.md](./docs/APPROVALS.md) | Approval / plan binding |
 | [docs/BROWSER_UNBUNDLE.md](./docs/BROWSER_UNBUNDLE.md) | Native browser vs CDP |
 | [docs/](./docs/) | Auth, swarm, eval notes (many specialized) |
