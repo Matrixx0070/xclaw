@@ -54,6 +54,17 @@ user objective
 - **Completion is criteria-driven.** The first segment derives explicit
   completion criteria; `done` with open criteria gets bounded pushback
   (cap 2) — complete them, evidence them, or honestly mark unachievable.
+- **Independent verification before completion.** Before a mission closes,
+  an independent read-only *verifier segment* (fresh context) checks the
+  work against the objective — replacing the old prose-length heuristic.
+  If the objective carries typed `verify` checks (command exits + file
+  assertions, same shape jobs use, passed to `POST /objectives` as
+  `verify:[…]`), those run as a **deterministic gate**: no done-path may
+  complete while a check fails. A failure is fed back to the actor as a fix
+  directive (cap 2) then escalates to the human with the exact failing
+  checks. `objective.verdict` is `verified` only when real checks ran and
+  passed, `model-verified` when only the verifier segment approved, else
+  `unverified`.
 - **Decision classification.**
   - *Autonomous*: everything the model can infer — it is instructed the
     turn budget is never completion and to decide-and-record rather than
@@ -98,5 +109,6 @@ user objective
 - Discord/Slack/email pass no `notify` sender yet → no detached missions
   there (router degrades gracefully; commands still answer).
 - Mission concurrency is 1 per chat by design.
-- The final deliverable is the last segment's prose; no separate
-  synthesis pass yet.
+- The final deliverable is the last segment's prose. Verification is a
+  separate read-only pass (verifier segment + optional deterministic
+  `verify` checks); there is no separate *synthesis* pass yet.
