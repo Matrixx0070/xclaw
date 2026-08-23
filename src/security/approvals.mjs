@@ -36,7 +36,10 @@ function ensureSlaTimer(cfg) {
     for (const [id, item] of [...pending.entries()]) {
       if (item.deadline && now >= item.deadline) {
         pending.delete(id);
-        if (item.timer) clearTimeout(item.timer);
+        // Field is timeoutHandle (not .timer) — the uncleaned 120s fallback
+        // timer held child processes/tests alive after SLA resolution
+        // (event-loop-drain bug class).
+        if (item.timeoutHandle) clearTimeout(item.timeoutHandle);
         const action = item.slaAction || "deny";
         journalDecision(cfg, {
           tool: item.tool,

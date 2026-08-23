@@ -2339,10 +2339,9 @@ export async function startGateway({ root } = {}) {
         return json(res, 200, out);
       }
 
-      if (p === "/providers/route" && req.method === "GET") {
-        const model = url.searchParams.get("model") || undefined;
-        return json(res, 200, resolveProviderRoute(cfg, { model }));
-      }
+      // GET /providers/route is owned by routes/ops.mjs (dispatched above) —
+      // an identical inline handler here was shadowed dead code (audit
+      // 2026-08-23: duplicate route handlers, single-owner rule).
 
       if (p === "/cron/logs" && req.method === "GET") {
         const { monitorCronLogs } = await import("../cron/logs.mjs");

@@ -301,7 +301,10 @@ export async function tryHandleOpsRoute({
   if (p === "/providers/route" && method === "GET") {
     const { resolveProviderRoute } = await import("../../providers/router.mjs");
     const model = url.searchParams.get("model") || undefined;
-    json(res, 200, resolveProviderRoute(cfg, { model }));
+    // Redact the credential at the HTTP boundary — hasKey already conveys
+    // presence; the key value must never leave the process (audit 2026-08-23).
+    const { apiKey, ...route } = resolveProviderRoute(cfg, { model });
+    json(res, 200, route);
     return true;
   }
 

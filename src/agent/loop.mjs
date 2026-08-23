@@ -841,6 +841,7 @@ export async function runAgentLoop(options) {
   const goal = inferGoal(userMessage);
   let lastPendingApproval = null;
   let loopGuardStop = false;
+  let toolHaltStop = false; // batch stopped by policy (approval/guard/quota) — run must end, not re-turn
   let aborted = false;
   let finalText = "";
   let turns = 0;
@@ -1758,7 +1759,6 @@ export async function runAgentLoop(options) {
         cfg,
         onEvent,
       });
-      void stopTools;
       // Pairing invariant: EVERY tool_call id in this assistant turn must get
       // a tool message — a mid-batch stop (pending approval, guard critical)
       // skips the remaining calls, and an orphaned tool_use makes the next
@@ -1784,6 +1784,21 @@ export async function runAgentLoop(options) {
             })
           );
         }
+      }
+
+      // Honor the batch stop: a "stop" from processToolCall (guard critical,
+      // pending approval, quota hard circuit) means the run cannot productively
+      // continue — issuing another model turn just retries the blocked action
+      // (the approval-storm mechanism). The pairing backfill above keeps the
+      // transcript valid; the post-run pipeline (verify, metrics, receipts)
+      // still runs after the loop.
+      if (stopTools) {
+        toolHaltStop = true;
+        if (!finalText) {
+          finalText =
+            "Stopped: tool execution halted by policy (guard, approval, or quota).";
+        }
+        break;
       }
     }
 
@@ -2148,6 +2163,9 @@ export async function runAgentLoop(options) {
     sessionId,
     suggestions,
     turnState,
+    // Surfaced so orchestrators can resume the blocked action after a human
+    // decision without digging into turnState internals.
+    pendingApproval: lastPendingApproval,
     // Why the run ended — orchestrators must distinguish "the model finished"
     // from "the runtime cut it off" (a turn cap is an execution constraint,
     // never evidence the user's objective is complete).
@@ -2157,11 +2175,15 @@ export async function runAgentLoop(options) {
         ? "hook"
         : loopGuardStop
           ? "guard"
-          : budgetStop
-            ? "budget"
-            : maxTurnsStop
-              ? "maxTurns"
-              : "natural",
+          : lastPendingApproval
+            ? "approval"
+            : toolHaltStop
+              ? "policy"
+              : budgetStop
+                ? "budget"
+                : maxTurnsStop
+                  ? "maxTurns"
+                  : "natural",
     context: {
       skills: (skills || []).map((s) => s.name),
       memory: (memoryFiles || []).map((m) => m.path),

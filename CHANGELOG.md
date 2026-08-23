@@ -1,5 +1,49 @@
 # Changelog
 
+## 3.145.1 — S1: honor policy stops, stop leaking secrets (2026-08-23)
+
+First slice of the Master Evolution Directive, gated by the reconnaissance
+report (`docs/RECON-2026-08-23.md`) and a live architectural audit.
+
+### Agent loop — a policy stop now ends the RUN, not just the tool batch
+
+- `runAgentLoop` discarded the `stop` verdict from `runToolBatches`
+  (`void stopTools`): a guard-critical, pending-approval, or quota-circuit
+  stop halted the current batch, then the loop issued ANOTHER model turn —
+  the model retried the blocked action, each retry minting a fresh approval
+  prompt. This was the approval-storm mechanism (52 taps/30min, v3.125.0).
+  The loop now breaks on a batch stop; the pairing backfill keeps the
+  transcript valid and the post-run pipeline still runs.
+- New `stopReason` values: `"approval"` (run ended awaiting a human decision)
+  and `"policy"` (quota hard circuit). Orchestrators already treat only
+  `natural|hook` as model-completed, so both are additive-safe.
+- The run result now surfaces `pendingApproval` at top level so orchestrators
+  can resume the blocked action after a decision without digging into
+  `turnState` internals.
+- Regression: `test/loop-stop-honored.test.mjs` (fake-provider hermetic loop;
+  proves 1 model turn on pending approval, early stop on guard critical).
+
+### Approvals — SLA sweeper event-loop drain
+
+- The SLA sweeper cleared `item.timer` but the pending entry stores
+  `timeoutHandle` — the leaked 120s fallback timer held child processes and
+  tests alive long after the request resolved (event-loop-drain class).
+
+### Gateway — `GET /providers/route` no longer discloses the provider apiKey
+
+- The route returned `resolveProviderRoute()` verbatim, credential included.
+  The LIVE handler is `routes/ops.mjs` (dispatched at index.mjs:1230); an
+  identical inline handler at index.mjs:2342 was shadowed dead code — the
+  first fix landed there and changed nothing, proven by curling the live
+  gateway. Redaction now lives in the single owner (ops.mjs, which already
+  reports `hasKey`), and the shadowed duplicate is deleted. Live-proven:
+  response carries no `apiKey` field after restart.
+
+### Hygiene
+
+- `.gitignore` now covers the root-level ad-hoc capture/scrape scripts
+  (several held live proxy credentials; the repo is public).
+
 ## 3.145.0 — the TUI, ready for public use (2026-08-20)
 
 ### TUI — Claude Code surface (original code)

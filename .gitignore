@@ -28,3 +28,22 @@ tmp-live/
 reports/release/
 .xclaw-evidence/
 eval/baselines/last-*.json
+
+# Root-level ad-hoc capture/scrape scripts hold live proxy credentials —
+# never track them (repo is PUBLIC). Audit 2026-08-23.
+/capture-*
+/scrape-*
+/*-capture-*
+GOOGLE_ADS_CAPTURE_REPORT.md
+MISSION_2_SUMMARY.md
+/check-*.mjs
+/debug-*.mjs
+/deep-inspect-*.mjs
+/detailed-*.mjs
+/dump-*.mjs
+/extract-*.mjs
+/find-*.mjs
+/fixed-*.mjs
+/inspect-*.mjs
+/test-google-*.mjs
+/test-proxy-*.mjs
