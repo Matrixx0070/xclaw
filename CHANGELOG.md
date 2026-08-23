@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.152.1 — file_equals accepts `value`, fails loudly without an expected (2026-08-23)
+
+Hardening surfaced while live-proving the E-A deterministic verify gate end to
+end through the real gateway.
+
+- `file_equals` (the shared jobs/objectives verify check) now accepts `value`
+  as an alias for `content`, and — more importantly — **fails loudly** when a
+  check supplies neither, instead of silently comparing the file against `""`.
+  The silent empty-string compare had mis-verified a live objective posted with
+  `value`: the check reported FAIL, the gate correctly rejected and escalated,
+  but the failure was a schema footgun, not a real content mismatch. An
+  explicit `content: ""` still passes on a genuinely empty file.
+- Live-proven on the gateway: objectives posted with `content:"DONE"` and with
+  `value:"DONE"` both complete `verdict: "verified"` in one segment; a posted
+  check with no expected value now fails with detail `missing expected`.
+
 ## 3.152.0 — Deterministic mission verify, compaction provenance, one command parser (2026-08-23)
 
 Three enhancements finishing the Master Evolution Directive's ARC-3 tail —

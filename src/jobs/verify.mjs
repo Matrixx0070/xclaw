@@ -51,8 +51,21 @@ async function runOne(workspace, check) {
       case "file_equals": {
         const p = resolveCheckPath(workspace, check.path);
         const text = await fs.readFile(p, "utf8");
-        const pass = text === (check.content ?? "");
-        return { type, path: check.path, pass };
+        // `value` is an accepted alias for `content` (objectives share this
+        // parser via the deterministic verify gate). A check with neither
+        // fails loudly rather than silently comparing against "" — that
+        // silent empty-string compare mis-verified a real objective.
+        const expected = check.content ?? check.value;
+        if (expected === undefined) {
+          return {
+            type,
+            path: check.path,
+            pass: false,
+            detail: "file_equals missing expected 'content' (or 'value')",
+          };
+        }
+        const pass = text === expected;
+        return { type, path: check.path, pass, detail: pass ? undefined : "content mismatch" };
       }
       case "file_not_exists": {
         const p = resolveCheckPath(workspace, check.path);

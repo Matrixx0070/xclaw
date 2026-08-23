@@ -49,6 +49,30 @@ describe("evidence", () => {
   });
 });
 
+describe("file_equals content/value alias (E-A hardening)", () => {
+  it("passes on exact content, accepts `value` as an alias, fails loudly when neither is set", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-feq-"));
+    await fs.writeFile(path.join(dir, "r.txt"), "DONE");
+    // content: exact match
+    let r = await runVerifyChecks(dir, [{ type: "file_equals", path: "r.txt", content: "DONE" }]);
+    assert.equal(r.ok, true);
+    // value: alias for content
+    r = await runVerifyChecks(dir, [{ type: "file_equals", path: "r.txt", value: "DONE" }]);
+    assert.equal(r.ok, true, "value should alias content");
+    // mismatch
+    r = await runVerifyChecks(dir, [{ type: "file_equals", path: "r.txt", content: "NOPE" }]);
+    assert.equal(r.ok, false);
+    // neither content nor value -> loud fail, NOT a silent compare against ""
+    r = await runVerifyChecks(dir, [{ type: "file_equals", path: "r.txt" }]);
+    assert.equal(r.ok, false, "missing expected must fail, not silently pass on empty file");
+    assert.match(r.results[0].detail || "", /missing expected/);
+    // and an empty file with an explicit empty-string expectation still passes
+    await fs.writeFile(path.join(dir, "empty.txt"), "");
+    r = await runVerifyChecks(dir, [{ type: "file_equals", path: "empty.txt", content: "" }]);
+    assert.equal(r.ok, true);
+  });
+});
+
 describe("scoreCase budgets", () => {
   it("fails over maxTurns budget", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-s-"));
