@@ -1,0 +1,13 @@
+{
+  "version": "8539eb49175af0ca",
+  "files": [
+    "src/gateway/stop-route.mjs",
+    "src/gateway/stop-auth.mjs",
+    "src/gateway/ws-stop-control.mjs",
+    "src/gateway/sse-stop-control.mjs",
+    "src/cli/stop-help.mjs",
+    "docs/STOP.md",
+    "docs/openapi-stop.yaml"
+  ],
+  "at": "2026-08-23T20:26:14.116Z"
+}

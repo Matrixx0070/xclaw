@@ -1,6 +1,6 @@
 {
-  "at": "2026-08-14T10:30:09.527Z",
-  "quick": true,
+  "at": "2026-08-23T20:26:14.112Z",
+  "quick": false,
   "strict": false,
   "live": false,
   "steps": [
@@ -8,20 +8,20 @@
       "name": "unit tests",
       "ok": true,
       "required": true,
-      "ms": 31361,
-      "detail": "# tests 1597 | # pass 1592 | # fail 0",
+      "ms": 45362,
+      "detail": "# tests 2864 | # pass 2859 | # fail 0",
       "code": 0
     },
     {
       "name": "security-audit",
       "ok": true,
       "required": true,
-      "ms": 51,
+      "ms": 43,
       "detail": {
-        "at": "2026-08-14T10:30:09.464Z",
+        "at": "2026-08-23T20:26:11.956Z",
         "ok": true,
         "errors": 0,
-        "warnings": 0,
+        "warnings": 1,
         "findings": [
           {
             "id": "gateway.bind",
@@ -37,15 +37,9 @@
           },
           {
             "id": "security.autoApprove",
-            "level": "ok",
-            "message": "autoApprove off",
-            "fix": null
-          },
-          {
-            "id": "security.systemRunPlan",
-            "level": "ok",
-            "message": "bindSystemRunPlan on (frozen argv/cwd/exe before approval)",
-            "fix": null
+            "level": "warn",
+            "message": "autoApprove=true",
+            "fix": "Use only in lab; prod should use approvalPolicy risky/safeAuto"
           },
           {
             "id": "sandbox",
@@ -70,22 +64,71 @@
       "code": 0
     },
     {
-      "name": "a-enforcement",
-      "ok": false,
+      "name": "sandbox-redteam",
+      "ok": true,
+      "required": true,
+      "ms": 105,
+      "detail": null,
+      "code": 0
+    },
+    {
+      "name": "fire-drill",
+      "ok": true,
+      "required": true,
+      "ms": 1610,
+      "detail": null,
+      "code": 0
+    },
+    {
+      "name": "stop-fire-drill",
+      "ok": true,
+      "required": true,
+      "ms": 64,
+      "detail": null,
+      "code": 0
+    },
+    {
+      "name": "evidence",
+      "ok": true,
       "required": false,
-      "ms": 53,
-      "detail": "  code: 'ENOENT', |   syscall: 'open', |   path: '/tmp/xclaw-wt-b46edb58/src/computer/xclaw-server.mjs' | } | ",
-      "code": 2
+      "ms": 196,
+      "detail": null,
+      "code": 0
+    },
+    {
+      "name": "a-enforcement",
+      "ok": true,
+      "required": false,
+      "ms": 132,
+      "detail": " | Summary: 0 fail(s), 0 warning(s) — exit 0 | [xclaw] config: security.bypassApprovals=true — FULL AUTONOMY: no tool call will ever ask for approval, at any risk tier | [xclaw] config: security.autoApprove=true with requireApproval list — approvals may be auto-granted | ",
+      "code": 0
     },
     {
       "name": "bundle-markers",
-      "ok": false,
+      "ok": true,
       "required": false,
-      "ms": 2,
-      "detail": "ENOENT: no such file or directory, open '/tmp/xclaw-wt-b46edb58/src/computer/xclaw-server.mjs'",
-      "code": 1
+      "ms": 44,
+      "detail": [
+        "A2: driver hooks",
+        "A4: humanized CDP motor",
+        "A5: single Chrome argv"
+      ],
+      "code": 0
     }
   ],
   "ok": true,
-  "requiredFailed": []
+  "requiredFailed": [],
+  "stopSurface": {
+    "version": "8539eb49175af0ca",
+    "files": [
+      "src/gateway/stop-route.mjs",
+      "src/gateway/stop-auth.mjs",
+      "src/gateway/ws-stop-control.mjs",
+      "src/gateway/sse-stop-control.mjs",
+      "src/cli/stop-help.mjs",
+      "docs/STOP.md",
+      "docs/openapi-stop.yaml"
+    ],
+    "at": "2026-08-23T20:26:14.116Z"
+  }
 }

@@ -1,0 +1,102 @@
+{
+  "version": "3.152.0",
+  "at": "2026-08-23T20:12:50.906Z",
+  "scoreboard": {
+    "at": "2026-08-23T20:12:50.904Z",
+    "passRate": 1,
+    "passed": 20,
+    "total": 20,
+    "meanTurns": 2.789473684210526,
+    "meanWallMs": 6382.263157894737,
+    "costUsd": 0.607977,
+    "tokens": 108039,
+    "hardPack": {
+      "total": 5,
+      "passed": 5
+    },
+    "longPack": {
+      "total": 4,
+      "passed": 4
+    },
+    "campaignPack": {
+      "total": 2,
+      "passed": 2,
+      "passRate": 1
+    },
+    "skillLoop": {
+      "samples": 0,
+      "helped": 0,
+      "helpRate": null
+    },
+    "soak": {
+      "nights": 0,
+      "runs": 0,
+      "passRate": null,
+      "flakes": 0,
+      "flakeBudgetOk": true,
+      "gate": {
+        "minNights": 3,
+        "nightsOk": false,
+        "passOk": null
+      }
+    },
+    "trend": [],
+    "spendWindow": {
+      "runs": 2,
+      "totalUsd": 0.607977,
+      "avgUsdPerRun": 0.303989
+    },
+    "historyRuns": 2,
+    "imperfectRuns": 2,
+    "quarantine": {
+      "count": 2,
+      "ids": [
+        "refactor-rename-greet",
+        "skill-ab-trap"
+      ],
+      "excludedFromGate": [
+        "refactor-rename-greet"
+      ]
+    },
+    "releaseGate": {
+      "minPassRate": 0.9,
+      "ok": true,
+      "note": "excluded 2 quarantined case(s)"
+    }
+  },
+  "soak": {
+    "at": "2026-08-13T17:40:22.755Z",
+    "nights": 0,
+    "runs": 0,
+    "totalCases": 0,
+    "passed": 0,
+    "failed": 0,
+    "passRate": null,
+    "flakes": 0,
+    "flakeRate": null,
+    "flakeBudgetOk": true,
+    "lastRuns": [],
+    "gate": {
+      "minNights": 3,
+      "nightsOk": false,
+      "passOk": null
+    }
+  },
+  "baseline": {
+    "passRate": 1,
+    "total": 21,
+    "passed": 21
+  },
+  "campaign": {
+    "passRate": 1,
+    "total": 2,
+    "passed": 2
+  },
+  "skillLoop": {
+    "samples": 0,
+    "helped": 0,
+    "helpRate": null
+  },
+  "releaseOk": true,
+  "requireSoak": false
+}
