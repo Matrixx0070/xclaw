@@ -34,8 +34,12 @@ export async function runClaimsGateWithSoftRetry(ctx = {}) {
   };
 
   const budget = createClaimsSoftRetryBudget({ cfg, ...claimsOpts });
+  // Score the RAW final text (with the claims scaffold). The loop strips the
+  // block from its presentation `text`, so gating on `text` failed compliant
+  // answers for the runtime's own strip (2026-08-23 soak nights 1–2).
+  let gateText = agentResult?.finalText ?? agentResult?.text ?? "";
   let claimsGate = gateStructuredClaims({
-    text: agentResult?.text || "",
+    text: gateText,
     evidence: evidence?.snapshot?.() || evidence || [],
     cfg,
     opts: claimsOpts,
@@ -90,10 +94,12 @@ export async function runClaimsGateWithSoftRetry(ctx = {}) {
         history: [],
         rescuePrompt: true,
       });
-      if (rescue?.text) {
+      if (rescue?.text || rescue?.finalText) {
+        gateText = rescue.finalText ?? rescue.text;
         agentResult = {
           ...agentResult,
           text: rescue.text,
+          finalText: rescue.finalText ?? rescue.text,
           toolTrace: [
             ...(agentResult.toolTrace || []),
             ...(rescue.toolTrace || []),
@@ -104,7 +110,7 @@ export async function runClaimsGateWithSoftRetry(ctx = {}) {
           evidence.fromToolTrace(rescue.toolTrace);
         }
         claimsGate = gateStructuredClaims({
-          text: agentResult.text,
+          text: gateText,
           evidence: evidence?.snapshot?.() || [],
           cfg,
           opts: claimsOpts,
@@ -121,7 +127,7 @@ export async function runClaimsGateWithSoftRetry(ctx = {}) {
 
   const claimScore =
     claimsGate.score ||
-    scoreClaimsAgainstEvidence(agentResult?.text || "", evidence?.snapshot?.() || [], {
+    scoreClaimsAgainstEvidence(gateText, evidence?.snapshot?.() || [], {
       hard: claimsGate.policy?.hard,
       requireStructured: claimsGate.policy?.requireStructured,
     });

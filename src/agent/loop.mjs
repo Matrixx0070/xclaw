@@ -2287,6 +2287,11 @@ export async function runAgentLoop(options) {
 
   return {
     text: stripClaimsBlock(finalText) || "(no response)",
+    // Raw final text WITH the claims scaffold — the claims gate must score
+    // this, not the stripped presentation text above: stripping the block and
+    // then failing the job for "missing structured claims JSON block" punished
+    // the model for the runtime's own strip (2026-08-23 soak nights 1–2).
+    finalText,
     canary: hallucinationCanary,
     turns,
     toolTrace,

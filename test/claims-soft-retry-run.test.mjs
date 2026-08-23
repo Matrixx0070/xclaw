@@ -159,3 +159,54 @@ describe("soft retry fires on a refusing gate (soak night-1 fix)", () => {
     assert.equal(r.groundingFailed, true);
   });
 });
+
+// Root cause of soak nights 1–2: the loop strips the claims block from its
+// presentation `text`; the gate must score the raw `finalText` instead of
+// failing the model for the runtime's own strip.
+describe("gate scores raw finalText, not the stripped presentation text", () => {
+  const toolEv = [
+    { id: "ev_1", source: "tool", summary: "bash: node src/run.js -> RESULT=4" },
+    { id: "ev_2", source: "tool", summary: "write_file: src/calc.js" },
+  ];
+  it("a compliant answer whose block was stripped from `text` passes without any rescue", async () => {
+    let rescues = 0;
+    const r = await runClaimsGateWithSoftRetry({
+      agentResult: {
+        text: "Fixed src/calc.js; node src/run.js prints RESULT=4.",
+        finalText:
+          'Fixed src/calc.js; node src/run.js prints RESULT=4.\n```json\n{"claims":["fixed src/calc.js so run.js prints RESULT=4"],"evidence_ids":["ev_1","ev_2"]}\n```',
+        toolTrace: [],
+      },
+      evidence: { snapshot: () => toolEv, add() {}, fromToolTrace() {} },
+      cfg: { profile: "lab", jobs: {} },
+      opts: { groundHard: true, requireStructuredClaims: true, goal: "fix" },
+      push() {},
+      runAgentLoop: async () => {
+        rescues += 1;
+        return { text: "unused", toolTrace: [], turns: 1 };
+      },
+    });
+    assert.equal(rescues, 0);
+    assert.equal(r.groundingFailed, false);
+    assert.equal(r.error, null);
+  });
+
+  it("rescue re-gates on the rescue's raw finalText", async () => {
+    const r = await runClaimsGateWithSoftRetry({
+      agentResult: { text: "Fixed src/calc.js.", toolTrace: [] },
+      evidence: { snapshot: () => toolEv, add() {}, fromToolTrace() {} },
+      cfg: { profile: "lab", jobs: {} },
+      opts: { groundHard: true, requireStructuredClaims: true, goal: "fix" },
+      push() {},
+      runAgentLoop: async () => ({
+        text: "Fixed src/calc.js; node src/run.js prints RESULT=4.", // stripped
+        finalText:
+          'Fixed src/calc.js; node src/run.js prints RESULT=4.\n```json\n{"claims":["fixed src/calc.js so run.js prints RESULT=4"],"evidence_ids":["ev_1","ev_2"]}\n```',
+        toolTrace: [],
+        turns: 1,
+      }),
+    });
+    assert.equal(r.groundingFailed, false);
+    assert.equal(r.softRetryBudget.used, 1);
+  });
+});

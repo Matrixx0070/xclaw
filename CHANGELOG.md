@@ -1,3 +1,23 @@
+## 3.152.3 — claims gate scores raw finalText; receipts stop lying about the retry budget (2026-08-23)
+
+Soak iteration 2 failed the same two campaign cases AFTER 3.152.2 — which
+exposed the true root cause: `runAgentLoop` returns only the **stripped**
+presentation text (`stripClaimsBlock(finalText)`), so the job claims gate
+scored an answer the runtime had already deleted the block from. A compliant
+model could never win: its block was stripped, the gate refused, and the
+rescue's answer was stripped identically.
+
+- The loop now also returns raw `finalText`; the claims gate (initial and
+  rescue re-gate, plus the fallback claimScore) scores
+  `finalText ?? text`. Presentation surfaces keep the stripped `text`.
+- Receipt fix: `attachReceiptCollectorToJob` ran after the gate stamped the
+  real budget and clobbered it with the collector's pristine `{max:0}`
+  default — every receipt reported `max:0/used:0` and hid the retry state
+  during diagnosis. The pristine default no longer overwrites a stamped
+  budget.
+
+5 new tests; suite 2875/2870/0; ci-gate exit 0.
+
 ## 3.152.2 — claims soft retry fires on refuse + mandatory-block instruction (2026-08-23)
 
 Soak night 1 (the first real multi-night soak iteration) failed two campaign

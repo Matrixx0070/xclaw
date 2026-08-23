@@ -23,7 +23,20 @@ export function createReceiptCollector(seed = {}) {
 export function copyCollectorOntoJob(job, collector) {
   if (!job || !collector) return job;
   if (collector.quotaEscalate) job.quotaEscalate = collector.quotaEscalate;
-  if (collector.claimsSoftRetry) job.claimsSoftRetry = collector.claimsSoftRetry;
+  // The collector seeds claimsSoftRetry as a pristine {max:0} default; the
+  // real budget is stamped by the claims gate. Copying the untouched default
+  // over a stamped budget zeroed every receipt and hid the retry state
+  // (2026-08-23 soak diagnosis). Only copy when the collector carries data
+  // or the job has nothing yet.
+  const soft = collector.claimsSoftRetry;
+  const softHasData =
+    soft &&
+    (Number(soft.max) > 0 ||
+      Number(soft.used) > 0 ||
+      (Array.isArray(soft.attempts) && soft.attempts.length > 0));
+  if (soft && (softHasData || !job.claimsSoftRetry)) {
+    job.claimsSoftRetry = soft;
+  }
   if (collector.quotaHardCircuit || job.quotaHardCircuit) {
     job.quotaHardCircuit = job.quotaHardCircuit || collector.quotaHardCircuit;
   }
