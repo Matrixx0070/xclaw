@@ -67,6 +67,8 @@ export async function runClaimsGateWithSoftRetry(ctx = {}) {
 
     try {
       const rescue = await runAgentLoop({
+        // Bounded rescue sub-run — never auto-continue.
+        continuation: false,
         userMessage:
           (opts.goal || opts.message || "") +
           "\n\n[XClaw claims soft retry] Prior answer had grounding warnings. " +

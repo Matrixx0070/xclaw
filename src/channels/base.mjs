@@ -36,6 +36,9 @@ export async function replyWithAgent({
   history,
   chatSessionId,
   rescuePrompt,
+  /** Segmentation contract: objective segments pass false (they own their
+   *  own continuation); interactive chat turns leave it on. */
+  continuation,
 }) {
   const { runWithRequestContext } = await import("../connected/request-context.mjs");
   const { normalizeChannelUserId, resolveVaultUserId } = await import(
@@ -63,6 +66,7 @@ export async function replyWithAgent({
       ...(history !== undefined ? { history } : {}),
       ...(chatSessionId ? { chatSessionId } : {}),
       ...(rescuePrompt ? { rescuePrompt } : {}),
+      ...(continuation !== undefined ? { continuation } : {}),
     });
     return {
       text: result.text || "(no response)",

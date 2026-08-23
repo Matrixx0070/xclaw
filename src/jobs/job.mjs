@@ -160,6 +160,9 @@ export async function runJob(opts) {
   try {
     agentResult = await runAgentLoop({
       userMessage: goal,
+      // Jobs manage their own budget/verdict; a cutoff persists as an
+      // honest "incomplete" verdict instead of silently quadrupling turns.
+      continuation: false,
       cfg: jobCfg,
       workingDir: workspace,
       job: receiptCollector,

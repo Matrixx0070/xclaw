@@ -497,6 +497,8 @@ async function agentPhase(cfg, mission, phase, message, { onEvent, signal, provi
       ? `${message}\n\nSTATE FROM PRIOR PHASES (compact notes — trust but verify):\n${carry}`
       : message;
   const out = await runAgentLoop({
+    // Mission phases are their own segmentation — single-segment contract.
+    continuation: false,
     userMessage,
     cfg: mcfg,
     workingDir: mission.worktree.path,

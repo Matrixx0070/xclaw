@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.147.0 — S3: the turn budget is a checkpoint, not a wall (2026-08-23)
+
+Third slice of the Master Evolution Directive — the headline capability gap
+from the architectural audit: a 20-step task died at exactly turn 15 on the
+default path, with no continuation anywhere.
+
+### Turn-budget continuation on the default path
+
+- `agent.maxTurns` is now a SEGMENT boundary, not a mission boundary. At each
+  multiple of `maxTurns` the loop emits a `segment` event, checkpoints the
+  durable run snapshot (`status:"active"`, `stopReason:"segment"`), pushes a
+  continuation notice, and keeps working — up to a bounded total
+  (`agent.maxTotalTurns`, default `4 × maxTurns`). Resource limits (cost
+  governor, run budget) are checked every turn and remain the real stops.
+- `stopReason:"maxTurns"` and the final-answer rescue now fire only at the
+  TOTAL cap. Rescue text says "turn cap N".
+- Orchestrators that own their segmentation keep the exact single-segment
+  contract via `continuation:false`: objective segments (channels/runtime),
+  spawn children, jobs, mission phases, claims-rescue sub-runs, cron
+  announcements. Config kill-switch: `agent.continueOnMaxTurns:false`.
+- Threaded through the canonical wrapper: `replyWithAgent` →
+  `normalizeAgentRequest` → `runAgent` → `runAgentLoop`.
+- Regression: `test/loop-continuation.test.mjs` (5 tests — finishes past the
+  segment budget, single-segment contract preserved, bounded total, cap
+  override, durable mid-run checkpoints).
+- LIVE-PROVEN: the audit's Test A scenario (20-link strictly-sequential
+  chain, live maxTurns=15) previously stopped at turn 15 without the secret;
+  it now completes in 20 turns and reports the secret. grok-4.6, $0.072.
+
 ## 3.146.0 — S2: earned verdicts — and the /job path was dead (2026-08-23)
 
 Second slice of the Master Evolution Directive: "maximum turns reached" is

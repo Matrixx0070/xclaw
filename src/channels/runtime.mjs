@@ -346,6 +346,7 @@ function startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, noti
       chatId: inbound.chatId,
       onEvent,
       history: [], // fresh context each segment — durable state IS the memory
+      continuation: false, // objective owns segmentation — single-segment runs
       chatSessionId: sessionId,
       rescuePrompt,
     });

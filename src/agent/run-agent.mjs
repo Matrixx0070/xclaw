@@ -61,6 +61,9 @@ export function normalizeAgentRequest(req = {}) {
     history: Array.isArray(req.history) ? req.history : undefined,
     rescuePrompt: req.rescuePrompt ?? null,
     profile: req.profile || null,
+    // Segmentation contract (S3): undefined = default (auto-continue past
+    // the per-segment turn budget); false = single-segment run.
+    continuation: req.continuation,
   };
 }
 
@@ -86,6 +89,9 @@ export async function runAgent(req = {}) {
   try {
     const raw = await runAgentLoop({
       userMessage: opts.userMessage,
+      // Forward the segmentation contract: orchestrators (objective
+      // segments) opt out of auto-continuation through this wrapper.
+      continuation: opts.continuation,
       cfg: opts.cfg,
       workingDir: opts.workingDir,
       signal: opts.signal,

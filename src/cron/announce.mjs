@@ -28,6 +28,8 @@ export async function announceCronJob(job, opts = {}) {
   }
 
   const result = await runAgentLoop({
+    // Bounded utility run — never auto-continue.
+    continuation: false,
     userMessage: prompt,
     cfg,
     workingDir: session?.workingDir || opts.workingDir || process.cwd(),

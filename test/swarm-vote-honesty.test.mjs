@@ -57,7 +57,7 @@ describe("maxTurns final-answer rescue", () => {
     });
     const text = out.finalText ?? out.text;
     assert.match(text, /rescued: found 3 issues/);
-    assert.match(text, /stopped at maxTurns=0/);
+    assert.match(text, /stopped at turn cap 0/); // wording updated in S3 (turn cap = bounded total)
     // the rescue call carried the exhaustion instruction and disabled tools
     const last = provider.calls.at(-1).at(-1);
     assert.equal(last.role, "user");

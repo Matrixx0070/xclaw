@@ -207,6 +207,19 @@ export async function runAgentLoop(options) {
   const hooks = options.hookManager || getSharedHookManager(cfg);
 
   const maxTurns = cfg.agent?.maxTurns ?? 15;
+  // S3 (Master Evolution Directive): the turn budget is a SEGMENT boundary,
+  // not a mission boundary. On the default path the loop checkpoints at each
+  // maxTurns multiple and continues — up to a bounded total — instead of
+  // abandoning unfinished work ("maximum turns reached" is never "mission
+  // complete"). Resource limits (cost governor, run budget) remain the real
+  // stops and are checked every turn. Orchestrators that manage their own
+  // segmentation (objective segments, spawn children, jobs, missions,
+  // sub-runs) pass continuation:false and keep the single-segment contract.
+  const continuationEnabled =
+    options.continuation !== false && cfg.agent?.continueOnMaxTurns !== false;
+  const totalTurnCap = continuationEnabled
+    ? Math.max(maxTurns, cfg.agent?.maxTotalTurns ?? maxTurns * 4)
+    : maxTurns;
   const runBudget = createRunBudget(cfg);
   const skillsEnabled = cfg.skills?.enabled !== false;
   const memoryEnabled = cfg.memory?.enabled !== false;
@@ -865,8 +878,51 @@ export async function runAgentLoop(options) {
     // re-enters, at most stopBlockCap times (Claude-Code-style Stop hooks).
     stopCycle: while (true) {
     naturalStop = false;
-    for (turns = 0; !hookAbort && turns < maxTurns; turns++) {
+    for (turns = 0; !hookAbort && turns < totalTurnCap; turns++) {
       if (signal?.aborted) throw new Error("aborted");
+
+      // Segment boundary: checkpoint durable state and tell the model to
+      // keep going. Context is NOT reset — the window-eviction machinery
+      // manages size; this converts the old hard stop into a supervised
+      // continuation with an audit trail.
+      if (continuationEnabled && turns > 0 && turns % maxTurns === 0) {
+        const segment = Math.floor(turns / maxTurns) + 1;
+        onEvent({
+          type: "segment",
+          phase: "continue",
+          segment,
+          turns,
+          segmentSize: maxTurns,
+          cap: totalTurnCap,
+        });
+        try {
+          if (options.sessionId || options.persistRun) {
+            await saveAgentRun(cfg, {
+              sessionId:
+                options.sessionId || options.runId || `run_${Date.now().toString(36)}`,
+              workingDir: options.workingDir || process.cwd(),
+              model: provider?.model || cfg.agent?.model,
+              streamId: options.streamId || null,
+              messages,
+              toolTrace,
+              turns,
+              status: "active",
+              stopReason: "segment",
+              meta: {
+                goal:
+                  typeof userMessage === "string" ? userMessage.slice(0, 200) : null,
+              },
+            });
+          }
+        } catch {
+          /* checkpoint is best-effort — the run continues regardless */
+        }
+        messages.push(
+          makeEphemeralNotice(
+            `Turn checkpoint (${turns}/${totalTurnCap} turns used). The task is NOT finished — continue working toward the goal. Take the next concrete action; do not restart completed steps or stop to summarize.`
+          )
+        );
+      }
 
       try {
         const cg = costGov.check({ toolCalls: toolTrace.length });
@@ -1842,7 +1898,7 @@ export async function runAgentLoop(options) {
     break stopCycle;
     } // end stopCycle
 
-    if (turns >= maxTurns && !finalText) {
+    if (turns >= totalTurnCap && !finalText) {
       maxTurnsStop = true;
       // Final-answer rescue: hitting the turn budget mid-work used to discard
       // EVERYTHING (live: a 5-node research swarm returned 0/5 ballots — every
@@ -1872,14 +1928,14 @@ export async function runAgentLoop(options) {
               ? rescue.message.content.trim()
               : "";
           if (text) {
-            finalText = `${text}\n\n_[stopped at maxTurns=${maxTurns}; this is a best-effort final answer]_`;
+            finalText = `${text}\n\n_[stopped at turn cap ${totalTurnCap}; this is a best-effort final answer]_`;
             onEvent({ type: "lifecycle", phase: "final_answer_rescue", turns });
           }
         } catch {
           /* rescue is best-effort — fall through to the stub */
         }
       }
-      if (!finalText) finalText = `Stopped after ${maxTurns} turns (maxTurns).`;
+      if (!finalText) finalText = `Stopped after ${totalTurnCap} turns (turn cap).`;
     }
 
     // ── Hook: post_process — system/trusted hooks may transform the final

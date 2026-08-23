@@ -263,6 +263,8 @@ export async function spawnSubagent(opts = {}) {
     let result;
     try {
       result = await runAgentLoop({
+        // Children are budget-capped by the PARENT — never auto-continue.
+        continuation: false,
         userMessage: opts.task,
         cfg: childCfg,
         workingDir: workingDir || process.cwd(),
