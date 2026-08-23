@@ -38,6 +38,19 @@ export async function appendMemory(cfg, workspacePath, event) {
     ...event,
   });
   await fs.appendFile(p.jsonl, JSON.stringify(line) + "\n");
+  // Bound the events log (audit 2026-08-23: unbounded growth, and every
+  // append re-read the WHOLE file to rebuild memory.md). Rotation reuses the
+  // ops maintenance owner; recall only ever scans the tail, so the archived
+  // head ("<file>.1") loses nothing recall could see.
+  try {
+    const { rotateJsonlIfOversize } = await import("../ops/maintenance.mjs");
+    await rotateJsonlIfOversize(p.jsonl, {
+      maxBytes: cfg?.memory?.maxEventBytes ?? 1_000_000,
+      keepBytes: cfg?.memory?.keepEventBytes ?? 500_000,
+    });
+  } catch {
+    /* rotation is best-effort */
+  }
   await rebuildMemoryMd(cfg, workspacePath);
   return line;
 }

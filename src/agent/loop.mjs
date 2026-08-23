@@ -1432,6 +1432,10 @@ export async function runAgentLoop(options) {
           if (isPending) {
             return "stop";
           }
+          // Denied calls MUST feed the loop guard: repeated retries of a
+          // blocked tool are exactly the stagnation the guard exists to
+          // catch (they previously bypassed guard.record entirely).
+          guard.record(name, args, `DENIED: ${msg}`);
           return;
         }
         if (auth.mode === "human") {
@@ -1491,6 +1495,7 @@ export async function runAgentLoop(options) {
                 }
               )
             );
+            guard.record(name, args, "DENIED: " + (rv.reason || "plan_drift"));
             return;
           }
           onEvent({
@@ -1527,6 +1532,7 @@ export async function runAgentLoop(options) {
               }
             )
           );
+          guard.record(name, args, "DENIED: " + msg);
           return;
         }
         args = sand.args || args;
@@ -1552,6 +1558,7 @@ export async function runAgentLoop(options) {
               }
             )
           );
+          guard.record(name, args, "DENIED: " + msg);
           return;
         }
 
@@ -1561,6 +1568,7 @@ export async function runAgentLoop(options) {
           onEvent({ type: "security", phase: "receipt_required", name, ...riskR });
           messages.push(makeToolMessage({ tool_call_id: call.id, content: msg, source: "receipt" }));
           recordTrace(finalizeToolTraceEntry(beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }), { resultText: msg, blocked: true, policy: { phase: "receipt", decision: "deny", reason: riskR.code || "RECEIPT_REQUIRED" } }));
+          guard.record(name, args, "DENIED: " + msg);
           return;
         }
 

@@ -27,6 +27,7 @@ import { authorizeQuotaPreflight } from "./authorize-quota.mjs";
 const pending = new Map(); // id -> { tool, args, plan, resolve, at, deadline }
 let slaTimer = null;
 let sharedGate = null;
+let sharedGateSecurityKey = null;
 
 function ensureSlaTimer(cfg) {
   if (slaTimer) return;
@@ -636,13 +637,37 @@ export function createApprovalGate(cfg = {}) {
 
 /** Process-wide shared gate (gateway + agent loop). */
 export function getSharedApprovalGate(cfg = {}) {
-  if (!sharedGate) sharedGate = createApprovalGate(cfg);
+  const key = JSON.stringify(cfg?.security || {});
+  if (!sharedGate) {
+    sharedGate = createApprovalGate(cfg);
+    sharedGateSecurityKey = key;
+    return sharedGate;
+  }
+  // First-caller-wins froze the gate's security policy for the whole process
+  // (same singleton-freeze class as getSharedAlerter / the 3.102.1 gate bug):
+  // a later caller with DIFFERENT security config silently ran under the
+  // stale policy. Upgrade in place when the offered policy is non-empty and
+  // differs — but never mid-flight (an in-memory pending must not be
+  // stranded) and never downgrade to an empty policy from a bare-{} caller.
+  const offersPolicy =
+    cfg && cfg.security && Object.keys(cfg.security).length > 0;
+  if (offersPolicy && key !== sharedGateSecurityKey) {
+    try {
+      if ((sharedGate.listPending?.() || []).length === 0) {
+        sharedGate = createApprovalGate(cfg);
+        sharedGateSecurityKey = key;
+      }
+    } catch {
+      /* keep the existing gate */
+    }
+  }
   return sharedGate;
 }
 
 /** Reset shared gate (tests / config reload). */
 export function resetSharedApprovalGate(cfg = {}) {
   sharedGate = createApprovalGate(cfg);
+  sharedGateSecurityKey = JSON.stringify(cfg?.security || {});
   return sharedGate;
 }
 

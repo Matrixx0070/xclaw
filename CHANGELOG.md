@@ -1,5 +1,42 @@
 # Changelog
 
+## 3.149.0 — S5: verification + stagnation hardening (2026-08-23)
+
+Fifth slice of the Master Evolution Directive: close the audited gaps where
+"nothing happened" could still read as success, and where blocked work could
+loop forever unseen.
+
+### Missions — empty-diff gate
+
+- A mission whose execute phase produced NO effective change (no patch, no
+  kept untracked files) can no longer reach `merge_ready` on the strength of
+  a green suite — a passing suite proves the tree is healthy, not that the
+  mission did its work (audit C11). Opt-out for legitimately change-free
+  missions: `verify.allowEmptyDiff`.
+
+### Loop guard — denied calls now count
+
+- All five deny paths (approval deny, plan drift, sandbox, egress, receipt)
+  returned before `guard.record`, so a model hammering a BLOCKED tool never
+  fed the stagnation detector. Denied attempts now record as
+  `DENIED: <reason>` — repeated denied retries trip the breaker like any
+  other loop.
+
+### Approvals — the shared gate unfreezes
+
+- `getSharedApprovalGate` froze the first config it ever saw (the exact
+  singleton-freeze class of `getSharedAlerter` / the 3.102.1 gate bug). It
+  now upgrades in place when a caller offers a DIFFERENT non-empty security
+  policy — but never mid-flight (pending approvals are never stranded) and
+  never downgrades to an empty policy from a bare-`{}` caller.
+
+### Memory — the events log is bounded
+
+- `appendMemory` rotates the per-workspace `events.jsonl` at a size cap
+  (`memory.maxEventBytes`, default 1 MB → keeps 500 KB tail), reusing the
+  ops-maintenance rotation owner. Recall only ever scanned the tail, so the
+  archived head loses nothing recall could see.
+
 ## 3.148.0 — S4: delete the dead computer-engine program (2026-08-23)
 
 Fourth slice of the Master Evolution Directive: migrate → verify → delete.

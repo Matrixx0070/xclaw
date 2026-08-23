@@ -122,6 +122,31 @@ async function settle(id, timeoutMs = 30_000) {
 }
 
 describe("mission engine end-to-end", () => {
+  it("empty-diff gate: a mission that changes NOTHING cannot reach merge_ready (S5)", async () => {
+    // Provider claims completion without writing anything. Verification
+    // passes (the repo's own suite is green) — but a green tree proves
+    // health, not that this mission did its work. Previously: merge_ready.
+    const noopProvider = {
+      providerName: "fake",
+      model: "fake-1",
+      baseUrl: "http://127.0.0.1:1",
+      async chat() {
+        return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
+      },
+    };
+    const started = await engine.startMission(CFG, {
+      goal: "improve the greeting",
+      repoDir: REPO,
+      provider: noopProvider,
+      // Always-green verify: isolates the GATE (a green suite must not be
+      // enough when the mission produced no change).
+      verify: ["node -e \"process.exit(0)\""],
+    });
+    const m = await settle(started.id);
+    assert.equal(m.status, "failed", `status: ${m.status} (${m.error || ""})`);
+    assert.match(m.error || "", /empty diff|NO change/i);
+  });
+
   it("plans → implements in shadow workspace → verifies → merge_ready, repo untouched until merge", async () => {
     const ref = {};
     const started = await engine.startMission(CFG, {

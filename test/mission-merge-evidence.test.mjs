@@ -212,7 +212,7 @@ describe("mission autonomy survives a gateway-primed shared approval gate", () =
           return {
             message: {
               role: "assistant", content: "",
-              tool_calls: [{ id: `b${n}`, function: { name: "xclaw_bash", arguments: JSON.stringify({ command: "echo mission-ok" }) } }],
+              tool_calls: [{ id: `b${n}`, function: { name: "xclaw_bash", arguments: JSON.stringify({ command: "echo mission-ok > mission-ok.txt" }) } }],
             },
             finishReason: "tool_calls",
           };

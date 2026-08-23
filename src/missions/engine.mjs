@@ -1039,6 +1039,24 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     return mission;
   }
   await captureDiff(cfg, mission);
+  // Empty-diff gate (audit 2026-08-23 C11): a passing suite proves the tree
+  // is healthy, NOT that this mission changed anything. An execute phase that
+  // produced no effective diff (no patch, no kept untracked files) must not
+  // reach merge_ready — that path previously green-lit doing nothing.
+  // Opt-out for missions that legitimately change nothing: verify.allowEmptyDiff.
+  const effDiff =
+    (mission.diff?.patch || "").trim().length > 0 ||
+    (mission.diff?.untracked || []).length > 0;
+  if (!effDiff && mission.verify?.allowEmptyDiff !== true) {
+    mission.status = "failed";
+    mission.error =
+      "verification passed but the mission produced NO change (empty diff) — success cannot be claimed for work that did not happen";
+    addEvent(mission, "error", mission.error);
+    mledger(cfg, mission, "failure", { error: mission.error, phase: "gate" });
+    emit("gate", mission.error);
+    await saveMission(cfg, mission);
+    return mission;
+  }
   mission.status = "merge_ready";
   emit("ready", `verified — diff ready (${(mission.diff.patch || "").length} chars of patch)`);
   await saveMission(cfg, mission);
