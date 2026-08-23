@@ -34,6 +34,11 @@ export async function recordJob(cfg, job) {
     goal: String(job.goal || "").slice(0, 500),
     status: job.status,
     pass: job.pass,
+    // S2: verdict provenance and why the run ended must survive into the
+    // durable record — resume/recovery decisions read THIS file, not the
+    // in-process job object.
+    verdict: job.verdict || null,
+    stopReason: job.stopReason || null,
     turns: job.turns,
     toolCalls: job.toolCalls,
     toolErrors: job.toolErrors,

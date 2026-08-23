@@ -2116,6 +2116,26 @@ export async function runAgentLoop(options) {
     /* metrics optional */
   }
 
+  // Why the run ended — computed once, used by the durable snapshot AND the
+  // return value. Orchestrators must distinguish "the model finished" from
+  // "the runtime cut it off" (a turn cap is an execution constraint, never
+  // evidence the user's objective is complete).
+  const stopReason = signal?.aborted || aborted
+    ? "aborted"
+    : hookAbort
+      ? "hook"
+      : loopGuardStop
+        ? "guard"
+        : lastPendingApproval
+          ? "approval"
+          : toolHaltStop
+            ? "policy"
+            : budgetStop
+              ? "budget"
+              : maxTurnsStop
+                ? "maxTurns"
+                : "natural";
+
   // Feature 2 — durable snapshot for resume
   try {
     if (options.sessionId || options.persistRun) {
@@ -2127,7 +2147,14 @@ export async function runAgentLoop(options) {
         messages,
         toolTrace,
         turns,
-        status: aborted ? "aborted" : "completed",
+        // Honest terminal state: "completed" is reserved for runs the model
+        // actually finished — a cutoff persists AS its stopReason so restart
+        // recovery can tell resumable work from done work.
+        status:
+          stopReason === "natural" || stopReason === "hook"
+            ? "completed"
+            : stopReason,
+        stopReason,
         meta: { goal: typeof userMessage === "string" ? userMessage.slice(0, 200) : null },
       });
     }
@@ -2166,24 +2193,7 @@ export async function runAgentLoop(options) {
     // Surfaced so orchestrators can resume the blocked action after a human
     // decision without digging into turnState internals.
     pendingApproval: lastPendingApproval,
-    // Why the run ended — orchestrators must distinguish "the model finished"
-    // from "the runtime cut it off" (a turn cap is an execution constraint,
-    // never evidence the user's objective is complete).
-    stopReason: signal?.aborted || aborted
-      ? "aborted"
-      : hookAbort
-        ? "hook"
-        : loopGuardStop
-          ? "guard"
-          : lastPendingApproval
-            ? "approval"
-            : toolHaltStop
-              ? "policy"
-              : budgetStop
-                ? "budget"
-                : maxTurnsStop
-                  ? "maxTurns"
-                  : "natural",
+    stopReason,
     context: {
       skills: (skills || []).map((s) => s.name),
       memory: (memoryFiles || []).map((m) => m.path),

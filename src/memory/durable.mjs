@@ -101,13 +101,20 @@ export async function loadDurableMemoryFile(cfg, workspacePath) {
 
 export async function rememberJob(cfg, job, extra = {}) {
   if (!job?.workspace) return null;
+  // Provenance in the record type: only a deterministically-verified success
+  // earns "job_ok". A model-self-declared pass is durable but labeled — it
+  // must never read back as proven success (audit 2026-08-23).
+  const verified = job.verdict === "verified";
+  const type = job.pass ? (verified ? "job_ok" : "job_ok_unverified") : "job_fail";
   return appendMemory(cfg, job.workspace, {
-    type: job.pass ? "job_ok" : "job_fail",
+    type,
     goal: String(job.goal || "").slice(0, 300),
     status: job.status,
+    verdict: job.verdict || null,
     turns: job.turns,
     summary: job.pass
-      ? "Succeeded: " + String(job.goal || "").slice(0, 120)
+      ? (verified ? "Succeeded (verified): " : "Succeeded (unverified): ") +
+        String(job.goal || "").slice(0, 120)
       : "Failed: " + (job.error || job.status) + " — " + String(job.goal || "").slice(0, 100),
     proposal: extra.proposal || job.proposal || null,
     jobId: job.id,

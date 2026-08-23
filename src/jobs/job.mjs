@@ -125,6 +125,15 @@ export async function runJob(opts) {
   let agentResult = null;
   let verifyResult = null;
   let error = null;
+  // Claims-gate outputs. These declarations were dropped by 0bf1d69
+  // (2026-08-19) — since then EVERY runJob threw
+  // "ReferenceError: groundWarn is not defined" at job construction (strict
+  // ESM), killing the /job path silently: no test drove runJob end-to-end.
+  let groundWarn = [];
+  let groundingFailed = false;
+  let claimScore = null;
+  let claimsGate = null;
+  let softRetryBudget = null;
   const midToolTrace = [];
 
   const ac = new AbortController();
@@ -155,6 +164,9 @@ export async function runJob(opts) {
       workingDir: workspace,
       job: receiptCollector,
       receiptCollector,
+      // Injection seam (tests / callers with a pre-resolved provider) — the
+      // loop already accepts one and resolves from cfg when absent.
+      provider: opts.provider,
       signal: ac.signal,
       ledgerIds: { jobId: id },
       systemNotes: opts.systemNotes || jobCfg.agent?.systemNotes,
@@ -267,8 +279,15 @@ export async function runJob(opts) {
     } else if (verify.length && verifyResult.ok) {
       status = "succeeded";
     } else {
+      // No verify commands: success cannot be EARNED, so derive honesty from
+      // how the run actually ended. A runtime cutoff (maxTurns, pending
+      // approval, guard, budget) is never evidence the goal was met — those
+      // jobs are INCOMPLETE, not succeeded (they were previously recorded as
+      // succeeded and written to durable memory as job_ok).
       const critical = events.some((e) => e.type === "guard" && e.level === "critical");
-      status = critical ? "failed" : "succeeded";
+      const sr = agentResult?.stopReason || "natural";
+      const modelEnded = sr === "natural" || sr === "hook";
+      status = critical ? "failed" : modelEnded ? "succeeded" : "incomplete";
     }
   } catch (err) {
     error = err.message || String(err);
@@ -290,6 +309,19 @@ export async function runJob(opts) {
     workspace,
     status,
     pass: status === "succeeded",
+    // Verdict provenance: how "succeeded" was established. "verified" is
+    // earned by deterministic verify commands; "unverified" is the model's
+    // own account with no independent check — consumers (memory, skill
+    // promotion) must treat those differently.
+    verdict:
+      verify.length && verifyResult?.ok
+        ? "verified"
+        : verify.length
+          ? "failed"
+          : status === "succeeded"
+            ? "unverified"
+            : status,
+    stopReason: agentResult?.stopReason || null,
     turns: agentResult?.turns ?? 0,
     toolCalls: agentResult?.toolTrace?.length ?? 0,
     toolErrors: (agentResult?.toolTrace || []).filter((t) => t.blocked || /error|fail/i.test(String(t.result || ""))).length,
@@ -394,8 +426,10 @@ export async function runJob(opts) {
     }
   }
 
-  // R5: learn from success (review-only skill draft + preference hints)
-  if (cfg && job && job.pass && cfg.skills?.proposeOnSuccess !== false) {
+  // R5: learn from success (review-only skill draft + preference hints).
+  // Only VERIFIED successes may seed skills — a model-self-declared pass is
+  // not evidence the approach worked (audit 2026-08-23).
+  if (cfg && job && job.pass && job.verdict === "verified" && cfg.skills?.proposeOnSuccess !== false) {
     try {
       const prop = await proposeSkillFromSuccess(cfg, {
         caseId: job.id || job.caseId,

@@ -29,15 +29,28 @@ describe("durable memory", () => {
     const cfg = { paths: { configDir: dir } };
     const ws = path.join(dir, "ws");
     await fs.mkdir(ws);
+    // S2 (2026-08-23): job_ok is EARNED by a verified verdict; a pass
+    // without verification is durable but labeled job_ok_unverified.
     await rememberJob(cfg, {
       id: "j1",
       workspace: ws,
       pass: true,
       status: "succeeded",
+      verdict: "verified",
       goal: "write x",
+      turns: 1,
+    });
+    await rememberJob(cfg, {
+      id: "j2",
+      workspace: ws,
+      pass: true,
+      status: "succeeded",
+      verdict: "unverified",
+      goal: "write y",
       turns: 1,
     });
     const items = await listMemory(cfg, ws);
     assert.ok(items.some((i) => i.type === "job_ok"));
+    assert.ok(items.some((i) => i.type === "job_ok_unverified"));
   });
 });

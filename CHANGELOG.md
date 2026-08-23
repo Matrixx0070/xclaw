@@ -1,5 +1,39 @@
 # Changelog
 
+## 3.146.0 — S2: earned verdicts — and the /job path was dead (2026-08-23)
+
+Second slice of the Master Evolution Directive: "maximum turns reached" is
+never "mission complete", and success is never assumed.
+
+### runJob has thrown on EVERY invocation since 0bf1d69 (2026-08-19)
+
+- Commit 0bf1d69 dropped the `let` declarations for `groundWarn`,
+  `groundingFailed`, `claimScore`, `claimsGate` (and `softRetryBudget` never
+  had one) — strict-ESM `ReferenceError` at job construction on every call.
+  The `/job` path was production-dead for 4 days; no test drove `runJob`
+  end-to-end so the suite stayed green (test-green/production-dead class).
+  Declarations restored; live-proven end-to-end on the real provider.
+
+### Verdict provenance — success must be EARNED
+
+- Job status ladder: with no verify commands, a run the runtime cut off
+  (`stopReason` maxTurns/approval/guard/budget) is now **"incomplete"**, not
+  "succeeded". Previously it landed in the "no critical guard fired" bucket
+  and was recorded as a success.
+- New `job.verdict`: `verified` (deterministic verify commands passed) |
+  `unverified` (model's own account, no independent check) | `failed` |
+  `incomplete`. Persisted into `~/.xclaw/jobs/*.json` alongside `stopReason`.
+- Durable memory: only verified successes write `job_ok`; a self-declared
+  pass writes `job_ok_unverified` with a labeled summary. Skill proposals
+  (`proposeOnSuccess`) now require a verified verdict.
+- Agent-loop persistence: a run snapshot no longer records `"completed"`
+  unconditionally — status is `"completed"` only for natural/hook stops,
+  otherwise the stopReason itself, and `stopReason` is persisted verbatim
+  (run-store) so restart recovery can tell resumable cutoffs from done work.
+- `runJob` forwards an injected `provider` (testability seam); regression
+  suite `test/job-verdict.test.mjs` drives runJob end-to-end hermetically —
+  the first test to do so.
+
 ## 3.145.1 — S1: honor policy stops, stop leaking secrets (2026-08-23)
 
 First slice of the Master Evolution Directive, gated by the reconnaissance

@@ -46,6 +46,10 @@ export async function saveAgentRun(cfg, snapshot) {
       : [],
     turns: snapshot.turns ?? null,
     status: snapshot.status || "active",
+    // S2: why the run ended, verbatim — restart recovery must be able to
+    // tell resumable cutoffs (maxTurns/approval/budget) from finished work
+    // without re-deriving it from message text.
+    stopReason: snapshot.stopReason || null,
     truncated: Boolean(snapshot.truncated),
     meta: snapshot.meta || {},
   };
