@@ -67,6 +67,26 @@ describe("autonomy-policy", () => {
 });
 
 describe("enforceProdHardening", () => {
+  it("forces bypassApprovals off on prod (break-glass env restores it)", () => {
+    delete process.env.XCLAW_ALLOW_PROD_AUTO;
+    const cfg = enforceProdHardening({
+      profile: "prod",
+      security: { bypassApprovals: true },
+    });
+    assert.equal(cfg.security.bypassApprovals, false);
+    assert.ok(cfg._prodHardening.includes("forced security.bypassApprovals=false"));
+    process.env.XCLAW_ALLOW_PROD_AUTO = "1";
+    try {
+      const bg = enforceProdHardening({
+        profile: "prod",
+        security: { bypassApprovals: true },
+      });
+      assert.equal(bg.security.bypassApprovals, true, "explicit break-glass wins");
+    } finally {
+      delete process.env.XCLAW_ALLOW_PROD_AUTO;
+    }
+  });
+
   it("forces autoApprove off on prod", () => {
     delete process.env.XCLAW_AUTONOMY_LEVEL;
     delete process.env.XCLAW_ALLOW_PROD_AUTO;

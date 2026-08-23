@@ -96,6 +96,14 @@ export function enforceProdHardening(cfg = {}) {
     out.security.autoApprove = false;
     out._prodHardening.push("forced security.autoApprove=false");
   }
+  // bypassApprovals REMOVES the approval gate entirely (every tier,
+  // including critical). Prod hardening forced autoApprove off but let
+  // bypass through — the stronger flag escaped the weaker flag's fence
+  // (audit 2026-08-23 C16). Same explicit break-glass applies.
+  if (!allow && out.security.bypassApprovals === true) {
+    out.security.bypassApprovals = false;
+    out._prodHardening.push("forced security.bypassApprovals=false");
+  }
   if (!allow && out.security.approvalPolicy === "never") {
     out.security.approvalPolicy = "risky";
     out._prodHardening.push("forced approvalPolicy=risky");

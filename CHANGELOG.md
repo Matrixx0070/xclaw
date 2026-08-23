@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.149.1 — S6a: prod break-glass covers bypassApprovals (2026-08-23)
+
+- `enforceProdHardening` forced `autoApprove` off in prod but let
+  `security.bypassApprovals` through — the STRONGER flag (removes the
+  approval gate entirely, every tier including critical) escaped the weaker
+  flag's fence (audit C16). Prod now forces it off too; the same explicit
+  break-glass (`XCLAW_ALLOW_PROD_AUTO=1`) restores it, logged in
+  `_prodHardening` either way.
+
 ## 3.149.0 — S5: verification + stagnation hardening (2026-08-23)
 
 Fifth slice of the Master Evolution Directive: close the audited gaps where
