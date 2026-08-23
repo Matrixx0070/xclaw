@@ -21,12 +21,6 @@ jobs:
         with:
           node-version: "22"
 
-      - name: C4 computer parity
-        run: node scripts/check-computer-parity.mjs
-
-      - name: C3 computer build
-        run: node scripts/build-computer-bundle.mjs
-
       - name: N10 kill-switch wires
         run: node scripts/apply-n10-wires.mjs --check
 

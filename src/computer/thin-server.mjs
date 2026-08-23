@@ -231,7 +231,7 @@ const isMain = (() => {
     a.endsWith("thin-server.mjs") ||
     a.includes("thin-server") ||
     a.endsWith("computer-server.mjs") ||
-    a.includes("generated/computer-server")
+    a.includes("generated/computer-server") // legacy path, engine deleted S4
   );
 })();
 

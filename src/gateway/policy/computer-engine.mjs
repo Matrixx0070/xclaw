@@ -1,7 +1,7 @@
 /**
  * Gateway control-plane policy for computer engine selection.
  *
- * Product default: full CDP bundle. native/generated remain lightweight escape hatches.
+ * Product default: full CDP bundle. native remains the lightweight escape hatch (generated deleted in S4, 2026-08-23).
  * Implementation lives in src/computer/engine.mjs.
  */
 
@@ -10,7 +10,6 @@ import {
   resolveComputerEntryPath,
   describeComputerEngine,
   isNativeComputer,
-  isGeneratedComputer,
   DEFAULT_COMPUTER_ENGINE,
 } from "../../computer/engine.mjs";
 
@@ -18,12 +17,11 @@ import {
 export const ALLOWED_DEFAULT_ENGINES = Object.freeze([
   "bundle",
   "native",
-  "generated",
 ]);
 
 /**
  * @param {object} [cfg]
- * @returns {"native"|"generated"|"bundle"}
+ * @returns {"native"|"bundle"}
  */
 export function policyResolveComputerEngine(cfg = {}) {
   return resolveComputerEngine(cfg);
@@ -91,7 +89,6 @@ export {
   resolveComputerEntryPath,
   describeComputerEngine,
   isNativeComputer,
-  isGeneratedComputer,
   DEFAULT_COMPUTER_ENGINE,
 };
 
@@ -105,6 +102,5 @@ export default {
   resolveComputerEntryPath,
   describeComputerEngine,
   isNativeComputer,
-  isGeneratedComputer,
   DEFAULT_COMPUTER_ENGINE,
 };

@@ -2,64 +2,7 @@
   "sourceBundle": "src/computer/xclaw-server.mjs",
   "sourceBytes": 16830476,
   "sourceLines": 395462,
-  "extracted": [
-    {
-      "id": "bash-tool",
-      "path": "src/computer/modules/bash-tool.extracted.mjs",
-      "lineStart": 382468,
-      "lineEnd": 382575,
-      "bytes": 3848
-    },
-    {
-      "id": "browser-network-details-tool",
-      "path": "src/computer/modules/browser-network-details-tool.extracted.mjs",
-      "lineStart": 383406,
-      "lineEnd": 383537,
-      "bytes": 5123
-    },
-    {
-      "id": "browser-tab-tool",
-      "path": "src/computer/modules/browser-tab-tool.extracted.mjs",
-      "lineStart": 383637,
-      "lineEnd": 383943,
-      "bytes": 11436
-    },
-    {
-      "id": "file-edit-tool",
-      "path": "src/computer/modules/file-edit-tool.extracted.mjs",
-      "lineStart": 392505,
-      "lineEnd": 392662,
-      "bytes": 5258
-    },
-    {
-      "id": "file-read-tool",
-      "path": "src/computer/modules/file-read-tool.extracted.mjs",
-      "lineStart": 392733,
-      "lineEnd": 392844,
-      "bytes": 3372
-    },
-    {
-      "id": "file-write-tool",
-      "path": "src/computer/modules/file-write-tool.extracted.mjs",
-      "lineStart": 392907,
-      "lineEnd": 393068,
-      "bytes": 5435
-    },
-    {
-      "id": "http-server-main",
-      "path": "src/computer/modules/http-server-main.extracted.mjs",
-      "lineStart": 394324,
-      "lineEnd": 395462,
-      "bytes": 32455
-    },
-    {
-      "id": "skills-context",
-      "path": "src/computer/modules/skills-context.extracted.mjs",
-      "lineStart": 380000,
-      "lineEnd": 382467,
-      "bytes": 83995
-    }
-  ],
+  "extracted": [],
   "regions": [
     {
       "key": "vendored_and_deps",
@@ -181,5 +124,5 @@
       "path": "src/computer/bundle-entry.mjs"
     }
   ],
-  "extractedAreReferenceOnly": true
+  "extractedAreReferenceOnly": "extracted snapshots deleted 2026-08-23 (S4) \u2014 cleanModules are the source of truth"
 }

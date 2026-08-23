@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.148.0 — S4: delete the dead computer-engine program (2026-08-23)
+
+Fourth slice of the Master Evolution Directive: migrate → verify → delete.
+Net −10,460 lines with zero capability loss.
+
+- **Deleted the `generated` computer engine** (3,960-line esbuild duplicate
+  of the native modules, reachable only by explicit opt-in): the engine, its
+  emit script (`scripts/build-computer-bundle.mjs`), the parity gate
+  (`scripts/check-computer-parity.mjs`, `check-extraction.mjs`, two CI steps,
+  four npm scripts) and its tests. Stale `generated`/`gen`/`c3` selectors
+  now resolve to `native` — the same code, unbundled. This also kills the
+  suite-dirtying defect: a test re-emitted the engine and rewrote
+  `build-stamp.json` on every `npm test`.
+- **Deleted `browser-service.mjs`** (689 lines): un-runnable resurrected dead
+  code — undefined references throw on call, zero importers, already deleted
+  once in 3.82.0.
+- **Deleted the eight `*.extracted.mjs` bundle snapshots** (reference-only
+  line captures; `modules/` clean sources are the single source of truth) and
+  the `PARITY_MATRIX.json` / `STRATEGY_C.md` artifacts of that program.
+- Kept: the bundle default, the native escape hatch, `MODULE_MAP.json`
+  (extracted list emptied), and `recall-provenance` (reachable from live
+  recall — inert, slated for real wiring, not deletion).
+
 ## 3.147.0 — S3: the turn budget is a checkpoint, not a wall (2026-08-23)
 
 Third slice of the Master Evolution Directive — the headline capability gap
