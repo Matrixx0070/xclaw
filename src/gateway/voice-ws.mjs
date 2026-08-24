@@ -217,7 +217,8 @@ async function sendReplyWithOptionalOpus(state, cfg, payload) {
   let opusReply = null;
 
   if (payload.speak !== false && text && !tts) {
-    tts = await localSpeak(String(text).slice(0, 400), cfg);
+    const { toSpeakableText } = await import("../voice/speakable.mjs");
+    tts = await localSpeak(toSpeakableText(text, { maxChars: 400 }), cfg);
   }
 
   if (

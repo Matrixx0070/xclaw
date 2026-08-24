@@ -14,6 +14,7 @@ import {
   probeLocalVoiceStack,
 } from "./providers/local.mjs";
 import { createSpeechPlane } from "./speech-plane.mjs";
+import { toSpeakableText } from "./speakable.mjs";
 import { createEntente, voiceCommandsHelp } from "./entente.mjs";
 import { playWav } from "./playback.mjs";
 
@@ -120,7 +121,7 @@ export async function runVoiceTui(cfg = {}, opts = {}) {
       if (classified.reply && !speech.isSuppressed()) {
         const begin = speech.beginSpeak(classified.reply);
         if (begin.ok) {
-          const spoken = await localSpeak(classified.reply, cfg);
+          const spoken = await localSpeak(toSpeakableText(classified.reply), cfg);
           if (spoken.ok) await playWav(spoken.path, { speech, epoch: begin.epoch });
           else speech.endSpeak(begin.epoch);
         }
@@ -184,7 +185,7 @@ export async function runVoiceTui(cfg = {}, opts = {}) {
     if (!speech.isSuppressed()) {
       const begin = speech.beginSpeak(reply);
       if (begin.ok) {
-        const spoken = await localSpeak(reply, cfg);
+        const spoken = await localSpeak(toSpeakableText(reply), cfg);
         if (spoken.ok) {
           const play = await playWav(spoken.path, { speech, epoch: begin.epoch });
           if (!play.ok && !play.interrupted) {

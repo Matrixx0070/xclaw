@@ -24,7 +24,7 @@ export function createPersonalAssistant(opts = {}) {
       opts.speak ||
       (localOnly
         ? async (text) => {
-            const r = await localSpeak(text, cfg);
+            const r = await localSpeak((await import("../speakable.mjs")).toSpeakableText(text), cfg);
             if (!r.ok) return;
             try {
               const { spawn } = await import("node:child_process");

@@ -7,6 +7,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { localSpeak } from "../../voice/providers/local.mjs";
+import { toSpeakableText } from "../../voice/speakable.mjs";
 
 function run(cmd, args) {
   return new Promise((resolve) => {
@@ -52,7 +53,9 @@ export async function wavToOggOpus(wavPath) {
  */
 export async function synthesizeReplyVoice(text, cfg = {}, voiceConf = {}) {
   const maxChars = Number(voiceConf.maxChars) > 0 ? Number(voiceConf.maxChars) : 400;
-  const slice = String(text || "").trim().slice(0, maxChars);
+  // Speak natural language, not markup — raw replies made the TTS vocalize
+  // bullets, asterisks, parens and URLs (cut at a sentence, not mid-word).
+  const slice = toSpeakableText(text, { maxChars });
   if (!slice) return { ok: false, reason: "empty" };
 
   const spoken = await localSpeak(slice, cfg);

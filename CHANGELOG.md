@@ -1,3 +1,16 @@
+## 3.171.0 (2026-08-24)
+
+- voice: TTS no longer vocalizes markup — new toSpeakableText sanitizer
+  (src/voice/speakable.mjs) converts replies to natural speech before every
+  synthesis: bullets/headings become sentences, code blocks say "Code
+  omitted", URLs collapse to their hostname, links speak their label,
+  emphasis/parens/pipes/emoji dropped, sentence punctuation KEPT for
+  prosody, maxChars cuts at a sentence boundary instead of mid-word.
+  Wired at every reply-speaking surface: Telegram voice notes, the
+  streaming sentence speaker, voice WS, TUI voice session, and the
+  personal-assistant agent. Verbatim paths (audio_generation plugin) are
+  deliberately untouched.
+
 ## 3.170.0 (2026-08-24)
 
 Four defects observed live in the owner's Telegram DM session, all fixed:

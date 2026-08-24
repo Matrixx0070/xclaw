@@ -7,6 +7,7 @@
  */
 
 import { localSpeak } from "./providers/local.mjs";
+import { toSpeakableText } from "./speakable.mjs";
 import { playWav } from "./playback.mjs";
 
 const SENTENCE_END = /(?<=[.!?…])\s+/;
@@ -74,7 +75,12 @@ export async function speakSentences(text, cfg = {}, opts = {}) {
         firstAudioMs,
       };
     }
-    const syn = await localSpeak(sentence.slice(0, maxChars), cfg);
+    const speakable = toSpeakableText(sentence, { maxChars });
+    if (!speakable) {
+      speech?.endSpeak?.(begin.epoch);
+      continue;
+    }
+    const syn = await localSpeak(speakable, cfg);
     if (!syn.ok) {
       speech?.endSpeak?.(begin.epoch);
       continue;
