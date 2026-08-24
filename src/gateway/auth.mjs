@@ -110,6 +110,9 @@ export function createGatewayAuth(cfg = {}) {
       // point-and-prompt drives the operator's browser + starts missions
       p === "/point" ||
       p.startsWith("/point/") ||
+      // swarm-ext runs autonomous sub-agent fleets and spends provider tokens
+      p === "/api/swarm" ||
+      p.startsWith("/api/swarm/") ||
       // completions spend provider tokens per call
       p === "/complete";
     if (core) return true;

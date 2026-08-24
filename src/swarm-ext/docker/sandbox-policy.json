@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "description": "XClaw Swarm Sub-Agent Sandbox Policy",
+  "runtime": {
+    "type": "docker",
+    "image": "xclaw-swarm-subagent:latest",
+    "memoryLimit": "512m",
+    "cpuLimit": 1.0,
+    "networkMode": "bridge",
+    "readOnlyRoot": true,
+    "tmpfsSize": "100m",
+    "capDrop": ["ALL"],
+    "capAdd": ["CHOWN", "SETGID", "SETUID"],
+    "securityOpt": ["no-new-privileges:true"]
+  },
+  "filesystem": {
+    "readOnlyPaths": ["/app/src", "/app/node_modules"],
+    "writablePaths": ["/tmp", "/app/logs", "/app/data"],
+    "blockedPaths": ["/etc/shadow", "/proc/sys", "/sys"]
+  },
+  "network": {
+    "egress": "allowlist",
+    "allowedHosts": [
+      "api.openai.com",
+      "api.x.ai",
+      "api.anthropic.com",
+      "generativelanguage.googleapis.com",
+      "api.github.com"
+    ],
+    "blockedHosts": [],
+    "maxConnections": 10
+  },
+  "process": {
+    "maxProcesses": 20,
+    "maxFileDescriptors": 1024,
+    "allowedCommands": ["node", "python3", "bash", "curl", "git"],
+    "blockedCommands": ["sudo", "su", "chmod", "chown"]
+  },
+  "time": {
+    "maxExecutionSeconds": 300,
+    "gracefulShutdownSeconds": 10
+  }
+}

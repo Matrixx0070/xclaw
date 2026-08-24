@@ -1,0 +1,13 @@
+{
+  "name": "web-search",
+  "version": "0.1.0",
+  "description": "Search the web using multiple search engines",
+  "keywords": ["search", "web", "google", "bing"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["web_search"]
+  }
+}

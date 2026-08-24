@@ -1,0 +1,13 @@
+{
+  "name": "browser",
+  "version": "0.1.0",
+  "description": "Control a headless browser for navigation and interaction",
+  "keywords": ["browser", "playwright", "puppeteer", "navigation", "screenshot"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["browser_navigate", "browser_screenshot", "browser_click", "browser_type"]
+  }
+}

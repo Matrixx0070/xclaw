@@ -1,0 +1,13 @@
+{
+  "name": "file-reader",
+  "version": "0.1.0",
+  "description": "Read files with encoding detection and format parsing",
+  "keywords": ["file", "read", "parse", "json", "csv", "markdown"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["file_read"]
+  }
+}

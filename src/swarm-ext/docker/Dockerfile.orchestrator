@@ -1,0 +1,26 @@
+# XClaw Swarm Orchestrator
+# The brain — handles task decomposition, DAG planning, and result aggregation
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.swarm.json package.json
+RUN npm install --production
+
+# Copy swarm source
+COPY src/swarm ./src/swarm
+COPY src/gateway ./src/gateway
+COPY xclaw-swarm.json .
+COPY .env.swarm.example .env
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "fetch('http://localhost:18790/health').then(r=>r.ok?process.exit(0):process.exit(1))" || exit 1
+
+EXPOSE 18790
+
+ENV NODE_ENV=production
+ENV XCLAW_SWARM_CONFIG=/app/xclaw-swarm.json
+
+CMD ["node", "src/gateway/routes/swarm.mjs"]

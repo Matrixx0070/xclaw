@@ -1,0 +1,13 @@
+{
+  "name": "calculator",
+  "version": "0.1.0",
+  "description": "Perform mathematical calculations safely",
+  "keywords": ["math", "calculate", "compute", "expression"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["calculate"]
+  }
+}

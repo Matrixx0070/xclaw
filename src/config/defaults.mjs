@@ -310,6 +310,21 @@ export const DEFAULT_CONFIG = {
     maxChars: 8000,
     preferenceWriteBack: true,
   },
+  /**
+   * swarm-ext: isolated opt-in extension module at src/swarm-ext/ (ADR 0003).
+   * A SECOND swarm engine (Redis-backed goal decomposition → DAG → sub-agent
+   * pool → merge → receipt) mounted at /api/swarm. Coexists with — never
+   * replaces — the native swarm below. Requires
+   * `npm install --prefix src/swarm-ext` + reachable redis when enabled.
+   */
+  swarmExt: {
+    enabled: false,
+    /** optional model override; defaults to cfg.agent.model via provider routing */
+    model: null,
+    /** operator caps over the vendored config (vendor default was 300/300) */
+    maxSubAgents: 25,
+    maxConcurrent: 8,
+  },
   /** S0–S3 swarm */
   swarm: {
     enabled: true,

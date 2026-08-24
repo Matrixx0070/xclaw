@@ -1,0 +1,27 @@
+# XClaw Swarm Sub-Agent Container
+# Lightweight Node.js runtime for individual sub-agent execution
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Install production deps only
+COPY package.swarm.json package.json
+RUN npm install --production --ignore-scripts
+
+# Copy sub-agent source only (minimal footprint)
+COPY src/swarm/sub-agent.mjs ./src/swarm/
+COPY src/swarm/config.mjs ./src/swarm/
+COPY src/swarm/utils.mjs ./src/swarm/
+COPY src/swarm/prompts.mjs ./src/swarm/
+COPY src/swarm/schemas.mjs ./src/swarm/
+COPY src/swarm/computer ./src/swarm/computer
+COPY src/swarm/merge ./src/swarm/merge
+COPY xclaw-swarm.json .
+
+# Resource limits enforced at runtime via Docker
+# Memory: 512m, CPU: 1.0, Read-only rootfs
+ENV NODE_ENV=production
+ENV XCLAW_SWARM_CONFIG=/app/xclaw-swarm.json
+
+# Sub-agents are spawned on-demand; this image is the template
+CMD ["node", "-e", "console.log('XClaw sub-agent image ready')"]

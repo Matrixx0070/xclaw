@@ -1,0 +1,124 @@
+{
+  "swarm": {
+    "enabled": true,
+    "orchestrator": {
+      "model": "xai/grok-4.5",
+      "fallbackModel": "openai/gpt-4o",
+      "maxSubAgents": 25,
+      "maxToolCalls": 4000,
+      "maxSteps": 15,
+      "timeoutSeconds": 1200,
+      "temperature": 0.2,
+      "topP": 0.95,
+      "planningMode": "strict",
+      "autoRetry": true,
+      "retryAttempts": 3
+    },
+    "subAgent": {
+      "model": "xai/grok-4.5",
+      "fallbackModel": "openai/gpt-4o-mini",
+      "maxConcurrent": 8,
+      "timeoutSeconds": 300,
+      "temperature": 0.3,
+      "retryAttempts": 3,
+      "sandbox": {
+        "enabled": false,
+        "type": "docker",
+        "image": "xclaw-swarm-subagent:latest",
+        "memoryLimit": "512m",
+        "cpuLimit": 1.0,
+        "networkMode": "bridge",
+        "readOnlyRoot": true,
+        "tmpfsSize": "100m"
+      }
+    },
+    "taskQueue": {
+      "backend": "redis",
+      "brokerUrl": "redis://localhost:6379/0",
+      "resultBackend": "redis://localhost:6379/1",
+      "taskSerializer": "json",
+      "acceptContent": [
+        "json"
+      ],
+      "resultExpires": 3600,
+      "maxRetries": 3,
+      "retryDelay": 5000
+    },
+    "contextSharding": {
+      "enabled": true,
+      "shardSize": 16000,
+      "overlap": 2000,
+      "vectorStore": "redis",
+      "embeddingModel": "text-embedding-3-small"
+    },
+    "plugins": {
+      "directory": "./plugins",
+      "autoLoad": true,
+      "builtinTools": [
+        "web-search",
+        "web-extract",
+        "web-crawl",
+        "code-executor",
+        "browser",
+        "file-reader",
+        "calculator",
+        "image-generate",
+        "tts"
+      ],
+      "mcpServers": [],
+      "mcpEagerTools": []
+    },
+    "mergePolicy": {
+      "mode": "llm",
+      "autoMerge": false,
+      "requireApproval": true,
+      "confidenceThreshold": 0.85,
+      "fallbackMode": "concat"
+    },
+    "receipt": {
+      "enabled": true,
+      "includeToolCalls": true,
+      "includeTokenUsage": true,
+      "includeDiffs": true,
+      "maxHistoryLength": 1000
+    },
+    "parl": {
+      "enabled": true,
+      "rewardModel": "heuristic",
+      "trainingInterval": 100,
+      "minSamplesForTraining": 10,
+      "exportPath": "./.xclaw/swarm-ext/parl-samples.jsonl"
+    },
+    "heartbeat": {
+      "enabled": true,
+      "intervalSeconds": 30,
+      "maxConsecutiveFailures": 10,
+      "backoffStrategy": "exponential"
+    },
+    "watchdog": {
+      "enabled": true,
+      "taskTimeoutSeconds": 1800,
+      "agentTimeoutSeconds": 600,
+      "cleanupIntervalSeconds": 60
+    },
+    "budget": {
+      "enabled": false,
+      "maxTokensPerTask": 1000000,
+      "maxCostPerTask": 10.0,
+      "currency": "USD"
+    },
+    "telemetry": {
+      "enabled": false,
+      "prometheusPort": 9090,
+      "metrics": [
+        "task_count",
+        "sub_agent_count",
+        "tool_call_count",
+        "latency_seconds",
+        "error_rate",
+        "token_usage",
+        "parallel_ratio"
+      ]
+    }
+  }
+}

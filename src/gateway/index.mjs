@@ -1355,6 +1355,28 @@ export async function startGateway({ root } = {}) {
 
 
 
+      // --- swarm-ext: isolated opt-in extension module (OFF by default) ---
+      // Vendored second swarm engine at src/swarm-ext/ (ADR 0003). Only
+      // imported when enabled, so its deps/redis are never touched otherwise.
+      if (p === "/api/swarm" || p.startsWith("/api/swarm/")) {
+        if (!cfg.swarmExt?.enabled) {
+          return json(res, 404, {
+            error: "swarm-ext disabled (set swarmExt.enabled=true in config)",
+            code: "SWARM_EXT_DISABLED",
+          });
+        }
+        try {
+          const { handleSwarmExt } = await import("../swarm-ext/mount.mjs");
+          return await handleSwarmExt(req, res, { cfg });
+        } catch (err) {
+          return json(res, 503, {
+            error: `swarm-ext unavailable: ${err.message}`,
+            code: "SWARM_EXT_UNAVAILABLE",
+            hint: "npm install --prefix src/swarm-ext (express/ioredis/zod) and ensure redis is reachable",
+          });
+        }
+      }
+
       // --- Swarm first-class HTTP API (Phase D) ---
       if (p === "/swarm/run" && req.method === "POST") {
         const body = await readBody(req).catch(() => ({}));

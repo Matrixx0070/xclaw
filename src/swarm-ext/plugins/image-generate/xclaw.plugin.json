@@ -1,0 +1,13 @@
+{
+  "name": "image-generate",
+  "version": "0.1.0",
+  "description": "Generate images using AI image models",
+  "keywords": ["image", "generate", "ai", "diffusion", "dalle"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["image_generate"]
+  }
+}

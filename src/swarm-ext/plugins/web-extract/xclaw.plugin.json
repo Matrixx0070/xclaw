@@ -1,0 +1,13 @@
+{
+  "name": "web-extract",
+  "version": "0.1.0",
+  "description": "Extract structured content from web pages",
+  "keywords": ["extract", "scrape", "html", "content"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["web_extract"]
+  }
+}

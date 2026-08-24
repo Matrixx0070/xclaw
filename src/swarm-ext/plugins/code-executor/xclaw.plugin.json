@@ -1,0 +1,13 @@
+{
+  "name": "code-executor",
+  "version": "0.1.0",
+  "description": "Execute code in sandboxed environments",
+  "keywords": ["code", "execute", "sandbox", "python", "javascript"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["code_execute"]
+  }
+}
