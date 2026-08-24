@@ -83,3 +83,15 @@ orchestration pipeline are real.
 
 - Vendor tests: `npm test --prefix src/swarm-ext` (needs deps installed).
 - Integration-glue tests run in the main suite without extension deps.
+
+## Security posture (review 2026-08-24)
+
+- The ENTIRE `/api/swarm` surface requires the gateway operator token in both
+  auth modes — it is a single-operator API. `GET /tasks/:id` intentionally has
+  no per-session ACL beyond that token (all sessions belong to the operator).
+- Task/agent ids come from `crypto.randomUUID()` (utils.mjs) — not guessable.
+- `tool-policy.mjs` URL allowlist uses exact-host or dot-suffix matching
+  (the vendored substring `hostname.includes()` was a bypass — fixed). Note
+  ToolPolicy is exported but not yet wired into the sub-agent execute path.
+- `swarm-ws.mjs` is NOT mounted; see the warning header in that file before
+  ever wiring it.

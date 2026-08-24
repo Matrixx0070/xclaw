@@ -1,6 +1,12 @@
 /**
  * Swarm WebSocket Handler
  * Real-time progress streaming for task execution
+ *
+ * SECURITY: NOT WIRED into the xclaw gateway (mount.mjs deliberately skips it;
+ * REST polling via GET /tasks/:id covers progress). If this is ever wired,
+ * the upgrade handler MUST enforce the gateway operator token AND an Origin
+ * check BEFORE subscribing — as shipped it performs neither (flagged by the
+ * 2026-08-24 security review of the vendored drop).
  */
 import { getTaskQueue } from "../../swarm/task-queue.mjs";
 

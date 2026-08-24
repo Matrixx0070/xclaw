@@ -32,10 +32,18 @@ export class ToolPolicy {
       }
     }
 
-    // Check URL allowlist for browser
+    // Check URL allowlist for browser.
+    // Exact-host or dot-suffix match ONLY — the vendored substring match
+    // (hostname.includes(entry)) let "allowed.com.attacker.io" through
+    // (2026-08-24 security review).
     if (toolName === "browser" && params.url) {
       const url = new URL(params.url);
-      if (this.allowlist.length > 0 && !this.allowlist.some(a => url.hostname.includes(a))) {
+      const hostAllowed = (a) => {
+        const entry = String(a).toLowerCase().replace(/^\.+/, "");
+        const host = url.hostname.toLowerCase();
+        return host === entry || host.endsWith("." + entry);
+      };
+      if (this.allowlist.length > 0 && !this.allowlist.some(hostAllowed)) {
         return { allowed: false, reason: "url_not_allowed" };
       }
     }
