@@ -1,5 +1,9 @@
 # Session State — COMPLETE (2026-08-24): 30-DAY PLAN slices W2b/W3a/W4c shipped v3.162.0→v3.164.0, regression trio A/F/H green
 
+## 2026-08-24 (latest): swarm-ext ENABLED LIVE + v3.165.1 multi-agent fixes
+
+Frank said "enable it and drive it live". `swarmExt.enabled:true` now set in LIVE /root/.xclaw/xclaw.json; gateway restarted. First live multi-agent goal crashed → 2 more vendor defects fixed (v3.165.1, commit e608128, CI 4/4): topologicalSort in-degrees were BACKWARDS (any dependency edge → null groups → null.length crash; phantom dep ids now ignored in sort + group builder, typed error added) and dependent agents received NOTHING from upstream (orchestrator now injects dependencyResults into task.context). LIVE MULTI-AGENT PROOF on :18790: "3 calcs in parallel then combine" → 3 analysts w/ real calculate calls (2387/1024/976) + writer join → `a=2387, b=1024, c=976`, confidence 1.0, 4 agents/2 groups/58.6s. Suites: main 2867/2867, vendor 15/15 (new dag-engine.test.mjs). Security review addressed same day (71127a3): SSRF suffix-match fix, WS guard header, README posture. Releases v3.165.0 + v3.165.1 live. NOTE: docs-only commits produce 0 CI runs (precedent 2aaa073) — expected.
+
 ## 2026-08-24 (later): swarm-ext SHIPPED v3.165.0
 
 Frank's iPhone-delivered `xclaw-swarm-extension-xclaw-branded.zip` (104 files) landed as an ISOLATED OPT-IN module (operator-confirmed shape): `src/swarm-ext/` + glue (`llm-adapter.mjs` maps vendor chat/structuredOutput onto createProvider; `mount.mjs` express app), mounted at `/api/swarm/*` ONLY when `swarmExt.enabled` (default FALSE → 404 SWARM_EXT_DISABLED, module never imported). Native swarm + ADR 0002 untouched (ADR 0003). Core stays zero-dep — express/ioredis/zod isolated via `npm install --prefix src/swarm-ext` (zip declared 11 deps, only 4 imported, node-fetch was a phantom named export → removed).
