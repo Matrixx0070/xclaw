@@ -99,6 +99,16 @@ import { beforeNavigate, beforeInput } from "../browser/hooks.mjs";
 import { resolveRole } from "../browser/role-binding.mjs";
 import { stripClaimsBlock } from "./claims-scaffold.mjs";
 
+// Router phrasings that mean "this tool name is not routable" — a hallucinated
+// tool. The router THROWS these ("Unknown tool: X" plane-fallthrough, "No
+// adapter for X (plane=local)", "Unknown local/MCP tool", "No MCP adapter") or
+// returns them ("No agent handler for X"). It does NOT emit them for a real tool
+// on an unavailable plane ("computer plane unavailable"), so matching this on an
+// errored call is an alias-safe, engine-agnostic signal that the model invented
+// a tool that does not exist.
+const UNROUTABLE_TOOL_RE =
+  /\b(?:unknown (?:tool|local tool|mcp tool)|no (?:adapter|mcp adapter|agent handler))\b/i;
+
 /**
  * Assistant message content → plain text. Providers may return a string or a
  * parts array ({type:"text", text} / {text}); empty/unknown parts collapse to "".
@@ -736,6 +746,15 @@ export async function runAgentLoop(options) {
       cfg.tokens?.maxToolDescriptionChars ?? cfg.tools?.maxDescriptionChars ?? null,
   });
   tools = optimized.tools;
+  // Per-run set of tool names the ROUTER proved unroutable (hallucinated). The
+  // router is the single source of truth for "no such tool"; we flag a name only
+  // once its OWN dispatch outcome matches UNROUTABLE_TOOL_RE (see below), which
+  // is alias-safe (a blocked `bash` returns "computer plane unavailable", never
+  // an unknown-tool error) and engine-agnostic. This feeds the loop guard's
+  // unknown-tool detector: a repeated hallucinated name becomes a fast typed
+  // CRITICAL stop (threshold 10) instead of waiting for the generic no-progress
+  // breaker (~20-30 calls).
+  const observedUnknownTools = new Set();
   const prefixHash = optimized.fingerprint.hash;
   const frozenSystem = optimized.systemMessage;
   const cachePolicy = defaultCacheOptimizePolicy(cfg);
@@ -1351,7 +1370,11 @@ export async function runAgentLoop(options) {
           if (hr.decision === "allow") hookAllow = true;
         }
 
-        const verdict = guard.detect(name, args);
+        const verdict = guard.detect(
+          name,
+          args,
+          observedUnknownTools.has(name) ? { unknownToolName: name } : {}
+        );
         if (verdict.stuck && verdict.level === "critical") {
           // Progress-based soft-stop: do not throw — keep post-run pipeline (verify, metrics, receipts)
           onEvent({ type: "guard", ...verdict, softStop: true });
@@ -1836,7 +1859,16 @@ export async function runAgentLoop(options) {
             onEvent({ type: "hook", phase: "mutated", category: "post_tool_use", name });
           }
         }
-        guard.record(name, args, text);
+        const unknownToolOutcome =
+          (toolThrown || result?.isError === true) &&
+          UNROUTABLE_TOOL_RE.test(rawText);
+        if (unknownToolOutcome) observedUnknownTools.add(name);
+        guard.record(
+          name,
+          args,
+          text,
+          unknownToolOutcome ? { unknownToolName: name } : {}
+        );
         const traceEntry = finalizeToolTraceEntry(tracePartial, {
           resultText: text,
           originalChars: trunc.originalChars,
