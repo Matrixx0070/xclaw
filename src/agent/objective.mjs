@@ -323,6 +323,22 @@ async function runObjectiveInner(cfg, opts = {}) {
       pendingAnswer = String(opts.answer);
       obj.decisions = [...obj.decisions, `Owner answered: ${pendingAnswer.slice(0, 300)}`];
       obj.humanQuestion = null;
+      // Preference write-back: the owner's mid-mission answer is where durable
+      // preferences surface ("always run tests", "never force-push"). Mirror
+      // job.mjs's on-success extraction; approve-only answers yield no hints.
+      if (cfg.memory?.preferenceWriteBack !== false) {
+        try {
+          const { extractPreferenceHints, writePreferences } = await import(
+            "../memory/preferences.mjs"
+          );
+          const hints = extractPreferenceHints(pendingAnswer);
+          if (hints.length) {
+            const w = await writePreferences(cfg, hints, { source: obj.id });
+            if (w.written)
+              obj.preferencesWritten = (obj.preferencesWritten || 0) + w.written;
+          }
+        } catch { /* preference write-back is best-effort */ }
+      }
     }
     obj.status = "running";
     obj.stopRequested = false;

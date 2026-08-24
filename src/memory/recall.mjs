@@ -11,6 +11,7 @@ import {
   memoryPaths,
   appendMemory,
   loadDurableMemoryFile,
+  forgetMemory,
 } from "./durable.mjs";
 import { expandRecallHits } from "./recall-provenance.mjs";
 
@@ -253,6 +254,51 @@ export function createRecallTool({ cfg, workingDir }) {
 }
 
 /**
+ * Delete durable workspace memory entries that are wrong or obsolete.
+ * Mirrors createRecallTool: same {cfg, workingDir} binding and tool shape.
+ * At least one matcher (id/jobId/type/contains) is required — forgetMemory
+ * fail-safes to {removed:0, reason:"no_matcher"} otherwise, never a blind wipe.
+ */
+export function createForgetTool({ cfg, workingDir }) {
+  return {
+    name: "xclaw_forget",
+    description:
+      "Delete durable workspace memory that is wrong or obsolete. Match by id, jobId, type, or a `contains` text fragment (matched against summary/goal). At least one matcher is required; nothing is removed without one. Returns {removed, kept}.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Exact memory event id to remove (from a prior recall hit)",
+        },
+        jobId: {
+          type: "string",
+          description: "Remove every event tagged with this jobId",
+        },
+        type: {
+          type: "string",
+          description: "Remove events of this type (e.g. note, outcome)",
+        },
+        contains: {
+          type: "string",
+          description: "Remove events whose summary/goal contains this text",
+        },
+      },
+    },
+    async execute(args = {}) {
+      const { id, jobId, type, contains } = args || {};
+      const res = await forgetMemory(cfg, workingDir || process.cwd(), {
+        id,
+        jobId,
+        type,
+        contains,
+      });
+      return { ok: true, ...res };
+    },
+  };
+}
+
+/**
  * Convenience: store a free-form note into durable memory.
  */
 export async function rememberNote(cfg, workspacePath, summary, extra = {}) {
@@ -268,5 +314,6 @@ export default {
   recallSwarmReceipts,
   recallAll,
   createRecallTool,
+  createForgetTool,
   rememberNote,
 };

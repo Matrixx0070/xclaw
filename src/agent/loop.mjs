@@ -58,7 +58,7 @@ import {
   buildContextSections,
 } from "../skills/loader.mjs";
 import { loadDurableMemoryFile } from "../memory/durable.mjs";
-import { createRecallTool } from "../memory/recall.mjs";
+import { createRecallTool, createForgetTool } from "../memory/recall.mjs";
 import { createRepoIntelTool } from "../intel/intel-tool.mjs";
 import { estimateRequestTokens, resolveTokenizer } from "../tokens/count.mjs";
 import { createUsageTracker, defaultLedgerPath } from "../tokens/usage-tracker.mjs";
@@ -603,6 +603,18 @@ export async function runAgentLoop(options) {
           name: recallTool.name,
           description: recallTool.description,
           parameters: recallTool.parameters,
+        },
+      });
+    }
+    // Memory correction: forget wrong/obsolete durable entries (same gate)
+    if (cfg.memory?.recall !== false) {
+      const forgetTool = createForgetTool({ cfg, workingDir });
+      tools.push({
+        type: "function",
+        function: {
+          name: forgetTool.name,
+          description: forgetTool.description,
+          parameters: forgetTool.parameters,
         },
       });
     }
@@ -1675,6 +1687,9 @@ export async function runAgentLoop(options) {
           } else if (name === "xclaw_recall") {
             const recallTool = createRecallTool({ cfg, workingDir });
             result = await recallTool.execute(args);
+          } else if (name === "xclaw_forget") {
+            const forgetTool = createForgetTool({ cfg, workingDir });
+            result = await forgetTool.execute(args);
           } else if (name === "xclaw_repo_intel") {
             const intelTool = createRepoIntelTool({ cfg, workingDir });
             result = await intelTool.execute(args);

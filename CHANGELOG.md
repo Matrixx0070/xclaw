@@ -1,3 +1,9 @@
+## 3.161.0 — memory correction tool + objective preference write-back (2026-08-24)
+
+- **The agent can now forget wrong memory.** New `xclaw_forget` tool (mirrors `xclaw_recall`, same `memory.recall` gate) deletes durable workspace memory by `id`, `jobId`, `type`, or a `contains` text fragment. It fail-safes: with no matcher it removes nothing (`reason:"no_matcher"`) — never a blind wipe — and unparseable lines are always kept. Closes the loop where memory could be written and read but never corrected.
+- **Long-run missions learn owner preferences.** When the owner answers a mission's held question on resume, that answer is mined for durable preferences ("always run the full test suite", "never force-push") and appended to the owner preference store — mirroring `job.mjs`'s on-success write-back, gated by `memory.preferenceWriteBack`. Approve-only answers yield nothing (conservative extractor).
+- **Tests**: new `test/objective-memory-tools.test.mjs` (4) — forget by type/contains + no-matcher no-op; preference mined from an owner answer, approve-only writes nothing, and the `preferenceWriteBack:false` gate. Full suite 2838/0 (5 skipped).
+
 ## 3.160.0 — objective learning write-path: outcomes recorded, lessons recalled (2026-08-24)
 
 - **Missions now learn across runs.** When a long-run objective completes, `runObjective` records a durable `outcome` memory in the mission's workspace (`src/agent/objective.mjs`): the goal, verdict, criteria, and segment/tool totals. The verdict is embedded in the summary string because `recallMemory`'s hit projection does not surface a `verdict` field of its own.
