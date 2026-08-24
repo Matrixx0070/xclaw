@@ -62,6 +62,18 @@ Legacy `swarmExt.*` keys are still honored (deprecated alias).
 Engine tuning (timeouts, merge policy, budget, watchdog) lives in
 `decompose-config.json`, loaded from this directory — never from cwd.
 
+## Stateful Python (`runtime/python/`)
+
+`jupyter_kernel.py` (vendored from the extension zip, loopback-patched) +
+`kernel_pool_server.py` (xclaw's pool layer: `POST /execute` with per-session
+kernels, LRU cap 6, 30-min idle reap, port 18799 loopback-only). Surfaced to
+the agent as the `python_session` local tool (`src/tools/python-tools.mjs`):
+persistent variables/dataframes across calls per session, `%matplotlib
+inline` figures saved into the workspace. Advertised only when the
+`/opt/xclaw-kernel/venv` exists. Risk: exec-family → tier risky — pends for
+the main agent, DENIED to swarm sub-agents unless the operator allow-lists
+it AND raises `autoApproveMaxTier`.
+
 ## History
 
 Landed 2026-08-24 from an operator-delivered extension zip as the isolated

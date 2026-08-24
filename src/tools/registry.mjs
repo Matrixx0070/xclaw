@@ -12,6 +12,7 @@ import { createBrowserTools } from "./browser-tools.mjs";
 import { createVideoTools } from "./video-tools.mjs";
 import { createSkillTools } from "./skill-tools.mjs";
 import { createSpawnTools } from "./spawn-tools.mjs";
+import { createPythonTools } from "./python-tools.mjs";
 import { createMockMailTools } from "./mock-mail.mjs";
 import { createMockChatTools } from "./mock-chat.mjs";
 import { createFastApiMockTools } from "./mock-fastapi-client.mjs";
@@ -31,6 +32,9 @@ export function createAllLocalTools(ctx = {}) {
     ...createVideoTools({ workingDir }),
     ...createSkillTools({ workingDir, cfg }),
     ...createSpawnTools({ workingDir, cfg, runState: ctx.spawnState }),
+    // Stateful Jupyter-kernel Python (advertised only when the kernel venv
+    // exists on this host); exec-family for risk purposes — never auto-runs.
+    ...createPythonTools({ workingDir, cfg }),
     // Eval-only mock tools (mail/chat/fastapi) are NOT part of the
     // production tool surface: advertising xclaw_gmail_send etc. to the
     // model in real runs invites it to "send email" into a mock

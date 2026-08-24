@@ -47,3 +47,5 @@ MISSION_2_SUMMARY.md
 /inspect-*.mjs
 /test-google-*.mjs
 /test-proxy-*.mjs
+__pycache__/
+*.pyc

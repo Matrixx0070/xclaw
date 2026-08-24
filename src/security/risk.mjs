@@ -30,7 +30,7 @@ export function tierRank(tier) {
 
 const READ_RE = /read|list|glob|grep|search|recall|repo_intel|status|show/i;
 const WRITE_RE = /write|edit|append|create|delete|remove|move|copy|mkdir/i;
-const EXEC_RE = /bash|shell|exec|terminal|run|spawn/i;
+const EXEC_RE = /bash|shell|exec|terminal|run|spawn|python|jupyter|kernel/i;
 const EGRESS_RE = /web_|fetch|http|browser|navigate|download|upload|api/i;
 
 // Irreversible command facts — each entry is (pattern, reason). Patterns run
@@ -278,7 +278,10 @@ function extractPaths(args = {}) {
 }
 
 function commandText(args = {}) {
-  return String(args.command ?? args.cmd ?? args.script ?? args.input ?? "");
+  // `code` covers exec tools that take source text (python_session) — their
+  // payload gets the same danger-fact scan (credential paths, system paths)
+  // as a shell command.
+  return String(args.command ?? args.cmd ?? args.script ?? args.input ?? args.code ?? "");
 }
 
 /**
