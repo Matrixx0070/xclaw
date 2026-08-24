@@ -62,6 +62,29 @@ function unionCapped(base = [], add = [], { max = 200, itemMax = 500 } = {}) {
   return out.slice(-max);
 }
 
+/** Normalize an operator-set deadline (ISO string or epoch ms) → ISO or null. */
+export function normalizeDeadline(deadline) {
+  if (deadline == null) return null;
+  const ms = typeof deadline === "number" ? deadline : Date.parse(String(deadline));
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+/**
+ * Normalize an operator-set budget → { maxUsd, maxToolCalls } with null for
+ * unset fields, or null when nothing is set. Operator-only: a model never
+ * sets its own budget (it cannot extend its own limits).
+ */
+export function normalizeBudget(budget) {
+  if (!budget || typeof budget !== "object") return null;
+  const usd = Number(budget.maxUsd);
+  const calls = Number(budget.maxToolCalls);
+  const out = {
+    maxUsd: Number.isFinite(usd) && usd > 0 ? usd : null,
+    maxToolCalls: Number.isFinite(calls) && calls > 0 ? Math.floor(calls) : null,
+  };
+  return out.maxUsd == null && out.maxToolCalls == null ? null : out;
+}
+
 /** Migrate pre-Trust-Sprint objective JSONs: counters + gate fields. */
 export function ensureCounters(obj) {
   if (!obj || typeof obj !== "object") return obj;
@@ -76,6 +99,14 @@ export function ensureCounters(obj) {
   if (obj.pendingCompletion === undefined) obj.pendingCompletion = null;
   if (obj.inFlightSegment === undefined) obj.inFlightSegment = null;
   if (obj.verifyDeriveTried === undefined) obj.verifyDeriveTried = false;
+  // W3a: richer durable state + operator guardrails on pre-W3a JSONs.
+  if (!Array.isArray(obj.assumptions)) obj.assumptions = [];
+  if (typeof obj.planVersion !== "number")
+    obj.planVersion = Array.isArray(obj.plan) && obj.plan.length ? 1 : 0;
+  if (obj.deadline === undefined) obj.deadline = null;
+  if (obj.budget === undefined) obj.budget = null;
+  if (obj.totals && typeof obj.totals === "object" && typeof obj.totals.costUsd !== "number")
+    obj.totals.costUsd = 0;
   return obj;
 }
 
@@ -86,6 +117,8 @@ export function newObjective({
   chatId = null,
   workingDir = null,
   verify = null,
+  deadline = null,
+  budget = null,
 } = {}) {
   const now = new Date().toISOString();
   return {
@@ -101,6 +134,8 @@ export function newObjective({
     progress: [], // compact accomplished-work notes
     findings: [], // important discoveries
     decisions: [], // decisions already made (do not re-litigate)
+    assumptions: [], // working assumptions recorded instead of stopping to ask (INTAKE doctrine)
+    planVersion: 0, // bumped whenever the committed plan actually changes
     constraints: [],
     openQuestions: [],
     failures: [], // [{ at, what, error, recovery }]
@@ -111,6 +146,11 @@ export function newObjective({
     channel,
     chatId,
     workingDir,
+    // W3a operator guardrails (operator-set only; a model cannot extend its
+    // own limits). deadline = wall-clock ISO; budget = spend / tool-call caps.
+    // Checked BETWEEN segments; a hit pauses the mission as paused_budget.
+    deadline: normalizeDeadline(deadline),
+    budget: normalizeBudget(budget),
     // Deterministic completion checks (jobs/verify.mjs shape). When set,
     // NO done-path may complete the mission while any check fails — the
     // verdict is earned, not narrated (S2 semantics, wired here in E-A).
@@ -130,7 +170,7 @@ export function newObjective({
     },
     inFlightSegment: null, // { n, startedAt } while a segment is executing
     segments: [], // [{ n, turns, toolCalls, stopReason, status, at }]
-    totals: { segments: 0, toolCalls: 0, turns: 0 },
+    totals: { segments: 0, toolCalls: 0, turns: 0, costUsd: 0 },
     finalAnswer: null,
     createdAt: now,
     updatedAt: now,
@@ -229,7 +269,15 @@ export function mergeStateUpdate(obj, update = {}) {
     }
     obj.criteria = [...byKey.values()].slice(0, 60);
   }
-  if (Array.isArray(update.plan)) obj.plan = unionCapped([], update.plan, { max: 40 });
+  if (Array.isArray(update.plan)) {
+    // planVersion is an audit trail of replanning: bump only when the
+    // committed plan actually changes (re-emitting the same plan is a no-op).
+    const nextPlan = unionCapped([], update.plan, { max: 40 });
+    if (JSON.stringify(nextPlan) !== JSON.stringify(obj.plan)) {
+      obj.planVersion = (Number(obj.planVersion) || 0) + 1;
+    }
+    obj.plan = nextPlan;
+  }
   if (typeof update.currentSubtask === "string") {
     obj.currentSubtask = update.currentSubtask.slice(0, 400);
   }
@@ -239,6 +287,7 @@ export function mergeStateUpdate(obj, update = {}) {
   obj.progress = unionCapped(obj.progress, update.progress || [], { max: 120 });
   obj.findings = unionCapped(obj.findings, update.findings || [], { max: 120 });
   obj.decisions = unionCapped(obj.decisions, update.decisions || [], { max: 60 });
+  obj.assumptions = unionCapped(obj.assumptions || [], update.assumptions || [], { max: 40 });
   obj.constraints = unionCapped(obj.constraints, update.constraints || [], { max: 30 });
   obj.openQuestions = Array.isArray(update.openQuestions)
     ? unionCapped([], update.openQuestions, { max: 30 })

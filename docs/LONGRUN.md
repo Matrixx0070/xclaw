@@ -87,8 +87,11 @@ user objective
   `blocked` gets one diagnose-and-recover directive before escalating; a
   crashed segment retries once, then parks `interrupted` (resumable).
 - **Limits are typed.** Safety = risk gate/hooks (unchanged). Resource =
-  cost governor + `objectives.maxSegments` (default 40) → `paused_budget`
-  with a resume hint, never silent death. Model/context = per-segment
+  cost governor + `objectives.maxSegments` (default 40) + **operator caps**
+  (`deadline`, `budget.maxUsd`, `budget.maxToolCalls`, checked between
+  segments) → `paused_budget` with a typed reason + resume hint, never
+  silent death. A model cannot widen its own caps; raising one is an
+  explicit operator `resume` with a new value. Model/context = per-segment
   eviction/compaction (unchanged, now scoped to a segment). Execution =
   `maxTurns` per segment. Completion = criteria only.
 - **Restart survival.** Boot marks `running` objectives `interrupted`,
@@ -106,6 +109,11 @@ user objective
 ## Entry points
 
 - `/objective <goal>` — explicit mission start (also `status|stop|resume`).
+  Operator caps as flags, stripped from the goal before the model sees it:
+  `--deadline <ISO|+30m|+2h|+1d>`, `--max-usd <n>`, `--max-tools <n>`.
+  Raise a cap past a pause with `/objective resume <id> --max-tools <n>`
+  (etc.). HTTP mirrors this: `POST /objectives` and
+  `POST /objectives/:id/resume` accept `{deadline, budget}` in the body.
 - **Auto-promotion**: a normal channel turn cut off by `maxTurns` becomes
   a mission automatically (seeded with the partial turn's inspected files),
   and the user is told it is continuing — the old failure mode now *starts*
@@ -117,6 +125,10 @@ user objective
 ## Config
 
 `objectives.{enabled, autoPromote, maxSegments, progressEverySegments, dir}`
+
+Per-mission durable fields (set at start or on resume, not global config):
+`deadline`, `budget.{maxUsd,maxToolCalls}`, plus the audit-trail state
+`assumptions[]`, `planVersion`, and `totals.costUsd`.
 
 ## Known limitations
 

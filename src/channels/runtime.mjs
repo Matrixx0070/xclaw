@@ -335,6 +335,39 @@ export async function processInbound(inbound, opts = {}) {
 }
 
 /** Build the segment runner + start a detached mission loop. */
+/** Extract operator guardrail flags from a mission command tail, stripping
+ * them out so the remainder is the goal/subcommand text.
+ *   --deadline <ISO | +Nm | +Nh | +Nd>   --max-usd <n>   --max-tools <n>
+ * Operator-set only: a mission cannot widen its own limits — raising a cap is
+ * an explicit /objective resume with a new flag. */
+export function parseObjectiveFlags(rest) {
+  let text = String(rest || "");
+  const take = (re) => {
+    const m = text.match(re);
+    if (!m) return null;
+    text = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).replace(/\s{2,}/g, " ").trim();
+    return m[1];
+  };
+  let deadline = null;
+  const dl = take(/--deadline\s+(\S+)/i);
+  if (dl) {
+    const rel = dl.match(/^\+(\d+)\s*([mhd])$/i);
+    if (rel) {
+      const mult = { m: 60000, h: 3600000, d: 86400000 }[rel[2].toLowerCase()];
+      deadline = new Date(Date.now() + Number(rel[1]) * mult).toISOString();
+    } else {
+      deadline = dl; // ISO — normalizeDeadline validates/normalizes downstream
+    }
+  }
+  const usd = take(/--max-usd\s+([\d.]+)/i);
+  const tools = take(/--max-tools\s+(\d+)/i);
+  const budget =
+    usd || tools
+      ? { maxUsd: usd ? Number(usd) : null, maxToolCalls: tools ? Number(tools) : null }
+      : null;
+  return { text: text.trim(), deadline, budget };
+}
+
 function startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts }) {
   const runSegment = async ({ prompt, rescuePrompt, sessionId }) =>
     replyWithAgent({
@@ -387,7 +420,8 @@ export async function routeObjective({ text, inbound, cfg, workingDir, replyWith
   const active = await store.findActiveObjective(cfg, scope);
 
   if (isCmd) {
-    const rest = text.trim().split(/\s+/).slice(1).join(" ").trim();
+    const rawRest = text.trim().split(/\s+/).slice(1).join(" ").trim();
+    const { text: rest, deadline: flagDeadline, budget: flagBudget } = parseObjectiveFlags(rawRest);
     const sub = rest.split(/\s+/)[0]?.toLowerCase() || "";
     if (!rest || sub === "status") {
       if (!active) return { handled: true, via: "objective", reply: "No active mission. /objective <goal> to start one." };
@@ -442,7 +476,7 @@ export async function routeObjective({ text, inbound, cfg, workingDir, replyWith
         target.sessionKey = inbound.identity || target.sessionKey;
         await store.saveObjective(cfg, target);
       }
-      startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { resumeId: target.id } });
+      startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { resumeId: target.id, deadline: flagDeadline, budget: flagBudget } });
       return { handled: true, via: "objective", reply: `▶️ Resuming mission \`${target.id}\`.` };
     }
     // /objective <goal text> — explicit mission start
@@ -450,7 +484,7 @@ export async function routeObjective({ text, inbound, cfg, workingDir, replyWith
       return { handled: true, via: "objective", reply: `A mission is already active (\`${active.id}\`, ${active.status}). /objective status | stop first.` };
     }
     if (!notify) return { handled: true, via: "objective", reply: "This channel cannot run detached missions (no sender)." };
-    startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { objective: rest } });
+    startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { objective: rest, deadline: flagDeadline, budget: flagBudget } });
     return { handled: true, via: "objective", reply: `🎯 Mission started. I'll work autonomously and report here; /objective status any time.` };
   }
 

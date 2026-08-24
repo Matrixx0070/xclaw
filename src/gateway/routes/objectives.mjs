@@ -6,10 +6,10 @@
  * Paths (operator-token gated in BOTH auth modes via the core list):
  *   GET  /objectives            — summaries (newest first)
  *   GET  /objectives/:id        — full state
- *   POST /objectives            — {objective, workingDir?, verify?} start detached (gateway-run);
+ *   POST /objectives            — {objective, workingDir?, verify?, deadline?, budget?} start detached (gateway-run);
  *       verify = typed checks (jobs/verify.mjs shape) gating every done-path
  *   POST /objectives/:id/stop   — request stop at the next segment boundary
- *   POST /objectives/:id/resume — {answer?} resume interrupted/paused/awaiting/stopped
+ *   POST /objectives/:id/resume — {answer?, deadline?, budget?} resume interrupted/paused/awaiting/stopped (deadline/budget raise the cap)
  */
 import {
   listObjectives,
@@ -119,7 +119,7 @@ export async function tryHandleObjectivesRoute({ p, method, req, cfg, res, json,
     }
     // create synchronously so the caller gets the id
     const store = await import("../../agent/objective-store.mjs");
-    const obj = store.newObjective({ objective, channel: "api", chatId: null, workingDir: body?.workingDir || null, verify: Array.isArray(body?.verify) ? body.verify : null });
+    const obj = store.newObjective({ objective, channel: "api", chatId: null, workingDir: body?.workingDir || null, verify: Array.isArray(body?.verify) ? body.verify : null, deadline: body?.deadline || null, budget: body?.budget || null });
     await saveObjective(cfg, obj);
     await startGatewayObjective(cfg, { resumeId: obj.id }, { workingDir: body?.workingDir });
     json(res, 200, { ok: true, id: obj.id, status: "running" });
@@ -160,7 +160,12 @@ export async function tryHandleObjectivesRoute({ p, method, req, cfg, res, json,
     const body = await readBody(req).catch(() => ({}));
     await startGatewayObjective(
       cfg,
-      { resumeId: id, ...(body?.answer ? { answer: String(body.answer) } : {}) },
+      {
+        resumeId: id,
+        ...(body?.answer ? { answer: String(body.answer) } : {}),
+        ...(body?.deadline !== undefined ? { deadline: body.deadline } : {}),
+        ...(body?.budget ? { budget: body.budget } : {}),
+      },
       { workingDir: obj.workingDir }
     );
     json(res, 200, { ok: true, id, status: "running" });

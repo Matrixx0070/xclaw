@@ -31,11 +31,70 @@ import {
   loadObjective,
   mergeStateUpdate,
   ensureCounters,
+  normalizeDeadline,
+  normalizeBudget,
 } from "./objective-store.mjs";
 import { getSharedLedger } from "../ops/ledger.mjs";
+import { estimateUsdFromUsage } from "../tokens/cost-governor.mjs";
 import { rememberNote, recallMemory } from "../memory/recall.mjs";
 
 export const STATE_FENCE = "xclaw-objective-state";
+
+/**
+ * W3a operator guardrails, checked BETWEEN segments (same granularity as the
+ * segment budget). Returns a typed { reason, message, ... } when a limit is
+ * hit, else null. Operator-set only — a model cannot extend its own limits;
+ * /objective resume with a raised cap continues past a pause.
+ */
+export function checkObjectiveGuardrails(obj, now = Date.now()) {
+  if (obj.deadline) {
+    const dl = Date.parse(obj.deadline);
+    if (Number.isFinite(dl) && now >= dl) {
+      return { reason: "deadline", message: `deadline reached (${obj.deadline})`, deadline: obj.deadline };
+    }
+  }
+  const b = obj.budget || {};
+  const toolCalls = Number(obj.totals?.toolCalls) || 0;
+  if (Number.isFinite(b.maxToolCalls) && toolCalls >= b.maxToolCalls) {
+    return {
+      reason: "maxToolCalls",
+      message: `tool-call budget reached (${toolCalls}/${b.maxToolCalls})`,
+      toolCalls,
+      maxToolCalls: b.maxToolCalls,
+    };
+  }
+  const costUsd = Number(obj.totals?.costUsd) || 0;
+  if (Number.isFinite(b.maxUsd) && costUsd >= b.maxUsd) {
+    return {
+      reason: "maxUsd",
+      message: `spend budget reached ($${costUsd.toFixed(4)}/$${b.maxUsd})`,
+      costUsd,
+      maxUsd: b.maxUsd,
+    };
+  }
+  return null;
+}
+
+/** USD spent by one segment: real cost when the provider bills it, else an
+ * estimate from token usage (same path as the loop's daily-governor feed). */
+function segmentUsd(cfg, seg) {
+  const u = seg?.usage;
+  if (!u || typeof u !== "object") return 0;
+  if (u.hasCost && Number.isFinite(u.costUsd)) return Number(u.costUsd) || 0;
+  if (u.hasRealUsage) {
+    try {
+      const est = estimateUsdFromUsage(
+        { prompt_tokens: u.promptTokens, completion_tokens: u.completionTokens },
+        cfg,
+        { modelRef: seg?.model }
+      );
+      return est > 0 ? est : 0;
+    } catch {
+      /* estimate optional */
+    }
+  }
+  return 0;
+}
 
 const DEFAULT_MAX_SEGMENTS = 40;
 const CRITERIA_PUSHBACK_CAP = 2;
@@ -96,6 +155,7 @@ End EVERY reply with exactly one fenced block:
   "progress": ["work completed THIS segment, compact"],
   "findings": ["important discoveries THIS segment"],
   "decisions": ["decisions made THIS segment"],
+  "assumptions": ["working assumptions you are proceeding on instead of stopping to ask"],
   "openQuestions": ["..."],
   "inspected": {"files":["..."],"dirs":["..."],"components":["..."]},
   "failures": [{"what":"...","error":"...","recovery":"..."}],
@@ -143,13 +203,16 @@ export function buildSegmentPrompt(obj, { firstSegment = false, directive = null
     parts.push(`# Mission state (durable — your memory across segments)`);
     if (obj.interpretation) parts.push(`Interpretation: ${obj.interpretation}`);
     parts.push(`\n## Completion criteria\n${fmtCriteria(obj.criteria)}`);
-    parts.push(`\n## Plan\n${fmtList(obj.plan, { max: 40 })}`);
+    parts.push(`\n## Plan${obj.planVersion ? ` (v${obj.planVersion})` : ""}\n${fmtList(obj.plan, { max: 40 })}`);
     if (obj.currentSubtask) parts.push(`\n## Current subtask\n${obj.currentSubtask}`);
     parts.push(`\n## Remaining work\n${fmtList(obj.remaining, { max: 40 })}`);
     parts.push(`\n## Progress so far\n${fmtList(obj.progress, { max: 40 })}`);
     parts.push(`\n## Key findings\n${fmtList(obj.findings, { max: 40 })}`);
     if (obj.decisions.length) {
       parts.push(`\n## Decisions already made (do not re-litigate)\n${fmtList(obj.decisions, { max: 20 })}`);
+    }
+    if (obj.assumptions?.length) {
+      parts.push(`\n## Working assumptions (proceeding on these — challenge only if evidence contradicts)\n${fmtList(obj.assumptions, { max: 20 })}`);
     }
     if (obj.constraints.length) parts.push(`\n## Constraints\n${fmtList(obj.constraints, { max: 15 })}`);
     if (obj.openQuestions.length) parts.push(`\n## Open questions\n${fmtList(obj.openQuestions, { max: 15 })}`);
@@ -342,6 +405,11 @@ async function runObjectiveInner(cfg, opts = {}) {
     }
     obj.status = "running";
     obj.stopRequested = false;
+    // Operator may raise (or set) the deadline / budget when resuming a
+    // paused mission — this is how /objective resume continues past a cap.
+    if (opts.deadline !== undefined && opts.deadline !== null)
+      obj.deadline = normalizeDeadline(opts.deadline);
+    if (opts.budget) obj.budget = normalizeBudget(opts.budget);
   } else {
     obj = newObjective({
       objective: opts.objective,
@@ -350,6 +418,8 @@ async function runObjectiveInner(cfg, opts = {}) {
       chatId: opts.chatId || null,
       workingDir: opts.workingDir || null,
       verify: opts.verify || null,
+      deadline: opts.deadline || null,
+      budget: opts.budget || null,
     });
     if (opts.seed) mergeStateUpdate(obj, opts.seed);
     ledgerEvent(cfg, obj, "objective_started", { objective: obj.objective.slice(0, 200) });
@@ -574,6 +644,21 @@ async function runObjectiveInner(cfg, opts = {}) {
       );
       return { status: obj.status, id: obj.id, objective: obj };
     }
+    // ── operator guardrails: wall-clock deadline + spend/tool-call budget ─
+    const gr = checkObjectiveGuardrails(obj);
+    if (gr) {
+      obj.status = "paused_budget";
+      await saveObjective(cfg, obj);
+      ledgerEvent(cfg, obj, "objective_paused", gr);
+      onEvent({ type: "objective", phase: "paused", id: obj.id, ...gr });
+      await notify(
+        `⏸ Mission ${obj.id} paused: ${gr.message}. ` +
+          `Progress is saved (${obj.criteria.filter((c) => c.done).length}/${obj.criteria.length} criteria done). ` +
+          `/objective resume ${gr.reason === "deadline" ? "with a later deadline" : "with a higher budget"} to continue.`,
+        { kind: "paused" }
+      );
+      return { status: obj.status, id: obj.id, objective: obj };
+    }
 
     // ── run one segment ──────────────────────────────────────────────────
     const n = obj.totals.segments + 1;
@@ -634,6 +719,7 @@ async function runObjectiveInner(cfg, opts = {}) {
     obj.totals.segments = n;
     obj.totals.turns += Number(seg?.turns) || 0;
     obj.totals.toolCalls += Array.isArray(seg?.toolTrace) ? seg.toolTrace.length : 0;
+    obj.totals.costUsd = (Number(obj.totals.costUsd) || 0) + segmentUsd(cfg, seg);
     obj.segments.push({
       n,
       turns: Number(seg?.turns) || 0,
