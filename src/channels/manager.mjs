@@ -15,11 +15,28 @@ export function createChannelManager(cfg) {
   const channels = [telegram, discord, slack, email];
   const byName = Object.fromEntries(channels.map((c) => [c.name, c]));
 
+  // Serialize lifecycle operations per channel. The 2026-08-24 restart storm:
+  // the health watchdog's tick and a /channels/manage/restart ran restartChannel
+  // concurrently, interleaving stop/start so two telegram poll loops ran at
+  // once and terminated each other's getUpdates (CONFLICT) until a process
+  // restart. Every start/stop/restart for one channel now queues behind the
+  // previous one.
+  const lifecycleTail = new Map(); // name → settled-safe tail promise
+  function serialize(name, fn) {
+    const prev = lifecycleTail.get(name) || Promise.resolve();
+    const run = prev.then(fn, fn);
+    lifecycleTail.set(
+      name,
+      run.catch(() => {})
+    );
+    return run;
+  }
+
   return {
     async startAll() {
       for (const ch of channels) {
         try {
-          await ch.start();
+          await serialize(ch.name, () => ch.start());
         } catch (err) {
           console.error(`[channels] ${ch.name} failed to start:`, err.message);
           if (typeof ch.markError === "function") ch.markError(err.message);
@@ -29,7 +46,7 @@ export function createChannelManager(cfg) {
     async stopAll() {
       for (const ch of channels) {
         try {
-          await ch.stop();
+          await serialize(ch.name, () => ch.stop());
         } catch (err) {
           console.error(`[channels] ${ch.name} stop error:`, err.message);
         }
@@ -41,13 +58,15 @@ export function createChannelManager(cfg) {
     async restartChannel(name) {
       const ch = byName[name];
       if (!ch) throw new Error(`unknown channel ${name}`);
-      try {
-        await ch.stop();
-      } catch {
-        /* */
-      }
-      await ch.start();
-      return { ok: true, name };
+      return serialize(name, async () => {
+        try {
+          await ch.stop();
+        } catch {
+          /* */
+        }
+        await ch.start();
+        return { ok: true, name };
+      });
     },
     async restart(name) {
       return this.restartChannel(name);

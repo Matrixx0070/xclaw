@@ -68,12 +68,18 @@ import { recordSuggestionTapMetric } from "../../agent/agent-metrics.mjs";
 import {
   classifyTelegramError,
   telegramApiError,
+  backoffMsFromClassification,
 } from "./errors.mjs";
 import { runTelegramPollLoop } from "./poll-loop.mjs";
 import { enrichStickerMeta } from "./sticker-meta.mjs";
 import { chunkText, prepareReplyChunks } from "./chunk-text.mjs";
 
-const API = "https://api.telegram.org";
+// Overridable for tests and self-hosted Bot API servers; read at call time so
+// a test can point an already-imported module at a local mock.
+const DEFAULT_API = "https://api.telegram.org";
+function apiBase() {
+  return process.env.XCLAW_TELEGRAM_API_BASE || DEFAULT_API;
+}
 
 export function createTelegramChannel(cfg) {
   const conf = cfg.channels?.telegram || {};
@@ -105,6 +111,7 @@ export function createTelegramChannel(cfg) {
 
   let offset = 0;
   let stopped = false;
+  let starting = false;
   let loopPromise = null;
   let botInfo = null;
   let messagesHandled = 0;
@@ -142,7 +149,7 @@ export function createTelegramChannel(cfg) {
   }
 
   async function api(method, body) {
-    const url = `${API}/bot${token}/${method}`;
+    const url = `${apiBase()}/bot${token}/${method}`;
     let r;
     try {
       r = await fetch(url, {
@@ -296,7 +303,7 @@ export function createTelegramChannel(cfg) {
         const f = await api("getFile", { file_id: fileId });
         const filePath = f.file_path;
         if (!filePath) throw new Error("no file_path from getFile");
-        const url = `${API}/file/bot${token}/${filePath}`;
+        const url = `${apiBase()}/file/bot${token}/${filePath}`;
         const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
         if (!res.ok) throw new Error(`download HTTP ${res.status}`);
         const buf = Buffer.from(await res.arrayBuffer());
@@ -1001,6 +1008,29 @@ export function createTelegramChannel(cfg) {
         console.log(`[telegram] disabled (set channels.telegram.enabled + token)`);
         return;
       }
+      // 2026-08-24 restart storm: the health watchdog and a manual
+      // /channels/manage/restart interleaved, each stop() flagging the loop the
+      // other's start() then revived — two concurrent poll loops terminated each
+      // other's getUpdates (CONFLICT) every second until a process restart. A
+      // live loop makes start a no-op, and a start already in flight is not
+      // begun twice; createChannelManager additionally serializes lifecycle
+      // calls per channel.
+      if (starting) {
+        console.warn(`[telegram] start already in flight — skip`);
+        return;
+      }
+      if (loopAlive && !stopped) {
+        console.warn(`[telegram] already running — start skipped`);
+        return;
+      }
+      starting = true;
+      try {
+        await this.startInner();
+      } finally {
+        starting = false;
+      }
+    },
+    async startInner() {
       if (singleWriter) {
         writerLock = acquireTelegramWriterLock({
           lockPath: conf.writerLockPath,
@@ -1014,7 +1044,27 @@ export function createTelegramChannel(cfg) {
         }
         console.log(`[telegram] writer lock ok pid=${process.pid}`);
       }
-      botInfo = await api("getMe");
+      // Retried: one transient Bad Gateway here at gateway boot (2026-08-24
+      // 19:57) killed the channel until the watchdog's next pass — the poll
+      // loop retries everything, but this pre-loop call had no second chance.
+      // Bounded like downloadTelegramFile; non-retryable errors (bad token)
+      // still fail immediately.
+      let getMeAttempt = 0;
+      for (;;) {
+        try {
+          botInfo = await api("getMe");
+          break;
+        } catch (err) {
+          const c = classifyTelegramError(err);
+          getMeAttempt += 1;
+          if (!c.retryable || getMeAttempt >= 4) throw err;
+          const delay = Math.min(3000, backoffMsFromClassification(c, getMeAttempt));
+          console.warn(
+            `[telegram] getMe ${c.code} — retry ${getMeAttempt}/3 in ${delay}ms`
+          );
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
       console.log(`[telegram] bot @${botInfo.username} (id ${botInfo.id}) transport=${transport}`);
       stopped = false;
       lastError = null;

@@ -1,3 +1,23 @@
+## 3.176.1 (2026-08-24)
+
+- TELEGRAM CHANNEL HARDENING (live outage found minutes after the 3.176.0
+  restart): a transient `getMe: Bad Gateway` at gateway boot killed the channel
+  until the watchdog's next pass, and then the watchdog's recovery restart and
+  a manual /channels/manage/restart interleaved — two concurrent poll loops
+  terminated each other's getUpdates (CONFLICT every second) until a process
+  restart. Three fixes, all evidence-driven from the gateway log:
+  - `start()` retries retryable getMe failures (bounded, classified via
+    classifyTelegramError — bad tokens still fail immediately) and is a no-op
+    while a poll loop is alive or another start is in flight, so nothing can
+    revive a loop that a concurrent stop() just flagged.
+  - `createChannelManager` serializes start/stop/restart per channel — the
+    watchdog tick and the manage route can no longer interleave.
+  - Telegram API base is overridable at call time (XCLAW_TELEGRAM_API_BASE)
+    for tests and self-hosted Bot API servers.
+- New regression suite test/telegram-start-race.test.mjs (5 tests against a
+  local mock Bot API: boot retry, fail-fast on 401, idempotent start, stop
+  leaves no poller behind, concurrent restarts serialize to one poller).
+
 ## 3.176.0 (2026-08-24)
 
 - COMPUTER ENGINE REVERSAL (ADR 0006, operator directive: the 16MB bundle is
