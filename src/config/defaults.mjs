@@ -324,6 +324,22 @@ export const DEFAULT_CONFIG = {
     /** operator caps over the vendored config (vendor default was 300/300) */
     maxSubAgents: 25,
     maxConcurrent: 8,
+    /**
+     * Bridge to xclaw's REAL tool router for sub-agents (tool-bridge.mjs).
+     * Autonomous sub-agents can never pend for approval, so every call is
+     * risk-gated FAIL-CLOSED: assessRisk tier must be ≤ autoApproveMaxTier
+     * ("low" = reads + provably read-only exec + workspace writes; risky and
+     * critical are denied with a typed error). `allow` narrows which tools
+     * are advertised (null = curated DEFAULT_ALLOW); `alwaysAllow` bypasses
+     * the tier gate by name (default: web_search/web_fetch — research
+     * primitives whose name-family would classify egress→risky).
+     */
+    tools: {
+      enabled: true,
+      autoApproveMaxTier: "low",
+      allow: null,
+      alwaysAllow: null,
+    },
   },
   /** S0–S3 swarm */
   swarm: {

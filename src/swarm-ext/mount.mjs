@@ -73,8 +73,27 @@ async function buildApp(xclawCfg) {
   // NOTE: vendor loadPlugins() returns a plain array; sub-agents need the
   // PluginRegistry interface (getSchemas/execute), so build the registry.
   const { PluginRegistry } = await import("./src/swarm/plugin-registry.mjs");
-  const toolRegistry = new PluginRegistry();
-  await toolRegistry.loadPlugins();
+  const vendorRegistry = new PluginRegistry();
+  await vendorRegistry.loadPlugins();
+
+  // Bridge to xclaw's REAL tool router (computer/local/search planes),
+  // risk-gated fail-closed. Real tools win name collisions (e.g. the real
+  // web_search over the vendor stub); vendor plugins fill the gaps. If the
+  // bridge cannot come up (computer plane down), degrade LOUDLY to
+  // vendor-only rather than failing the whole mount.
+  let toolRegistry = vendorRegistry;
+  if (xclawCfg?.swarmExt?.tools?.enabled !== false) {
+    try {
+      const { createXclawToolBridge, createMergedToolRegistry } = await import("./tool-bridge.mjs");
+      const bridge = await createXclawToolBridge(xclawCfg);
+      toolRegistry = createMergedToolRegistry(bridge, vendorRegistry);
+      console.log(
+        `[swarm-ext] xclaw tool bridge up: ${bridge.list().length} real tools (ws=${bridge.workingDir}), vendor fills gaps`
+      );
+    } catch (err) {
+      console.error(`[swarm-ext] xclaw tool bridge UNAVAILABLE — vendor plugins only: ${err.message}`);
+    }
+  }
 
   const { swarmLogger } = await import("./src/gateway/middleware/swarm-logger.mjs");
   const { swarmRateLimit } = await import("./src/gateway/middleware/swarm-rate-limit.mjs");
