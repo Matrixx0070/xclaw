@@ -1,6 +1,12 @@
 # Session State — COMPLETE (2026-08-24): 30-DAY PLAN slices W2b/W3a/W4c shipped v3.162.0→v3.164.0, regression trio A/F/H green
 
-## 2026-08-24 (latest): 5 REAL data plugins from the 'complete-final' zip review — v3.167.0
+## 2026-08-24 (latest): real local TTS gateway-wide — v3.168.0/3.168.1
+
+Frank: "FIGURE OUT TTS BACKEND OR MIGHT BE LOCAL FOR FREE" + confirmed insight that TTS was Telegram-only. Discovery: xclaw ALREADY had localSpeak (src/voice/providers/local.mjs: piper→espeak-ng) but only the Telegram voice-out + webchat paths could reach it, and piper was NOT installed (espeak-ng only). Installed piper 2023.11.14-2 at /opt/piper + en_US-lessac-medium voice (63MB, ~20x realtime CPU, RTF 0.048); live config gains FLAT voice.piperBin=/opt/piper/piper/piper + voice.piperModel keys. New REAL audio_generation plugin (v3.168.0, commit 19286da, CI 4/4): routes localSpeak with gateway config, WAV into ~/.xclaw/workspaces/swarm-ext/artifacts/audio/, {speakImpl,cfgLoader,outDir} injectable — 3 CI-safe tests, no TTS binary in CI. Side effect: Telegram voice replies auto-upgraded espeak→piper. v3.168.1 (53b298c, CI 4/4): vendor tts stub removed (fabricated URLs, superseded — same class as image-generate removal).
+
+PROOF: piper direct (161KB WAV, RTF 0.048), localSpeak returns provider:"piper", plugin E2E (live-proof.wav 226KB), LIVE swarm goal task_mt74gtj7_0y6qtc on restarted 3.168.0 → swarm-voice-proof.wav on disk 93,856 bytes real 22kHz PCM, agent-reported byte size matches disk exactly. Suites 2891/2891 + vendor 15/15 both ships; releases v3.168.0 + v3.168.1 live; gateway on 3.168.1, /api/swarm mount 200, tree clean.
+
+## 2026-08-24: 5 REAL data plugins from the 'complete-final' zip review — v3.167.0
 
 Frank's 54MB `xclaw-swarm-extension-complete-final.zip` finally landed after 6 failed Taildrop attempts (phone kept dropping; Taildrop does NOT resume — restarts each send; watcher on /var/lib/tailscale/files/megastream.../ caught completion). Review: `src/` byte-identical to the branded zip already integrated (same 8 corrupted files, already fixed — shipped tree strictly ahead); ~90MB unrelated bundled junk (76MB DingTalk CLI binaries — NOT executed, one zip entry corrupt; pdf.js browser ext; python plugin bundles); the 7 genuinely-new plugins were ALL STUBS (zero fetch calls, Math.random data, "This is a stub", phantom node-fetch import). Frank: code was AI-generated for xclaw; junk accidental. Do NOT attribute the package to any particular generator in user-facing text (Frank's explicit ask).
 
