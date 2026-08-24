@@ -46,6 +46,7 @@ import {
   voiceOutOptions,
 } from "./voice-out.mjs";
 import { localTranscribe } from "../../voice/providers/local.mjs";
+import { mdToTelegramHtml, mdToPlain } from "./markdown.mjs";
 import {
   gateGroupMessage,
   stripBotMention,
@@ -194,6 +195,20 @@ export function createTelegramChannel(cfg) {
       if (replyTo != null && i === 0) body.reply_to_message_id = replyTo;
       // only attach keyboard on last chunk
       if (i < chunks.length - 1) delete body.reply_markup;
+      // Render the agent's markdown (bold/code/links) instead of showing
+      // literal ** asterisks (Frank, 2026-08-24). HTML mode with a plain
+      // fallback: if Telegram rejects the entities, the text still arrives.
+      if (extra.parse_mode === undefined) {
+        try {
+          const html = mdToTelegramHtml(part);
+          if (html !== part) {
+            last = await api("sendMessage", { ...body, text: html, parse_mode: "HTML" });
+            continue;
+          }
+        } catch {
+          /* fall through to plain send */
+        }
+      }
       last = await api("sendMessage", body);
     }
     return last;
@@ -271,18 +286,33 @@ export function createTelegramChannel(cfg) {
   }
 
   async function downloadTelegramFile(fileId, destPath) {
-    const f = await api("getFile", { file_id: fileId });
-    const filePath = f.file_path;
-    if (!filePath) throw new Error("no file_path from getFile");
-    const url = `${API}/file/bot${token}/${filePath}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`download HTTP ${res.status}`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    await fs.mkdir(path.dirname(destPath), { recursive: true });
-    await fs.writeFile(destPath, buf);
-    return { path: destPath, bytes: buf.length, telegramPath: filePath };
+    // Retried: a single transient `fetch failed` was silently eating whole
+    // voice notes (Frank's 4s note at 11:10, 2026-08-24 — he had to repeat
+    // himself). 3 attempts with short backoff.
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, attempt * 750));
+      try {
+        const f = await api("getFile", { file_id: fileId });
+        const filePath = f.file_path;
+        if (!filePath) throw new Error("no file_path from getFile");
+        const url = `${API}/file/bot${token}/${filePath}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+        if (!res.ok) throw new Error(`download HTTP ${res.status}`);
+        const buf = Buffer.from(await res.arrayBuffer());
+        const fs = await import("node:fs/promises");
+        const path = await import("node:path");
+        await fs.mkdir(path.dirname(destPath), { recursive: true });
+        await fs.writeFile(destPath, buf);
+        return { path: destPath, bytes: buf.length, telegramPath: filePath };
+      } catch (err) {
+        lastErr = err;
+        console.warn(
+          `[telegram] media download attempt ${attempt + 1}/3 failed: ${err.message}`
+        );
+      }
+    }
+    throw lastErr;
   }
 
   /**
@@ -794,10 +824,14 @@ export function createTelegramChannel(cfg) {
         // Deliver any images the agent produced (generate_image / edit_image)
         // as actual photos — the text reply alone left the picture on the server.
         if (Array.isArray(out.images) && out.images.length) {
-          const { sendPhotoFile } = await import("./photo-out.mjs");
+          const { sendPhotoFile, sendPhotoUrl, isImageUrl } = await import("./photo-out.mjs");
           for (const imgPath of out.images.slice(0, 10)) {
             try {
-              const r = await sendPhotoFile({ token, chatId, filePath: imgPath, replyTo: msg.message_id });
+              // Artifacts can be local files OR remote URLs (weather icons
+              // etc.) — a URL fed to the file sender fails ENOENT.
+              const r = isImageUrl(imgPath)
+                ? await sendPhotoUrl({ token, chatId, url: imgPath, replyTo: msg.message_id })
+                : await sendPhotoFile({ token, chatId, filePath: imgPath, replyTo: msg.message_id });
               if (r.ok) console.log(`[telegram] 🖼 ${r.method} ${imgPath.split("/").pop()}`);
               else console.warn(`[telegram] photo send failed (${imgPath}): ${r.error}`);
             } catch (ierr) {
@@ -814,7 +848,7 @@ export function createTelegramChannel(cfg) {
                 chatId,
                 filePath: syn.path,
                 replyTo: msg.message_id,
-                caption: voiceOpts.caption ? String(out.reply).slice(0, 200) : undefined,
+                caption: voiceOpts.caption ? mdToPlain(out.reply).slice(0, 200) : undefined,
                 format: syn.format,
               });
               console.log(`[telegram] ♪ voice via ${syn.provider}`);

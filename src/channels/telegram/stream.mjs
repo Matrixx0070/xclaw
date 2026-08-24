@@ -193,6 +193,47 @@ export function createTelegramStreamer(opts) {
     const raw = String(text || "").trim() || "(no response)";
     const { head, overflow } = splitHeadAndOverflow(raw, maxLen);
 
+    // Final edit renders the agent's markdown; partial edits stay plain
+    // (mid-stream text can hold unterminated fences). Plain fallback on any
+    // HTML rejection.
+    try {
+      const { mdToTelegramHtml } = await import("./markdown.mjs");
+      const html = mdToTelegramHtml(head);
+      if (html !== head) {
+        await api("editMessageText", {
+          chat_id: chatId,
+          message_id: messageId ?? (await sendPlaceholder()),
+          text: clip(html),
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        });
+        lastText = clip(html);
+        let overflowSent0 = 0;
+        for (const part of overflow) {
+          if (!part || closed) break;
+          try {
+            await api("sendMessage", {
+              chat_id: chatId,
+              text: clip(mdToTelegramHtml(part)),
+              parse_mode: "HTML",
+              disable_web_page_preview: true,
+            });
+            overflowSent0 += 1;
+          } catch {
+            await api("sendMessage", {
+              chat_id: chatId,
+              text: part.length > maxLen ? clip(part) : part,
+              disable_web_page_preview: true,
+            });
+            overflowSent0 += 1;
+          }
+        }
+        return { messageId, overflowSent: overflowSent0 };
+      }
+    } catch {
+      /* fall through to the plain-text path below */
+    }
+
     try {
       await editNow(head);
     } catch (err) {

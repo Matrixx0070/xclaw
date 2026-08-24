@@ -10,7 +10,26 @@
  */
 
 import { applyClaimsGateToResult } from "./claims-gate.mjs";
-import { runAgentLoop } from "./loop.mjs";
+import { runAgentLoop, stripClaimsBlock } from "./loop.mjs";
+
+/**
+ * The loop returns BOTH finalText (raw, WITH the claims scaffold — what the
+ * claims gate must score) and text (stripped presentation). Preferring
+ * finalText and passing it straight through as the outward text was the
+ * 2026-08-24 regression that leaked ```json {"claims":…}``` blocks into
+ * Telegram replies and voice captions: score raw, present stripped.
+ */
+export function splitScoreAndPresentationText(raw) {
+  const text =
+    raw?.finalText ||
+    raw?.text ||
+    raw?.reply ||
+    (typeof raw === "string" ? raw : "") ||
+    "(no response)";
+  const presentationText =
+    (raw?.finalText ? raw?.text : null) || stripClaimsBlock(text) || "(no response)";
+  return { text, presentationText };
+}
 
 /** @typedef {"cli"|"telegram"|"webchat"|"discord"|"slack"|"email"|"tui"|"api"|"automation"|"unknown"} AgentChannel */
 
@@ -105,12 +124,7 @@ export async function runAgent(req = {}) {
       ...(opts.rescuePrompt ? { rescuePrompt: opts.rescuePrompt } : {}),
     });
 
-    const text =
-      raw?.finalText ||
-      raw?.text ||
-      raw?.reply ||
-      (typeof raw === "string" ? raw : "") ||
-      "(no response)";
+    const { text, presentationText } = splitScoreAndPresentationText(raw);
 
     const evidence = [];
     for (const tr of raw?.toolTrace || []) {
@@ -126,6 +140,7 @@ export async function runAgent(req = {}) {
         ok: true,
         text,
         finalText: text,
+        presentationText,
         turns: raw?.turns,
         model: raw?.model,
         toolTrace: raw?.toolTrace,
@@ -141,6 +156,10 @@ export async function runAgent(req = {}) {
       },
       { evidence, cfg: opts.cfg, opts: {} }
     );
+    // Outward text is what channels render — never the claims scaffold. The
+    // gate has already scored the raw text above.
+    gated.text = presentationText;
+    gated.finalText = presentationText;
     return gated;
   } catch (e) {
     return {

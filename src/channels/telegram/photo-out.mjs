@@ -14,6 +14,34 @@ export function isImagePath(p) {
   return typeof p === "string" && IMAGE_EXT.test(p);
 }
 
+/** True for an http(s) or protocol-relative image URL. */
+export function isImageUrl(p) {
+  return typeof p === "string" && /^(https?:)?\/\//i.test(p);
+}
+
+/**
+ * Send a remote image by URL. Telegram fetches http(s) URLs itself;
+ * protocol-relative //host/... (seen in wttr.in weather icons, 2026-08-24 —
+ * they were being read as local paths and failing ENOENT) is normalized to
+ * https.
+ */
+export async function sendPhotoUrl({ token, chatId, url, replyTo, caption }) {
+  const photo = String(url).replace(/^\/\//, "https://");
+  const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      photo,
+      caption: caption ? String(caption).slice(0, 1000) : undefined,
+      reply_to_message_id: replyTo ?? undefined,
+    }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!j.ok) return { ok: false, error: j.description || `HTTP ${res.status}`, url: photo };
+  return { ok: true, method: "sendPhoto(url)", result: j.result, url: photo };
+}
+
 /**
  * @param {object} args
  * @param {string} args.token bot token

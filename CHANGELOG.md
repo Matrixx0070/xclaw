@@ -1,3 +1,22 @@
+## 3.170.0 (2026-08-24)
+
+Four defects observed live in the owner's Telegram DM session, all fixed:
+
+- FIX claims-JSON leak (REGRESSION): run-agent preferred the loop's raw
+  finalText (kept for claims-gate scoring) and passed it outward — Telegram
+  replies and voice captions showed the internal ```json {"claims":…}```
+  scaffold. Now: gate scores raw, channels get stripped presentation text
+  (splitScoreAndPresentationText, unit-tested).
+- Telegram markdown rendering: replies now sent parse_mode HTML via a
+  bounded md→HTML converter (bold/italic/code/fences/http-links, entity
+  escaping, plain-text fallback on rejection); streamer's final edit too.
+  Voice captions use mdToPlain instead of raw asterisks.
+- Photo delivery: image artifacts that are URLs (e.g. protocol-relative
+  weather icons) are sent via sendPhoto-by-URL instead of being read as
+  local file paths (was ENOENT, photos silently dropped).
+- Media downloads (voice notes, photos, documents) retry 3x with backoff —
+  a single transient fetch failure was eating whole voice notes.
+
 ## 3.169.0 (2026-08-24)
 
 - voice: Kokoro-82M neural TTS integrated into localSpeak as the preferred
