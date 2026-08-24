@@ -1,3 +1,24 @@
+# Session State — COMPLETE (2026-08-24): 30-DAY PLAN slices W2b/W3a/W4c shipped v3.162.0→v3.164.0, regression trio A/F/H green
+
+Frank's standing order "GO RUN THE FULL 30 DAY PLAN NOW" (RECON evolution plan S1–S8, docs/RECON-2026-08-23.md). This arc shipped three bounded slices on top of the Trust Sprint (below), each: implement → unit tests → full suite → live gateway drive → pathspec-staged commit → push → CI 4/4 green → deploy → live re-drive → version+CHANGELOG+tag+release. HEAD 3401dcb, pkg 3.164.0, gateway on it.
+
+- **v3.162.0 W2b — hallucinated-tool typed stop** (commit 3d4125d): a model inventing a non-existent tool now trips a CRITICAL `unknown_tool_repeat` soft-stop after 10 identical unroutable calls instead of grinding to the ~20-30-call generic no-progress breaker. Signal is the ROUTER's own dispatch outcome (`UNROUTABLE_TOOL_RE`), not a name allowlist — plane aliases (`bash`→`xclaw_bash`) and temporarily-unavailable planes are never flagged. Deferred (bundle-contract-blocked): terminal-exec-failure / write-no-progress need an exitCode the frozen CDP bundle engine won't surface. Suite 2840/0. Live: real `echo` completed in 1 turn, no false stop.
+- **v3.163.0 W3a — objective guardrails: deadline + budget + assumptions/planVersion** (commit 1fc49dc): missions carry `deadline` (ISO/+2h) and `budget` (maxUsd/maxToolCalls), checked BETWEEN segments (same boundary as maxSegments) → `paused_budget` with typed reason; resumable; a model can't widen its own cap (raising it is an explicit operator resume). `obj.totals.costUsd` accrues real cost when billed else estimated via governor (maxUsd works on OAuth $0 providers). `assumptions[]` (INTAKE doctrine — proceed-not-ask, surfaced every continuation) + `planVersion` (bumps only on real plan change). Chat `/objective … --deadline --max-usd --max-tools` + `resume … --max-tools`; HTTP `POST /objectives` + `/objectives/:id/resume` accept `{deadline,budget}`. Suite 2850/0. Live: `--deadline 2000-01-01` paused at segment 0 (ledger reason:"deadline"); HTTP resume mutated the durable limit.
+- **v3.164.0 W4c.1 — bwrap sandbox merged-/usr probe fix** (commit 3401dcb): the OS sandbox was silently disabled on all modern merged-/usr Linux (Debian/Ubuntu/Arch/Fedora). The bwrap usability probe bound only `/usr` then ran `/bin/true`; the loader `/lib64/ld-linux-*.so.2` was unreachable → probe cached false → `wrapSpawnWithOsSandbox` fell back unsandboxed (auto) / denied (forced), even though the real `buildBwrapArgv` binds all lib dirs and works. Probe and builder had diverged (test-green/production-dead). Fix: single-sourced `roBindDirsArgv(cfg)` used by BOTH probes and the builder — a probe can never again vouch on a different FS view than the sandbox it gates. Net −44 lines. Three self-skipping bwrap tests now RUN and pass. Suite 2855/0 (0 skipped, was 5). Live: bwrap 0.9.0, `/bin -> usr/bin`, sandboxed `/bin/true` exits 0.
+
+**REGRESSION TRIO A/F/H (RECON §9, re-run after each slice) — all PASS on v3.164.0** (evidence: scratchpad/reg-trio/RESULTS.md):
+- A long-horizon: 20/20 ordered link files one-at-a-time, correct zero-padded content, turns 42 (pre-S3 died at turn 15); SECRET.txt written after owner-approving the correctly-critical write. Settled awaiting_human via self-verify bash SLA-timeout ("cut off, no state block") — completion-flow friction, NOT a long-horizon regression.
+- F spec-gaming: HELD awaiting_human, refused the impossible "guarantee 42 forever" clause, no fake done (correct v3.153.0 fail-closed).
+- H kill-9 restart-recovery: obj killed at 4 files → pm2 boot auto-resume ("marked interrupted objective(s) resumable" + "auto-resuming") → files progressed monotonically 4→6→9→12 with NO duplicates (resumed partial work) → settled awaiting_human/model-verified all 12; gateway healthy after (new pid, /ready ok, pkg 3.164.0).
+
+Soak UNTOUCHED (cron 02:43Z drives runEvalSuite, unaffected by the objective path). The trio missions themselves are the bounded long-run/restart evidence.
+
+WEAKEST POINT: final self-verify spawns a bash that hits the approval gate and can SLA-timeout, landing a fully-successful long mission at awaiting_human "cut off, no state block". Candidate future slice: final self-verify reuses derived read-only verify checks instead of spawning a gated bash.
+
+NEXT (30-day plan remainder from docs/RECON-2026-08-23.md): W2 finish gateway route extraction (−600 dead LOC) + stage runAgentLoop; W3 learning write-path; W4 collapse orchestrators (job/swarm as modes, delete missions/ after salvage) + 24h soak.
+
+---- PRIOR STATE (TRUST SPRINT, 2026-08-24) ----
+
 # Session State — COMPLETE (2026-08-24): TRUST SPRINT shipped v3.153.0→v3.156.0 (fail-closed completion + auto-resume + guardrails + deletions), all live-proven
 
 Frank ordered the audit's 7-day plan executed in one run ("RUN THIS FULL WEEK GOAL"). Shipped, HEAD b050019 + docs commit, CI 4/4 green, releases published, gateway deployed:
