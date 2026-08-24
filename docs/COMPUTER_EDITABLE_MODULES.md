@@ -10,7 +10,6 @@ The maintained tool modules live in `src/computer/modules/` (bash, file read/wri
 
 - `src/computer/thin-server.mjs` — the default **native** engine
 - `src/computer/generated/computer-server.mjs` — the esbuild **generated** engine (`npm run build:computer`)
-- `src/computer/xclaw-server.mjs` — the opt-in full **CDP bundle** engine (GitHub release asset, `npm run fetch:bundle`; not in git)
 
 | Module | Path | Status |
 |--------|------|--------|
@@ -25,11 +24,11 @@ passed `node --check` but referenced identifiers that were never defined
 `CHROME_TMPDIR_PREFIX`) and nothing imported it at runtime — every method call
 would ReferenceError (design review 2026-08-12 §6.3). It was deleted in 3.82.0;
 recover it from git history if ever needed. The full CDP/Chrome path is the
-**bundle engine** (`XCLAW_COMPUTER_ENGINE=bundle`).
+managed headless Chrome (`src/computer/chrome-session.mjs` + `src/computer/modules/browser-cdp.mjs`) — single native engine since ADR 0005.
 
 ## Lineage
 
-The bundle descends from `/app/grok-computer-server.mjs` (Grok). XClaw = rebrand + Horizon patches on that region.
+The retired vendored bundle is archived on GitHub release `computer-bundle` (ADR 0005).
 
 ## How to verify
 

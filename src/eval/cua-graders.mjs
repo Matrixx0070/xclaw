@@ -46,13 +46,16 @@ export async function runCuaI6Suite() {
   // 02 act fail closed
   {
     const id = "cua-i6-02_act_fail_closed";
-    delete process.env.XCLAW_CDP_URL;
-    delete process.env.CDP_URL;
-    delete process.env.XCLAW_COMPUTER_ENGINE;
+    // Deterministic: dead loopback endpoint (external wins — never spawns
+    // the managed Chrome) must fail typed, fast, and closed.
+    process.env.XCLAW_CDP_URL = "http://127.0.0.1:59991";
+    process.env.XCLAW_CUA_RETRIES = "0";
     const r = await runComputerAct({ action: "click", x: 1, y: 1 });
+    delete process.env.XCLAW_CDP_URL;
+    delete process.env.XCLAW_CUA_RETRIES;
     rows.push({
       id,
-      pass: r.ok === false && r.code === "CUA_ACT_REQUIRES_BUNDLE",
+      pass: r.ok === false && r.code === "CDP_ATTACH_FAILED",
       detail: r.code,
     });
   }
@@ -142,26 +145,31 @@ export async function runCuaI6Suite() {
   {
     const id = "cua-i6-08_multistep_policy";
     _resetTabsForTests();
-    // step1: cannot click without CDP
+    // Deterministic: dead external endpoint — CDP-tier actions fail typed,
+    // never spawn the managed Chrome inside the grader.
+    process.env.XCLAW_CDP_URL = "http://127.0.0.1:59991";
+    process.env.XCLAW_CUA_RETRIES = "0";
+    // step1: click against an unreachable browser fails closed
     const a1 = await runComputerAct({ action: "click", ref: "e1", tabId: "t" });
-    // step2: observe path exists
+    // step2: observe path exists without any browser
     const html = `<button>Next</button>`;
     const obs = observeFromTab({ id: "t", url: "https://ex.com", title: "", text: "", html });
     cacheObserveResult("t", obs);
     // step3: desktop without opt-in still blocked
     const a3 = await runComputerAct({ surface: "desktop", action: "click", x: 1, y: 1 });
-    // step4: observe preferred over screenshot message
+    // step4: screenshot against an unreachable browser fails typed
     const shot = await runBrowserTab({ screenshot: "full" });
+    delete process.env.XCLAW_CDP_URL;
+    delete process.env.XCLAW_CUA_RETRIES;
     const pass =
       a1.ok === false &&
       obs.ok === true &&
       a3.code === "DESKTOP_GUI_DISABLED" &&
-      shot.ok === false &&
-      /observe|bundle|CDP/i.test(String(shot.error || ""));
+      shot.ok === false;
     rows.push({
       id,
       pass,
-      detail: `act=${a1.code} obs=${obs.elementCount} desk=${a3.code} shot_blocked=${!shot.ok}`,
+      detail: `act=${a1.code} obs=${obs.elementCount} desk=${a3.code} shot=${shot.code}`,
     });
   }
 

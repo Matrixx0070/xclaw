@@ -89,9 +89,14 @@ describe("native browser_tab", () => {
     }
   });
 
-  it("rejects jsCode with clear CDP guidance", async () => {
-    const r = await runBrowserTab({ jsCode: "1+1" });
-    assert.equal(r.ok, false);
-    assert.match(r.error, /CDP|BrowserService/);
+  it("jsCode without a reachable browser fails typed (external endpoint pinned — no spawn)", async () => {
+    process.env.XCLAW_CDP_URL = "http://127.0.0.1:59991";
+    try {
+      const r = await runBrowserTab({ jsCode: "1+1" });
+      assert.equal(r.ok, false);
+      assert.equal(r.code, "CUA_JS_FAILED");
+    } finally {
+      delete process.env.XCLAW_CDP_URL;
+    }
   });
 });

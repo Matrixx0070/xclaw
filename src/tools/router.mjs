@@ -14,10 +14,6 @@ import {
 } from "./planes.mjs";
 import { executeLocalTool, localToolNames } from "./registry.mjs";
 import { runWebSearch, isSearchPlaneTool } from "../planes/search.mjs";
-import {
-  assertPlanAtSpawn,
-  getSpawnEnforceMode,
-} from "../security/spawn-enforce.mjs";
 
 /**
  * @param {object} ctx
@@ -28,10 +24,6 @@ import {
  * @param {object} [ctx.cfg]
  * @param {string} [ctx.workingDir]
  * @param {Function} [ctx.beforeComputer] — optional async (name, args) => { args?, skip?, result? }
- * @param {boolean} [ctx.computerAcceptsRunPlan] — whether the computer engine's
- *   advertised xclaw_bash schema declares systemRunPlan. Opaque engines (the CDP
- *   bundle) strictly validate input and reject unknown keys, so when false the
- *   router enforces the frozen plan itself and strips the key before forwarding.
  */
 export function createToolRouter(ctx = {}) {
   const {
@@ -42,8 +34,6 @@ export function createToolRouter(ctx = {}) {
     cfg = {},
     workingDir = process.cwd(),
     beforeComputer = null,
-    computerAcceptsRunPlan = true,
-    computerAcceptsCwd = true,
   } = ctx;
 
   const localNames = new Set(
@@ -122,44 +112,6 @@ export function createToolRouter(ctx = {}) {
             },
             durationMs: Date.now() - started,
           };
-        }
-        // Engines that don't declare systemRunPlan in their tool schema
-        // (the strict-zod CDP bundle) would reject the whole call on the
-        // injected key. Run the same spawn-time plan gate the module engine
-        // runs, then strip the key before forwarding.
-        if (args.systemRunPlan && !computerAcceptsRunPlan) {
-          const plan = args.systemRunPlan;
-          delete args.systemRunPlan;
-          const check = assertPlanAtSpawn({
-            plan,
-            command: args.command,
-            cwd: args.cwd || workingDir,
-            mode: getSpawnEnforceMode(cfg),
-          });
-          if (!check.ok) {
-            const msg = check.error || "spawn enforce denied";
-            return {
-              callId,
-              name,
-              plane: "computer",
-              ok: false,
-              blocked: true,
-              error: msg,
-              result: {
-                isError: true,
-                content: [{ type: "text", text: msg }],
-              },
-              durationMs: Date.now() - started,
-            };
-          }
-          if (check.command) args.command = check.command;
-        }
-        // Same strict-schema guard for the injected cwd/workingDir pin: the
-        // frozen C4 bundle rejects unknown keys, and its session already runs
-        // in the createSession(workingDir) directory — stripping loses nothing.
-        if (!computerAcceptsCwd) {
-          if ("cwd" in args) delete args.cwd;
-          if ("workingDir" in args) delete args.workingDir;
         }
         if (typeof beforeComputer === "function") {
           const gate = await beforeComputer(name, args);

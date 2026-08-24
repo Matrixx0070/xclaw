@@ -1547,11 +1547,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       const { loadConfig } = await import("../src/config/load.mjs");
       if (!sub || sub === "start" || sub.startsWith("-")) {
         const fg = !args.includes("--bg");
-        await startComputer({
-          root,
-          foreground: fg,
-          args: args.slice(sub === "start" ? 2 : 1).filter((a) => a !== "--bg"),
-        });
+        await startComputer({ root, foreground: fg });
         break;
       }
       if (sub === "status") {

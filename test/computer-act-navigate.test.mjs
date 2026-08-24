@@ -4,12 +4,17 @@ import { runComputerAct } from "../src/computer/modules/computer-act-tool.mjs";
 import { lookupCuaError } from "../src/computer/cua-errors.mjs";
 
 describe("computer_act navigate", () => {
-  it("without CDP fails closed (not unknown action)", async () => {
-    delete process.env.XCLAW_CDP_URL;
-    delete process.env.CDP_URL;
-    const r = await runComputerAct({ action: "navigate", url: "https://example.com" });
-    assert.equal(r.ok, false);
-    assert.equal(r.code, "CUA_ACT_REQUIRES_BUNDLE");
+  it("unreachable CDP endpoint fails closed (not unknown action)", async () => {
+    process.env.XCLAW_CDP_URL = "http://127.0.0.1:59991";
+    process.env.XCLAW_CUA_RETRIES = "0";
+    try {
+      const r = await runComputerAct({ action: "navigate", url: "https://example.com" });
+      assert.equal(r.ok, false);
+      assert.equal(r.code, "CDP_ATTACH_FAILED");
+    } finally {
+      delete process.env.XCLAW_CDP_URL;
+      delete process.env.XCLAW_CUA_RETRIES;
+    }
   });
 
   it("catalog has CUA_ACT_NEED_URL", () => {
@@ -19,7 +24,8 @@ describe("computer_act navigate", () => {
   });
 
   it("with CDP missing url returns NEED_URL or attach fail", async () => {
-    process.env.XCLAW_CDP_URL = process.env.XCLAW_CDP_URL || "http://127.0.0.1:9223";
+    process.env.XCLAW_CDP_URL = "http://127.0.0.1:59991";
+    process.env.XCLAW_CUA_RETRIES = "0";
     const r = await runComputerAct({ action: "navigate" });
     assert.equal(r.ok, false);
     assert.ok(

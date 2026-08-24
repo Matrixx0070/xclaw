@@ -1,7 +1,9 @@
 /**
- * Gateway control-plane policy for computer engine selection.
+ * Gateway control-plane policy for the computer engine.
  *
- * Product default: full CDP bundle. native remains the lightweight escape hatch (generated deleted in S4, 2026-08-23).
+ * Single native engine since the 2026-08-24 unification (ADR 0005) — the
+ * policy layer stays as the gateway's stable import surface for engine
+ * observability (doctor, /dashboard, security snapshot).
  * Implementation lives in src/computer/engine.mjs.
  */
 
@@ -13,30 +15,15 @@ import {
   DEFAULT_COMPUTER_ENGINE,
 } from "../../computer/engine.mjs";
 
-/** Engines allowed as long-term defaults (product + escape hatches). */
-export const ALLOWED_DEFAULT_ENGINES = Object.freeze([
-  "bundle",
-  "native",
-]);
+/** Engines allowed as long-term defaults. */
+export const ALLOWED_DEFAULT_ENGINES = Object.freeze(["native"]);
 
 /**
  * @param {object} [cfg]
- * @returns {"native"|"bundle"}
+ * @returns {"native"}
  */
 export function policyResolveComputerEngine(cfg = {}) {
   return resolveComputerEngine(cfg);
-}
-
-/**
- * True when operator explicitly forced the legacy "bundle as fallback only" path.
- * With product default = bundle, this is false for ordinary default resolution.
- * @param {object} [cfg]
- */
-export function isBundleFallback(cfg = {}) {
-  return (
-    resolveComputerEngine(cfg) === "bundle" &&
-    DEFAULT_COMPUTER_ENGINE !== "bundle"
-  );
 }
 
 /**
@@ -45,25 +32,13 @@ export function isBundleFallback(cfg = {}) {
  */
 export function validateComputerEnginePolicy(cfg = {}) {
   const engine = resolveComputerEngine(cfg);
-
   if (!ALLOWED_DEFAULT_ENGINES.includes(engine)) {
     return { ok: false, engine, reason: `unknown engine: ${engine}` };
   }
-
-  if (engine === "native" || engine === "generated") {
-    return {
-      ok: true,
-      engine,
-      reason: "lightweight escape hatch",
-      warning: false,
-    };
-  }
-
-  // bundle is the product default
   return {
     ok: true,
     engine,
-    reason: "product default full CDP bundle",
+    reason: "single native engine (real-browser capability included)",
     warning: false,
   };
 }
@@ -95,7 +70,6 @@ export {
 export default {
   ALLOWED_DEFAULT_ENGINES,
   policyResolveComputerEngine,
-  isBundleFallback,
   validateComputerEnginePolicy,
   computerEnginePolicySnapshot,
   resolveComputerEngine,

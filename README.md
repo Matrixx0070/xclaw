@@ -45,7 +45,7 @@ node bin/xclaw.mjs gateway
 |-------|--------|
 | `doctor` | Config loads; lab profile OK; warns if no API key |
 | `agent "…"` | Tool runs (lab auto-approves) or clear error |
-| Computer | **Native default** (auditable modules + bwrap OS sandbox on `:4243`); CDP bundle opt-in for CUA browser: `XCLAW_COMPUTER_ENGINE=bundle` + `npm run fetch:bundle` + `verify:bundle` |
+| Computer | **Single native engine** (auditable modules + bwrap OS sandbox on `:4243`) with real-browser CUA included — managed headless Chrome, jsCode/screenshots/console/network via CDP (ADR 0005) |
 
 **Requirements:** Node.js **≥ 22**, network for model APIs.
 
@@ -116,17 +116,16 @@ Project memory injected into the agent: **[XCLAW.md](./XCLAW.md)** (edit this fo
 
 ## Strategy C (computer)
 
-**Modules are the source of truth.** Do **not** hand-edit the ~16MB `xclaw-server.mjs` bundle.
+**Modules are the source of truth.** Every computer tool lives in `src/computer/modules/*` — edit directly.
 
 | Engine | Entry | When |
 |--------|--------|------|
 | **native** (default) | `src/computer/thin-server.mjs` | Fast lab; edit `src/computer/modules/**` |
 | **generated** | `src/computer/generated/computer-server.mjs` | `npm run build:computer` |
-| **bundle** | `src/computer/xclaw-server.mjs` | Full CDP — treat as **runtime artifact** |
 
 ```bash
 npm run build:computer
-# XCLAW_COMPUTER_ENGINE=native|generated|bundle
+# legacy XCLAW_COMPUTER_ENGINE selectors all resolve to native (ADR 0005)
 ```
 
 Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
@@ -265,17 +264,16 @@ Architecture + state contract: **[docs/LONGRUN.md](./docs/LONGRUN.md)**.
 
 ## Strategy C (computer)
 
-**Modules are the source of truth.** Do **not** hand-edit the ~16MB `xclaw-server.mjs` bundle.
+**Modules are the source of truth.** Every computer tool lives in `src/computer/modules/*` — edit directly.
 
 | Engine | Entry | When |
 |--------|--------|------|
 | **native** (default) | `src/computer/thin-server.mjs` | Fast lab; edit `src/computer/modules/**` |
 | **generated** | `src/computer/generated/computer-server.mjs` | `npm run build:computer` |
-| **bundle** | `src/computer/xclaw-server.mjs` | Full CDP — treat as **runtime artifact** |
 
 ```bash
 npm run build:computer
-# XCLAW_COMPUTER_ENGINE=native|generated|bundle
+# legacy XCLAW_COMPUTER_ENGINE selectors all resolve to native (ADR 0005)
 ```
 
 Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
@@ -287,7 +285,7 @@ Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
 | Area | Capability |
 |------|------------|
 | **Agent** | Multi-provider loop, tools, loop guards, role routing, transcripts |
-| **Computer** | Bash / files / browser (native); optional full CDP bundle |
+| **Computer** | Bash / files / real browser (native, managed headless Chrome) |
 | **Terminal** | `xclaw tui` — streaming chat, inline approvals, resumable sessions |
 | **Security** | Approvals, plan binding + spawn enforce, egress, optional bwrap, kill-switch |
 | **Swarm** | DAG, receipts, merge policy (prod should not silent-auto-merge) |
@@ -347,7 +345,7 @@ See [OPS.md](./OPS.md) and `deploy/`.
 | [docs/API.md](./docs/API.md) | HTTP / gateway API |
 | [docs/LONGRUN.md](./docs/LONGRUN.md) | Long-running objectives / mission architecture |
 | [docs/APPROVALS.md](./docs/APPROVALS.md) | Approval / plan binding |
-| [docs/BROWSER_UNBUNDLE.md](./docs/BROWSER_UNBUNDLE.md) | Native browser vs CDP |
+| [docs/adr/0005-computer-engine-unification.md](./docs/adr/0005-computer-engine-unification.md) | Single computer engine (bundle retired) |
 | [docs/](./docs/) | Auth, swarm, eval notes (many specialized) |
 
 Deep / historical design notes live under `docs/`—prefer this README + XCLAW.md for daily use.

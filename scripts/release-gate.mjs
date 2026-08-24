@@ -147,26 +147,22 @@ await step("a-enforcement", async () => {
   return { code: r.code, detail: (r.out + r.err).split("\n").slice(-5).join(" | ") };
 }, { required: false });
 
-await step("bundle-markers", async () => {
-  const bundlePath = path.join(root, "src/computer/xclaw-server.mjs");
-  let text = "";
-  try {
-    text = await fs.readFile(bundlePath, "utf8");
-  } catch (e) {
-    return { code: 1, detail: e.message };
+await step("native-engine-entry", async () => {
+  // Single native engine (ADR 0005): entry + chrome-session must be present.
+  for (const rel of [
+    "src/computer/thin-server.mjs",
+    "src/computer/chrome-session.mjs",
+    "src/computer/modules/browser-cdp.mjs",
+  ]) {
+    try {
+      await fs.access(path.join(root, rel));
+    } catch {
+      console.log("Missing engine file:", rel);
+      return { code: 1, detail: rel };
+    }
   }
-  const markers = [
-    "A2: driver hooks",
-    "A4: humanized CDP motor",
-    "A5: single Chrome argv",
-  ];
-  const missing = markers.filter((m) => !text.includes(m));
-  if (missing.length) {
-    console.log("Missing markers:", missing.join(", "));
-    return { code: 1, detail: missing };
-  }
-  console.log("Markers present:", markers.join(", "));
-  return { code: 0, detail: markers };
+  console.log("Native engine files present");
+  return { code: 0, detail: "native" };
 }, { required: false });
 
 if (strict) {

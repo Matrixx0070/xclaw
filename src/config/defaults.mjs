@@ -40,20 +40,17 @@ export const DEFAULT_CONFIG = {
   },
   computer: {
     /**
-     * Engine: "native" (DEFAULT since W4 — auditable modules + bwrap sandbox)
-     *         "bundle" (16MB CDP xclaw-server.mjs; opt-in for CUA browser)
-     * Env: XCLAW_COMPUTER_ENGINE=native|bundle
+     * Single native engine (unification, ADR 0005): auditable modules +
+     * bwrap sandbox + managed headless Chrome for real-browser capability.
+     * Legacy engine/nativeServer selectors in existing configs are accepted
+     * and resolve to native (see src/computer/engine.mjs).
      */
-    engine: "native",
-    nativeServer: false,
     /** Optional remote computer base URL (sidecar) */
     remoteUrl: null,
     authToken: null,
     authHmac: false,
     host: "127.0.0.1",
     port: 4243,
-    /** Bundle entry (only when engine=bundle) */
-    entry: "src/computer/xclaw-server.mjs",
     autoStart: true,
     startTimeoutMs: 45_000,
     env: {},

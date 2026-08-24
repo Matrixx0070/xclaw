@@ -119,41 +119,6 @@ test("operator can raise the tier ceiling via config", async () => {
   assert.equal(out.success, true, out.error);
 });
 
-test("strict-schema engine: router strips the injected cwd (real router, fake computer)", async () => {
-  // Fake engine that (like the frozen C4 bundle) does NOT declare cwd in its
-  // bash schema and REJECTS unknown keys. Uses the REAL createToolRouter —
-  // the bridge must probe the schema and pass computerAcceptsCwd:false.
-  const calls = [];
-  const computer = {
-    async listTools() {
-      return [
-        {
-          name: "xclaw_bash",
-          description: "run bash",
-          inputSchema: { type: "object", properties: { command: { type: "string" } } }, // no cwd!
-        },
-      ];
-    },
-    async createSession() {
-      return "sess-strict";
-    },
-    async destroySession() {},
-    async callTool(sessionId, name, args) {
-      calls.push({ name, args });
-      if ("cwd" in args || "workingDir" in args) {
-        return { isError: true, content: [{ type: "text", text: "InputValidationError: Unrecognized key(s) in object: 'cwd'" }] };
-      }
-      return { content: [{ type: "text", text: "6.8.0-fake" }] };
-    },
-  };
-  const b = await createXclawToolBridge({}, { computer, sessionId: "sess-strict", localTools: [], workingDir: ws() });
-  const out = await b.execute("xclaw_bash", { command: "uname -r" });
-  assert.equal(out.success, true, out.error);
-  assert.match(String(out.data), /6\.8\.0-fake/);
-  assert.equal(calls.length, 1);
-  assert.ok(!("cwd" in calls[0].args), "router must strip cwd for strict engines");
-});
-
 test("merged registry: bridge wins collisions, vendor fills gaps", async () => {
   const f = fakes();
   const b = await createXclawToolBridge({}, { ...f, workingDir: ws() });

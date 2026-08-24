@@ -1,7 +1,10 @@
 /**
  * Computer service manager — supervised start/stop with PID + log files.
+ * Single native engine (thin-server.mjs); the server manages its own
+ * headless Chrome internally (chrome-session.mjs), so the manager's job
+ * is just process supervision by HTTP health.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mitmEnvFromConfig, isMitmEnabled } from "../browser/mitm.mjs";
 import path from "node:path";
 import http from "node:http";
@@ -9,6 +12,11 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import { loadConfig } from "../config/load.mjs";
+import {
+  resolveComputerEngine,
+  resolveComputerEntryPath,
+  describeComputerEngine,
+} from "./engine.mjs";
 
 /** In-process child when we spawned it in this process */
 let child = null;
@@ -40,42 +48,6 @@ export function computerLogPath(cfg) {
 
 export function computerMetaPath(cfg) {
   return path.join(configDir(cfg), "computer.meta.json");
-}
-
-async function loadEngineApi() {
-  try {
-    return await import("./engine.mjs");
-  } catch {
-    return {
-      resolveComputerEngine: () => {
-        const e = process.env.XCLAW_COMPUTER_ENGINE || process.env.XCLAW_COMPUTER_NATIVE;
-        if (e === "native" || e === "thin" || e === "1" || e === "true") return "native";
-        if (e === "generated" || e === "gen") return "generated";
-        return "bundle";
-      },
-      resolveComputerEntryPath: (cfg, root) => {
-        const eng =
-          process.env.XCLAW_COMPUTER_ENGINE === "bundle" ||
-          process.env.XCLAW_COMPUTER_NATIVE === "0"
-            ? "bundle"
-            : "native";
-        if (eng === "bundle") {
-          return path.join(root, "src/computer/xclaw-server.mjs");
-        }
-        return path.join(root, "src/computer/thin-server.mjs");
-      },
-      describeComputerEngine: (cfg, root) => ({
-        engine:
-          process.env.XCLAW_COMPUTER_ENGINE === "bundle" ? "bundle" : "native",
-        entry: path.join(root || process.cwd(), "src/computer/thin-server.mjs"),
-        entryExists: false,
-        entryBytes: null,
-        isFallbackBundle: false,
-        strategyPhase: "C4",
-        policy: { defaultEngine: "bundle", handEditBundle: false },
-      }),
-    };
-  }
 }
 
 function probeHealth(cfg, timeoutMs = 1000) {
@@ -192,7 +164,6 @@ export async function getComputerStatus(cfg) {
   }
   const inProcess = Boolean(child && !child.killed);
   const root = process.env.XCLAW_ROOT || process.cwd();
-  const { describeComputerEngine } = await loadEngineApi();
   const engineInfo = describeComputerEngine(cfg, root);
   return {
     url,
@@ -210,7 +181,7 @@ export async function getComputerStatus(cfg) {
   };
 }
 
-export async function startComputer({ root, foreground = false, args = [] } = {}) {
+export async function startComputer({ root, foreground = false } = {}) {
   const cfg = await loadConfig();
   const url = computerBaseUrl(cfg);
   const workRoot = root || process.env.XCLAW_ROOT || process.cwd();
@@ -247,154 +218,36 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
     await clearPid(cfg);
   }
 
-  const {
-    resolveComputerEngine,
-    resolveComputerEntryPath,
-    describeComputerEngine,
-  } = await loadEngineApi();
-  let engine = resolveComputerEngine(cfg);
-  let engineInfo = describeComputerEngine(cfg, workRoot);
-  let entry = resolveComputerEntryPath(cfg, workRoot);
+  const engine = resolveComputerEngine(cfg);
+  const engineInfo = describeComputerEngine(cfg, workRoot);
+  const entry = resolveComputerEntryPath(cfg, workRoot);
 
-  console.log(
-    `[xclaw] Computer engine=${engineInfo.engine} phase=${engineInfo.strategyPhase} fallbackBundle=${engineInfo.isFallbackBundle}`
-  );
-  console.log(
-    `[xclaw] Computer entry=${entry} exists=${engineInfo.entryExists} bytes=${engineInfo.entryBytes ?? "n/a"}`
-  );
-
-  // Product default is bundle, but the 16MB artifact is not in git. If missing
-  // (CI, fresh clone), fall back to native so agent tests and lab still run.
-  if (engine === "bundle" && !fs.existsSync(entry)) {
-    const allowNativeFallback = !["0", "false", "off"].includes(
-      String(process.env.XCLAW_BUNDLE_FALLBACK_NATIVE ?? "1").toLowerCase()
-    );
-    const autofetch = !["0", "false", "off"].includes(
-      String(process.env.XCLAW_BUNDLE_AUTOFETCH || "1").toLowerCase()
-    );
-    if (autofetch) {
-      console.log("[xclaw] Computer bundle missing — fetching from release…");
-      const fetchScript = path.join(workRoot, "scripts/fetch-computer-bundle.mjs");
-      const r = spawnSync(process.execPath, [fetchScript], {
-        cwd: workRoot,
-        encoding: "utf8",
-        stdio: "inherit",
-      });
-      if (r.status === 0 && fs.existsSync(entry)) {
-        console.log("[xclaw] Bundle fetch ok");
-      }
-    }
-    if (!fs.existsSync(entry) && allowNativeFallback) {
-      const nativeEntry = path.join(workRoot, "src/computer/thin-server.mjs");
-      if (fs.existsSync(nativeEntry)) {
-        console.warn(
-          `[xclaw] Bundle not installed — falling back to native: ${nativeEntry}`
-        );
-        engine = "native";
-        entry = nativeEntry;
-        engineInfo = { ...engineInfo, engine: "native", entry: nativeEntry, entryExists: true };
-      }
-    }
-  }
-
-  if (engine === "native" || engine === "generated") {
-    if (!fs.existsSync(entry)) {
-      throw new Error(
-        engine === "generated"
-          ? `Generated computer missing: ${entry} — run npm run build:computer`
-          : `Native computer entry not found: ${entry}`
-      );
-    }
-    console.log(
-      `[xclaw] Starting ${engine === "generated" ? "GENERATED (C3)" : "NATIVE thin"} computer: ${entry}`
-    );
-    const env = {
-      ...process.env,
-      ...cfg.computer?.env,
-      PORT: String(cfg.computer?.port || 4243),
-      HOST: cfg.computer?.host || "127.0.0.1",
-      XCLAW_COMPUTER_PORT: String(cfg.computer?.port || 4243),
-      XCLAW_COMPUTER_HOST: cfg.computer?.host || "127.0.0.1",
-      XCLAW_ROOT: process.env.XCLAW_ROOT || workRoot,
-      XCLAW_COMPUTER_ENGINE: engine,
-      // Forward the SSRF policy so the native browser_tab enforces the same
-      // guard as web_fetch (cloud metadata stays blocked in every mode).
-      ...(process.env.XCLAW_SSRF || cfg.security?.ssrf?.mode
-        ? { XCLAW_SSRF: process.env.XCLAW_SSRF || String(cfg.security.ssrf.mode) }
-        : {}),
-      ...(process.env.XCLAW_SSRF_ALLOW_PRIVATE === "1" || cfg.security?.ssrf?.allowPrivate === true
-        ? { XCLAW_SSRF_ALLOW_PRIVATE: "1" }
-        : {}),
-    };
-    const logPath = computerLogPath(cfg);
-    await fsp.mkdir(path.dirname(logPath), { recursive: true });
-    const logFd = fs.openSync(logPath, "a");
-    child = spawn(process.execPath, [entry], {
-      cwd: workRoot,
-      env,
-      stdio: foreground ? "inherit" : ["ignore", logFd, logFd],
-      detached: !foreground,
-    });
-    if (!foreground) child.unref();
-    await writePid(cfg, child.pid);
-    await writeMeta(cfg, {
-      engine,
-      engineInfo,
-      entry,
-      pid: child.pid,
-      startedAt: new Date().toISOString(),
-      url,
-    });
-    await appendLog(
-      cfg,
-      `\n===== start ${new Date().toISOString()} engine=${engine} entry=${entry} =====\n`
-    );
-    const ok = await waitForHealthy(cfg, { timeoutMs: 15_000 });
-    if (!ok) {
-      throw new Error(`Native computer failed /health at ${url}`);
-    }
-    console.log(`[xclaw] Native computer healthy at ${url}`);
-    return {
-      alreadyRunning: false,
-      url,
-      engine,
-      engineInfo,
-      pid: child.pid,
-    };
-  }
-
-  // Bundle path — entry must exist (fetch/fallback handled above)
   if (!fs.existsSync(entry)) {
-    throw new Error(
-      `Computer bundle not found: ${entry}\n` +
-        `Install with: npm run fetch:bundle\n` +
-        `Or set XCLAW_COMPUTER_ENGINE=native for the thin server.`
-    );
+    throw new Error(`Computer entry not found: ${entry}`);
   }
+  console.log(`[xclaw] Starting computer (${engine}): ${entry}`);
 
   const env = {
     ...process.env,
     ...cfg.computer?.env,
+    // MITM proxy/SPKI env so the managed headless Chrome inherits the
+    // interception policy (chrome-args.mjs reads XCLAW_MITM*).
     ...mitmEnvFromConfig(cfg),
     PORT: String(cfg.computer?.port || 4243),
     HOST: cfg.computer?.host || "127.0.0.1",
-    NODE_ENV: process.env.NODE_ENV || "production",
+    XCLAW_COMPUTER_PORT: String(cfg.computer?.port || 4243),
+    XCLAW_COMPUTER_HOST: cfg.computer?.host || "127.0.0.1",
     XCLAW_ROOT: process.env.XCLAW_ROOT || workRoot,
-    XCLAW_COMPUTER_ENGINE: "bundle",
+    XCLAW_COMPUTER_ENGINE: engine,
+    // Forward the SSRF policy so the native browser_tab enforces the same
+    // guard as web_fetch (cloud metadata stays blocked in every mode).
+    ...(process.env.XCLAW_SSRF || cfg.security?.ssrf?.mode
+      ? { XCLAW_SSRF: process.env.XCLAW_SSRF || String(cfg.security.ssrf.mode) }
+      : {}),
+    ...(process.env.XCLAW_SSRF_ALLOW_PRIVATE === "1" || cfg.security?.ssrf?.allowPrivate === true
+      ? { XCLAW_SSRF_ALLOW_PRIVATE: "1" }
+      : {}),
   };
-  if (!env.XCLAW_HOOKS_BRIDGE) {
-    const hb = path.join(env.XCLAW_ROOT, "src/computer/hooks-bridge.mjs");
-    env.XCLAW_HOOKS_BRIDGE = hb;
-  }
-  if (!env.XCLAW_MOTOR_BRIDGE) {
-    env.XCLAW_MOTOR_BRIDGE = path.join(env.XCLAW_ROOT, "src/computer/motor-bridge.mjs");
-  }
-  if (!env.XCLAW_CHROME_ARGS_BRIDGE) {
-    env.XCLAW_CHROME_ARGS_BRIDGE = path.join(
-      env.XCLAW_ROOT,
-      "src/computer/chrome-args-bridge.mjs"
-    );
-  }
   if (isMitmEnabled(cfg)) {
     console.log(`[xclaw] MITM env injected for computer (port ${env.XCLAW_MITM_PORT || 4444})`);
   }
@@ -402,77 +255,57 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
   const logPath = computerLogPath(cfg);
   await fsp.mkdir(path.dirname(logPath), { recursive: true });
   const logFd = fs.openSync(logPath, "a");
-
-  console.log(`[xclaw] Starting Computer (bundle fallback): ${entry}`);
-  console.log(`[xclaw] Computer listen: ${cfg.computer?.host || "127.0.0.1"}:${cfg.computer?.port || 4243}`);
-  console.log(`[xclaw] Computer log: ${logPath}`);
-
-  await appendLog(
-    cfg,
-    `\n===== start ${new Date().toISOString()} engine=bundle entry=${entry} =====\n`
-  );
-
-  child = spawn(process.execPath, [entry, ...args], {
+  child = spawn(process.execPath, [entry], {
+    cwd: workRoot,
     env,
-    detached: !foreground,
     stdio: foreground ? "inherit" : ["ignore", logFd, logFd],
+    detached: !foreground,
   });
-
-  if (!foreground) {
-    try {
-      child.unref();
-    } catch {
-      /* */
-    }
-  }
-
-  const pid = child.pid;
-  await writePid(cfg, pid);
-  await writeMeta(cfg, {
-    pid,
-    startedAt: new Date().toISOString(),
-    entry,
-    url,
-    port: cfg.computer?.port || 4243,
-    engine: "bundle",
-    engineInfo,
-  });
+  if (!foreground) child.unref();
 
   child.on("exit", (code, signal) => {
-    const msg = `[xclaw] Computer exited code=${code} signal=${signal}`;
-    console.log(msg);
+    console.log(`[xclaw] Computer exited code=${code} signal=${signal}`);
     void appendLog(cfg, `[${new Date().toISOString()}] exit code=${code} signal=${signal}\n`);
     child = null;
     void clearPid(cfg);
   });
-
   child.on("error", (err) => {
     console.error(`[xclaw] Computer spawn error:`, err.message);
     void appendLog(cfg, `[${new Date().toISOString()}] spawn error: ${err.message}\n`);
   });
 
+  await writePid(cfg, child.pid);
+  await writeMeta(cfg, {
+    engine,
+    engineInfo,
+    entry,
+    pid: child.pid,
+    startedAt: new Date().toISOString(),
+    url,
+  });
+  await appendLog(
+    cfg,
+    `\n===== start ${new Date().toISOString()} engine=${engine} entry=${entry} =====\n`
+  );
   try {
     fs.closeSync(logFd);
   } catch {
     /* */
   }
 
-  const healthy = await waitForHealthy(cfg, {
-    timeoutMs: cfg.computer?.startTimeoutMs ?? 45_000,
+  const ok = await waitForHealthy(cfg, {
+    timeoutMs: cfg.computer?.startTimeoutMs ?? 15_000,
   });
-  if (!healthy) {
+  if (!ok) {
     try {
       if (child) child.kill("SIGTERM");
     } catch {
       /* */
     }
-    await appendLog(cfg, `[${new Date().toISOString()}] failed to become healthy at ${url}\n`);
-    throw new Error(
-      `Computer failed to become healthy at ${url} — see ${logPath}`
-    );
+    throw new Error(`Computer failed /health at ${url} — see ${logPath}`);
   }
-  console.log(`[xclaw] Computer healthy at ${url} (pid ${pid})`);
-  await appendLog(cfg, `[${new Date().toISOString()}] healthy pid=${pid} engine=bundle\n`);
+  console.log(`[xclaw] Computer healthy at ${url}`);
+  await appendLog(cfg, `[${new Date().toISOString()}] healthy pid=${child.pid} engine=${engine}\n`);
 
   if (foreground) {
     await new Promise((resolve) => {
@@ -483,7 +316,14 @@ export async function startComputer({ root, foreground = false, args = [] } = {}
     });
   }
 
-  return { pid, url, logPath, engine: "bundle", engineInfo };
+  return {
+    alreadyRunning: false,
+    url,
+    engine,
+    engineInfo,
+    pid: child?.pid ?? null,
+    logPath,
+  };
 }
 
 export async function stopComputer(cfgArg) {

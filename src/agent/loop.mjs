@@ -537,20 +537,6 @@ export async function runAgentLoop(options) {
   try {
     const computerTools = await computer.listTools(sessionId);
     tools = toOpenAITools(computerTools);
-    // Does this engine's bash accept the injected systemRunPlan key?
-    // The strict-zod CDP bundle doesn't — the router then enforces the
-    // plan gateway-side and strips the key before forwarding.
-    var computerAcceptsRunPlan = Boolean(
-      computerTools.find((t) => t.name === "xclaw_bash")?.inputSchema
-        ?.properties?.systemRunPlan
-    );
-    // Same probe for the injected cwd key: the maintained module engines pin
-    // spawn cwd per call, but the frozen C4 bundle's strict zod schemas
-    // predate it and reject the whole call on any unrecognized key.
-    var computerAcceptsCwd = Boolean(
-      computerTools.find((t) => t.name === "xclaw_bash")?.inputSchema
-        ?.properties?.cwd
-    );
     // Local tools (not on computer server)
     const spawnTool = createSpawnTool({
       cfg,
@@ -712,12 +698,6 @@ export async function runAgentLoop(options) {
     agentHandlers: mcpHandlers,
     cfg,
     workingDir,
-    computerAcceptsRunPlan:
-      typeof computerAcceptsRunPlan === "boolean"
-        ? computerAcceptsRunPlan
-        : true,
-    computerAcceptsCwd:
-      typeof computerAcceptsCwd === "boolean" ? computerAcceptsCwd : true,
   });
 
 

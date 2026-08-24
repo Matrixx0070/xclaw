@@ -10,7 +10,6 @@ import {
   buildChromeArgs,
   chromeArgsInvariants,
 } from "../src/computer/chrome-args.mjs";
-import { resolveChromeArgs, loadChromeArgsModule } from "../src/computer/chrome-args-bridge.mjs";
 
 describe("Phase A5 single Chrome args path", () => {
   it("buildChromeArgs requires userDataDir", () => {
@@ -87,18 +86,6 @@ describe("Phase A5 single Chrome args path", () => {
       else delete process.getuid;
       for (const [k, v] of saved) if (v !== undefined) process.env[k] = v;
     }
-  });
-
-  it("bridge resolves same module", async () => {
-    process.env.XCLAW_ROOT = process.cwd();
-    const m = await loadChromeArgsModule();
-    assert.ok(m?.buildChromeArgs);
-    const args = await resolveChromeArgs(
-      { userDataDir: "/tmp/bridge-p", headless: true },
-      ["--stale"]
-    );
-    const inv = chromeArgsInvariants(args);
-    assert.equal(inv.ok, true);
   });
 
 });

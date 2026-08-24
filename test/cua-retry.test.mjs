@@ -50,12 +50,17 @@ describe("CUA retry", () => {
     assert.equal(n, 1);
   });
 
-  it("permanent computer_act still fast-fails", async () => {
-    delete process.env.XCLAW_CDP_URL;
-    delete process.env.CDP_URL;
-    const t0 = Date.now();
-    const r = await runComputerAct({ action: "click", x: 1, y: 1 });
-    assert.equal(r.code, "CUA_ACT_REQUIRES_BUNDLE");
-    assert.ok(Date.now() - t0 < 500, "should not backoff on permanent error");
+  it("dead endpoint computer_act still fast-fails", async () => {
+    process.env.XCLAW_CDP_URL = "http://127.0.0.1:59991";
+    process.env.XCLAW_CUA_RETRIES = "0";
+    try {
+      const t0 = Date.now();
+      const r = await runComputerAct({ action: "click", x: 1, y: 1 });
+      assert.equal(r.code, "CDP_ATTACH_FAILED");
+      assert.ok(Date.now() - t0 < 1500, "should not backoff on refused connect");
+    } finally {
+      delete process.env.XCLAW_CDP_URL;
+      delete process.env.XCLAW_CUA_RETRIES;
+    }
   });
 });

@@ -1,9 +1,9 @@
 /**
  * CLEAN xclaw_browser_network_details — native implementation (Strategy C).
  *
- * Works with native-fetch tab registry from browser-tab-tool.mjs.
- * Full CDP multi-request capture remains richer in the bundle engine;
- * native covers the primary navigation request recorded at navigate time.
+ * Works with the tab registry from browser-tab-tool.mjs. Fetch-tier tabs
+ * hold the primary navigation request; CDP-materialized tabs accumulate
+ * every request streamed from Network.* events (browser-cdp.mjs).
  */
 import {
   getTab,
@@ -64,9 +64,10 @@ export async function runBrowserNetworkDetails(input = {}) {
     responseHeaders: entry.responseHeaders || {},
     responseBodyBytes: entry.responseBodyBytes ?? null,
     responseBodyPreview: includeBody ? entry.responseBodyPreview || null : null,
+    resourceType: entry.resourceType ?? null,
     at: entry.at,
     note:
-      "Native engine records the primary navigation request. Multi-resource CDP capture requires computer.engine=bundle.",
+      "Fetch-tier tabs record the primary navigation request; tabs opened in the real browser (render:true / jsCode / screenshot) capture every request via CDP.",
   };
 }
 

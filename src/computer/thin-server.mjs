@@ -1,6 +1,7 @@
 /**
- * Thin computer HTTP server — transitional lab/default until Strategy C4.
- * Full runtime target remains src/computer/xclaw-server.mjs (built from modules; do not hand-edit).
+ * The computer HTTP server — the single engine (unification, ADR 0005).
+ * Native modules + bwrap-sandboxed bash; real-browser capability via the
+ * managed headless Chrome (chrome-session.mjs), started lazily.
  *
  * Compatible with createComputerClient session API:
  *   GET  /health
@@ -11,8 +12,6 @@
  *   GET  /tools
  *   POST /call
  *   GET  /extraction
- *
- * Enable bundle instead: computer.engine = "bundle" or XCLAW_COMPUTER_NATIVE=0
  */
 
 import http from "node:http";
@@ -20,6 +19,7 @@ import crypto from "node:crypto";
 import { listNativeTools, executeNativeTool, NATIVE_TOOLS } from "./native-tools.mjs";
 import { BrowserTabTool, runBrowserTab } from "./modules/browser-tab-tool.mjs";
 import { getExtractionStatus } from "./extraction-status.mjs";
+import { chromeSessionStatus, stopChrome } from "./chrome-session.mjs";
 
 const ALL = [...NATIVE_TOOLS];
 // BrowserTabTool is already in NATIVE_TOOLS after earlier wire-up; avoid dup in list
@@ -96,6 +96,7 @@ export function createThinComputerServer(opts = {}) {
           ok: true,
           engine: "thin-native",
           sessions: sessions.size,
+          browser: chromeSessionStatus(),
           tools: toolDescriptors().map((t) => t.name),
         });
       }
@@ -219,7 +220,8 @@ export function createThinComputerServer(opts = {}) {
         server.on("error", reject);
       });
     },
-    close() {
+    async close() {
+      await stopChrome();
       return new Promise((resolve) => server.close(() => resolve()));
     },
   };

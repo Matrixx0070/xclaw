@@ -12,17 +12,11 @@ export const CUA_ERROR_CATALOG = {
     recovery:
       "Call xclaw_browser_tab with action=observe for structure. computer_act is for GUI actuation only.",
   },
-  CUA_ACT_REQUIRES_BUNDLE: {
+  CUA_BROWSER_UNAVAILABLE: {
     severity: "error",
     surface: "cdp",
     recovery:
-      "Set XCLAW_CDP_URL to a Chrome remote-debugging endpoint (e.g. http://127.0.0.1:9222). Prefer tools/APIs first.",
-  },
-  CUA_ACT_NOT_EXTRACTED: {
-    severity: "error",
-    surface: "bundle",
-    recovery:
-      "engine=bundle without CDP: attach XCLAW_CDP_URL for CLEAN motor path, or extract BrowserService modules.",
+      "No Chrome/Chromium binary on this host — install chromium, or set XCLAW_BROWSER_BIN, or attach an existing browser via XCLAW_CDP_URL. Prefer tools/APIs first.",
   },
   CDP_ATTACH_FAILED: {
     severity: "error",

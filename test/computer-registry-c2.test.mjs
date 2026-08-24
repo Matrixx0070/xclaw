@@ -7,7 +7,6 @@ import {
   listMaintainedTools,
   executeMaintainedTool,
   MAINTAINED_TOOLS,
-  BUNDLE_ONLY_REGIONS,
 } from "../src/computer/modules/registry.mjs";
 import { listNativeTools, executeNativeTool } from "../src/computer/native-tools.mjs";
 
@@ -51,7 +50,4 @@ describe("Strategy C2 registry", () => {
     assert.equal(listNativeTools().length, listMaintainedTools().length);
   });
 
-  it("documents bundle-only regions", () => {
-    assert.ok(BUNDLE_ONLY_REGIONS.includes("BrowserService"));
-  });
 });

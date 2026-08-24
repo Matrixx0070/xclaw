@@ -7,7 +7,6 @@ import {
   planMotor,
   executeSteps,
 } from "../src/browser/motor.mjs";
-import { loadMotor, planMotorOnly } from "../src/computer/motor-bridge.mjs";
 import { createBrowserTools } from "../src/tools/browser-tools.mjs";
 
 describe("Phase A4 humanized motor", () => {
@@ -59,11 +58,8 @@ describe("Phase A4 humanized motor", () => {
     assert.ok(calls.some((c) => c[0] === "mouse"));
   });
 
-  it("motor-bridge loads planMotor", async () => {
-    process.env.XCLAW_ROOT = process.cwd();
-    const m = await loadMotor();
-    assert.ok(m?.planClick);
-    const plan = await planMotorOnly({ op: "type", text: "a" });
+  it("planMotor plans a type op (direct module)", async () => {
+    const plan = planMotor({ op: "type", text: "a" });
     assert.equal(plan.meta.kind, "type");
   });
 

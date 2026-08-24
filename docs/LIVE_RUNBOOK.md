@@ -4,7 +4,7 @@ Minimal path to run real goals with tools (lab profile).
 
 ## 1. Native computer (recommended)
 
-**Default engine is native (thin).** lab/dev profiles and DEFAULT_CONFIG use native; **prod** profile still selects bundle. Soft-migrate upgrades older user configs that froze `engine:bundle` under lab.
+**Single native engine** (ADR 0005): every profile and legacy `engine:` selector resolves to native; real-browser CUA is built in (managed headless Chrome).
 
 ```bash
 export XCLAW_COMPUTER_ENGINE=native
@@ -17,7 +17,7 @@ node src/computer/thin-server.mjs &
 curl -s http://127.0.0.1:4243/health
 ```
 
-Prefer **native/thin** over the 16MB bundle for day-to-day agent work (cleaner tool schemas, `computer_act` maintained modules).
+The native engine includes the full real-browser plane (jsCode/screenshot/console/network via CDP).
 
 ## 2. Optional CDP (GUI navigate/click/screenshot)
 
@@ -64,7 +64,7 @@ node scripts/cua-doctor.mjs       # CDP + desktop only
 ## 6. Fail-closed notes
 
 - Desktop GUI act: off unless `XCLAW_DESKTOP_GUI=1`
-- No CDP → `computer_act` actuation codes (`CUA_ACT_REQUIRES_BUNDLE` / CDP_*)
+- No Chrome binary on host → `CUA_BROWSER_UNAVAILABLE`; attach failures → CDP_* codes
 - Bash tool `timeout` is **seconds**, max 120 (not ms)
 
 ## Bash tool codes

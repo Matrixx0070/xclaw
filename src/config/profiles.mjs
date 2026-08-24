@@ -7,7 +7,6 @@ export const PROFILES = {
     gateway: { host: "127.0.0.1" },
     security: { autoApprove: true, approvalPolicy: "risky" },
     readiness: { requireComputer: false },
-    computer: { engine: "bundle", nativeServer: false },
     agent: {
       maxTurns: 15,
       loopGuard: {
@@ -27,7 +26,6 @@ export const PROFILES = {
     security: { autoApprove: true, approvalPolicy: "never" },
     sandbox: { enabled: true, allowPaths: ["/tmp"] },
     readiness: { requireComputer: false },
-    computer: { engine: "bundle", nativeServer: false },
     jobs: {
       structuredClaimsOnTags: ["campaign", "long"],
     },
@@ -69,7 +67,6 @@ export const PROFILES = {
   prod: {
     description: "Production-ish — strict approvals, require gateway token, structured claims on long/campaign",
     gateway: { host: "127.0.0.1", requireAuth: true, publicUi: false },
-    computer: { engine: "bundle", nativeServer: false },
     jobs: {
       groundHard: true,
       claimsRequireEvidence: true,

@@ -1,8 +1,6 @@
 /**
- * Strategy C2 — maintained tool registry (edit source).
- *
- * Prefer these CLEAN modules over *.extracted.mjs (bundle line snapshots).
- * thin-server / native-tools / future bundle-entry all resolve tools here.
+ * Maintained tool registry — the single source of computer tools.
+ * thin-server / native-tools resolve every tool here.
  */
 
 import { BashTool, runBash } from "./bash-tool.mjs";
@@ -32,13 +30,6 @@ export const MAINTAINED_TOOLS = [
   BrowserTabTool,
   BrowserNetworkDetailsTool,
   ComputerActTool,
-];
-
-/** Roles still only in bundle / extracted snapshots (not yet CLEAN) */
-export const BUNDLE_ONLY_REGIONS = [
-  "http-server-main",
-  "skills-context",
-  "BrowserService",
 ];
 
 export function listMaintainedTools() {
@@ -86,7 +77,6 @@ export {
 
 export default {
   MAINTAINED_TOOLS,
-  BUNDLE_ONLY_REGIONS,
   listMaintainedTools,
   executeMaintainedTool,
   getTool,

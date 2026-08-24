@@ -114,16 +114,7 @@ export async function createXclawToolBridge(cfg = {}, overrides = {}) {
   const { assessRisk, tierRank } =
     overrides.risk || (await import("../security/risk.mjs"));
 
-  // Probe the engine's advertised bash schema BEFORE building the router —
-  // the frozen C4 bundle's strict zod schemas reject unknown keys, so the
-  // router must strip injected cwd/systemRunPlan when the engine doesn't
-  // declare them (same probe the agent loop runs; skipping it made the live
-  // engine fail every call with "Unrecognized key(s): 'cwd'", 2026-08-24).
   const rawComputerTools = computer?.listTools ? await computer.listTools(sessionId) : [];
-  const bashProps =
-    rawComputerTools.find((t) => t.name === "xclaw_bash")?.inputSchema?.properties || {};
-  const computerAcceptsCwd = Boolean(bashProps.cwd);
-  const computerAcceptsRunPlan = Boolean(bashProps.systemRunPlan);
 
   const router =
     overrides.router ||
@@ -133,8 +124,6 @@ export async function createXclawToolBridge(cfg = {}, overrides = {}) {
       localTools,
       cfg,
       workingDir,
-      computerAcceptsCwd,
-      computerAcceptsRunPlan,
     });
 
   // --- advertised schemas: (computer ∪ local) ∩ allow, deduped ---

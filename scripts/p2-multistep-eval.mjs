@@ -38,21 +38,12 @@ if (!xaiKey) {
 const cfg = await loadConfig();
 cfg.profile = process.env.XCLAW_PROFILE || cfg.profile || "lab";
 
-// Engine: env wins; if unset and blob missing, prefer native so CI/lab still runs
-const bundlePath = path.join(root, "src/computer/xclaw-server.mjs");
-const hasBundle = fsSync.existsSync(bundlePath);
-let engine = process.env.XCLAW_COMPUTER_ENGINE || process.env.XCLAW_COMPUTER_NATIVE || "";
-if (!engine) {
-  engine = hasBundle ? "bundle" : "native";
-}
-if (engine === "1" || engine === "true" || engine === "thin") engine = "native";
-if (engine === "0" || engine === "false" || engine === "full") engine = "bundle";
+// Single native engine (unification, ADR 0005)
+const engine = "native";
 process.env.XCLAW_COMPUTER_ENGINE = engine;
 
 cfg.computer = {
   ...(cfg.computer || {}),
-  engine,
-  nativeServer: engine === "native",
   autoStart: true,
 };
 

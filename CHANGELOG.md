@@ -1,3 +1,57 @@
+## 3.175.0 (2026-08-24)
+
+- COMPUTER ENGINE UNIFICATION (ADR 0005, operator directive: "merge both
+  into single without losing or wasting any function and dead code"): the
+  native engine gains the full real-browser capability and the vendored
+  16MB CDP bundle (`xclaw-server.mjs`) is retired — one engine, one spawn
+  path, one policy answer.
+- New `src/computer/chrome-session.mjs`: managed headless Chrome per
+  computer-server process (lazy spawn with OS-assigned CDP port via
+  DevToolsActivePort, adoption across server restarts, XCLAW_CDP_URL
+  attach override, teardown on close, /health browser status).
+- New `src/computer/modules/browser-cdp.mjs` + rewired `xclaw_browser_tab`:
+  `render:true` real navigation, `jsCode` (Runtime.evaluate + console
+  capture), full-PNG screenshots to disk with desktop/mobile device
+  emulation (`screenshot: viewport|desktop|mobile|both`), `action=console`,
+  live Network.* capture feeding `xclaw_browser_network_details`, click/type
+  actuation. `src/browser/cdp-client.mjs` gained CDP event subscription
+  (`on()`); previously all event frames were dropped.
+- `xclaw_computer_act` works out of the box: falls back to the managed
+  Chrome when no XCLAW_CDP_URL is attached; screenshots now written to disk
+  as full PNG (`~/.xclaw/screenshots/`) instead of truncated base64.
+  Retired codes CUA_ACT_REQUIRES_BUNDLE / CUA_ACT_NOT_EXTRACTED →
+  CUA_BROWSER_UNAVAILABLE (no Chrome binary on host).
+- Phase A enforcement now runs engine-side in `runBrowserTab`
+  (beforeNavigate commit/role gates, beforeInput jsCode motor-pattern
+  policy) — parity with the in-process enforcement the bundle got via its
+  env bridges.
+- Deleted: bundle entry + hooks/motor/chrome-args bridges + bundle metadata
+  JSONs + fetch/publish/verify/bench scripts + npm bundle scripts + engine
+  selection branches + BUNDLE_ONLY_REGIONS + the computerAcceptsCwd/RunPlan
+  schema probes and router strip branches (native always accepts both).
+  Legacy selectors (engine:"bundle"/"full", XCLAW_COMPUTER_NATIVE=0,
+  "generated") resolve to native with a one-time notice. The last published
+  bundle stays archived on GitHub release `computer-bundle` (sha256
+  9d95d067…, verified byte-identical before deletion).
+
+## 3.174.1 (2026-08-24)
+
+- python_session advertised in the `act` and `browse` role packs — the lab
+  profile's `agent.toolPack:"act"` had filtered the tool out of the
+  advertised set (risk gate unchanged; membership only controls
+  advertisement).
+
+## 3.174.0 (2026-08-24)
+
+- STATEFUL PYTHON: `python_session` agent tool on a per-session Jupyter
+  kernel pool (`src/swarm/runtime/python/kernel_pool_server.py`, loopback
+  127.0.0.1:18799, LRU 6 kernels, 30-min idle reap) over the extension
+  zip's `jupyter_kernel.py` ZMQ execute protocol. Variables/dataframes
+  persist across calls per session; matplotlib figures land in the
+  workspace as PNG paths. Risk: exec-family → risky, credential-touching
+  code → critical, swarm bridge denies at default tier. Advertised only
+  when the kernel venv (/opt/xclaw-kernel/venv) exists.
+
 ## 3.173.0 (2026-08-24)
 
 - SWARM UNIFICATION (ADR 0004, operator directive: "merge both"): the

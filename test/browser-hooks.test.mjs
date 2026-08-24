@@ -10,11 +10,6 @@ import {
   buildChromeArgs,
   hooksStatus,
 } from "../src/browser/hooks.mjs";
-import {
-  resolveHooksModulePath,
-  loadHooks,
-  runBeforeNavigate,
-} from "../src/computer/hooks-bridge.mjs";
 import { openCommitGate, resolveCommitGate } from "../src/browser/physics.mjs";
 
 describe("Phase A2 driver hooks", () => {
@@ -85,14 +80,8 @@ describe("Phase A2 driver hooks", () => {
     assert.ok(after.actionId);
   });
 
-  it("hooks-bridge resolves and loads", async () => {
-    process.env.XCLAW_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-    // test runs from package; cwd may be package root when node --test
-    const p = resolveHooksModulePath();
-    assert.ok(p && p.includes("hooks.mjs"), p);
-    const h = await loadHooks();
-    assert.ok(h.beforeNavigate);
-    const r = await runBeforeNavigate({ url: "https://example.com", role: "actor" });
+  it("beforeNavigate allows a plain actor navigate (direct module)", async () => {
+    const r = await beforeNavigate({ url: "https://example.com", role: "actor" });
     assert.equal(r.ok, true);
   });
 

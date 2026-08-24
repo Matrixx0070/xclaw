@@ -37,11 +37,9 @@ async function main() {
   const need = [
     "src/browser/hooks.mjs",
     "src/browser/motor.mjs",
-    "src/computer/hooks-bridge.mjs",
-    "src/computer/motor-bridge.mjs",
     "src/computer/chrome-args.mjs",
-    "src/computer/chrome-args-bridge.mjs",
-    "src/computer/xclaw-server.mjs",
+    "src/computer/chrome-session.mjs",
+    "src/computer/thin-server.mjs",
   ];
   for (const rel of need) {
     if (fs.existsSync(path.join(ROOT, rel))) ok(`file.${rel}`, "present");
@@ -105,24 +103,12 @@ async function main() {
   if (typed.meta.length === 2) ok("motor.type_plan", "2 chars");
   else fail("motor.type_plan", "bad length");
 
-  const { loadHooks } = await import(mod("src/computer/hooks-bridge.mjs"));
-  const { loadMotor } = await import(mod("src/computer/motor-bridge.mjs"));
-  const { loadChromeArgsModule } = await import(mod("src/computer/chrome-args-bridge.mjs"));
-  if (await loadHooks()) ok("bridge.hooks", "loaded");
-  else fail("bridge.hooks", "null");
-  if (await loadMotor()) ok("bridge.motor", "loaded");
-  else fail("bridge.motor", "null");
-  if (await loadChromeArgsModule()) ok("bridge.chrome_args", "loaded");
-  else fail("bridge.chrome_args", "null");
-
-  const bundle = fs.readFileSync(path.join(ROOT, "src/computer/xclaw-server.mjs"), "utf8");
-  for (const [id, needle] of [
-    ["bundle.a2", "A2: driver hooks"],
-    ["bundle.a4", "A4: humanized CDP motor"],
-    ["bundle.a5", "A5: single Chrome argv"],
-  ]) {
-    if (bundle.includes(needle)) ok(id, needle);
-    else fail(id, `missing ${needle}`);
+  try {
+    const hooksMod = await import(mod("src/browser/hooks.mjs"));
+    if (hooksMod?.hooksStatus) ok("enforce.hooks", "hooks.mjs loaded");
+    else fail("enforce.hooks", "hooks.mjs missing hooksStatus");
+  } catch (e) {
+    fail("enforce.hooks", e.message || String(e));
   }
 
   try {

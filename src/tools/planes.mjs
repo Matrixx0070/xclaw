@@ -21,7 +21,7 @@
  * @type {Record<string, Plane>}
  */
 export const TOOL_PLANE = {
-  // Computer (Strategy C modules / thin or bundle server)
+  // Computer (native server tools)
   xclaw_bash: "computer",
   bash: "computer",
   shell: "computer",
@@ -53,7 +53,7 @@ export const TOOL_PLANE = {
   // registered local browser tools were unreachable (2026-08-23 audit,
   // live-corroborated: benchmark B fell back to an MCP browser). Explicit
   // mapping outranks the regex. xclaw_browser_tab / browser_network_details
-  // stay "computer" above — those really are bundle tools.
+  // stay "computer" above — those really are computer-server tools.
   browser_screenshot: "local",
   browser_snapshot: "local",
   browser_clipboard: "local",

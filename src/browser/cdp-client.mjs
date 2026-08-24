@@ -79,6 +79,10 @@ function wsConnect(wsUrl, opts = {}) {
     req.on("timeout", () => req.destroy(new Error("CDP WS timeout")));
     req.on("upgrade", (res, socket) => {
       socket.setNoDelay(true);
+      // An idle attach must never pin the event loop (the unref'd-timer/child
+      // drain bug class): any process doing real work holds its own ref
+      // (HTTP server, test runner, a pending await); frames still arrive.
+      socket.unref();
       // TCP keepalive: detect half-open after idle (layer under WS ping)
       if (keepAlive !== false) {
         try {
@@ -88,6 +92,8 @@ function wsConnect(wsUrl, opts = {}) {
         }
       }
       const pending = new Map();
+      /** CDP event subscriptions: method (or "*") → Set<handler(params, method)> */
+      const eventListeners = new Map();
       let id = 0;
       let buf = Buffer.alloc(0);
       let closed = false;
@@ -217,8 +223,22 @@ function wsConnect(wsUrl, opts = {}) {
               if (msg.id && pending.has(msg.id)) {
                 const { resolve: res2, reject: rej2 } = pending.get(msg.id);
                 pending.delete(msg.id);
+                if (!pending.size) socket.unref();
                 if (msg.error) rej2(new Error(msg.error.message || "CDP error"));
                 else res2(msg.result);
+              } else if (msg.method) {
+                // CDP event (no id): dispatch to subscribers. "*" receives all.
+                const hs = [
+                  ...(eventListeners.get(msg.method) || []),
+                  ...(eventListeners.get("*") || []),
+                ];
+                for (const h of hs) {
+                  try {
+                    h(msg.params || {}, msg.method);
+                  } catch {
+                    /* listener errors must not break the parser */
+                  }
+                }
               }
             } catch {
               /* non-JSON frame ignored */
@@ -247,9 +267,13 @@ function wsConnect(wsUrl, opts = {}) {
         }
         return new Promise((res2, rej2) => {
           pending.set(mid, { resolve: res2, reject: rej2 });
+          // A pending command must keep the process alive; drop back to
+          // unref'd (idle) when the last in-flight command settles.
+          socket.ref();
           setTimeout(() => {
             if (pending.has(mid)) {
               pending.delete(mid);
+              if (!pending.size) socket.unref();
               rej2(new Error(`CDP ${method} timed out`));
             }
           }, t).unref?.();
@@ -341,8 +365,28 @@ function wsConnect(wsUrl, opts = {}) {
         });
       }
 
+      /**
+       * Subscribe to CDP events (e.g. "Runtime.consoleAPICalled",
+       * "Network.responseReceived"; "*" for all). Enable the domain first
+       * (send("Runtime.enable") etc.) or no events arrive. Returns unsubscribe.
+       */
+      function on(method, handler) {
+        if (!method || typeof handler !== "function") return () => {};
+        let set = eventListeners.get(method);
+        if (!set) {
+          set = new Set();
+          eventListeners.set(method, set);
+        }
+        set.add(handler);
+        return () => {
+          set.delete(handler);
+          if (!set.size) eventListeners.delete(method);
+        };
+      }
+
       resolve({
         send,
+        on,
         ping,
         startHeartbeat,
         stopHeartbeat,
@@ -440,6 +484,8 @@ export function createCdpClient(opts = {}) {
         page,
         /** Raw CDP command access for advanced callers (Input.*, DOM.*, …). */
         send: (method, params, sendOpts) => ws.send(method, params, sendOpts),
+        /** Subscribe to CDP events ("Runtime.consoleAPICalled", "*", …); returns unsubscribe. */
+        on: (method, handler) => ws.on(method, handler),
         /** WebSocket-level ping (not a CDP domain method). */
         ping: (payload, pingOpts) => ws.ping(payload, pingOpts),
         startHeartbeat: (hbOpts) => ws.startHeartbeat(hbOpts),

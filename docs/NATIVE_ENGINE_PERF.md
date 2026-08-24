@@ -1,5 +1,7 @@
 # Native (thin) engine performance
 
+> **Historical (pre-unification):** these benches compared the native thin server against the retired 16MB CDP bundle. Since ADR 0005 (2026-08-24) only the native engine exists; numbers kept for the record.
+
 Measured on this host: 2026-08-17 (lab node). Numbers are order-of-magnitude guides, not SLAs.
 
 ## Footprint
@@ -44,7 +46,7 @@ node tmp-live/bench-computer.mjs
 # or scripts equivalent once checked in
 ```
 
-Env: `XCLAW_COMPUTER_ENGINE=native|bundle`.
+Env: legacy `XCLAW_COMPUTER_ENGINE` selectors all resolve to native (ADR 0005).
 
 ## Session reuse
 

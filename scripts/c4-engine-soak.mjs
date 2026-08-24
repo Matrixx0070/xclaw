@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * C4 optional soak — verify native / generated / bundle engine entries resolve
- * and exist. Does not start long-running servers or delete the bundle.
+ * Engine resolution soak — every selector (including retired legacy ones)
+ * must resolve to the single native engine and its entry must exist.
  *
  *   node scripts/c4-engine-soak.mjs
  */
@@ -15,72 +15,31 @@ import {
 } from "../src/computer/engine.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const engines = ["native", "generated", "bundle"];
+const selectors = ["native", "thin", "generated", "gen", "c3", "bundle", "full", "xclaw-server", ""];
 const report = {
   at: new Date().toISOString(),
-  phase: "C4-soak",
+  phase: "unified-native-soak",
   engines: [],
 };
 
-for (const eng of engines) {
-  process.env.XCLAW_COMPUTER_ENGINE = eng;
-  const cfg = { computer: { engine: eng } };
+let fails = 0;
+for (const sel of selectors) {
+  if (sel) process.env.XCLAW_COMPUTER_ENGINE = sel;
+  else delete process.env.XCLAW_COMPUTER_ENGINE;
+  const cfg = sel ? { computer: { engine: sel } } : {};
   const resolved = resolveComputerEngine(cfg);
   const entry = resolveComputerEntryPath(cfg, root);
   const info = describeComputerEngine(cfg, root);
-  const exists = fs.existsSync(entry);
-  const bytes = exists ? fs.statSync(entry).size : 0;
-  let readable = false;
-  if (exists) {
-    try {
-      const st = fs.statSync(entry);
-      readable = st.isFile() && st.size > 0;
-      // bundle is binary-ish large; only check size
-      if (eng !== "bundle") {
-        const head = fs.readFileSync(entry, "utf8").slice(0, 4000);
-        readable = head.length > 0;
-      }
-    } catch {
-      readable = false;
-    }
-  }
+  const ok = resolved === "native" && fs.existsSync(entry);
+  if (!ok) fails += 1;
   report.engines.push({
-    requested: eng,
+    selector: sel || "(default)",
     resolved,
-    entry: path.relative(root, entry),
-    exists,
-    bytes,
-    readable,
-    strategyPhase: info.strategyPhase,
-    isFallbackBundle: info.isFallbackBundle,
+    entry,
+    entryExists: info.entryExists,
+    ok,
   });
 }
 
-const allExist = report.engines.every((e) => e.exists && e.readable);
-const nativeOk = report.engines.find((e) => e.requested === "native");
-const genOk = report.engines.find((e) => e.requested === "generated");
-const bundleOk = report.engines.find((e) => e.requested === "bundle");
-
-report.ok =
-  Boolean(nativeOk?.exists) &&
-  Boolean(genOk?.exists) &&
-  Boolean(bundleOk?.exists) &&
-  allExist;
-
-report.summary = {
-  allEnginesPresent: allExist,
-  nativeBytes: nativeOk?.bytes,
-  generatedBytes: genOk?.bytes,
-  bundleBytes: bundleOk?.bytes,
-  browserService: "bundle_only (intentionally not on native default path)",
-  deleteBundle: false,
-  note: "Soak confirms entries only; full process soak is release-gate / live-e2e",
-};
-
 console.log(JSON.stringify(report, null, 2));
-if (!report.ok) {
-  console.error("[c4-engine-soak] FAIL");
-  process.exit(1);
-}
-console.error("[c4-engine-soak] OK — native + generated + bundle present");
-process.exit(0);
+process.exit(fails ? 2 : 0);

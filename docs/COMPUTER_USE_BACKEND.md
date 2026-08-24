@@ -19,7 +19,7 @@ XClaw attaches CUA capabilities to the **existing** computer plane:
 
 ## Policy order
 
-`tools / connectors → observe (structure) → GUI screenshot/click (bundle/CDP)`
+`tools / connectors → observe (structure) → GUI screenshot/click (managed Chrome via CDP)`
 
 Encoded as `capability-reach.cuaPolicy = "tools_first_then_observe_then_gui"`.
 
@@ -29,11 +29,11 @@ Encoded as `capability-reach.cuaPolicy = "tools_first_then_observe_then_gui"`.
 |--------|---------|
 | navigate / list / read | yes |
 | **observe** | yes — HTML-derived interactive elements (`ref`, `role`, `name`) |
-| screenshot / jsCode / click / type | no — returns `CUA_ACT_REQUIRES_BUNDLE` |
+| screenshot / jsCode / click / type | yes — managed headless Chrome (spawned lazily) |
 
-## Bundle / CDP
+## Real browser (CDP)
 
-Set `XCLAW_COMPUTER_ENGINE=bundle` or `XCLAW_CDP_URL=http://127.0.0.1:9222`.
+Included by default: the native engine spawns a managed headless Chrome on first use (chrome-session.mjs). To attach an existing browser instead, set `XCLAW_CDP_URL=http://127.0.0.1:9222`.
 
 ## Reach fields
 
@@ -64,7 +64,7 @@ export XCLAW_CDP_URL=http://127.0.0.1:9222
 
 - **I1** observe — done (native structure)
 - **I2** stub — done (fail closed)
-- **I2b** CDP motor path — done (CLEAN); bundle BrowserService still BUNDLE_ONLY
+- **I2b** CDP motor path — done (CLEAN); BrowserService superseded by chrome-session + browser-cdp (ADR 0005)
 - **I3** planes serial — done
 - **I4** observe ref→coords via CDP evaluate — done
 - **I5** DesktopDriver — done (opt-in, Linux xdotool/ydotool; fail closed)

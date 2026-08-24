@@ -77,14 +77,6 @@ async function main() {
   process.env.XCLAW_FABRIC_DIR =
     process.env.XCLAW_FABRIC_DIR || path.join(ROOT, ".tmp-live-e2e-fabric");
   fs.mkdirSync(process.env.XCLAW_FABRIC_DIR, { recursive: true });
-  process.env.XCLAW_HOOKS_BRIDGE =
-    process.env.XCLAW_HOOKS_BRIDGE || path.join(ROOT, "src/computer/hooks-bridge.mjs");
-  process.env.XCLAW_MOTOR_BRIDGE =
-    process.env.XCLAW_MOTOR_BRIDGE || path.join(ROOT, "src/computer/motor-bridge.mjs");
-  process.env.XCLAW_CHROME_ARGS_BRIDGE =
-    process.env.XCLAW_CHROME_ARGS_BRIDGE ||
-    path.join(ROOT, "src/computer/chrome-args-bridge.mjs");
-
   const { loadConfig } = await import(mod("src/config/load.mjs"));
   const { isComputerRunning, startComputer, stopComputer, getComputerStatus } =
     await import(mod("src/computer/manager.mjs"));

@@ -6,7 +6,8 @@ import { runDesktopAct } from "../src/computer/modules/desktop-driver.mjs";
 
 describe("CUA error handling", () => {
   it("catalog has core codes", () => {
-    assert.ok(CUA_ERROR_CATALOG.CUA_ACT_REQUIRES_BUNDLE);
+    assert.ok(CUA_ERROR_CATALOG.CUA_BROWSER_UNAVAILABLE);
+    assert.ok(CUA_ERROR_CATALOG.CDP_ATTACH_FAILED);
     assert.ok(CUA_ERROR_CATALOG.DESKTOP_GUI_DISABLED);
     assert.ok(CUA_ERROR_CATALOG.AX_TCC_REQUIRED);
   });
@@ -18,12 +19,17 @@ describe("CUA error handling", () => {
   });
 
   it("computer_act fail includes recovery", async () => {
-    delete process.env.XCLAW_CDP_URL;
-    delete process.env.CDP_URL;
-    const r = await runComputerAct({ action: "click", x: 1, y: 1 });
-    assert.equal(r.ok, false);
-    assert.equal(r.code, "CUA_ACT_REQUIRES_BUNDLE");
-    assert.ok(r.recovery || r.hint);
+    process.env.XCLAW_CDP_URL = "http://127.0.0.1:59991";
+    process.env.XCLAW_CUA_RETRIES = "0";
+    try {
+      const r = await runComputerAct({ action: "click", x: 1, y: 1 });
+      assert.equal(r.ok, false);
+      assert.equal(r.code, "CDP_ATTACH_FAILED");
+      assert.ok(r.recovery || r.hint);
+    } finally {
+      delete process.env.XCLAW_CDP_URL;
+      delete process.env.XCLAW_CUA_RETRIES;
+    }
   });
 
   it("desktop act disabled includes recovery", async () => {

@@ -16,9 +16,8 @@ import { runSecurityAudit } from "../security/audit.mjs";
 import { isMitmEnabled, mitmStatus, findMitmdump, mitmCaStatus } from "../browser/mitm.mjs";
 import { horizon0Checklist, buildProductionChromeArgs } from "../browser/horizon0.mjs";
 import { hooksStatus, beforeNavigate, beforeInput } from "../browser/hooks.mjs";
-import { resolveHooksModulePath } from "../computer/hooks-bridge.mjs";
-import { loadMotor } from "../computer/motor-bridge.mjs";
-import { loadChromeArgsModule } from "../computer/chrome-args-bridge.mjs";
+import { planClick } from "../browser/motor.mjs";
+import { findChromeBinary } from "../browser/dedicated.mjs";
 import { buildChromeArgs, chromeArgsInvariants } from "../computer/chrome-args.mjs";
 import fsSync from "node:fs";
 
@@ -1427,30 +1426,20 @@ export async function runDoctor(opts = {}) {
     const pkgRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
     const candidates = [process.env.XCLAW_ROOT, pkgRoot, process.cwd()].filter(Boolean);
     const root =
-      candidates.find((r) => fsSync.existsSync(path.join(r, "src/computer/hooks-bridge.mjs"))) ||
+      candidates.find((r) => fsSync.existsSync(path.join(r, "src/computer/chrome-args.mjs"))) ||
       candidates[0];
-    const bridgeFiles = [
-      ["a.hooks_bridge", "src/computer/hooks-bridge.mjs"],
-      ["a.motor_bridge", "src/computer/motor-bridge.mjs"],
-      ["a.chrome_args_bridge", "src/computer/chrome-args-bridge.mjs"],
+    const enforcementFiles = [
       ["a.hooks_module", "src/browser/hooks.mjs"],
       ["a.motor_module", "src/browser/motor.mjs"],
       ["a.chrome_args_module", "src/computer/chrome-args.mjs"],
     ];
-    for (const [id, rel] of bridgeFiles) {
+    for (const [id, rel] of enforcementFiles) {
       const abs = path.join(root, rel);
       if (fsSync.existsSync(abs)) {
         push(id, "ok", `found ${rel}`);
       } else {
         push(id, "error", `missing ${rel} under XCLAW_ROOT/cwd (${root})`);
       }
-    }
-
-    const hooksPath = resolveHooksModulePath();
-    if (hooksPath) {
-      push("a.hooks_resolve", "ok", `resolveHooksModulePath → ${hooksPath}`);
-    } else {
-      push("a.hooks_resolve", "error", "hooks.mjs not resolvable — set XCLAW_ROOT");
     }
 
     const hs = hooksStatus();
@@ -1462,38 +1451,28 @@ export async function runDoctor(opts = {}) {
 
     // chrome-args canonical
     try {
-      const m = await loadChromeArgsModule();
-      if (!m?.buildChromeArgs) {
-        push("a.chrome_args_load", "error", "chrome-args module failed to load");
+      const args = buildChromeArgs({
+        userDataDir: process.env.XCLAW_BROWSER_PROFILE_DIR || "/tmp/xclaw-a6-doctor",
+        headless: true,
+      });
+      const inv = chromeArgsInvariants(args);
+      if (!inv.ok) {
+        push("a.chrome_args_invariants", "error", `missing: ${inv.missing.join(", ")}`);
       } else {
-        const args = buildChromeArgs({
-          userDataDir: process.env.XCLAW_BROWSER_PROFILE_DIR || "/tmp/xclaw-a6-doctor",
-          headless: true,
-        });
-        const inv = chromeArgsInvariants(args);
-        if (!inv.ok) {
-          push("a.chrome_args_invariants", "error", `missing: ${inv.missing.join(", ")}`);
-        } else {
-          push("a.chrome_args_invariants", "ok", `canonical argv ok (${args.length} flags)`);
-        }
+        push("a.chrome_args_invariants", "ok", `canonical argv ok (${args.length} flags)`);
       }
     } catch (e) {
       push("a.chrome_args_load", "error", e.message || String(e));
     }
 
-    // motor load
+    // motor
     try {
-      const motor = await loadMotor();
-      if (!motor?.planClick) {
-        push("a.motor_load", "warn", "motor.mjs not loaded — browser_click humanize unavailable");
-      } else {
-        const plan = motor.planClick({ x: 10, y: 10, fromX: 0, fromY: 0, targetWidth: 20 });
-        push(
-          "a.motor_load",
-          "ok",
-          `planClick steps=${plan.steps?.length || 0} humanize=${plan.meta?.humanize}`
-        );
-      }
+      const plan = planClick({ x: 10, y: 10, fromX: 0, fromY: 0, targetWidth: 20 });
+      push(
+        "a.motor_load",
+        "ok",
+        `planClick steps=${plan.steps?.length || 0} humanize=${plan.meta?.humanize}`
+      );
     } catch (e) {
       push("a.motor_load", "warn", e.message || String(e));
     }
@@ -1580,44 +1559,20 @@ export async function runDoctor(opts = {}) {
       );
     }
 
-    // Bundle patch markers (A2/A4/A5)
+    // Real-browser capability: managed headless Chrome needs a binary on host
     try {
-      const bundle = path.join(root, "src/computer/xclaw-server.mjs");
-      if (fsSync.existsSync(bundle)) {
-        const head = fsSync.readFileSync(bundle, "utf8");
-        const markers = [
-          ["a.bundle_navigate_hook", "A2: driver hooks"],
-          ["a.bundle_motor", "A4: humanized CDP motor"],
-          ["a.bundle_chrome_args", "A5: single Chrome argv"],
-        ];
-        for (const [id, needle] of markers) {
-          if (head.includes(needle)) push(id, "ok", `marker present: ${needle}`);
-          else push(id, "error", `bundle missing patch marker: ${needle}`);
-        }
+      const chromeBin = findChromeBinary();
+      if (chromeBin) {
+        push("a.browser_binary", "ok", `chrome binary: ${chromeBin}`);
       } else {
-        // W4: native is the product default; bundle is opt-in — missing blob is an error only when bundle is explicitly selected, unless
-        // the operator explicitly selected native/generated escape hatch.
-        let engine = cfg.computer?.engine;
-        try {
-          const { resolveComputerEngine } = await import("../computer/engine.mjs");
-          engine = resolveComputerEngine(cfg);
-        } catch {
-          engine =
-            process.env.XCLAW_COMPUTER_ENGINE ||
-            cfg.computer?.engine ||
-            "bundle";
-        }
-        const needsBundle = engine === "bundle" || engine === "full";
         push(
-          "a.bundle",
-          needsBundle ? "error" : "ok",
-          needsBundle
-            ? "engine=bundle selected but xclaw-server.mjs missing — run: npm run fetch:bundle && npm run verify:bundle"
-            : `native engine=${engine} (default; auditable modules + bwrap sandbox); CDP bundle is opt-in`
+          "a.browser_binary",
+          "warn",
+          "no Chrome/Chromium found — jsCode/screenshot/click on xclaw_browser_tab unavailable (install chromium or set XCLAW_BROWSER_BIN)"
         );
       }
     } catch (e) {
-      push("a.bundle", "warn", e.message || String(e));
+      push("a.browser_binary", "warn", e.message || String(e));
     }
   } catch (e) {
     push("a.enforcement", "error", e.message || String(e));

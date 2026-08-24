@@ -11,9 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      # Bundle not in git; manager falls back to native when missing.
-      XCLAW_BUNDLE_AUTOFETCH: "0"
-      XCLAW_BUNDLE_FALLBACK_NATIVE: "1"
     steps:
       - uses: actions/checkout@v4
 

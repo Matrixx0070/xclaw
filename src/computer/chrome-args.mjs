@@ -2,7 +2,7 @@
  * Phase A5 — Single Chrome argv builder (source of truth for launch flags).
  *
  * Used by:
- *   - computer bundle ensureRunning (via chrome-args-bridge)
+ *   - managed headless Chrome launch (chrome-session.mjs)
  *   - hooks.buildChromeArgs (invariants merge)
  *
  * Order: base H0 → headed/window → UA → sandbox → MITM proxy/SPKI → extra → CHROMIUM_FLAGS → docker

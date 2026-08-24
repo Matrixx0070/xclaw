@@ -61,7 +61,7 @@ export XCLAW_PROFILE=lab
 ```bash
 export XCLAW_ROOT=/path/to/xclaw
 node scripts/a-enforcement-e2e.mjs          # offline A-plane (exit 0 or 1 OK; 2 = fail)
-npm run check-bundle-markers                # A2/A4/A5 still in computer bundle
+node scripts/c4-engine-soak.mjs             # engine resolution: every selector → native
 node bin/xclaw.mjs doctor                   # includes a.* checks
 # With Chrome available:
 node scripts/live-enforcement-e2e.mjs       # or: npm run release-gate:live
@@ -84,7 +84,7 @@ npm run release-gate:live                   # + live computer path
 | `XCLAW_FABRIC_ENFORCE=1` | no tab act without lease (unless auto) |
 | `XCLAW_JSCODE_MODE=read` | `.click()` via jsCode denied |
 | No `XCLAW_ROLE_FROM_ENV` | roles from `session_role` / trusted ctx |
-| Bundle markers | A2, A4, A5 present |
+| Engine resolution | every selector resolves native (c4-engine-soak) |
 | Doctor `a.*` | no errors under strict/prod |
 | Durable profile | `XCLAW_BROWSER_PROFILE_DIR` set if identity matters |
 

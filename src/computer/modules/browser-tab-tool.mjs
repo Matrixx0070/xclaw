@@ -1,22 +1,31 @@
 /**
- * CLEAN xclaw_browser_tab — lightweight native implementation (P0→P1 + CUA observe).
+ * xclaw_browser_tab — the single native browser plane (engine unification).
  *
- * Full CDP/Chrome path lives in the bundle engine (XCLAW_COMPUTER_ENGINE=bundle).
- * Native engine:
- *   - navigate/fetch URL (redirect-aware)
- *   - tab registry (list / read / observe)
- *   - title, text, links extraction
- *   - observe → structured element candidates (HTML-derived a11y-like tree)
- *   - jsCode/screenshot/click → clear error pointing at bundle/CDP
+ * Two tiers, one tool:
+ *   - fetch tier (default navigate): SSRF-guarded HTTP fetch, redirect-aware;
+ *     title/text/links extraction; observe → HTML-derived a11y-like tree.
+ *     Cheap, no browser process.
+ *   - CDP tier (jsCode / screenshot / click / type / console / render:true):
+ *     lazily materializes the tab in the managed headless Chrome
+ *     (chrome-session.mjs) and captures console + network events live.
  *
  * CUA policy: prefer observe (structure) before vision/screenshot; tools before GUI.
  *
- * @see docs/BROWSER_UNBUNDLE.md
  * @see docs/COMPUTER_USE_BACKEND.md
  */
 
 import { safeFetch } from "../../security/ssrf.mjs";
-import { cacheObserveResult } from "./computer-act-tool.mjs";
+import { beforeNavigate, beforeInput } from "../../browser/hooks.mjs";
+import { cacheObserveResult, runComputerAct } from "./computer-act-tool.mjs";
+import {
+  ensureTabPage,
+  runJsCode,
+  captureTabScreenshot,
+  readTabHtml,
+  readTabDom,
+  tabConsole,
+  isCdpTab,
+} from "./browser-cdp.mjs";
 
 /** @type {Map<string, { id: string, url: string, title: string, text: string, links: object[], status: number, at: string }>} */
 const tabs = new Map();
@@ -281,35 +290,153 @@ function listTabs() {
  * @param {string} [input.click]  — not supported on native
  * @param {string} [input.type]   — not supported on native
  */
+/**
+ * Resolve or create the tab record and materialize it in the managed Chrome.
+ * Used by every CDP-tier action (jsCode/screenshot/click/type/render).
+ */
+async function getOrCreateCdpTab(input = {}) {
+  let tab = input.tabId ? tabs.get(input.tabId) : null;
+  if (!tab && input.tabId && !input.url) {
+    const err = new Error(`Unknown tabId: ${input.tabId}`);
+    err.code = "UNKNOWN_TAB";
+    throw err;
+  }
+  if (!tab) {
+    tab = {
+      id: nextId(),
+      url: input.url || "about:blank",
+      title: "",
+      text: "",
+      links: [],
+      status: null,
+      at: new Date().toISOString(),
+      network: [],
+      console: [],
+    };
+    tabs.set(tab.id, tab);
+    await ensureTabPage(tab, { navigate: Boolean(input.url), url: input.url });
+  } else if (input.url && input.url !== tab.url) {
+    await ensureTabPage(tab, { navigate: true, url: input.url });
+  } else {
+    await ensureTabPage(tab);
+  }
+  return tab;
+}
+
+function cdpFailure(err, extra = {}) {
+  return {
+    ok: false,
+    error: err?.message || String(err),
+    code:
+      err?.code === "UNKNOWN_TAB"
+        ? "UNKNOWN_TAB"
+        : /binary|chromium|chrome/i.test(String(err?.message))
+          ? "CUA_BROWSER_UNAVAILABLE"
+          : extra.code || "CUA_CDP_FAILED",
+    engine: "native-cdp",
+    ...extra,
+    ...(extra.code ? { code: extra.code } : {}),
+  };
+}
+
+/** Phase A enforcement (hooks.mjs) applied in-process, engine-side. */
+function hookBlocked(gate, extra = {}) {
+  return {
+    ok: false,
+    error: gate.reason || gate.code || "blocked by enforcement hooks",
+    code: gate.code || "HOOKS_BLOCKED",
+    phase: gate.phase,
+    engine: "native-cdp",
+    ...extra,
+  };
+}
+
 export async function runBrowserTab(input = {}) {
   const action = String(input.action || "").toLowerCase();
 
   if (input.jsCode) {
-    return {
-      ok: false,
-      error:
-        "jsCode requires the CDP bundle engine. Set XCLAW_COMPUTER_ENGINE=bundle (npm run fetch:bundle). See docs/BROWSER_UNBUNDLE.md",
-      tabId: input.tabId || null,
-      engine: "native-fetch",
-    };
+    const gate = await beforeInput({ jsCode: input.jsCode, action: "jsCode", tabId: input.tabId });
+    if (!gate.ok) return hookBlocked(gate, { tabId: input.tabId || null });
+    try {
+      const tab = await getOrCreateCdpTab(input);
+      const timeoutMs = Math.min(
+        Math.max(Number(input.jsTimeoutMs) || 15_000, 1000),
+        60_000
+      );
+      const r = await runJsCode(tab, input.jsCode, { timeoutMs });
+      return {
+        ok: true,
+        action: "jsCode",
+        tabId: tab.id,
+        url: tab.url,
+        value: r.value,
+        console: r.console,
+        engine: "native-cdp",
+      };
+    } catch (err) {
+      return cdpFailure(err, { tabId: input.tabId || null, code: err?.code === "UNKNOWN_TAB" ? "UNKNOWN_TAB" : "CUA_JS_FAILED" });
+    }
   }
   if (input.screenshot) {
-    return {
-      ok: false,
-      error:
-        "screenshot requires the CDP bundle engine. Prefer action=observe on native for structure. See docs/BROWSER_UNBUNDLE.md",
-      tabId: input.tabId || null,
-      engine: "native-fetch",
-    };
+    try {
+      const tab = await getOrCreateCdpTab(input);
+      const shots = await captureTabScreenshot(tab, input.screenshot);
+      return {
+        ok: true,
+        action: "screenshot",
+        tabId: tab.id,
+        url: tab.url,
+        screenshots: shots,
+        note: "Full PNG written to disk; read with file tools if vision is needed. Prefer action=observe for structure.",
+        engine: "native-cdp",
+      };
+    } catch (err) {
+      return cdpFailure(err, { tabId: input.tabId || null, code: err?.code === "UNKNOWN_TAB" ? "UNKNOWN_TAB" : "CUA_SCREENSHOT_FAILED" });
+    }
   }
   if (input.click || input.type || action === "click" || action === "type") {
+    const kind = Boolean(input.type) || action === "type" ? "type" : "click";
+    const gate = await beforeInput({ action: kind, tabId: input.tabId });
+    if (!gate.ok) return hookBlocked(gate, { tabId: input.tabId || null });
+    try {
+      const tab = await getOrCreateCdpTab(input);
+      const isType = kind === "type";
+      const clickSpec = String(input.click || input.ref || "").trim();
+      const actInput = isType
+        ? { action: "type", text: input.type || input.text || "" }
+        : /^e\d+$/i.test(clickSpec)
+          ? { action: "click", ref: clickSpec, tabId: tab.id }
+          : Number.isFinite(Number(input.x)) && Number.isFinite(Number(input.y))
+            ? { action: "click", x: Number(input.x), y: Number(input.y) }
+            : { action: "click", label: clickSpec || input.label || "" };
+      const res = await runComputerAct({
+        ...actInput,
+        urlMatch: tab._cdp?.targetId ? undefined : tab.url,
+        targetId: tab._cdp?.targetId,
+      });
+      return { ...res, tabId: tab.id, url: tab.url };
+    } catch (err) {
+      return cdpFailure(err, { tabId: input.tabId || null, code: err?.code === "UNKNOWN_TAB" ? "UNKNOWN_TAB" : "CUA_ACT_FAILED" });
+    }
+  }
+
+  if (action === "console") {
+    const tab = tabs.get(input.tabId);
+    if (!tab) {
+      return { ok: false, error: `Unknown tabId: ${input.tabId || "(none)"}`, tabId: input.tabId || null, engine: "native-cdp" };
+    }
+    const entries = tabConsole(tab, Number(input.limit) || 100);
     return {
-      ok: false,
-      error:
-        "click/type require CDP bundle or attached Chromium (XCLAW_CDP_URL). On native, use action=observe then tools/API; do not invent coordinates.",
-      tabId: input.tabId || null,
-      engine: "native-fetch",
-      code: "CUA_ACT_REQUIRES_BUNDLE",
+      ok: true,
+      action: "console",
+      tabId: tab.id,
+      url: tab.url,
+      entries,
+      count: entries.length,
+      engine: isCdpTab(tab) ? "native-cdp" : "native-fetch",
+      ...(entries.length === 0 && !isCdpTab(tab)
+        ? { note: "Console capture starts when the tab runs in the real browser (jsCode/screenshot/render:true)." }
+        : {}),
     };
   }
 
@@ -334,6 +461,14 @@ export async function runBrowserTab(input = {}) {
     const tab = tabs.get(input.tabId);
     if (!tab) {
       return { ok: false, error: `Unknown tabId: ${input.tabId}`, tabId: input.tabId };
+    }
+    if (isCdpTab(tab)) {
+      // Live DOM beats the fetch-time HTML snapshot (js may have run since).
+      try {
+        tab.html = (await readTabHtml(tab)).slice(0, 500_000);
+      } catch {
+        /* fall back to cached html */
+      }
     }
     return observeFromTab(tab);
   }
@@ -360,9 +495,59 @@ export async function runBrowserTab(input = {}) {
   if (!input.url) {
     return {
       ok: false,
-      error: "url required for navigate (or action=list|read|observe with tabId)",
+      error: "url required for navigate (or action=list|read|observe|console with tabId)",
       engine: "native-fetch",
     };
+  }
+
+  // Phase A enforcement: commit gates / role gates on every navigate tier.
+  const navGate = await beforeNavigate({ url: input.url, tabId: input.tabId });
+  if (!navGate.ok) return hookBlocked(navGate, { url: input.url });
+
+  // Real-browser navigate (js executes, console + full network captured).
+  if (input.render === true) {
+    try {
+      const tab = await getOrCreateCdpTab(input);
+      const dom = await readTabDom(tab);
+      tab.url = dom.url || tab.url;
+      tab.title = dom.title || "";
+      tab.text = dom.text || "";
+      tab.html = (await readTabHtml(tab)).slice(0, 500_000);
+      tab.links = extractLinks(tab.html, tab.url);
+      tab.description = extractMetaDescription(tab.html);
+      tab.status =
+        tab.network.find((n) => n.resourceType === "Document")?.status ?? null;
+      const out = {
+        ok: true,
+        action: "navigate",
+        tabId: tab.id,
+        url: tab.url,
+        title: tab.title,
+        description: tab.description,
+        status: tab.status,
+        textPreview: tab.text.slice(0, 4000),
+        links: tab.links.slice(0, 20),
+        engine: "native-cdp",
+        networkSummaries: input.includeNetwork
+          ? tab.network.map((n) => ({
+              requestId: n.requestId,
+              method: n.method,
+              url: n.url,
+              status: n.status,
+              resourceType: n.resourceType,
+            }))
+          : undefined,
+      };
+      if (input.observe === true || action === "navigate_observe") {
+        const obs = observeFromTab(tab);
+        out.elements = obs.elements;
+        out.elementCount = obs.elementCount;
+        out.mode = obs.mode;
+      }
+      return out;
+    } catch (err) {
+      return cdpFailure(err, { url: input.url, code: "CUA_NAVIGATE_FAILED" });
+    }
   }
 
   let res;
@@ -472,28 +657,46 @@ export function _resetTabsForTests() {
 export const BrowserTabTool = {
   name: "xclaw_browser_tab",
   description:
-    "Browser plane (CUA-aware): navigate/fetch URL, list/read tabs, action=observe for structured interactive elements (HTML a11y-like tree). Prefer observe before screenshot. jsCode/screenshot/click/type require CDP bundle (XCLAW_COMPUTER_ENGINE=bundle or XCLAW_CDP_URL). See docs/BROWSER_UNBUNDLE.md and docs/COMPUTER_USE_BACKEND.md.",
+    "Browser plane (CUA-aware): navigate/fetch URL, list/read tabs, action=observe for structured interactive elements. render:true navigates in the managed headless Chrome (js executes, console + full network captured). jsCode runs JavaScript in the real page; screenshot captures full PNG to disk (viewport|desktop|mobile|both); click/type actuate via CDP; action=console reads captured logs. Prefer observe (structure) before screenshot. See docs/COMPUTER_USE_BACKEND.md.",
   inputSchema: {
     type: "object",
     properties: {
       action: {
         type: "string",
         description:
-          "navigate | list | read | observe (default: navigate if url set). observe requires tabId.",
+          "navigate | list | read | observe | console | click | type (default: navigate if url set). observe/console require tabId.",
       },
       url: { type: "string", description: "URL for navigate" },
-      tabId: { type: "string", description: "Tab id for read/observe/list targeting" },
+      tabId: { type: "string", description: "Tab id for read/observe/console targeting" },
+      render: {
+        type: "boolean",
+        description:
+          "Navigate in the real headless browser instead of plain fetch (runs js, captures console+network)",
+      },
       observe: {
         type: "boolean",
         description: "If true on navigate, also return elements[] (same as action=observe)",
       },
-      jsCode: { type: "string", description: "Bundle/CDP only" },
-      screenshot: { type: "string", description: "Bundle/CDP only — prefer action=observe on native" },
+      jsCode: {
+        type: "string",
+        description: "JavaScript to run in the tab's real page; returns the expression value",
+      },
+      jsTimeoutMs: { type: "number", description: "jsCode timeout (default 15000, max 60000)" },
+      screenshot: {
+        type: "string",
+        description:
+          "Capture full PNG to disk: viewport | desktop | mobile | both — prefer action=observe for structure",
+      },
       includeNetwork: { type: "boolean" },
-      click: { type: "string", description: "Bundle/CDP only" },
-      type: { type: "string", description: "Bundle/CDP only" },
+      click: { type: "string", description: "Element ref (eN from observe) or label text to click" },
+      type: { type: "string", description: "Text to type into the focused element" },
+      x: { type: "number", description: "Explicit click x (with y)" },
+      y: { type: "number", description: "Explicit click y (with x)" },
+      limit: { type: "number", description: "Max console entries for action=console (default 100)" },
     },
   },
+  // Read-only relative to the LOCAL system: page actuation never touches
+  // host files/processes, matching the previous risk posture of this tool.
   isReadOnly: () => true,
   async call(input, _context = {}) {
     const data = await runBrowserTab(input || {});

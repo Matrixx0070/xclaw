@@ -1,15 +1,19 @@
 /**
- * I2 — unified computer actuation (CUA) on existing planes.
+ * Unified computer actuation (CUA) — native engine.
  *
  * Policy: tools → observe → GUI act.
  *
- * Paths:
- *   1) XCLAW_CDP_URL / CDP_URL set → Horizon motor + cdp-client (CLEAN)
- *   2) engine=bundle without CDP URL → honest NOT_EXTRACTED (BrowserService still bundle-only)
- *   3) native/thin without CDP → CUA_ACT_REQUIRES_BUNDLE
+ * Endpoint: XCLAW_CDP_URL / CDP_URL when the operator attached a browser,
+ * otherwise the managed headless Chrome (chrome-session.mjs), spawned
+ * lazily on first use. Fails typed (CUA_BROWSER_UNAVAILABLE) only when no
+ * Chrome binary exists on the host.
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import { createCdpClient } from "../../browser/cdp-client.mjs";
+import { ensureChrome, externalCdpEndpoint } from "../chrome-session.mjs";
+import { SCREENSHOT_DIR } from "./browser-cdp.mjs";
 import { planClick, planType, planScroll, executeSteps } from "../../browser/motor.mjs";
 import { runDesktopAct, runDesktopObserve, probeDesktopDriver } from "./desktop-driver.mjs";
 import { enrichCuaError, classifyCdpError } from "../cua-errors.mjs";
@@ -104,22 +108,15 @@ async function resolveClickTarget(tab, input = {}) {
   return null;
 }
 
-function parseCdpUrl(raw) {
-  if (!raw) return null;
-  try {
-    const u = new URL(String(raw));
-    return {
-      host: u.hostname || "127.0.0.1",
-      port: Number(u.port) || 9222,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function resolveCdpEndpoint() {
-  const raw = process.env.XCLAW_CDP_URL || process.env.CDP_URL || null;
-  return parseCdpUrl(raw);
+/**
+ * CDP endpoint: operator-attached (XCLAW_CDP_URL) wins; otherwise the
+ * managed headless Chrome is ensured (spawned on first use). GUI actuation
+ * works out of the box on the native engine — no env var, no bundle.
+ */
+async function resolveCdpEndpoint() {
+  const external = externalCdpEndpoint();
+  if (external) return external;
+  return ensureChrome();
 }
 
 /**
@@ -179,31 +176,17 @@ async function runComputerActImpl(input = {}) {
   }
 
   const engine = process.env.XCLAW_COMPUTER_ENGINE || "native";
-  const cdpEp = resolveCdpEndpoint();
-  const canAct = Boolean(cdpEp) || engine === "bundle" || engine === "generated";
-
-  if (!canAct) {
+  let cdpEp;
+  try {
+    cdpEp = await resolveCdpEndpoint();
+  } catch (e) {
     return {
       ok: false,
-      error:
-        "GUI actuation (click/type/key/scroll/screenshot) requires XCLAW_CDP_URL or CDP bundle. Prefer tools/APIs, then xclaw_browser_tab action=observe.",
-      code: "CUA_ACT_REQUIRES_BUNDLE",
+      error: `no browser available for GUI actuation: ${e?.message || e}`,
+      code: "CUA_BROWSER_UNAVAILABLE",
       engine: engine === "thin" ? "native" : engine,
       cuaPolicy: "tools_first_then_observe_then_gui",
-      hint: "export XCLAW_CDP_URL=http://127.0.0.1:9222  # or XCLAW_COMPUTER_ENGINE=bundle",
-    };
-  }
-
-  // Prefer explicit CDP attach (CLEAN path). Bundle-without-CDP stays deferred.
-  if (!cdpEp) {
-    return {
-      ok: false,
-      error:
-        "engine=bundle without XCLAW_CDP_URL: BrowserService actuation is still BUNDLE_ONLY. Attach CDP for CLEAN motor path, or extract BrowserService modules.",
-      code: "CUA_ACT_NOT_EXTRACTED",
-      engine,
-      cuaPolicy: "tools_first_then_observe_then_gui",
-      hint: "export XCLAW_CDP_URL=http://127.0.0.1:9222",
+      hint: "install chromium (or set XCLAW_BROWSER_BINARY / XCLAW_CDP_URL)",
     };
   }
 
@@ -213,7 +196,10 @@ async function runComputerActImpl(input = {}) {
     const attachResult = await withCuaRetry(
       async () => {
         client = createCdpClient({ host: cdpEp.host, port: cdpEp.port });
-        tab = await client.attach(input.urlMatch || undefined);
+        const match = input.targetId
+          ? (p) => p.id === input.targetId
+          : input.urlMatch || undefined;
+        tab = await client.attach(match);
         return { ok: true, tab };
       },
       {
@@ -281,16 +267,18 @@ async function runComputerActImpl(input = {}) {
 
     if (action === "screenshot") {
       const buf = await tab.screenshot();
-      const b64 = buf.toString("base64");
+      // Full image goes to disk (16MB of base64 does not belong in model
+      // context); callers read the file when vision is actually needed.
+      fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      const file = path.join(SCREENSHOT_DIR, `act-${Date.now()}.png`);
+      fs.writeFileSync(file, buf);
       return {
         ok: true,
         action: "screenshot",
         engine: "cdp-motor",
         mime: "image/png",
         bytes: buf.length,
-        /** callers may persist; we return prefix only in metadata-heavy logs */
-        dataBase64Length: b64.length,
-        dataBase64: b64.slice(0, 120) + (b64.length > 120 ? "…" : ""),
+        path: file,
         pageUrl: tab.page?.url || null,
       };
     }
@@ -399,7 +387,7 @@ async function runComputerActImpl(input = {}) {
 export const ComputerActTool = {
   name: "xclaw_computer_act",
   description:
-    "CUA GUI actuation via CDP (navigate/click/type/key/scroll/screenshot) when XCLAW_CDP_URL is set. Prefer connectors/tools and xclaw_browser_tab observe first. Supports navigate when CDP is attached. Native without CDP fails closed.",
+    "CUA GUI actuation via CDP (navigate/click/type/key/scroll/screenshot) on the managed headless Chrome (or XCLAW_CDP_URL when attached). Prefer connectors/tools and xclaw_browser_tab observe first. Screenshots are written to disk as full PNG.",
   inputSchema: {
     type: "object",
     properties: {
@@ -408,6 +396,7 @@ export const ComputerActTool = {
         description: "navigate | click | type | key | scroll | screenshot",
       },
       tabId: { type: "string" },
+      targetId: { type: "string", description: "Exact CDP target id to act on" },
       url: { type: "string", description: "Target URL for action=navigate" },
       urlMatch: { type: "string", description: "Pick CDP page by URL substring" },
       ref: { type: "string", description: "Element ref from observe (label only until ref→coords)" },

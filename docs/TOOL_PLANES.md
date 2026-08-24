@@ -10,7 +10,7 @@ Separate gateways: browse / search / code / bash as parallel planes.
 |-------|----------------|
 | Bash | `xclaw_bash` + spawn enforce + optional bwrap |
 | Files | `xclaw_file_*` modules |
-| Browser | `xclaw_browser_tab` (native) + optional **bundle CDP** (`XCLAW_COMPUTER_ENGINE=bundle`) |
+| Browser | `xclaw_browser_tab` — fetch tier + real-browser CDP tier (managed headless Chrome) |
 | Network details | `browser-network-details` (extracted / MITM flows) |
 | Search / web | Via browser tools or model tools — not a separate search gateway |
 | Code | Agent edits via file tools + bash; no isolated “code worker” process |
@@ -25,4 +25,4 @@ A true multi-plane gateway (browse ∥ search ∥ code ∥ bash) is a **product 
 
 ## Full CDP
 - **native** thin server: tab/navigate/snapshot style tools  
-- **bundle** `xclaw-server.mjs`: full BrowserService / CDP — use when needed, do not hand-edit (Strategy C)
+- single native engine since ADR 0005 (2026-08-24) — real-browser capability included

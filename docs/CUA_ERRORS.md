@@ -8,7 +8,7 @@ Failures also include `recovery` / `hint` when enriched via `enrichCuaError`.
 ```json
 {
   "ok": false,
-  "code": "CUA_ACT_REQUIRES_BUNDLE",
+  "code": "CUA_BROWSER_UNAVAILABLE",
   "error": "human readable",
   "severity": "error",
   "surface": "cdp",
@@ -22,8 +22,7 @@ Failures also include `recovery` / `hint` when enriched via `enrichCuaError`.
 | Code | Surface | Recovery (short) |
 |------|---------|------------------|
 | `USE_BROWSER_OBSERVE` | browser | Use `browser_tab` observe |
-| `CUA_ACT_REQUIRES_BUNDLE` | cdp | Set `XCLAW_CDP_URL` |
-| `CUA_ACT_NOT_EXTRACTED` | bundle | CDP or extract BrowserService |
+| `CUA_BROWSER_UNAVAILABLE` | cdp | Install chromium or set `XCLAW_BROWSER_BIN` / `XCLAW_CDP_URL` |
 | `CDP_ATTACH_FAILED` | cdp | Chrome down / wrong port |
 | `CDP_NO_PAGE` | cdp | No page target — open tab / navigate |
 | `CDP_NOT_LOOPBACK` | cdp | Host not 127.0.0.1 |
@@ -67,7 +66,7 @@ Transient failures are retried with exponential backoff (`src/computer/cua-retry
 
 **Retried:** `CDP_ATTACH_FAILED`, `CUA_ACT_EXEC_FAILED`, `*_EXEC_FAILED`, empty helper, brief registry blips.
 
-**Not retried:** `DESKTOP_GUI_DISABLED`, `CUA_ACT_REQUIRES_BUNDLE`, `*_NEED_*`, `CUA_ACT_UNKNOWN`, `AX_TCC_REQUIRED`, missing installs.
+**Not retried:** `DESKTOP_GUI_DISABLED`, `CUA_BROWSER_UNAVAILABLE`, `*_NEED_*`, `CUA_ACT_UNKNOWN`, `AX_TCC_REQUIRED`, missing installs.
 
 Successful retries set `retried: true` and `retries: N` on the result.
 

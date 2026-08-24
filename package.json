@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.174.1",
+  "version": "3.175.0",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
@@ -45,11 +45,8 @@
     "live-e2e": "node scripts/live-enforcement-e2e.mjs",
     "live-enforcement": "node scripts/live-enforcement-e2e.mjs",
     "release-gate:live": "node scripts/release-gate.mjs --live",
-    "check-bundle-markers": "node -e \"const fs=require('fs');const p='src/computer/xclaw-server.mjs';if(!fs.existsSync(p)){console.log('SKIP: bundle not installed (opt-in artifact — npm run fetch:bundle)');process.exit(0)}const t=fs.readFileSync(p,'utf8');const m=['A2: driver hooks','A4: humanized CDP motor','A5: single Chrome argv'];const miss=m.filter(x=>!t.includes(x));if(miss.length){console.error('MISSING',miss);process.exit(2)}console.log('OK markers',m.join(', '));\"",
     "live-e2e:cron": "node bin/xclaw.mjs live-e2e",
     "live-e2e:schedule": "node bin/xclaw.mjs live-e2e-schedule",
-    "fetch:bundle": "node scripts/fetch-computer-bundle.mjs",
-    "publish:bundle": "node scripts/publish-bundle.mjs",
     "init": "node src/cli/init.mjs",
     "onboard": "node src/cli/init.mjs",
     "install:local": "bash install/install.sh --yes",
@@ -66,8 +63,6 @@
     "ci-gate": "node scripts/ci-gate.mjs",
     "p2:swarm-fail": "node scripts/p2-swarm-fail.mjs",
     "c4:soak": "node scripts/c4-engine-soak.mjs",
-    "verify:bundle": "node scripts/verify-computer-bundle.mjs",
-    "verify:bundle:strict": "node scripts/verify-computer-bundle.mjs --require-sigstore",
     "smoke:arc": "node scripts/smoke-arc.mjs",
     "harness:live": "node scripts/live-harness-smoke.mjs",
     "ship:pack": "node scripts/ci-ship-pack.mjs",

@@ -49,9 +49,16 @@ describe("browser observe (I1)", () => {
     assert.equal(r.ok, false);
   });
 
-  it("click/type honestly require bundle", async () => {
-    const r = await runBrowserTab({ action: "click", click: "e1" });
-    assert.equal(r.ok, false);
-    assert.match(String(r.error), /CDP|bundle/i);
+  it("click without a reachable browser fails typed (external endpoint pinned — no spawn)", async () => {
+    process.env.XCLAW_CDP_URL = "http://127.0.0.1:59991";
+    process.env.XCLAW_CUA_RETRIES = "0";
+    try {
+      const r = await runBrowserTab({ action: "click", click: "e1" });
+      assert.equal(r.ok, false);
+      assert.match(String(r.code), /CDP_ATTACH_FAILED|CUA_ACT/);
+    } finally {
+      delete process.env.XCLAW_CDP_URL;
+      delete process.env.XCLAW_CUA_RETRIES;
+    }
   });
 });

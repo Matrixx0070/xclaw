@@ -1,6 +1,6 @@
 /**
  * CLEAN file tools — standalone (read / write / edit).
- * P0 extraction: no xclaw-server.mjs dependency.
+ * Native file tools (single engine).
  */
 
 import fs from "node:fs/promises";

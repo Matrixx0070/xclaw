@@ -3,7 +3,7 @@
  *
  * Builds ordered CDP Input domain commands using humanize (Fitts paths,
  * key delays, reaction/settle). Execution happens in the computer process
- * via motor-bridge + tabClient.Input.dispatch*.
+ * via cdp-client tab.send Input.dispatch*.
  */
 
 import {
