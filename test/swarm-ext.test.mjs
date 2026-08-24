@@ -8,7 +8,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_CONFIG as DEFAULTS } from "../src/config/defaults.mjs";
@@ -47,9 +47,14 @@ test("core package.json stays zero-dependency", () => {
 test("vendored tree present with no node-fetch imports (removed vendor bug)", () => {
   const orch = readFileSync(join(root, "src/swarm-ext/src/swarm/orchestrator.mjs"), "utf8");
   assert.match(orch, /class Orchestrator/);
-  for (const f of ["web-search", "web-extract", "web-crawl", "image-generate", "tts"]) {
-    const t = readFileSync(join(root, `src/swarm-ext/plugins/${f}/tool.mjs`), "utf8");
-    assert.ok(!t.includes("node-fetch"), `${f} still imports node-fetch`);
+  // Scan EVERY plugin dir (not a hardcoded list) so newly landed plugins are
+  // covered and removed ones don't break the test.
+  const pluginsDir = join(root, "src/swarm-ext/plugins");
+  const dirs = readdirSync(pluginsDir, { withFileTypes: true }).filter((d) => d.isDirectory());
+  assert.ok(dirs.length >= 10, `unexpectedly few plugins: ${dirs.length}`);
+  for (const d of dirs) {
+    const t = readFileSync(join(pluginsDir, d.name, "tool.mjs"), "utf8");
+    assert.ok(!t.includes("node-fetch"), `${d.name} still imports node-fetch`);
   }
 });
 

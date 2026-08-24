@@ -1,0 +1,13 @@
+{
+  "name": "sec-edgar",
+  "version": "0.1.0",
+  "description": "Query SEC EDGAR filings and company financial reports",
+  "keywords": ["sec", "edgar", "filings", "10-k", "10-q", "financial reports"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["sec_edgar"]
+  }
+}

@@ -74,10 +74,28 @@ never from cwd). xclaw-side keys under `swarmExt`:
 
 ## Known vendor stubs (shipped as delivered)
 
-`plugins/{web-search,web-extract,tts,code-executor,browser,image-generate}`
-contain "in production, integrate..." stubs; `src/swarm/computer/screen.mjs`
+`plugins/{web-search,web-extract,tts,code-executor,browser}` contain
+"in production, integrate..." stubs; `src/swarm/computer/screen.mjs`
 OCR is a stub. `calculator`, `file-reader`, `web-crawl` and the core
-orchestration pipeline are real.
+orchestration pipeline are real. The bridge shadows the important ones with
+real tools (web_search/web_fetch, xclaw_bash beats code_execute), and the
+`image-generate` stub was REMOVED in 3.167.0 — the real `generate_image`
+(xAI images API via the credential store) is exposed through the bridge.
+
+## Real data plugins (3.167.0 — replace the stub drop from the
+"complete-final" zip, which fabricated data)
+
+`plugins/{yahoo-finance,sec-edgar,world-bank,imf,scholar}` are REAL keyless
+API clients (Yahoo chart API; SEC data.sec.gov submissions+XBRL facts; World
+Bank Open Data v2; IMF DataMapper; Semantic Scholar with OpenAlex fallback).
+Shared HTTP in `plugins-lib/http.mjs` (URL-free UA — SEC's WAF 403s UAs
+containing URLs; single 429/503 retry honoring Retry-After). Each constructor
+takes `{ fetchImpl }` so tests inject fakes — CI never touches the network.
+The zip's `audio-generation` stub was NOT landed: xclaw has no real TTS
+backend to route it to, and a tool returning fabricated audio URLs is worse
+than no tool. SCAFFOLD note: `sec-edgar` carries a built-in top-50 ticker→CIK
+fallback because www.sec.gov (the index file host) is IP-blocked from some
+datacenters, while data.sec.gov (the actual data) is not.
 
 ## Tests
 

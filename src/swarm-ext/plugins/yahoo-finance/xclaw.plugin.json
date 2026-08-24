@@ -1,0 +1,13 @@
+{
+  "name": "yahoo-finance",
+  "version": "0.1.0",
+  "description": "Fetch stock quotes, historical prices, and financial data from Yahoo Finance",
+  "keywords": ["finance", "stocks", "yahoo", "quotes", "market"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["yahoo_finance"]
+  }
+}

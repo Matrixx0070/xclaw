@@ -1,0 +1,13 @@
+{
+  "name": "world-bank",
+  "version": "0.1.0",
+  "description": "Access World Bank development indicators and economic data",
+  "keywords": ["world bank", "development", "indicators", "poverty", "economics"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["world_bank"]
+  }
+}

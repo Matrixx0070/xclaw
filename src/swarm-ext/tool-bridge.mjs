@@ -42,6 +42,9 @@ export const DEFAULT_ALLOW = [
   // research (see alwaysAllow note above)
   "web_search",
   "web_fetch",
+  // media — real xAI images API via the credential store (replaces the
+  // vendor image-generation stub, which fabricated URLs)
+  "generate_image",
 ];
 
 export const DEFAULT_ALWAYS_ALLOW = ["web_search", "web_fetch"];

@@ -1,0 +1,13 @@
+{
+  "name": "imf",
+  "version": "0.1.0",
+  "description": "Access IMF macroeconomic data and financial statistics",
+  "keywords": ["imf", "macroeconomics", "gdp", "inflation", "exchange rates"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["imf"]
+  }
+}

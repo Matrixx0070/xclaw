@@ -1,3 +1,22 @@
+## 3.167.0 (2026-08-24)
+
+- swarm-ext: 5 REAL data plugins replace the stub drop from the operator's
+  "complete-final" zip (which returned fabricated Math.random data):
+  `yahoo_finance` (Yahoo chart API — quotes/history/dividends),
+  `sec_edgar` (SEC data.sec.gov filings + key XBRL facts, ticker or CIK),
+  `world_bank` (Open Data v2 + indicator shortcuts),
+  `imf` (DataMapper WEO incl. projections; API ignores its own country/period
+  filters, so filtering is client-side),
+  `scholar` (Semantic Scholar with automatic OpenAlex fallback on 429).
+- swarm-ext: shared plugin HTTP helper (`plugins-lib/http.mjs`) — URL-free UA
+  (SEC WAF rejects UAs containing URLs), one 429/503 retry honoring
+  Retry-After, injectable fetch so CI is network-free.
+- swarm-ext: real `generate_image` (xAI images API) exposed to sub-agents via
+  the tool bridge; the vendor `image-generate` stub (fabricated URLs) removed.
+  The `audio-generation` stub was NOT landed — no real TTS backend exists.
+- sec-edgar SCAFFOLD: built-in top-50 ticker→CIK fallback for hosts where
+  www.sec.gov (index file) is IP-blocked while data.sec.gov is reachable.
+
 ## 3.166.0 — swarm-ext: sub-agents wired to xclaw's REAL tool router (2026-08-24)
 
 - **New `src/swarm-ext/tool-bridge.mjs`** — implements the vendor ToolRegistry interface (`getSchemas`/`execute`) over xclaw's actual tool planes via `createToolRouter`: computer (`xclaw_bash`, `xclaw_file_read/write/edit/list`), local (`glob`, `grep`, `file_type`, `markitdown`), and research (`web_search`, `web_fetch`). Curated `DEFAULT_ALLOW` exposure (∩ actually-advertised), operator-narrowable via `swarmExt.tools.allow`. Merged registry: real tools WIN name collisions (the real `web_search` replaces the vendor stub), vendor plugins fill gaps; bridge failure degrades loudly to vendor-only instead of failing the mount.

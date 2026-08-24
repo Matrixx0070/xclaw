@@ -1,0 +1,13 @@
+{
+  "name": "scholar",
+  "version": "0.1.0",
+  "description": "Search academic papers and citations from Google Scholar",
+  "keywords": ["scholar", "academic", "papers", "research", "citations"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["scholar"]
+  }
+}
