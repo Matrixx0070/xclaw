@@ -1,0 +1,13 @@
+{
+  "name": "audio-generation",
+  "version": "0.1.0",
+  "description": "Generate audio, music, and sound effects using AI models",
+  "keywords": ["audio", "music", "sound", "generation", "tts", "synthesis"],
+  "author": "XClaw Swarm",
+  "license": "MIT",
+  "skills": "./SKILL.md",
+  "interface": {
+    "entry": "tool.mjs",
+    "tools": ["audio_generation"]
+  }
+}

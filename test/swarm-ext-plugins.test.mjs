@@ -11,7 +11,11 @@ import { SecEdgarTool } from "../src/swarm-ext/plugins/sec-edgar/tool.mjs";
 import { WorldBankTool } from "../src/swarm-ext/plugins/world-bank/tool.mjs";
 import { ImfTool } from "../src/swarm-ext/plugins/imf/tool.mjs";
 import { ScholarTool } from "../src/swarm-ext/plugins/scholar/tool.mjs";
+import { AudioGenerationTool } from "../src/swarm-ext/plugins/audio-generation/tool.mjs";
 import { makeHttp, capList } from "../src/swarm-ext/plugins-lib/http.mjs";
+import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const jsonRes = (body, { status = 200, headers = {} } = {}) => ({
   ok: status >= 200 && status < 300,
@@ -162,4 +166,43 @@ test("http helper retries once on 429 honoring Retry-After", async () => {
 test("capList bounds arrays", () => {
   assert.equal(capList([1, 2, 3], 2).length, 2);
   assert.equal(capList([1], 5).length, 1);
+});
+
+test("audio_generation synthesizes via injected speak and moves file into workspace", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "swarm-audio-"));
+  const src = join(dir, "tmp-tts.wav");
+  writeFileSync(src, Buffer.from("RIFFfakewavdata"));
+  const t = new AudioGenerationTool({
+    speakImpl: async (text) => ({ ok: true, path: src, provider: "piper" }),
+    cfgLoader: async () => ({}),
+    outDir: join(dir, "out"),
+  });
+  const out = await t.execute({ text: "hello world", filename: "greet" });
+  assert.equal(out.success, true, out.error);
+  assert.equal(out.data.provider, "piper");
+  assert.ok(out.data.path.endsWith("greet.wav"));
+  assert.ok(existsSync(out.data.path), "wav must exist in workspace");
+});
+
+test("audio_generation surfaces backend failure typed — never fabricates audio", async () => {
+  const t = new AudioGenerationTool({
+    speakImpl: async () => ({ ok: false, error: "No local TTS", provider: "none" }),
+    cfgLoader: async () => ({}),
+    outDir: mkdtempSync(join(tmpdir(), "swarm-audio-")),
+  });
+  const out = await t.execute({ text: "hi" });
+  assert.equal(out.success, false);
+  assert.match(out.error, /No local TTS/);
+});
+
+test("audio_generation rejects empty and over-length text before spawning", async () => {
+  let called = 0;
+  const t = new AudioGenerationTool({
+    speakImpl: async () => { called++; return { ok: true }; },
+    cfgLoader: async () => ({}),
+    outDir: mkdtempSync(join(tmpdir(), "swarm-audio-")),
+  });
+  assert.equal((await t.execute({ text: "" })).success, false);
+  assert.equal((await t.execute({ text: "x".repeat(501) })).success, false);
+  assert.equal(called, 0);
 });

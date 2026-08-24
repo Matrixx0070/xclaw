@@ -1,3 +1,12 @@
+## 3.168.0 (2026-08-24)
+
+- swarm-ext: `audio_generation` plugin landed REAL — local TTS via xclaw's
+  own voice pipeline (`localSpeak`): piper neural voice (installed at
+  /opt/piper, en_US-lessac-medium, ~20x realtime on CPU) with espeak-ng
+  fallback; WAV output into the swarm workspace. No cloud APIs, no keys.
+  TTS is now gateway-wide — previously reachable only from Telegram/webchat
+  voice paths. Live config gains voice.piperBin/voice.piperModel (flat keys).
+
 ## 3.167.0 (2026-08-24)
 
 - swarm-ext: 5 REAL data plugins replace the stub drop from the operator's

@@ -91,9 +91,12 @@ Bank Open Data v2; IMF DataMapper; Semantic Scholar with OpenAlex fallback).
 Shared HTTP in `plugins-lib/http.mjs` (URL-free UA — SEC's WAF 403s UAs
 containing URLs; single 429/503 retry honoring Retry-After). Each constructor
 takes `{ fetchImpl }` so tests inject fakes — CI never touches the network.
-The zip's `audio-generation` stub was NOT landed: xclaw has no real TTS
-backend to route it to, and a tool returning fabricated audio URLs is worse
-than no tool. SCAFFOLD note: `sec-edgar` carries a built-in top-50 ticker→CIK
+`audio-generation` landed REAL in 3.168.0: it routes through xclaw's own
+voice pipeline (`localSpeak` — piper neural TTS at /opt/piper when
+`voice.piperBin`/`voice.piperModel` are set, espeak-ng fallback), synthesizing
+WAV files into the swarm workspace. Local-only, no cloud APIs or keys. This
+made TTS gateway-wide — previously `localSpeak` was reachable only from the
+Telegram/webchat voice paths. SCAFFOLD note: `sec-edgar` carries a built-in top-50 ticker→CIK
 fallback because www.sec.gov (the index file host) is IP-blocked from some
 datacenters, while data.sec.gov (the actual data) is not.
 
