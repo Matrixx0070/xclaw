@@ -41,7 +41,7 @@ export async function writeIntent(cfg, intent) {
 }
 
 /** Written by the engine at self-mission merge. */
-export async function requestDeploy(cfg, { missionId, repoDir, mergeCommit, prevKnownGood }) {
+export async function requestDeploy(cfg, { missionId, repoDir, mergeCommit, prevKnownGood, drill }) {
   const intent = {
     v: 1,
     missionId,
@@ -53,6 +53,9 @@ export async function requestDeploy(cfg, { missionId, repoDir, mergeCommit, prev
     attempts: 0,
     healthChecks: [],
     resolvedAt: null,
+    // W4: drill intents are marked so their alerts render as [DRILL] and can
+    // never be mistaken for a real production deploy incident.
+    drill: drill === true,
   };
   await writeIntent(cfg, intent);
   ledgerDeploy(cfg, missionId, { phase: "requested", mergeCommit });
@@ -127,13 +130,19 @@ async function healthOk(cfg, { retries = 10, delayMs = 3000 } = {}, expectCommit
   return { ok: false, checks };
 }
 
-async function alertOwner(cfg, title, body) {
+async function alertOwner(cfg, title, body, intent = null) {
+  // W4: mark drill/rehearsal alerts so a fake "ROLLBACK FAILED" can never be
+  // mistaken for a real production incident. Two independent markers so it
+  // holds whether the drill runs in-process (env) or is consumed by the
+  // out-of-process deploy watcher (intent.drill persisted in the intent file).
+  const isDrill = intent?.drill === true || process.env.XCLAW_FIRE_DRILL === "1";
+  const prefix = isDrill ? "[DRILL] " : "";
   try {
     const { getSharedAlerter } = await import("../alerting/alerts.mjs");
     await getSharedAlerter(cfg).send({
       key: `self-deploy:${title}`,
       severity: /rolled_back|failed|ROLLBACK/i.test(title) ? "error" : "info",
-      title: `xclaw self-deploy: ${title}`,
+      title: `${prefix}xclaw self-deploy: ${title}`,
       body,
     });
   } catch {
@@ -170,7 +179,7 @@ export async function runDeployOnce(cfg) {
       intent.resolvedAt = new Date().toISOString();
       await writeIntent(cfg, intent);
       ledgerDeploy(cfg, intent.missionId, { phase: "abandoned", attempts: intent.attempts });
-      await alertOwner(cfg, "ROLLBACK FAILED", `mission ${intent.missionId}: deploy crash-looped ${intent.attempts}× — manual intervention required`);
+      await alertOwner(cfg, "ROLLBACK FAILED", `mission ${intent.missionId}: deploy crash-looped ${intent.attempts}× — manual intervention required`, intent);
       return intent;
     }
     // fall through and retry (attempts increments below)
@@ -182,7 +191,7 @@ export async function runDeployOnce(cfg) {
   intent.attempts += 1;
   await writeIntent(cfg, intent);
   ledgerDeploy(cfg, intent.missionId, { phase: "restarting", attempt: intent.attempts });
-  await alertOwner(cfg, "deploying", `mission ${intent.missionId} commit ${String(intent.mergeCommit).slice(0, 10)} — restarting gateway`);
+  await alertOwner(cfg, "deploying", `mission ${intent.missionId} commit ${String(intent.mergeCommit).slice(0, 10)} — restarting gateway`, intent);
 
   await restartGateway(cfg);
   const health = await healthOk(cfg, cfg.self?.health || {}, intent.mergeCommit);
@@ -198,7 +207,7 @@ export async function runDeployOnce(cfg) {
     } catch {}
     await markMission(cfg, intent.missionId, "deployed", `deployed ${String(intent.mergeCommit).slice(0, 10)} — health OK`);
     ledgerDeploy(cfg, intent.missionId, { phase: "deployed", commit: intent.mergeCommit });
-    await alertOwner(cfg, "deployed", `mission ${intent.missionId} live on ${String(intent.mergeCommit).slice(0, 10)} — health OK`);
+    await alertOwner(cfg, "deployed", `mission ${intent.missionId} live on ${String(intent.mergeCommit).slice(0, 10)} — health OK`, intent);
     return intent;
   }
 
@@ -230,7 +239,8 @@ export async function runDeployOnce(cfg) {
   await alertOwner(
     cfg,
     health2.ok ? "rolled_back" : "ROLLBACK FAILED",
-    `mission ${intent.missionId}: new build failed health checks; ${health2.ok ? `reverted to ${String(target).slice(0, 10)} and recovered` : "manual intervention required"}`
+    `mission ${intent.missionId}: new build failed health checks; ${health2.ok ? `reverted to ${String(target).slice(0, 10)} and recovered` : "manual intervention required"}`,
+    intent
   );
   return intent;
 }

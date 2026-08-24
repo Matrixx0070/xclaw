@@ -81,6 +81,10 @@ export async function replyWithAgent({
       vaultUserId,
       ok: result.ok,
       error: result.error || null,
+      // 30-day plan W3: surface the loop's usage snapshot so orchestrators
+      // (objective per-mission budgets) can account spend per segment —
+      // it was silently dropped here before.
+      usage: result.usage || null,
     };
   };
   if (userId || channel || chatId) {

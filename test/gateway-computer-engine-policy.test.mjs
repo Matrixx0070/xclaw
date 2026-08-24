@@ -9,17 +9,19 @@ import {
 } from "../src/gateway/policy/computer-engine.mjs";
 
 describe("gateway policy/computer-engine", () => {
-  it("defaults to bundle and validates ok", () => {
+  it("defaults to native and validates ok (W4 flip); explicit bundle is the fallback marker", () => {
     const prev = process.env.XCLAW_COMPUTER_ENGINE;
     const prevN = process.env.XCLAW_COMPUTER_NATIVE;
     delete process.env.XCLAW_COMPUTER_ENGINE;
     delete process.env.XCLAW_COMPUTER_NATIVE;
     try {
-      assert.equal(policyResolveComputerEngine({}), "bundle");
+      assert.equal(policyResolveComputerEngine({}), "native");
       assert.equal(isBundleFallback({}), false);
+      // explicit bundle now reads as the legacy-fallback path
+      assert.equal(isBundleFallback({ computer: { engine: "bundle" } }), true);
       const v = validateComputerEnginePolicy({});
       assert.equal(v.ok, true);
-      assert.equal(v.engine, "bundle");
+      assert.equal(v.engine, "native");
       assert.ok(ALLOWED_DEFAULT_ENGINES.includes("bundle"));
       assert.ok(ALLOWED_DEFAULT_ENGINES.includes("native"));
     } finally {
@@ -46,7 +48,7 @@ describe("gateway policy/computer-engine", () => {
       const s = computerEnginePolicySnapshot({});
       assert.equal(s.controlPlane, "gateway");
       assert.equal(s.capabilityPlane, "computer");
-      assert.equal(s.engine, "bundle");
+      assert.equal(s.engine, "native");
       assert.ok(s.validation);
       assert.equal(s.validation.ok, true);
     } finally {

@@ -40,11 +40,11 @@ export const DEFAULT_CONFIG = {
   },
   computer: {
     /**
-     * Engine: "bundle" (DEFAULT — 16MB CDP xclaw-server.mjs)
-     *         "native" | "generated" (lightweight escape hatch)
-     * Env: XCLAW_COMPUTER_ENGINE=bundle|native|generated
+     * Engine: "native" (DEFAULT since W4 — auditable modules + bwrap sandbox)
+     *         "bundle" (16MB CDP xclaw-server.mjs; opt-in for CUA browser)
+     * Env: XCLAW_COMPUTER_ENGINE=native|bundle
      */
-    engine: "bundle",
+    engine: "native",
     nativeServer: false,
     /** Optional remote computer base URL (sidecar) */
     remoteUrl: null,

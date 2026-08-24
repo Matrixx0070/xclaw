@@ -1595,7 +1595,7 @@ export async function runDoctor(opts = {}) {
           else push(id, "error", `bundle missing patch marker: ${needle}`);
         }
       } else {
-        // D3: bundle is the product default — missing blob is an error unless
+        // W4: native is the product default; bundle is opt-in — missing blob is an error only when bundle is explicitly selected, unless
         // the operator explicitly selected native/generated escape hatch.
         let engine = cfg.computer?.engine;
         try {
@@ -1612,8 +1612,8 @@ export async function runDoctor(opts = {}) {
           "a.bundle",
           needsBundle ? "error" : "ok",
           needsBundle
-            ? "default engine=bundle but xclaw-server.mjs missing — run: npm run fetch:bundle && npm run verify:bundle"
-            : `lightweight engine=${engine}; CDP bundle not required (escape hatch)`
+            ? "engine=bundle selected but xclaw-server.mjs missing — run: npm run fetch:bundle && npm run verify:bundle"
+            : `native engine=${engine} (default; auditable modules + bwrap sandbox); CDP bundle is opt-in`
         );
       }
     } catch (e) {

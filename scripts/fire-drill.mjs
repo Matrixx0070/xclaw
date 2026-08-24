@@ -13,6 +13,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 
+process.env.XCLAW_FIRE_DRILL = "1"; // W4: mark any alert this drill triggers as [DRILL]
 const cfg = await loadConfig();
 const scenario = process.argv[2] || "all";
 const report = { at: new Date().toISOString(), steps: [] };
@@ -83,7 +84,7 @@ const alerter = createAlerter(drillCfg);
 const sent = await alerter.send({
   key: "fire-drill:ping",
   severity: "error",
-  title: "XClaw fire-drill ping",
+  title: "[DRILL] XClaw fire-drill ping",
   body: "Phase Q drill",
   source: "fire-drill",
 });

@@ -1,3 +1,24 @@
+## 3.157.0 — native computer engine is the product default; drill-alert hygiene (2026-08-24)
+
+- **Native computer engine is now the default** (`DEFAULT_COMPUTER_ENGINE =
+  "native"` in src/computer/engine.mjs; `computer.engine:"native"` in
+  defaults). The auditable module plane (thin-server.mjs + bwrap OS sandbox)
+  runs unless a config or `XCLAW_COMPUTER_ENGINE=bundle` opts back into the
+  opaque CDP bundle. W4 of the 30-day audit plan: the product now ships the
+  path we can actually read. `doctor` treats a missing bundle blob as an
+  error only when bundle is explicitly selected; the else-branch reports
+  native as default. (Live bot + tonight's soak are pinned to `bundle` via
+  ~/.xclaw/xclaw.json so this flip changes neither until re-proven.)
+- **Drill alerts can no longer masquerade as production incidents.**
+  self-deploy alerts render a `[DRILL] ` title prefix whenever the deploy
+  intent is a drill (`intent.drill === true`, persisted through the
+  out-of-process watcher) or `XCLAW_FIRE_DRILL=1` is set in-process.
+  `requestDeploy` accepts and persists a `drill` flag; `scripts/fire-drill.mjs`
+  sets the env marker and prefixes its ping. A fake "ROLLBACK FAILED"
+  rehearsal now reads unmistakably as a drill.
+- **base.mjs** returns `usage: result.usage || null` from replyWithAgent
+  (W3 budget seam — lets objective segments accumulate real cost/tool usage).
+
 ## 3.156.0 — delete dead cluster subsystem; mock tools off the prod surface (2026-08-23)
 
 - **src/cluster/ deleted** (40 files, ~2,000 LOC) + doctor-cluster + its 41

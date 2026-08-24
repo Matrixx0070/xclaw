@@ -45,7 +45,7 @@ node bin/xclaw.mjs gateway
 |-------|--------|
 | `doctor` | Config loads; lab profile OK; warns if no API key |
 | `agent "…"` | Tool runs (lab auto-approves) or clear error |
-| Computer | **Bundle default** (16MB CDP on `:4243`); run `npm run fetch:bundle` + `verify:bundle` — thin: `XCLAW_COMPUTER_ENGINE=native` |
+| Computer | **Native default** (auditable modules + bwrap OS sandbox on `:4243`); CDP bundle opt-in for CUA browser: `XCLAW_COMPUTER_ENGINE=bundle` + `npm run fetch:bundle` + `verify:bundle` |
 
 **Requirements:** Node.js **≥ 22**, network for model APIs.
 

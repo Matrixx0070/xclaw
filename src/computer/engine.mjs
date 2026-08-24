@@ -1,8 +1,8 @@
 /**
- * Computer engine selection — Bundle-default (D1).
+ * Computer engine selection — native-default (30-day plan W4).
  *
- * - bundle: xclaw-server.mjs (~16MB CDP runtime; do not hand-edit) — DEFAULT
- * - native / thin: thin-server.mjs (lightweight escape hatch)
+ * - native / thin: thin-server.mjs (auditable modules + bwrap sandbox) — DEFAULT
+ * - bundle: xclaw-server.mjs (~16MB CDP runtime; do not hand-edit) — opt-in
  *
  * Override: XCLAW_COMPUTER_ENGINE=native|bundle
  *
@@ -16,9 +16,14 @@ import path from "node:path";
 import fs from "node:fs";
 
 /** Product default when no env/cfg override is set.
- * "bundle" (C4) is the live-proven default; the native plane remains fully
- * selectable via XCLAW_COMPUTER_ENGINE=native or cfg.computer.engine. */
-export const DEFAULT_COMPUTER_ENGINE = "bundle";
+ * 30-day plan W4 (2026-08-24): default flipped bundle → NATIVE. The native
+ * plane is auditable source (src/computer/modules/*) and runs bash through
+ * the bwrap OS sandbox (wrapSpawnWithOsSandbox); the 395k-line vendored CDP
+ * bundle remains fully selectable (cfg.computer.engine:"bundle" /
+ * XCLAW_COMPUTER_ENGINE=bundle) for CUA browser capability. Existing
+ * deployments that relied on the old default should pin engine:"bundle"
+ * (the live lab box is pinned; see xclaw.json). */
+export const DEFAULT_COMPUTER_ENGINE = "native";
 
 /**
  * @param {object} [cfg]
