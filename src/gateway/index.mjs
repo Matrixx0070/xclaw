@@ -1489,8 +1489,7 @@ export async function startGateway({ root } = {}) {
       }
 
       // --- WebChat ---
-      if (webchatEnabled) {
-        if (p === "/channel/webchat/suggestions/feedback" && req.method === "POST") {
+        if (webchatEnabled && p === "/channel/webchat/suggestions/feedback" && req.method === "POST") {
           const body = await readBody(req);
           try {
             const { recordDurableSuggestionFeedback } = await import("../agent/suggestion-feedback.mjs");
@@ -1513,7 +1512,7 @@ export async function startGateway({ root } = {}) {
           }
         }
 
-        if (p === "/channel/webchat/message" && req.method === "POST") {
+        if (webchatEnabled && p === "/channel/webchat/message" && req.method === "POST") {
           const body = await readBody(req);
           try {
             const out = await handleWebChatMessage({
@@ -1546,7 +1545,7 @@ export async function startGateway({ root } = {}) {
         }
 
         // WebChat stream (SSE or NDJSON + Last-Event-ID resume)
-        if (p === "/channel/webchat/message/stream" && req.method === "POST") {
+        if (webchatEnabled && p === "/channel/webchat/message/stream" && req.method === "POST") {
           const body = await readBody(req);
           const isResume =
             body.resume === true ||
@@ -1566,7 +1565,7 @@ export async function startGateway({ root } = {}) {
           });
         }
 
-        if (p === "/channel/webchat/history" && req.method === "GET") {
+        if (webchatEnabled && p === "/channel/webchat/history" && req.method === "GET") {
           const sid = url.searchParams.get("sessionId");
           if (!sid) return json(res, 400, { error: "sessionId query required" });
           const hist = getHistory(sid);
@@ -1683,11 +1682,11 @@ export async function startGateway({ root } = {}) {
         return;
       }
 
-      if (p === "/channel/webchat/sessions" && req.method === "GET") {
+      if (webchatEnabled && p === "/channel/webchat/sessions" && req.method === "GET") {
           return json(res, 200, { sessions: listChatSessions() });
         }
 
-        if (p === "/channel/webchat/sessions" && req.method === "POST") {
+        if (webchatEnabled && p === "/channel/webchat/sessions" && req.method === "POST") {
           const body = await readBody(req).catch(() => ({}));
           const s = createChatSession({ workingDir: body.workingDir });
           return json(res, 200, { sessionId: s.id, createdAt: s.createdAt });
@@ -1702,15 +1701,14 @@ export async function startGateway({ root } = {}) {
           return serveStatic(res, path.join(controlRoot, safe));
         }
 
-        if (p === "/" || p === "/chat" || p === "/chat/") {
+        if (webchatEnabled && (p === "/" || p === "/chat" || p === "/chat/")) {
           return serveStatic(res, path.join(uiRoot, "index.html"));
         }
-        if (p.startsWith("/chat/")) {
+        if (webchatEnabled && p.startsWith("/chat/")) {
           const rel = p.slice("/chat/".length) || "index.html";
           const safe = path.normalize(rel).replace(/^(\.\.(\/|\\|$))+/, "");
           return serveStatic(res, path.join(uiRoot, safe));
         }
-      }
 
 
 

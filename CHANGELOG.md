@@ -1,3 +1,10 @@
+## 3.159.0 — un-nest non-webchat routes from the webchat gate (2026-08-24)
+
+- **Fixed a latent coupling bug in `src/gateway/index.mjs`**: `/control`, `/control/*`, `/oauth/callback`, `/auth/callback`, `/artifacts`, `/artifacts/list`, and `/artifacts/file` were nested inside `if (webchatEnabled) { … }`, so setting `channels.webchat.enabled:false` silently made the ops Control UI, provider OAuth callbacks, and artifact serving return 404. The flag defaults to `true`, so the bug was latent on the live gateway.
+- **Fix**: removed the `if (webchatEnabled)` wrapper and gate only the genuine webchat routes individually (`/channel/webchat/*`, `/chat`, `/`). The non-webchat routes now fall through to always-active handlers. Behavior is byte-identical when webchat is enabled (the live default).
+- **Proof**: pre-fix boot with `webchat.enabled:false` → `/control` `/oauth/callback` `/artifacts` all 404; post-fix same config → `/control` 200, `/oauth/callback` 400 (handler validates), `/artifacts` 200, while `/chat` and `/channel/webchat/history` correctly 404. Verified by brace-count (indentation in this block is inconsistent and untrustworthy), not by indentation.
+- Suite green; 65 route/gateway/oauth/webchat/control test files 291/0.
+
 ## 3.158.0 — gateway dead-code deletion (708 lines); route dispatch unchanged (2026-08-24)
 
 - **Deleted 708 lines of unreachable inline route handlers** from
