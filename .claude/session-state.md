@@ -1,5 +1,14 @@
 # Session State — COMPLETE (2026-08-24): 30-DAY PLAN slices W2b/W3a/W4c shipped v3.162.0→v3.164.0, regression trio A/F/H green
 
+## 2026-08-24 (later): swarm-ext SHIPPED v3.165.0
+
+Frank's iPhone-delivered `xclaw-swarm-extension-xclaw-branded.zip` (104 files) landed as an ISOLATED OPT-IN module (operator-confirmed shape): `src/swarm-ext/` + glue (`llm-adapter.mjs` maps vendor chat/structuredOutput onto createProvider; `mount.mjs` express app), mounted at `/api/swarm/*` ONLY when `swarmExt.enabled` (default FALSE → 404 SWARM_EXT_DISABLED, module never imported). Native swarm + ADR 0002 untouched (ADR 0003). Core stays zero-dep — express/ioredis/zod isolated via `npm install --prefix src/swarm-ext` (zip declared 11 deps, only 4 imported, node-fetch was a phantom named export → removed).
+
+SIX vendor defects fixed (zip did not run as delivered): literal-\n corruption in 8 files (graph unparseable), node-fetch named export, POST /goals returned a different taskId than submit() registered, detectAndBreakCycles destructure crash on EVERY run, loadPlugins array vs PluginRegistry interface, BudgetTracker ignored options/onAlert/totalTokens. Config honesty: caps 25/8, telemetry off (vendor metrics binds :9090), sandbox.enabled false (BashTool is plain bash -c), literal redis URLs (${REDIS_URL} passes through verbatim when unset). Vendor tool stubs documented in src/swarm-ext/README.md.
+
+PROOF: main suite 2856/2856, vendor 10/10, npm run ci exit 0, CI 4/4 green on 014c97d; live gateway restarted on 3.165.0 (flag off: token'd /api/swarm → 404 disabled, native /swarm → 200). E2E on isolated test gateway :18795: goal "17*23" → grok-4.6 plan → sub-agent → real calculate tool call → 391 → LLM merge → receipt done 1/1 in 32s. Cred store gotcha: provider keys live in ~/.xclaw/credentials.json, NOT xclaw.json. Enable recipe: swarmExt.enabled:true + redis + deps.
+
+
 Frank's standing order "GO RUN THE FULL 30 DAY PLAN NOW" (RECON evolution plan S1–S8, docs/RECON-2026-08-23.md). This arc shipped three bounded slices on top of the Trust Sprint (below), each: implement → unit tests → full suite → live gateway drive → pathspec-staged commit → push → CI 4/4 green → deploy → live re-drive → version+CHANGELOG+tag+release. HEAD 3401dcb, pkg 3.164.0, gateway on it.
 
 - **v3.162.0 W2b — hallucinated-tool typed stop** (commit 3d4125d): a model inventing a non-existent tool now trips a CRITICAL `unknown_tool_repeat` soft-stop after 10 identical unroutable calls instead of grinding to the ~20-30-call generic no-progress breaker. Signal is the ROUTER's own dispatch outcome (`UNROUTABLE_TOOL_RE`), not a name allowlist — plane aliases (`bash`→`xclaw_bash`) and temporarily-unavailable planes are never flagged. Deferred (bundle-contract-blocked): terminal-exec-failure / write-no-progress need an exitCode the frozen CDP bundle engine won't surface. Suite 2840/0. Live: real `echo` completed in 1 turn, no false stop.
