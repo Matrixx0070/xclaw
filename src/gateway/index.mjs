@@ -18,6 +18,11 @@ import { tryHandleStopRoute } from "./routes/stop.mjs";
 import { tryHandleSubagentsRoute } from "./routes/subagents.mjs";
 import { tryHandleMcpRoute } from "./routes/mcp.mjs";
 import { tryHandleMediaRoute } from "./routes/media.mjs";
+import { tryHandleVoiceRoute } from "./routes/voice.mjs";
+import { tryHandleOAuthCallbackRoute } from "./routes/oauth-callback.mjs";
+import { tryHandleArtifactsRoute } from "./routes/artifacts.mjs";
+import { tryHandleApprovalsRoute } from "./routes/approvals.mjs";
+import { tryHandleAgentRunRoute } from "./routes/agent-run.mjs";
 import { tryHandleHooksRoute } from "./routes/hooks.mjs";
 import { tryHandleMissionsRoute } from "./routes/missions.mjs";
 import { tryHandleObjectivesRoute } from "./routes/objectives.mjs";
@@ -31,7 +36,6 @@ import { attachVoiceWebSocket } from "./voice-ws.mjs";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
-import { listArtifacts } from "../artifacts/browser.mjs";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../config/load.mjs";
 import {
@@ -98,8 +102,6 @@ import { createMcpServer } from "../mcp/server.mjs";
 import { createPairingStore } from "../pairing/pairing-store.mjs";
 import { createGatewayAuth } from "./auth.mjs";
 import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
-import { takePending } from "../connected/oauth-pending.mjs";
-import { setAppToken } from "../connected/token-store.mjs";
 import { ensureDoctorCronJob } from "../cron/doctor-job.mjs";
 import { ensureApprovalDigestCronJob } from "../cron/approval-digest-job.mjs";
 import { ensureEvalCronJob } from "../cron/eval-job.mjs";
@@ -1244,8 +1246,11 @@ export async function startGateway({ root } = {}) {
     try {
       const routeArgs = { p, method: req.method, req, res, url, cfg, json, readBody };
       // Mechanical route groups live in ./routes/* (one tryHandle per module);
-      // stream/SSE, WebChat/static, OAuth-callback, telegram, and /agent/run
-      // handlers stay inline — they own writer/closure state.
+      // W2 finished the extraction: voice/oauth-callback/artifacts/approvals/
+      // agent-run moved out too (closure collaborators passed as args).
+      // Still inline BY DESIGN: /v1 passthrough, eviction SSE, native /swarm
+      // (stop-proxy semantics), telegram webhook + webchat streamers (writer
+      // state), and static /control /chat serving.
       if (await tryHandleProvidersRoute(routeArgs)) return;
       if (await tryHandleChannelsRoute({ ...routeArgs, channelManager })) return;
       if (await tryHandleAlertsRoute({ ...routeArgs, channelManager })) return;
@@ -1265,68 +1270,9 @@ export async function startGateway({ root } = {}) {
       if (await tryHandlePointRoute(routeArgs)) return;
       if (await tryHandleCompletionRoute(routeArgs)) return;
 
-      // Local voice stack (WebUI / TUI clients)
-      if (p === "/api/voice/probe" && req.method === "GET") {
-        const { probeLocalVoiceStack } = await import("../voice/providers/local.mjs");
-        return json(res, 200, await probeLocalVoiceStack(cfg));
-      }
-      if (p === "/api/voice/metrics" && req.method === "GET") {
-        const { voiceMetricsSnapshot } = await import("../voice/metrics.mjs");
-        return json(res, 200, voiceMetricsSnapshot());
-      }
-      if (p === "/api/voice/speak" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        const { localSpeak } = await import("../voice/providers/local.mjs");
-        const text = String(body.text || body.message || "").slice(0, 500);
-        const out = await localSpeak(text, cfg);
-        if (!out.ok) return json(res, 503, out);
-        // Return path only (local); WebUI can fetch file if shared
-        return json(res, 200, out);
-      }
-      if (p === "/api/voice/transcribe" && req.method === "POST") {
-        const body = await readBody(req).catch(() => ({}));
-        const { localTranscribe } = await import("../voice/providers/local.mjs");
-        // Browsers hold audio bytes, not server paths — accept an upload so the
-        // WebChat mic can use the local STT instead of a cloud speech API.
-        const audioB64 = body.audioBase64 || body.audio || null;
-        if (audioB64) {
-          const fsp = await import("node:fs/promises");
-          const os = await import("node:os");
-          const nodePath = await import("node:path");
-          const ext = /webm/i.test(body.mime || "")
-            ? "webm"
-            : /ogg|opus/i.test(body.mime || "")
-              ? "ogg"
-              : /mp4|m4a|aac/i.test(body.mime || "")
-                ? "m4a"
-                : "wav";
-          const tmp = nodePath.join(
-            os.tmpdir(),
-            `xclaw-upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-          );
-          try {
-            await fsp.writeFile(tmp, Buffer.from(String(audioB64), "base64"));
-            const out = await localTranscribe(tmp, cfg);
-            return json(res, out.ok ? 200 : 503, out);
-          } finally {
-            await fsp.unlink(tmp).catch(() => {});
-          }
-        }
-        const file = body.path || body.file || body.audioPath;
-        if (!file) return json(res, 400, { error: "path or audioBase64 required" });
-        const out = await localTranscribe(file, cfg);
-        return json(res, out.ok ? 200 : 503, out);
-      }
+      if (await tryHandleVoiceRoute(routeArgs)) return;
 
-
-
-
-
-
-
-
-
-            if (p === "/events/eviction/stream" && req.method === "GET") {
+      if (p === "/events/eviction/stream" && req.method === "GET") {
         const lastEventId =
           req.headers["last-event-id"] ||
           url.searchParams.get("lastEventId") ||
@@ -1436,63 +1382,7 @@ export async function startGateway({ root } = {}) {
 
 
       // --- Agent: JSON (sync) ---
-      if (p === "/agent/run" && req.method === "POST") {
-        const body = await readBody(req);
-        const message = body.message || body.prompt || body.text;
-        if (!message || typeof message !== "string") {
-          return json(res, 400, { error: "body.message (string) required" });
-        }
-        const events = [];
-        try {
-          const result = await runAgentLoop({
-            userMessage: message,
-            cfg,
-            workingDir: body.workingDir || process.cwd(),
-            chatSessionId: body.sessionId || body.chatSessionId || body.conversationId || null,
-            history: Array.isArray(body.history)
-              ? body.history
-              : Array.isArray(body.messages)
-                ? body.messages
-                : [],
-            onEvent: (e) => {
-              noteEviction(e, "agent/run");
-              events.push({ ...e, at: Date.now() });
-              if (body.verbose) console.log(`[agent]`, e.type, e.phase || "", e.name || "");
-            },
-          });
-          return json(res, 200, {
-            ok: true,
-            ...result,
-            events: body.includeEvents ? events : undefined,
-          });
-        } catch (err) {
-          return json(res, 500, {
-            ok: false,
-            error: err.message || String(err),
-            events: body.includeEvents ? events : undefined,
-          });
-        }
-      }
-
-      // --- Agent: SSE stream ---
-      if (p === "/agent/run/stream" && req.method === "POST") {
-        const body = await readBody(req);
-        const message = body.message || body.prompt || body.text;
-        // Allow resume without message when streamId is present
-        const isResume =
-          body.resume === true ||
-          body.attach === true ||
-          (body.streamId && (body.lastEventId || req.headers["last-event-id"]));
-        if ((!message || typeof message !== "string") && !isResume) {
-          return json(res, 400, { error: "body.message (string) required" });
-        }
-        return streamAgentRun(req, res, {
-          message,
-          workingDir: body.workingDir,
-          cfg,
-          body,
-        });
-      }
+      if (await tryHandleAgentRunRoute({ ...routeArgs, runAgentLoop, noteEviction, streamAgentRun })) return;
 
       // --- Telegram webhook (always registered; handler checks enabled) ---
       if (p === "/channel/telegram/webhook" && req.method === "POST") {
@@ -1598,111 +1488,9 @@ export async function startGateway({ root } = {}) {
         
       
       // P5 gateway OAuth callback (PKCE pending exchange)
-      if ((p === "/oauth/callback" || p === "/auth/callback") && req.method === "GET") {
-        const u = new URL(req.url || "/", "http://local");
-        const state = u.searchParams.get("state");
-        const code = u.searchParams.get("code");
-        const err = u.searchParams.get("error");
-        if (err) {
-          res.writeHead(400, { "Content-Type": "text/html" });
-          res.end(`<h1>OAuth error</h1><p>${err}</p>`);
-          return;
-        }
-        if (!state || !code) {
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end("missing state or code");
-          return;
-        }
-        const pending = await takePending(cfg, state);
-        if (!pending) {
-          res.writeHead(400, { "Content-Type": "text/html" });
-          res.end("<h1>Unknown or expired OAuth state</h1><p>Retry login from CLI.</p>");
-          return;
-        }
-        try {
-          const body = new URLSearchParams({
-            grant_type: "authorization_code",
-            code,
-            redirect_uri: pending.redirectUri,
-            client_id: pending.clientId,
-            code_verifier: pending.verifier,
-          });
-          if (pending.clientSecret) body.set("client_secret", pending.clientSecret);
-          const tokenRes = await fetch(pending.tokenUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-              Accept: "application/json",
-            },
-            body,
-            signal: AbortSignal.timeout(60_000),
-          });
-          const json = await tokenRes.json().catch(() => ({}));
-          if (!tokenRes.ok || !json.access_token) {
-            res.writeHead(400, { "Content-Type": "text/html" });
-            res.end(`<h1>Token exchange failed</h1><pre>${JSON.stringify(json).slice(0, 500)}</pre>`);
-            return;
-          }
-          const expiresAt =
-            json.expires_in != null
-              ? new Date(Date.now() + Number(json.expires_in) * 1000).toISOString()
-              : null;
-          await setAppToken(cfg, pending.appId, {
-            accessToken: json.access_token,
-            refreshToken: json.refresh_token || null,
-            expiresAt,
-            tokenType: json.token_type || "Bearer",
-            scope: json.scope || pending.scope,
-            clientId: pending.clientId,
-            source: "oauth_gateway_callback",
-          });
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(
-            `<html><body style="font-family:system-ui;padding:2rem"><h1>XClaw OAuth OK</h1><p>Connected <b>${pending.appId}</b>. You can close this window.</p></body></html>`
-          );
-        } catch (e) {
-          res.writeHead(500, { "Content-Type": "text/plain" });
-          res.end(e.message || String(e));
-        }
-        return;
-      }
+      if (await tryHandleOAuthCallbackRoute(routeArgs)) return;
 
-// Artifacts browser (P3.4)
-      if (p === "/artifacts/list" && req.method === "GET") {
-        const workspace = cfg.agent?.workingDir || cfg.workspace || process.cwd();
-        const listing = await listArtifacts(workspace);
-        return json(res, 200, listing);
-      }
-      // Inline artifact bytes for the webchat UI (images etc.) — strict
-      // workspace containment + extension allowlist (src/gateway/artifact-file.mjs)
-      if (p === "/artifacts/file" && req.method === "GET") {
-        const { resolveArtifactFile } = await import("./artifact-file.mjs");
-        const roots = [
-          cfg.paths?.workspaces,
-          cfg.agent?.workingDir || cfg.workspace || process.cwd(),
-        ].filter(Boolean);
-        const rf = await resolveArtifactFile(roots, url.searchParams.get("path"));
-        if (!rf.ok) {
-          const code = rf.code === "not_found" ? 404 : rf.code === "type_not_allowed" ? 415 : 400;
-          return json(res, code, { error: rf.error, code: rf.code });
-        }
-        const data = await fs.readFile(rf.abs);
-        res.writeHead(200, {
-          "Content-Type": rf.mime,
-          "Content-Length": data.length,
-          "Cache-Control": "no-store",
-          "X-Content-Type-Options": "nosniff",
-        });
-        res.end(data);
-        return;
-      }
-      if (p === "/artifacts" || p === "/artifacts/") {
-        const htmlPath = path.join(root, "ui", "artifacts", "index.html");
-        const html = await fs.readFile(htmlPath, "utf8").catch(() => "<h1>artifacts UI missing</h1>");
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(html);
-        return;
-      }
+      if (await tryHandleArtifactsRoute({ ...routeArgs, root })) return;
 
       if (webchatEnabled && p === "/channel/webchat/sessions" && req.method === "GET") {
           return json(res, 200, { sessions: listChatSessions() });
@@ -1767,30 +1555,7 @@ export async function startGateway({ root } = {}) {
         if (handled) return;
       }
 
-      if ((p === "/approvals" || p === "/approvals/pending") && req.method === "GET") {
-        return json(res, 200, { pending: approvalGate.listPending() });
-      }
-      if (p === "/approvals/approve" && req.method === "POST") {
-        const body = await readBody(req);
-        const out = approvalGate.decide(body.id, true, body.note || body.reason || "");
-        const status = out.ok ? 200 : out.code === "APPROVAL_NOT_FOUND" ? 404 : 409;
-        return json(res, status, out);
-      }
-      if (p === "/approvals/deny" && req.method === "POST") {
-        const body = await readBody(req);
-        const out = approvalGate.decide(body.id, false, body.note || body.reason || "Denied");
-        const status = out.ok ? 200 : out.code === "APPROVAL_NOT_FOUND" ? 404 : 409;
-        return json(res, status, out);
-      }
-      if (p === "/agent-runs" && req.method === "GET") {
-        const { listAgentRuns, loadAgentRun } = await import("../agent/run-store.mjs");
-        const id = url.searchParams.get("id");
-        if (id) {
-          const out = await loadAgentRun(cfg, id);
-          return json(res, out.ok ? 200 : out.code === "SESSION_NOT_FOUND" ? 404 : 400, out);
-        }
-        return json(res, 200, { runs: await listAgentRuns(cfg, { limit: Number(url.searchParams.get("limit") || 30) }) });
-      }
+      if (await tryHandleApprovalsRoute({ ...routeArgs, approvalGate })) return;
 
       // GET /providers/route is owned by routes/ops.mjs (dispatched above) —
       // an identical inline handler here was shadowed dead code (audit

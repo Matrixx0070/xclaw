@@ -1,3 +1,16 @@
+## 3.172.0 (2026-08-24)
+
+- gateway (30-day plan W2): route extraction finished — voice (4 routes),
+  oauth-callback, artifacts (3), approvals+agent-runs (4), and /agent/run
+  (JSON + SSE entry) moved from the index.mjs monolith into ./routes/*
+  modules at identical dispatch positions (closure collaborators
+  runAgentLoop/noteEviction/streamAgentRun/approvalGate passed as args;
+  behavior byte-preserved). index.mjs 1876 -> 1638 lines; dead imports
+  removed. Still inline by design: /v1, eviction SSE, native /swarm
+  (stop-proxy), telegram webhook + webchat streamers, static serving.
+  Live-verified on an isolated gateway: all 5 groups incl. a real
+  /agent/run round-trip.
+
 ## 3.171.0 (2026-08-24)
 
 - voice: TTS no longer vocalizes markup — new toSpeakableText sanitizer

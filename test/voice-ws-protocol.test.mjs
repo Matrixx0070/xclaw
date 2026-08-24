@@ -186,8 +186,9 @@ describe("a voice session is a conversation, not a series of jobs", () => {
 
 describe("webchat mic can use local STT", () => {
   it("transcribe endpoint accepts uploaded audio, not just server paths", async () => {
+    // W2 route extraction moved the voice routes out of gateway/index.mjs.
     const src = await fs.readFile(
-      new URL("../src/gateway/index.mjs", import.meta.url),
+      new URL("../src/gateway/routes/voice.mjs", import.meta.url),
       "utf8"
     );
     // A browser has bytes, not a path — path-only meant the mic had to fall
