@@ -1,6 +1,12 @@
 # Session State — COMPLETE (2026-08-24): 30-DAY PLAN slices W2b/W3a/W4c shipped v3.162.0→v3.164.0, regression trio A/F/H green
 
-## 2026-08-24 (latest): TTS speakable-text sanitizer — v3.171.0
+## 2026-08-24 (latest): 30-day-plan W2 route extraction COMPLETE — v3.172.0
+
+Resumed the standing 30-day plan at W2. Extracted the 5 remaining extractable inline route groups from gateway/index.mjs (1876→1638 lines) into ./routes/*: voice.mjs (probe/metrics/speak/transcribe), oauth-callback.mjs (PKCE exchange, byte-preserved), artifacts.mjs (list/file/UI), approvals.mjs (+/agent-runs), agent-run.mjs (JSON + SSE entry; closure collaborators runAgentLoop/noteEviction/streamAgentRun/approvalGate passed as args). Wired at IDENTICAL dispatch positions (order = auth semantics). Still inline BY DESIGN (comment updated in index.mjs): /v1 passthrough, eviction SSE, native /swarm (stop-proxy §64a), telegram webhook + webchat streamers, static /control //chat. One source-grep test retargeted (voice-ws-protocol expected audioBase64 in index.mjs → routes/voice.mjs). ISOLATED-GATEWAY RECIPE that works: HOME=<tempdir> node bin/xclaw.mjs gateway (config is $HOME/.xclaw — no --port flag exists; set gateway.port + telegram.enabled:false in the temp copy). Live-verified all 5 groups incl. REAL /agent/run round-trip ("W2 OK"); post-restart production spot-checks green (voice probe tts:true, artifacts 200, approvals 200). Suite 2912/2912, commit e180812, CI 4/4, release live.
+
+REMAINING 30-day plan: W2 stage runAgentLoop (loop.mjs internal staging), W3 learning write-path, W4 collapse orchestrators + 24h soak. Parked: ElevenLabs decision, swarm→chat wiring, swarm cost governor.
+
+## 2026-08-24: TTS speakable-text sanitizer — v3.171.0
 
 Frank: voice replies vocalized markup ("it also speak . , ( etc"). New src/voice/speakable.mjs toSpeakableText (bullets/headings→sentences, code blocks→"Code omitted", URLs→hostname, links→label, emphasis/parens/pipes/emoji dropped, sentence punctuation KEPT for prosody, maxChars cuts at sentence boundary) wired at ALL FIVE reply-speaking surfaces: telegram voice-out, sentence-tts streamer, voice-ws, tui-session, personal-assistant agent; audio_generation plugin verbatim by design. Gotcha caught mid-slice: python string-replace added usage without import in tui-session (node --check passes, runtime ReferenceError) — always verify imports after scripted edits. 8 new tests, main 2912/2912, commit 0a5b548, CI 4/4, release live, gateway restarted. AUDIBLE PROOF msg 528 in Frank's DM via real synthesizeReplyVoice: spokenText "Voice fix check: markdown symbols are gone, lists read as sentences, links like the repo just say their name. Code omitted. Sounds natural now, hopefully." (kokoro).
 
