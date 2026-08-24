@@ -75,6 +75,8 @@ export const ROLE_TOOL_PACKS = Object.freeze({
     // delegation: without this the agent has no way to run independent slices
     // concurrently, and was observed claiming parallelism it never achieved
     "xclaw_spawn_agent",
+    // stateful data analysis (risk-gated exec — pends before running)
+    "python_session",
   ],
   browse: [
     "xclaw_bash", "bash",
@@ -85,6 +87,7 @@ export const ROLE_TOOL_PACKS = Object.freeze({
     "xclaw_browser_tab", "browser_tab",
     "xclaw_skill",
     "xclaw_spawn_agent",
+    "python_session",
   ],
   full: null, // null = no filter
 });

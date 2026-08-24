@@ -228,3 +228,9 @@ test("risk: swarm bridge denies python_session at default tier even if allow-lis
   assert.equal(res.blocked, true);
   assert.match(res.error, /risk policy/);
 });
+
+test("role tool packs: act and browse expose python_session (risk gate still pends it)", async () => {
+  const { ROLE_TOOL_PACKS } = await import("../src/providers/role-router.mjs");
+  assert.ok(ROLE_TOOL_PACKS.act.includes("python_session"));
+  assert.ok(ROLE_TOOL_PACKS.browse.includes("python_session"));
+});
