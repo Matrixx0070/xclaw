@@ -23,6 +23,7 @@ import { tryHandleOAuthCallbackRoute } from "./routes/oauth-callback.mjs";
 import { tryHandleArtifactsRoute } from "./routes/artifacts.mjs";
 import { tryHandleApprovalsRoute } from "./routes/approvals.mjs";
 import { tryHandleAgentRunRoute } from "./routes/agent-run.mjs";
+import { tryHandleSwarmGoalsRoute } from "./routes/swarm-goals.mjs";
 import { tryHandleHooksRoute } from "./routes/hooks.mjs";
 import { tryHandleMissionsRoute } from "./routes/missions.mjs";
 import { tryHandleObjectivesRoute } from "./routes/objectives.mjs";
@@ -1304,24 +1305,10 @@ export async function startGateway({ root } = {}) {
       // --- swarm-ext: isolated opt-in extension module (OFF by default) ---
       // Vendored second swarm engine at src/swarm-ext/ (ADR 0003). Only
       // imported when enabled, so its deps/redis are never touched otherwise.
-      if (p === "/api/swarm" || p.startsWith("/api/swarm/")) {
-        if (!cfg.swarmExt?.enabled) {
-          return json(res, 404, {
-            error: "swarm-ext disabled (set swarmExt.enabled=true in config)",
-            code: "SWARM_EXT_DISABLED",
-          });
-        }
-        try {
-          const { handleSwarmExt } = await import("../swarm-ext/mount.mjs");
-          return await handleSwarmExt(req, res, { cfg });
-        } catch (err) {
-          return json(res, 503, {
-            error: `swarm-ext unavailable: ${err.message}`,
-            code: "SWARM_EXT_UNAVAILABLE",
-            hint: "npm install --prefix src/swarm-ext (express/ioredis/zod) and ensure redis is reachable",
-          });
-        }
-      }
+      // Unified swarm surface (ADR 0004): decompose engine (goal→DAG→
+      // sub-agents) under /swarm/goals|tasks|decompose + legacy /api/swarm
+      // aliases. MUST dispatch before the native ensemble's /swarm/ catch-all.
+      if (await tryHandleSwarmGoalsRoute(routeArgs)) return;
 
       // --- Swarm first-class HTTP API (Phase D) ---
       if (p === "/swarm/run" && req.method === "POST") {

@@ -1,3 +1,22 @@
+## 3.173.0 (2026-08-24)
+
+- SWARM UNIFICATION (ADR 0004, operator directive: "merge both"): the
+  isolated swarm-ext module is absorbed into core as `src/swarm/` — one
+  subsystem, two strategies (native ensemble /swarm/run unchanged;
+  decompose engine now at /swarm/goals + /swarm/tasks/:id +
+  /swarm/decompose/*; legacy /api/swarm aliases kept).
+- Zero external dependencies restored: redis-backed TaskQueue/MemoryStore
+  reimplemented in-process behind identical interfaces; express layer
+  replaced by a native gateway route (auth inherited); zod was dead code.
+  `npm install --prefix src/swarm-ext` and redis are no longer needed.
+- Config: swarm.decompose.* (legacy swarmExt.* honored). Engine tests moved
+  into the MAIN suite (were vendor-local, invisible to CI).
+- Dead vendor code deleted (fake /batch that fabricated task ids, stub
+  /receipts, unwired mcp chain, duplicate heartbeat, redis/zod carriers).
+  The formerly-dead ToolPolicy engine was WIRED LIVE instead: optional
+  egress policy in the tool bridge (swarm.decompose.tools.policy — tool
+  block/allowlists, egress deny, SSRF-safe URL host allowlist).
+
 ## 3.172.0 (2026-08-24)
 
 - gateway (30-day plan W2): route extraction finished — voice (4 routes),

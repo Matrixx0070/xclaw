@@ -310,39 +310,39 @@ export const DEFAULT_CONFIG = {
     maxChars: 8000,
     preferenceWriteBack: true,
   },
-  /**
-   * swarm-ext: isolated opt-in extension module at src/swarm-ext/ (ADR 0003).
-   * A SECOND swarm engine (Redis-backed goal decomposition → DAG → sub-agent
-   * pool → merge → receipt) mounted at /api/swarm. Coexists with — never
-   * replaces — the native swarm below. Requires
-   * `npm install --prefix src/swarm-ext` + reachable redis when enabled.
-   */
-  swarmExt: {
-    enabled: false,
-    /** optional model override; defaults to cfg.agent.model via provider routing */
-    model: null,
-    /** operator caps over the vendored config (vendor default was 300/300) */
-    maxSubAgents: 25,
-    maxConcurrent: 8,
-    /**
-     * Bridge to xclaw's REAL tool router for sub-agents (tool-bridge.mjs).
-     * Autonomous sub-agents can never pend for approval, so every call is
-     * risk-gated FAIL-CLOSED: assessRisk tier must be ≤ autoApproveMaxTier
-     * ("low" = reads + provably read-only exec + workspace writes; risky and
-     * critical are denied with a typed error). `allow` narrows which tools
-     * are advertised (null = curated DEFAULT_ALLOW); `alwaysAllow` bypasses
-     * the tier gate by name (default: web_search/web_fetch — research
-     * primitives whose name-family would classify egress→risky).
-     */
-    tools: {
-      enabled: true,
-      autoApproveMaxTier: "low",
-      allow: null,
-      alwaysAllow: null,
-    },
-  },
   /** S0–S3 swarm */
   swarm: {
+    /**
+     * Decompose engine (ADR 0004 unification — formerly the isolated
+     * swarmExt module; that legacy config key is still honored):
+     * goal → DAG → parallel sub-agents on the REAL risk-gated tool
+     * router → merge → receipt, at /swarm/goals. In-process queue/store,
+     * zero external deps. OFF by default.
+     */
+    decompose: {
+      enabled: false,
+      /** optional model override; defaults to cfg.agent.model via provider routing */
+      model: null,
+      /** operator caps over the vendored config (vendor default was 300/300) */
+      maxSubAgents: 25,
+      maxConcurrent: 8,
+      /**
+       * Bridge to xclaw's REAL tool router for sub-agents (tool-bridge.mjs).
+       * Autonomous sub-agents can never pend for approval, so every call is
+       * risk-gated FAIL-CLOSED: assessRisk tier must be ≤ autoApproveMaxTier
+       * ("low" = reads + provably read-only exec + workspace writes; risky and
+       * critical are denied with a typed error). `allow` narrows which tools
+       * are advertised (null = curated DEFAULT_ALLOW); `alwaysAllow` bypasses
+       * the tier gate by name (default: web_search/web_fetch — research
+       * primitives whose name-family would classify egress→risky).
+       */
+      tools: {
+        enabled: true,
+        autoApproveMaxTier: "low",
+        allow: null,
+        alwaysAllow: null,
+      },
+    },
     enabled: true,
     subagentTimeoutMs: 300_000,
     maxParallel: 3,
