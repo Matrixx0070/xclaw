@@ -46,6 +46,9 @@ function run(cmd, args, opts = {}) {
       resolve({ code: code ?? 1, stdout, stderr, errorCode: null })
     );
     if (opts.input != null) {
+      // A binary that exits before reading stdin (crash, bad args) must not
+      // take the gateway down with an uncaught EPIPE.
+      child.stdin.on("error", () => {});
       child.stdin.write(opts.input);
       child.stdin.end();
     }
@@ -72,6 +75,11 @@ export function localConfig(cfg = {}) {
       v.piperModel ||
       process.env.XCLAW_PIPER_MODEL ||
       "",
+    // Kokoro-82M neural TTS (most human-sounding local option) — a CLI with
+    // piper's shape: text on stdin, --output_file, plus --voice. Preferred
+    // over piper when configured.
+    kokoroBin: v.kokoroBin || process.env.XCLAW_KOKORO_BIN || "",
+    kokoroVoice: v.kokoroVoice || process.env.XCLAW_KOKORO_VOICE || "af_heart",
     espeakBin: v.espeakBin || process.env.XCLAW_ESPEAK_BIN || "espeak-ng",
   };
 }
@@ -155,6 +163,20 @@ export async function localSpeak(text, cfg = {}) {
   const c = localConfig(cfg);
   const tmp = path.join(os.tmpdir(), `xclaw-tts-${Date.now()}.wav`);
   const t = String(text || "").slice(0, 500);
+
+  if (c.kokoroBin) {
+    const r = await run(c.kokoroBin, ["--output_file", tmp, "--voice", c.kokoroVoice], {
+      input: t,
+    });
+    if (r.code === 0) {
+      try {
+        await fs.access(tmp);
+        return { ok: true, path: tmp, provider: "kokoro", voice: c.kokoroVoice };
+      } catch {
+        /* fall through */
+      }
+    }
+  }
 
   if (c.piperModel) {
     const r = await run(

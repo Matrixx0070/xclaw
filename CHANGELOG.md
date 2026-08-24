@@ -1,3 +1,13 @@
+## 3.169.0 (2026-08-24)
+
+- voice: Kokoro-82M neural TTS integrated into localSpeak as the preferred
+  local engine (cfg voice.kokoroBin/voice.kokoroVoice, piper's CLI shape,
+  falls through kokoro -> piper -> espeak-ng). Runtime at /opt/kokoro
+  (onnx model + speak.py wrapper), ~5x realtime on 4 CPU cores.
+- voice FIX: a TTS binary exiting before reading stdin crashed the gateway
+  with an uncaught EPIPE (stdin error handler added in run()) — found by the
+  new hermetic fallback tests (test/voice-kokoro.test.mjs, fake CLI bins).
+
 ## 3.168.1 (2026-08-24)
 
 - swarm-ext: vendor `tts` stub plugin removed — it fabricated audio URLs and
