@@ -1,3 +1,10 @@
+## 3.160.0 — objective learning write-path: outcomes recorded, lessons recalled (2026-08-24)
+
+- **Missions now learn across runs.** When a long-run objective completes, `runObjective` records a durable `outcome` memory in the mission's workspace (`src/agent/objective.mjs`): the goal, verdict, criteria, and segment/tool totals. The verdict is embedded in the summary string because `recallMemory`'s hit projection does not surface a `verdict` field of its own.
+- **Read-back closes the loop.** Before the first segment of a new mission, `runObjective` recalls prior outcomes/notes with a similar goal (`recallMemory`, gated by `memory.recall`, first-segment only, never on resume) and injects them as an advisory **"Lessons from past missions"** block in the segment prompt — so the model starts from what worked / what failed instead of relearning it. Memory that never changes behaviour is not memory (the S7 lesson).
+- **Robust by construction**: the outcome write is wrapped at the `runObjective` return boundary, so it fires on every done-path (owner-approve, natural-stop, verifier-segment, state-block done) — current and future — in one place; it is best-effort (a mission never fails because logging failed) and idempotent via a persisted `_outcomeLogged` flag (no double-log on a re-run of an already-done mission).
+- **Tests**: new `test/objective-learning.test.mjs` (4) pins both directions — outcome written on completion, verdict in summary, no double-log, and a real two-mission round-trip proving the lessons block reaches the later mission's first-segment prompt. Full suite 2834/0 (5 skipped).
+
 ## 3.159.0 — un-nest non-webchat routes from the webchat gate (2026-08-24)
 
 - **Fixed a latent coupling bug in `src/gateway/index.mjs`**: `/control`, `/control/*`, `/oauth/callback`, `/auth/callback`, `/artifacts`, `/artifacts/list`, and `/artifacts/file` were nested inside `if (webchatEnabled) { … }`, so setting `channels.webchat.enabled:false` silently made the ops Control UI, provider OAuth callbacks, and artifact serving return 404. The flag defaults to `true`, so the bug was latent on the live gateway.

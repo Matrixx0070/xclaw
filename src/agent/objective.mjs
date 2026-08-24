@@ -33,6 +33,7 @@ import {
   ensureCounters,
 } from "./objective-store.mjs";
 import { getSharedLedger } from "../ops/ledger.mjs";
+import { rememberNote, recallMemory } from "../memory/recall.mjs";
 
 export const STATE_FENCE = "xclaw-objective-state";
 
@@ -124,7 +125,7 @@ function fmtCriteria(criteria = []) {
 }
 
 /** Build the continuation prompt for a segment from durable state ONLY. */
-export function buildSegmentPrompt(obj, { firstSegment = false, directive = null, reconcile = false } = {}) {
+export function buildSegmentPrompt(obj, { firstSegment = false, directive = null, reconcile = false, lessons = "" } = {}) {
   const parts = [];
   parts.push(`# Mission (objective given by the user — verbatim, authoritative)`);
   parts.push(obj.objective);
@@ -133,6 +134,11 @@ export function buildSegmentPrompt(obj, { firstSegment = false, directive = null
     parts.push(
       "This is the FIRST segment. Derive an interpretation, explicit completion criteria, and a plan in your state block — then begin executing immediately (do not wait for approval of the plan)."
     );
+    if (lessons && lessons.trim()) {
+      parts.push(
+        `\n# Lessons from past missions (durable memory — advisory; verify before relying)\n${lessons.trim()}`
+      );
+    }
   } else {
     parts.push(`# Mission state (durable — your memory across segments)`);
     if (obj.interpretation) parts.push(`Interpretation: ${obj.interpretation}`);
@@ -235,7 +241,56 @@ async function runDeterministicChecks(obj) {
   }
 }
 
+/**
+ * Learning write-path: persist a durable outcome memory when a mission
+ * completes, so future missions with a similar goal recall what happened
+ * (see the lessons injection before the segment loop). Best-effort — a
+ * mission never fails because we could not record its outcome. Idempotent
+ * via a persisted flag so a re-run of an already-done mission never
+ * double-logs.
+ */
+async function persistOutcome(cfg, obj) {
+  if (!obj || obj._outcomeLogged) return;
+  if (cfg?.memory?.enabled === false) return;
+  try {
+    await rememberNote(
+      cfg,
+      obj.workingDir || process.cwd(),
+      `Mission ${obj.verdict || "done"}: ${String(obj.objective || "").slice(0, 180)}`,
+      {
+        type: "outcome",
+        goal: String(obj.objective || "").slice(0, 500),
+        verdict: obj.verdict || "done",
+        objectiveId: obj.id,
+        segments: obj.totals?.segments ?? null,
+        toolCalls: obj.totals?.toolCalls ?? null,
+        criteria: (obj.criteria || []).map((c) => ({
+          text: String(c.text || "").slice(0, 200),
+          done: !!c.done,
+        })),
+      }
+    );
+    obj._outcomeLogged = true;
+    await saveObjective(cfg, obj);
+  } catch {
+    /* memory is best-effort — never let a logging failure surface */
+  }
+}
+
+/**
+ * Public entry: run the segmented orchestrator, then record the outcome on
+ * any done-path (there are several scattered returns; wrapping the boundary
+ * catches them all — current and future — in one place).
+ */
 export async function runObjective(cfg, opts = {}) {
+  const result = await runObjectiveInner(cfg, opts);
+  if (result?.objective?.status === "done" && !result.objective._outcomeLogged) {
+    await persistOutcome(cfg, result.objective);
+  }
+  return result;
+}
+
+async function runObjectiveInner(cfg, opts = {}) {
   const {
     runSegment,
     notify = async () => {},
@@ -453,6 +508,30 @@ export async function runObjective(cfg, opts = {}) {
     return "escalated";
   };
 
+  // Proactive learning: recall outcomes/notes of past missions with a
+  // similar goal so the model starts from what worked / what failed instead
+  // of relearning it. Mirrors loop.mjs preference read-back (S7): memory
+  // that never changes behaviour is not memory. Advisory only, first
+  // segment only, never on resume, never blocks the mission.
+  let lessons = "";
+  if (cfg.memory?.recall !== false && !opts.resumeId) {
+    try {
+      const recalled = await recallMemory(cfg, obj.workingDir || process.cwd(), {
+        query: obj.objective,
+        limit: 6,
+      });
+      const hits = (recalled?.hits || []).filter((h) => h.summary || h.goal);
+      if (hits.length) {
+        lessons = hits
+          .slice(0, 6)
+          .map((h) => `- ${String(h.summary || h.goal).slice(0, 200)}`)
+          .join("\n");
+      }
+    } catch {
+      /* recall is additive — never block a mission on it */
+    }
+  }
+
   while (true) {
     // ── runtime control between segments ─────────────────────────────────
     if (signal?.aborted) {
@@ -483,7 +562,7 @@ export async function runObjective(cfg, opts = {}) {
     // ── run one segment ──────────────────────────────────────────────────
     const n = obj.totals.segments + 1;
     const firstSegment = n === 1 && !opts.resumeId;
-    const prompt = buildSegmentPrompt(obj, { firstSegment, directive, reconcile });
+    const prompt = buildSegmentPrompt(obj, { firstSegment, directive, reconcile, lessons: firstSegment ? lessons : "" });
     directive = null;
     reconcile = false;
     onEvent({ type: "objective", phase: "segment_start", id: obj.id, segment: n });
