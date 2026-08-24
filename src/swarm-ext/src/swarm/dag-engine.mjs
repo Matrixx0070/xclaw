@@ -135,16 +135,19 @@ export class DAGEngine {
   // === TOPOLOGICAL SORT ===
 
   topologicalSort(graph) {
+    // Vendor bug: this initialized in-degree by incrementing each DEPENDENCY's
+    // counter instead of the dependent node's — so any graph with at least one
+    // dependency edge sorted incomplete and buildExecutionGroups returned null
+    // (orchestrator then crashed on null.length). in-degree(node) = number of
+    // its own dependencies that exist in the graph (unknown ids are ignored so
+    // a phantom dep can never deadlock the sort).
     const inDegree = new Map();
-    for (const [nodeId] of graph.nodes) {
-      inDegree.set(nodeId, 0);
-    }
     for (const [nodeId, deps] of graph.edges) {
+      let d = 0;
       for (const dep of deps) {
-        if (inDegree.has(dep)) {
-          inDegree.set(dep, inDegree.get(dep) + 1);
-        }
+        if (graph.nodes.has(dep)) d++;
       }
+      inDegree.set(nodeId, d);
     }
 
     const queue = [];
@@ -153,6 +156,7 @@ export class DAGEngine {
     }
 
     const result = [];
+    const queued = new Set(queue);
     while (queue.length > 0) {
       const current = queue.shift();
       result.push(current);
@@ -161,7 +165,8 @@ export class DAGEngine {
       for (const [nodeId, deps] of graph.edges) {
         if (deps.has(current)) {
           inDegree.set(nodeId, inDegree.get(nodeId) - 1);
-          if (inDegree.get(nodeId) === 0) {
+          if (inDegree.get(nodeId) === 0 && !queued.has(nodeId)) {
+            queued.add(nodeId);
             queue.push(nodeId);
           }
         }
@@ -187,7 +192,12 @@ export class DAGEngine {
       for (const taskId of sorted) {
         if (completed.has(taskId)) continue;
         const task = graph.nodes.get(taskId);
-        const depsSatisfied = (task.dependencies || []).every((d) => completed.has(d));
+        // A dependency on a task that does not exist in the graph can never
+        // complete — ignore it (mirrors the phantom-dep handling in
+        // topologicalSort; otherwise one hallucinated dep id stalls the plan).
+        const depsSatisfied = (task.dependencies || []).every(
+          (d) => completed.has(d) || !graph.nodes.has(d)
+        );
         if (depsSatisfied) {
           ready.push(taskId);
         }

@@ -120,6 +120,11 @@ export class Orchestrator {
       // === STEP 4: BUILD EXECUTION GROUPS ===
       await this._broadcast(taskId, "status", { message: `Building execution groups (${plan.decomposedTasks.length} subtasks)...`, step: 4, total: 7 });
       const groups = this.dag.buildExecutionGroups(plan.decomposedTasks);
+      if (!groups) {
+        // buildExecutionGroups returns null on an unsortable graph — fail
+        // with a typed message instead of the opaque null.length crash.
+        throw new Error("unresolvable dependency graph: topological sort incomplete after cycle-breaking");
+      }
       console.log(`[swarm-orchestrator] Built ${groups.length} execution groups`);
 
       // === STEP 5: EXECUTE GROUPS ===
@@ -140,6 +145,30 @@ export class Orchestrator {
 
         // Get actual task objects for this group
         const groupTasks = plan.decomposedTasks.filter(t => group.tasks.includes(t.taskId));
+
+        // Inject upstream results into dependent tasks' context (vendor gap:
+        // a join/format agent received NOTHING from the tasks it depended on
+        // and could only answer "unavailable" — found live 2026-08-24).
+        // formatSubAgentPrompt serializes task.context into the user message.
+        for (const t of groupTasks) {
+          const deps = t.dependencies || [];
+          if (!deps.length) continue;
+          const dependencyResults = {};
+          for (const depId of deps) {
+            const dep = plan.decomposedTasks.find((x) => x.taskId === depId);
+            if (dep?.result) {
+              const c = dep.result.content;
+              dependencyResults[depId] = {
+                role: dep.agentRole,
+                description: dep.description,
+                content: typeof c === "string" ? c.slice(0, 4000) : c,
+              };
+            }
+          }
+          if (Object.keys(dependencyResults).length) {
+            t.context = { ...(t.context || {}), dependencyResults };
+          }
+        }
 
         // Create execution group
         const execGroup = this.groupManager.createGroup(
