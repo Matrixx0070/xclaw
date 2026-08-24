@@ -74,13 +74,14 @@ never from cwd). xclaw-side keys under `swarmExt`:
 
 ## Known vendor stubs (shipped as delivered)
 
-`plugins/{web-search,web-extract,tts,code-executor,browser}` contain
+`plugins/{web-search,web-extract,code-executor,browser}` contain
 "in production, integrate..." stubs; `src/swarm/computer/screen.mjs`
 OCR is a stub. `calculator`, `file-reader`, `web-crawl` and the core
 orchestration pipeline are real. The bridge shadows the important ones with
 real tools (web_search/web_fetch, xclaw_bash beats code_execute), and the
-`image-generate` stub was REMOVED in 3.167.0 — the real `generate_image`
-(xAI images API via the credential store) is exposed through the bridge.
+`image-generate` stub was REMOVED in 3.167.0 (real `generate_image` via the
+bridge replaces it) and the `tts` stub in 3.168.1 (real `audio_generation`
+replaces it).
 
 ## Real data plugins (3.167.0 — replace the stub drop from the
 "complete-final" zip, which fabricated data)

@@ -1,3 +1,9 @@
+## 3.168.1 (2026-08-24)
+
+- swarm-ext: vendor `tts` stub plugin removed — it fabricated audio URLs and
+  sat next to the real `audio_generation` tool (same class of removal as the
+  image-generate stub in 3.167.0). Capability strictly upgraded, not dropped.
+
 ## 3.168.0 (2026-08-24)
 
 - swarm-ext: `audio_generation` plugin landed REAL — local TTS via xclaw's
