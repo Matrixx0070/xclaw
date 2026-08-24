@@ -58,6 +58,49 @@ export function resetBwrapCache() {
   _bwrapNetnsWorks = undefined;
 }
 
+/**
+ * RO-bind argv pairs for the standard system dirs a usable shell needs.
+ * Single-sourced so the usability probes exercise the exact same filesystem
+ * view as the real sandbox — on merged-/usr hosts (/bin,/lib,/lib64,/sbin ->
+ * usr/*) binding only /usr leaves the ELF interpreter unreachable, which made
+ * the probe report bwrap "unusable" and silently disable a working sandbox.
+ * @param {object} [cfg]
+ * @returns {string[]}
+ */
+export function roBindDirsArgv(cfg = {}) {
+  const roDirs = [
+    "/usr",
+    "/etc",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/lib32",
+    ...(cfg?.security?.osSandboxExtraRo || []),
+  ];
+  /** @type {string[]} */
+  const argv = [];
+  const bound = new Set();
+  for (const d of roDirs) {
+    try {
+      if (!fs.existsSync(d)) continue;
+      let real = d;
+      try {
+        real = fs.realpathSync(d);
+      } catch {
+        /* keep d */
+      }
+      if (bound.has(real)) continue;
+      argv.push("--ro-bind", d, d);
+      bound.add(real);
+      bound.add(d);
+    } catch {
+      /* skip */
+    }
+  }
+  return argv;
+}
+
 let _bwrapWorks = undefined; // undefined=unprobed, true/false
 
 /**
@@ -72,11 +115,11 @@ export function probeBwrapWorks() {
     return false;
   }
   const cwd = process.cwd();
+  // Bind the same system dirs as the real sandbox so the probe result matches
+  // what the production wrap can actually do (see roBindDirsArgv).
   const args = [
     "--die-with-parent",
-    "--ro-bind",
-    "/usr",
-    "/usr",
+    ...roBindDirsArgv(),
     "--bind",
     cwd,
     cwd,
@@ -85,14 +128,6 @@ export function probeBwrapWorks() {
     "--",
     "/bin/true",
   ];
-  // /bin may be needed on non-merged systems
-  try {
-    if (fs.existsSync("/bin") && fs.realpathSync("/bin") !== fs.realpathSync("/usr")) {
-      args.splice(1, 0, "--ro-bind", "/bin", "/bin");
-    }
-  } catch {
-    /* ignore */
-  }
   try {
     const r = spawnSync(bwrap, args, { encoding: "utf8", timeout: 5000 });
     _bwrapWorks = r.status === 0;
@@ -144,9 +179,7 @@ export function probeBwrapNetns() {
       [
         "--die-with-parent",
         "--unshare-net",
-        "--ro-bind",
-        "/usr",
-        "/usr",
+        ...roBindDirsArgv(),
         "--bind",
         cwd,
         cwd,
@@ -219,36 +252,8 @@ export function buildBwrapArgv({
     "/tmp",
   ];
 
-  // Order matters on Debian/Ubuntu merged-/usr: bind /usr first, then /bin if real dir
-  const roDirs = [
-    "/usr",
-    "/etc",
-    "/bin",
-    "/sbin",
-    "/lib",
-    "/lib64",
-    "/lib32",
-    ...(cfg?.security?.osSandboxExtraRo || []),
-  ];
-  const bound = new Set();
-  for (const d of roDirs) {
-    try {
-      if (!fs.existsSync(d)) continue;
-      // Avoid double-bind of the same realpath
-      let real = d;
-      try {
-        real = fs.realpathSync(d);
-      } catch {
-        /* keep d */
-      }
-      if (bound.has(real)) continue;
-      argv.push("--ro-bind", d, d);
-      bound.add(real);
-      bound.add(d);
-    } catch {
-      /* skip */
-    }
-  }
+  // RO system paths (single-sourced with the usability probes)
+  argv.push(...roBindDirsArgv(cfg));
 
   // Workspace RW
   argv.push("--bind", ws, ws);
