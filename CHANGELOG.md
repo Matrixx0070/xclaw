@@ -1,3 +1,22 @@
+## 3.158.0 — gateway dead-code deletion (708 lines); route dispatch unchanged (2026-08-24)
+
+- **Deleted 708 lines of unreachable inline route handlers** from
+  `src/gateway/index.mjs` (2564 → 1856 lines). Every removed `if (p === ...)`
+  block was a duplicate already shadowed earlier in the dispatch by an
+  extracted route module — alerts, ops, eval-queue, jwks, sessions, subagents,
+  mcp, security, cron, media. The shadow map was verified route-by-route
+  before deletion (each predicate grep-matched to its owning module; dispatch
+  order proved the owner runs first) and confirmed after by an isolated
+  gateway boot: every formerly-inline route still resolves to its module
+  handler (200/401/503, never 404) and the fallthrough 404 is intact. W2 of
+  the 30-day audit plan.
+- A block of misindented boot code (SLO-monitor + digest interval) that lived
+  *inside* the dead `POST /queue` handler was removed with it; `startGateway`
+  already runs the identical setup earlier in the live boot path, so behavior
+  is unchanged.
+- Pure deletion — no endpoints added or removed, no route behavior changed.
+  Full suite 2830/0; 68/68 gateway-specific tests green.
+
 ## 3.157.0 — native computer engine is the product default; drill-alert hygiene (2026-08-24)
 
 - **Native computer engine is now the default** (`DEFAULT_COMPUTER_ENGINE =
