@@ -7,17 +7,16 @@ Minimal path to run real goals with tools (lab profile).
 **Single native engine** (ADR 0005): every profile and legacy `engine:` selector resolves to native; real-browser CUA is built in (managed headless Chrome).
 
 ```bash
-export XCLAW_COMPUTER_ENGINE=native
 export XCLAW_PROFILE=lab
 export XAI_API_KEY=xai-...   # or OPENAI_ / ANTHROPIC_
 
-# Start thin computer (bash/files/browser_tab/computer_act)
-node src/computer/thin-server.mjs &
-# health → engine thin-native, tools include xclaw_computer_act
+# Start the computer server (bash/files/browser_tab/network_details/computer_act)
+node src/computer/xclaw-server.mjs &
+# health → engine bundle, tools include xclaw_computer_act
 curl -s http://127.0.0.1:4243/health
 ```
 
-The native engine includes the full real-browser plane (jsCode/screenshot/console/network via CDP).
+The single engine includes the full real-browser plane (jsCode/screenshot/console/network via CDP).
 
 ## 2. Optional CDP (GUI navigate/click/screenshot)
 

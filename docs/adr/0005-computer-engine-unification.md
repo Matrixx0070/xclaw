@@ -1,7 +1,7 @@
 # ADR 0005 — Computer engine unification (retire the vendored CDP bundle)
 
 Date: 2026-08-24
-Status: accepted
+Status: accepted — direction superseded by [ADR 0006](0006-bundle-engine-reversal.md) (2026-08-24): the bundle survives, thin merged in
 
 ## Problem
 

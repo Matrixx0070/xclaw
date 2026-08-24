@@ -1,8 +1,9 @@
 /**
  * Computer service manager — supervised start/stop with PID + log files.
- * Single native engine (thin-server.mjs); the server manages its own
- * headless Chrome internally (chrome-session.mjs), so the manager's job
- * is just process supervision by HTTP health.
+ * Single engine: the unified CDP bundle (xclaw-server.mjs, ADR 0006).
+ * The server manages its own Chrome internally; the manager's job is
+ * process supervision by HTTP health plus wiring the native-source
+ * bridges (hooks/motor/chrome-args + the A6 thin-server merge).
  */
 import { spawn } from "node:child_process";
 import { mitmEnvFromConfig, isMitmEnabled } from "../browser/mitm.mjs";
@@ -248,6 +249,18 @@ export async function startComputer({ root, foreground = false } = {}) {
       ? { XCLAW_SSRF_ALLOW_PRIVATE: "1" }
       : {}),
   };
+  // Bridge modules the bundle dynamically imports from native source
+  // (A2 hooks / A4 motor / A5 chrome-args, and the A6 merge resolves via
+  // XCLAW_ROOT directly).
+  if (!env.XCLAW_HOOKS_BRIDGE) {
+    env.XCLAW_HOOKS_BRIDGE = path.join(env.XCLAW_ROOT, "src/computer/hooks-bridge.mjs");
+  }
+  if (!env.XCLAW_MOTOR_BRIDGE) {
+    env.XCLAW_MOTOR_BRIDGE = path.join(env.XCLAW_ROOT, "src/computer/motor-bridge.mjs");
+  }
+  if (!env.XCLAW_CHROME_ARGS_BRIDGE) {
+    env.XCLAW_CHROME_ARGS_BRIDGE = path.join(env.XCLAW_ROOT, "src/computer/chrome-args-bridge.mjs");
+  }
   if (isMitmEnabled(cfg)) {
     console.log(`[xclaw] MITM env injected for computer (port ${env.XCLAW_MITM_PORT || 4444})`);
   }
@@ -294,7 +307,7 @@ export async function startComputer({ root, foreground = false } = {}) {
   }
 
   const ok = await waitForHealthy(cfg, {
-    timeoutMs: cfg.computer?.startTimeoutMs ?? 15_000,
+    timeoutMs: cfg.computer?.startTimeoutMs ?? 45_000,
   });
   if (!ok) {
     try {

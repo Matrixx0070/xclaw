@@ -8,16 +8,16 @@ import {
   DEFAULT_COMPUTER_ENGINE,
 } from "../src/computer/engine.mjs";
 
-describe("computer engine (single native engine, ADR 0005)", () => {
-  it("defaults to native and every legacy selector resolves to native", () => {
+describe("computer engine (single bundle engine, ADR 0006)", () => {
+  it("defaults to bundle and every legacy selector resolves to bundle", () => {
     const prev = process.env.XCLAW_COMPUTER_ENGINE;
     const prevN = process.env.XCLAW_COMPUTER_NATIVE;
     delete process.env.XCLAW_COMPUTER_ENGINE;
     delete process.env.XCLAW_COMPUTER_NATIVE;
     try {
-      assert.equal(DEFAULT_COMPUTER_ENGINE, "native");
-      assert.equal(resolveComputerEngine({}), "native");
-      assert.equal(isNativeComputer({}), true);
+      assert.equal(DEFAULT_COMPUTER_ENGINE, "bundle");
+      assert.equal(resolveComputerEngine({}), "bundle");
+      assert.equal(isNativeComputer({}), false);
       for (const sel of [
         "native",
         "thin",
@@ -30,13 +30,13 @@ describe("computer engine (single native engine, ADR 0005)", () => {
       ]) {
         assert.equal(
           resolveComputerEngine({ computer: { engine: sel } }),
-          "native",
-          `selector ${sel} must resolve native`
+          "bundle",
+          `selector ${sel} must resolve bundle`
         );
       }
       assert.equal(
-        resolveComputerEngine({ computer: { nativeServer: false } }),
-        "native"
+        resolveComputerEngine({ computer: { nativeServer: true } }),
+        "bundle"
       );
     } finally {
       if (prev !== undefined) process.env.XCLAW_COMPUTER_ENGINE = prev;
@@ -46,12 +46,12 @@ describe("computer engine (single native engine, ADR 0005)", () => {
     }
   });
 
-  it("entry path is thin-server and describe reports the unified engine", () => {
+  it("entry path is the bundle and describe reports the unified engine", () => {
     const entry = resolveComputerEntryPath({}, "/repo");
-    assert.equal(entry, "/repo/src/computer/thin-server.mjs");
+    assert.equal(entry, "/repo/src/computer/xclaw-server.mjs");
     const d = describeComputerEngine({}, process.cwd());
-    assert.equal(d.engine, "native");
-    assert.equal(d.strategyPhase, "unified-native");
+    assert.equal(d.engine, "bundle");
+    assert.equal(d.strategyPhase, "unified-bundle");
     assert.equal(d.policy.singleEngine, true);
     assert.equal(d.entryExists, true);
   });

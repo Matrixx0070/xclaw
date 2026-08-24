@@ -1,46 +1,46 @@
 /**
- * Computer engine — SINGLE native engine (unification, ADR 0005, 2026-08-24).
+ * Computer engine — SINGLE engine: the full CDP bundle (ADR 0006, 2026-08-24).
  *
- * The vendored 16MB CDP bundle (xclaw-server.mjs) was retired after the
- * native engine reached full real-browser parity: managed headless Chrome
- * (chrome-session.mjs) + CDP tab layer (modules/browser-cdp.mjs) now cover
- * jsCode, full screenshots with device emulation, console logs, and
- * multi-request network capture. The last published bundle stays archived
- * as GitHub release `computer-bundle` (sha256 9d95d067…) for forensics.
+ * Operator direction (reversing ADR 0005's native-survives shape): the
+ * vendored runtime `xclaw-server.mjs` IS the one computer server, now
+ * tracked in git and carrying the thin server's functions via the A6
+ * merge patch (bwrap-sandboxed bash, per-call cwd, systemRunPlan assert,
+ * xclaw_computer_act) bridged from the maintained native source tree.
  *
- * Legacy selectors ("bundle"/"full"/"xclaw-server"/"generated"/"gen"/"c3",
- * XCLAW_COMPUTER_NATIVE=0) all resolve to native with a one-time notice so
- * existing deployments keep working unchanged.
+ * The thin server (thin-server.mjs) is retired. Legacy selectors
+ * ("native"/"thin"/"generated"/"gen"/"c3", XCLAW_COMPUTER_NATIVE=1) all
+ * resolve to the bundle with a one-time notice so existing deployments
+ * keep working unchanged.
  */
 import path from "node:path";
 import fs from "node:fs";
 
-export const DEFAULT_COMPUTER_ENGINE = "native";
+export const DEFAULT_COMPUTER_ENGINE = "bundle";
 
-const LEGACY_SELECTORS = new Set(["0", "false", "bundle", "full", "xclaw-server"]);
+const LEGACY_SELECTORS = new Set(["1", "true", "native", "thin", "generated", "gen", "c3"]);
 let warnedLegacy = false;
 
 /**
  * @param {object} [cfg]
- * @returns {"native"}
+ * @returns {"bundle"}
  */
 export function resolveComputerEngine(cfg = {}) {
   const sel =
     process.env.XCLAW_COMPUTER_ENGINE ||
     process.env.XCLAW_COMPUTER_NATIVE ||
     cfg.computer?.engine ||
-    (cfg.computer?.nativeServer === false ? "bundle" : null);
+    (cfg.computer?.nativeServer === true ? "native" : null);
   if (sel && LEGACY_SELECTORS.has(String(sel)) && !warnedLegacy) {
     warnedLegacy = true;
     console.error(
-      `[xclaw] computer engine "${sel}" is retired — the native engine now includes the full real-browser (CDP) capability; running native. Archived bundle: GitHub release computer-bundle.`
+      `[xclaw] computer engine "${sel}" is retired — the unified bundle engine (xclaw-server.mjs, A6 thin-server merge) is the single computer server; running bundle.`
     );
   }
-  return "native";
+  return "bundle";
 }
 
 export function isNativeComputer() {
-  return true;
+  return false;
 }
 
 /**
@@ -48,7 +48,7 @@ export function isNativeComputer() {
  * @param {string} [root]
  */
 export function resolveComputerEntryPath(_cfg = {}, root = process.cwd()) {
-  return path.join(root, "src/computer/thin-server.mjs");
+  return path.join(root, "src/computer/xclaw-server.mjs");
 }
 
 /**
@@ -73,7 +73,7 @@ export function describeComputerEngine(cfg = {}, root = process.cwd()) {
     entry,
     entryExists,
     entryBytes,
-    strategyPhase: "unified-native",
+    strategyPhase: "unified-bundle",
     policy: {
       defaultEngine: DEFAULT_COMPUTER_ENGINE,
       singleEngine: true,

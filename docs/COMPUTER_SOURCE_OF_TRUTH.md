@@ -1,15 +1,22 @@
 # COMPUTER_SOURCE_OF_TRUTH
 
-Since the engine unification (ADR 0005, 2026-08-24) the source of truth for
-the computer plane is simply the maintained source tree:
+Since the engine reversal (ADR 0006, 2026-08-24) the single computer server
+is the tracked, hand-patched bundle:
 
-- `src/computer/thin-server.mjs` — the computer HTTP server (single engine)
-- `src/computer/modules/*` — every tool (bash, files, browser tab, network
-  details, computer act) — edit these directly
+- `src/computer/xclaw-server.mjs` — THE computer HTTP server (single engine).
+  Tracked in git; every hand edit carries an `// A6: thin-server merge — …`
+  marker. Anchor line numbers drift with each edit — re-grep before editing.
+- `src/computer/modules/*` — maintained tool source (bash, files, browser
+  tab, network details, computer act). The bundle bridges into these via
+  `loadNativeMergeModule` for env policy, sandboxing, SSRF, motor, hooks,
+  and the thin browser verbs — edit these directly for that logic.
 - `src/computer/chrome-session.mjs` — managed headless Chrome lifecycle
+  (library, used by the bundle's bridges).
 - `src/computer/modules/browser-cdp.mjs` — CDP tab layer (jsCode,
-  screenshots, console, network capture)
-- `src/computer/chrome-args.mjs` — canonical Chrome argv builder
+  screenshots, console, network capture).
+- `src/computer/chrome-args.mjs` — canonical Chrome argv builder.
+- `scripts/ensure-computer.mjs` — spawn-or-adopt helper for the lab.
 
-There is no generated or vendored engine artifact. History of the retired
-bundle pipeline: [`docs/adr/0005-computer-engine-unification.md`](adr/0005-computer-engine-unification.md).
+`thin-server.mjs` is deleted (thin parity was proven gap-by-gap first).
+History: [`docs/adr/0006-bundle-engine-reversal.md`](adr/0006-bundle-engine-reversal.md)
+(supersedes the direction of [ADR 0005](adr/0005-computer-engine-unification.md)).

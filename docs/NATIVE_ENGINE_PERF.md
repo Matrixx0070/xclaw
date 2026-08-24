@@ -1,5 +1,9 @@
 # Native (thin) engine performance
 
+> **Historical** (2026-08-17 measurement): the thin-native engine was deleted
+> in the ADR 0006 reversal — the bundle column describes the single surviving
+> engine, which now also lists 7 tools (the A6 merge added `xclaw_computer_act`).
+
 > **Historical (pre-unification):** these benches compared the native thin server against the retired 16MB CDP bundle. Since ADR 0005 (2026-08-24) only the native engine exists; numbers kept for the record.
 
 Measured on this host: 2026-08-17 (lab node). Numbers are order-of-magnitude guides, not SLAs.

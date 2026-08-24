@@ -18,7 +18,6 @@ artifacts/
 dist/
 coverage/
 
-# Opt-in full-CDP computer runtime — fetched from release, not tracked (16MB)
 eval/fixtures/wc/**
 !eval/fixtures/wc/README.md
 eval/fixtures/wc/wc-05_*/**

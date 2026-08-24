@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 /**
- * Ensure thin-native computer is listening (lab).
- * Usage: node scripts/ensure-thin-computer.mjs
+ * Ensure the computer server is listening (lab).
+ * Usage: node scripts/ensure-computer.mjs
+ *
+ * A6: thin-server merge — this used to insist /health reported a "thin" engine
+ * and spawned src/computer/thin-server.mjs. There is one engine now, so it
+ * accepts whatever healthy server already holds the port and otherwise starts
+ * the bundle.
  */
 import { spawn } from "node:child_process";
 import http from "node:http";
@@ -35,28 +40,28 @@ function health() {
 }
 
 const h0 = await health();
-if (h0.ok && String(h0.body?.engine || "").includes("thin")) {
+if (h0.ok) {
   console.log(JSON.stringify({ already: true, ...h0.body }, null, 2));
   process.exit(0);
 }
 
-const child = spawn(process.execPath, [path.join(root, "src/computer/thin-server.mjs")], {
+const child = spawn(process.execPath, [path.join(root, "src/computer/xclaw-server.mjs")], {
   cwd: root,
-  env: { ...process.env, XCLAW_COMPUTER_ENGINE: "native", PORT: String(port) },
+  env: { ...process.env, PORT: String(port) },
   detached: true,
   stdio: "ignore",
 });
 child.unref();
 
 let last = null;
-for (let i = 0; i < 20; i++) {
-  await new Promise((r) => setTimeout(r, 200));
+for (let i = 0; i < 40; i++) {
+  await new Promise((r) => setTimeout(r, 250));
   last = await health();
   if (last.ok) break;
 }
 
 if (!last?.ok) {
-  console.error(JSON.stringify({ ok: false, error: "thin server did not become healthy", port }, null, 2));
+  console.error(JSON.stringify({ ok: false, error: "computer server did not become healthy", port }, null, 2));
   process.exit(1);
 }
 console.log(JSON.stringify({ started: true, pid: child.pid, ...last.body }, null, 2));

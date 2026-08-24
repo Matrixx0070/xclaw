@@ -13,7 +13,7 @@ node scripts/cua-doctor.mjs
 XClaw attaches CUA capabilities to the **existing** computer plane:
 
 - `src/computer/modules/*` — edit source (Strategy C)
-- `thin-server.mjs` / `xclaw-server.mjs` — runtime
+- `xclaw-server.mjs` — runtime (single engine, ADR 0006)
 - `src/tools/planes.mjs` — computer plane, serial actuation
 - `src/browser/*` — Horizon/CDP helpers (agent process)
 
@@ -70,7 +70,10 @@ export XCLAW_CDP_URL=http://127.0.0.1:9222
 - **I5** DesktopDriver — done (opt-in, Linux xdotool/ydotool; fail closed)
 - **I6** long-horizon eval
 
-Do **not** hand-edit `xclaw-server.mjs`; extend modules and rebuild.
+`xclaw-server.mjs` is a tracked, hand-patched source file since ADR 0006:
+edits are allowed but MUST carry an `// A6: thin-server merge` marker, and
+shared logic belongs in `src/computer/modules/*` (bridged via
+`loadNativeMergeModule`), not duplicated in the bundle.
 
 
 ## DesktopDriver (I5)

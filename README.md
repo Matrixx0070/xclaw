@@ -114,21 +114,21 @@ Project memory injected into the agent: **[XCLAW.md](./XCLAW.md)** (edit this fo
 
 ---
 
-## Strategy C (computer)
+## Computer server (single engine)
 
-**Modules are the source of truth.** Every computer tool lives in `src/computer/modules/*` — edit directly.
-
-| Engine | Entry | When |
-|--------|--------|------|
-| **native** (default) | `src/computer/thin-server.mjs` | Fast lab; edit `src/computer/modules/**` |
-| **generated** | `src/computer/generated/computer-server.mjs` | `npm run build:computer` |
+**One engine** (ADR 0006): `src/computer/xclaw-server.mjs` — the tracked,
+hand-patched bundle serving all 7 tools (bash, file read/write/edit,
+browser_tab, browser_network_details, computer_act). Hand edits carry
+`// A6: thin-server merge` markers; shared logic (env policy, sandbox, SSRF,
+Chrome lifecycle, motor/hooks) is bridged from `src/computer/modules/*` and
+`src/computer/chrome-session.mjs` — edit those directly.
 
 ```bash
-npm run build:computer
-# legacy XCLAW_COMPUTER_ENGINE selectors all resolve to native (ADR 0005)
+node src/computer/xclaw-server.mjs        # or: node scripts/ensure-computer.mjs
+# legacy XCLAW_COMPUTER_ENGINE selectors all resolve to bundle (ADR 0006)
 ```
 
-Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
+Source of truth: [docs/COMPUTER_SOURCE_OF_TRUTH.md](./docs/COMPUTER_SOURCE_OF_TRUTH.md)
 
 ---
 
@@ -262,21 +262,21 @@ curl -sX POST http://127.0.0.1:18790/objectives \
 
 Architecture + state contract: **[docs/LONGRUN.md](./docs/LONGRUN.md)**.
 
-## Strategy C (computer)
+## Computer server (single engine)
 
-**Modules are the source of truth.** Every computer tool lives in `src/computer/modules/*` — edit directly.
-
-| Engine | Entry | When |
-|--------|--------|------|
-| **native** (default) | `src/computer/thin-server.mjs` | Fast lab; edit `src/computer/modules/**` |
-| **generated** | `src/computer/generated/computer-server.mjs` | `npm run build:computer` |
+**One engine** (ADR 0006): `src/computer/xclaw-server.mjs` — the tracked,
+hand-patched bundle serving all 7 tools (bash, file read/write/edit,
+browser_tab, browser_network_details, computer_act). Hand edits carry
+`// A6: thin-server merge` markers; shared logic (env policy, sandbox, SSRF,
+Chrome lifecycle, motor/hooks) is bridged from `src/computer/modules/*` and
+`src/computer/chrome-session.mjs` — edit those directly.
 
 ```bash
-npm run build:computer
-# legacy XCLAW_COMPUTER_ENGINE selectors all resolve to native (ADR 0005)
+node src/computer/xclaw-server.mjs        # or: node scripts/ensure-computer.mjs
+# legacy XCLAW_COMPUTER_ENGINE selectors all resolve to bundle (ADR 0006)
 ```
 
-Policy: [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md)
+Source of truth: [docs/COMPUTER_SOURCE_OF_TRUTH.md](./docs/COMPUTER_SOURCE_OF_TRUTH.md)
 
 ---
 

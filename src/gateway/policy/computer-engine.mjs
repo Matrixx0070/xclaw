@@ -1,7 +1,7 @@
 /**
  * Gateway control-plane policy for the computer engine.
  *
- * Single native engine since the 2026-08-24 unification (ADR 0005) — the
+ * Single engine — the unified CDP bundle (ADR 0006, 2026-08-24) — the
  * policy layer stays as the gateway's stable import surface for engine
  * observability (doctor, /dashboard, security snapshot).
  * Implementation lives in src/computer/engine.mjs.
@@ -16,11 +16,11 @@ import {
 } from "../../computer/engine.mjs";
 
 /** Engines allowed as long-term defaults. */
-export const ALLOWED_DEFAULT_ENGINES = Object.freeze(["native"]);
+export const ALLOWED_DEFAULT_ENGINES = Object.freeze(["bundle"]);
 
 /**
  * @param {object} [cfg]
- * @returns {"native"}
+ * @returns {"bundle"}
  */
 export function policyResolveComputerEngine(cfg = {}) {
   return resolveComputerEngine(cfg);
@@ -38,7 +38,7 @@ export function validateComputerEnginePolicy(cfg = {}) {
   return {
     ok: true,
     engine,
-    reason: "single native engine (real-browser capability included)",
+    reason: "single unified bundle engine (A6 thin-server merge included)",
     warning: false,
   };
 }

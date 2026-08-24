@@ -18,7 +18,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const selectors = ["native", "thin", "generated", "gen", "c3", "bundle", "full", "xclaw-server", ""];
 const report = {
   at: new Date().toISOString(),
-  phase: "unified-native-soak",
+  phase: "unified-bundle-soak",
   engines: [],
 };
 
@@ -30,7 +30,7 @@ for (const sel of selectors) {
   const resolved = resolveComputerEngine(cfg);
   const entry = resolveComputerEntryPath(cfg, root);
   const info = describeComputerEngine(cfg, root);
-  const ok = resolved === "native" && fs.existsSync(entry);
+  const ok = resolved === "bundle" && fs.existsSync(entry);
   if (!ok) fails += 1;
   report.engines.push({
     selector: sel || "(default)",

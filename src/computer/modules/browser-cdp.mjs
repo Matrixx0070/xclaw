@@ -192,7 +192,12 @@ export async function ensureTabPage(tab, opts = {}) {
 
 async function cdpNavigate(tab, handle, url, waitMs) {
   // Same SSRF policy as the fetch path (cloud metadata always blocked).
-  await assertUrlAllowed(url, ssrfCfg(), { metadataFloor: true });
+  // assertUrlAllowed reports a denial as { ok: false }; it never throws, so the
+  // verdict has to be acted on or the navigation goes through unchecked.
+  const verdict = await assertUrlAllowed(url, ssrfCfg(), { metadataFloor: true });
+  if (verdict && verdict.ok === false) {
+    throw new Error(`SSRF_BLOCKED: ${verdict.error || "destination not allowed"}`);
+  }
   const loaded = new Promise((resolve) => {
     const un = handle.on("Page.loadEventFired", () => {
       un();

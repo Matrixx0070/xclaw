@@ -90,20 +90,19 @@ Image choices:
 node bin/xclaw.mjs agent "List files in the current directory"
 ```
 
-## Computer engines
+## Computer engine
 
-Default lab engine is **native** (thin server).
+There is a single computer server (ADR 0006): the tracked bundle
+`src/computer/xclaw-server.mjs`, carrying the thin server's functions via the
+A6 merge. Legacy `XCLAW_COMPUTER_ENGINE` values (`native`/`thin`/`generated`/
+`gen`/`c3`) all resolve to it with a one-time notice.
 
 ```bash
-# Build modules → generated/computer-server.mjs (does not overwrite 16MB CDP bundle)
-npm run build:computer
-
-XCLAW_COMPUTER_ENGINE=native      # thin-server.mjs (default)
-XCLAW_COMPUTER_ENGINE=generated   # esbuild artifact
-XCLAW_COMPUTER_ENGINE=bundle      # full xclaw-server.mjs (~16MB CDP)
+node src/computer/xclaw-server.mjs        # serves 127.0.0.1:4243 by default
+node scripts/ensure-computer.mjs          # spawn-or-adopt helper
 ```
 
-See [src/computer/STRATEGY_C.md](./src/computer/STRATEGY_C.md).
+See [docs/COMPUTER_SOURCE_OF_TRUTH.md](./docs/COMPUTER_SOURCE_OF_TRUTH.md).
 
 ## Verify
 

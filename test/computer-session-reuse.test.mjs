@@ -29,11 +29,11 @@ function health() {
 
 describe("computer session reuse", () => {
   before(async () => {
-    process.env.XCLAW_COMPUTER_ENGINE = "native";
+    process.env.XCLAW_COMPUTER_ENGINE = "bundle";
     process.env.XCLAW_COMPUTER_REUSE_SESSION = "1";
     await fs.mkdir(path.join(root, "tmp-live"), { recursive: true });
     if (!(await health())) {
-      spawn(process.execPath, [path.join(root, "src/computer/thin-server.mjs")], {
+      spawn(process.execPath, [path.join(root, "src/computer/xclaw-server.mjs")], {
         cwd: root,
         detached: true,
         stdio: "ignore",
@@ -48,7 +48,7 @@ describe("computer session reuse", () => {
 
   it("reuses session id for same workingDir", async () => {
     const cfg = {
-      computer: { host: "127.0.0.1", port: 4243, engine: "native", reuseSession: true },
+      computer: { host: "127.0.0.1", port: 4243, engine: "bundle", reuseSession: true },
     };
     const c = createComputerClient(cfg);
     const wd = path.join(root, "tmp-live");
@@ -64,7 +64,7 @@ describe("computer session reuse", () => {
     clearComputerSessionPool();
     process.env.XCLAW_COMPUTER_REUSE_SESSION = "1";
     const cfg = {
-      computer: { host: "127.0.0.1", port: 4243, engine: "native", reuseSession: true },
+      computer: { host: "127.0.0.1", port: 4243, engine: "bundle", reuseSession: true },
     };
     const c = createComputerClient(cfg);
     const wd = path.join(root, "tmp-live");
@@ -79,7 +79,7 @@ describe("computer session reuse", () => {
   it("caches tools/list per session", async () => {
     clearComputerSessionPool();
     const cfg = {
-      computer: { host: "127.0.0.1", port: 4243, engine: "native", reuseSession: true },
+      computer: { host: "127.0.0.1", port: 4243, engine: "bundle", reuseSession: true },
     };
     const c = createComputerClient(cfg);
     const wd = path.join(root, "tmp-live");

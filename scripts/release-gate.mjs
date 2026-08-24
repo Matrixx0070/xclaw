@@ -147,12 +147,12 @@ await step("a-enforcement", async () => {
   return { code: r.code, detail: (r.out + r.err).split("\n").slice(-5).join(" | ") };
 }, { required: false });
 
-await step("native-engine-entry", async () => {
-  // Single native engine (ADR 0005): entry + chrome-session must be present.
+await step("engine-entry", async () => {
+  // Single bundle engine (ADR 0006): blob + bridge + merged act tool present.
   for (const rel of [
-    "src/computer/thin-server.mjs",
-    "src/computer/chrome-session.mjs",
-    "src/computer/modules/browser-cdp.mjs",
+    "src/computer/xclaw-server.mjs",
+    "src/computer/hooks-bridge.mjs",
+    "src/computer/modules/computer-act-tool.mjs",
   ]) {
     try {
       await fs.access(path.join(root, rel));
@@ -161,8 +161,8 @@ await step("native-engine-entry", async () => {
       return { code: 1, detail: rel };
     }
   }
-  console.log("Native engine files present");
-  return { code: 0, detail: "native" };
+  console.log("Unified bundle engine files present");
+  return { code: 0, detail: "bundle" };
 }, { required: false });
 
 if (strict) {

@@ -1,3 +1,50 @@
+## 3.176.0 (2026-08-24)
+
+- COMPUTER ENGINE REVERSAL (ADR 0006, operator directive: the 16MB bundle is
+  the one computer server; thin merged INTO it): `src/computer/xclaw-server.mjs`
+  is now a tracked, hand-patched source file and the single engine;
+  `src/computer/thin-server.mjs` is deleted — only after the full 50-gap thin-
+  parity audit closed (operator's explicit gate).
+- Every hand edit carries an `// A6: thin-server merge` marker (96 at ship).
+  Merged-in thin behaviors, each live-probe-verified on a rig: env-policy
+  strip-secrets + bwrap sandbox + spawn enforcement on bash; workspace
+  confinement (E_SANDBOX) with cfg/env opt-outs; relaxed file guards;
+  2MB file-read budget with per-call maxOutputBytes; browser lifecycle parity
+  (adopt running Chrome, exit teardown incl. SIGHUP, stale SingletonLock
+  clearing, CDP liveness re-probe, XCLAW_BROWSER_BIN, durable profile,
+  stdio drain); SSRF floor on Page.navigate (metadata/file: blocked even with
+  SSRF off); network-capture record parity (always-capture, inline headers/
+  type/at/bytes, body preview, available-id hints); thin browser_tab verb
+  vocabulary bridged to the native CDP modules; embeddable factory
+  (createComputerServer, XCLAW_COMPUTER_EMBEDDED) + host/port binding;
+  persist/detach background bash; camelCase/bare-name/`path` aliases;
+  any-Content-Type JSON parsing; JSON 404 route directory; lenient create /
+  idempotent destroy; nameless tools/call → 400; every tools/call result now
+  stamped `metadata:{name, engine:"bundle"}` merged over the tool's own
+  metadata.
+- GAP 10 class closed for the browser plane: the gateway loop injects `cwd`
+  into every tool call; browser_tab's strictObject schemas rejected the whole
+  call (`unrecognized_keys`). Both schemas now declare-and-ignore
+  cwd/workingDir (probe: all 7 tools tolerate the injected keys).
+- Defects found and fixed during the parity audit: native `browser-cdp.mjs`
+  awaited `assertUrlAllowed` but ignored its verdict — the CDP-navigate SSRF
+  check was decorative (now throws SSRF_BLOCKED); enforced spawns lost all
+  output to a sandbox-private tmpfs redirect (fd-inherit capture now).
+- Deliberate skips, documented: bundle's 16-slot FIFO bash concurrency kept
+  (thin was unbounded — worse); strict numeric validation kept (thin's silent
+  garbage-coercion hid caller bugs). POST /call keeps the MCP-wrapped result
+  shape as the documented contract (no in-repo caller of /call exists).
+- Engine selection mirrors 3.175.0, reversed: resolveComputerEngine always
+  "bundle"; legacy selectors (native/thin/generated/gen/c3,
+  XCLAW_COMPUTER_NATIVE=1) resolve with a one-time notice.
+  `scripts/ensure-computer.mjs` replaces `ensure-thin-computer.mjs` and
+  adopts any healthy server on the port. Native browser stack
+  (chrome-session/browser-cdp/modules) stays in-tree as the maintained
+  library the bundle bridges to via loadNativeMergeModule.
+- Docs realigned: COMPUTER_SOURCE_OF_TRUTH, README, INSTALL, LIVE_RUNBOOK,
+  COMPUTER_USE_BACKEND, COMPUTER_EDITABLE_MODULES; NATIVE_ENGINE_PERF marked
+  historical; ADR 0005 marked direction-superseded.
+
 ## 3.175.0 (2026-08-24)
 
 - COMPUTER ENGINE UNIFICATION (ADR 0005, operator directive: "merge both

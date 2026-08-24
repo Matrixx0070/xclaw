@@ -6,9 +6,8 @@ import {
   executeMaintainedTool,
   getTool,
 } from "../src/computer/modules/registry.mjs";
-import { createThinComputerServer } from "../src/computer/thin-server.mjs";
 
-describe("maintained registry + thin server browser", () => {
+describe("maintained registry + bundle server browser", () => {
   it("registry lists xclaw_browser_tab", () => {
     const names = listMaintainedTools().map((t) => t.name);
     assert.ok(names.includes("xclaw_browser_tab"));
@@ -36,26 +35,27 @@ describe("maintained registry + thin server browser", () => {
     }
   });
 
-  it("thin server health exposes browser tool", async () => {
-    // port 0 → ephemeral
-    const svc = createThinComputerServer({ host: "127.0.0.1", port: 0 });
-    // thin-server uses Number(opts.port) which is 0 — Node assigns ephemeral
-    const { port } = await new Promise((resolve, reject) => {
-      svc.server.listen(0, "127.0.0.1", () => {
-        resolve(svc.server.address());
-      });
-      svc.server.on("error", reject);
-    });
+  it("bundle server health exposes browser tool", async () => {
+    // The unified engine's embeddable factory: XCLAW_COMPUTER_EMBEDDED=1 makes
+    // the import side-effect-free, createComputerServer({port:0}) binds an
+    // ephemeral port (A6 thin-server merge, GAP 44 parity).
+    process.env.XCLAW_COMPUTER_EMBEDDED = "1";
+    let svc;
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      const { createComputerServer } = await import("../src/computer/xclaw-server.mjs");
+      svc = createComputerServer({ port: 0 });
+      await svc.listen();
+      const res = await fetch(`http://127.0.0.1:${svc.port}/health`);
       const j = await res.json();
       assert.equal(j.ok, true);
+      assert.equal(j.engine, "bundle");
       assert.ok(
         j.tools.includes("xclaw_browser_tab"),
         `tools=${JSON.stringify(j.tools)}`
       );
     } finally {
-      await svc.close();
+      delete process.env.XCLAW_COMPUTER_EMBEDDED;
+      if (svc) await svc.close();
     }
   });
 });

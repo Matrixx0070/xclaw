@@ -40,10 +40,10 @@ export const DEFAULT_CONFIG = {
   },
   computer: {
     /**
-     * Single native engine (unification, ADR 0005): auditable modules +
-     * bwrap sandbox + managed headless Chrome for real-browser capability.
-     * Legacy engine/nativeServer selectors in existing configs are accepted
-     * and resolve to native (see src/computer/engine.mjs).
+     * Single engine (ADR 0006): the unified CDP bundle xclaw-server.mjs,
+     * carrying the thin server's functions via the A6 merge (bwrap bash,
+     * per-call cwd, systemRunPlan assert, xclaw_computer_act). Legacy
+     * engine/nativeServer selectors resolve to bundle (src/computer/engine.mjs).
      */
     /** Optional remote computer base URL (sidecar) */
     remoteUrl: null,

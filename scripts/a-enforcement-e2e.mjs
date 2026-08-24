@@ -38,8 +38,8 @@ async function main() {
     "src/browser/hooks.mjs",
     "src/browser/motor.mjs",
     "src/computer/chrome-args.mjs",
-    "src/computer/chrome-session.mjs",
-    "src/computer/thin-server.mjs",
+    "src/computer/hooks-bridge.mjs",
+    "src/computer/xclaw-server.mjs",
   ];
   for (const rel of need) {
     if (fs.existsSync(path.join(ROOT, rel))) ok(`file.${rel}`, "present");
