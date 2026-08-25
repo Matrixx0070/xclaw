@@ -1,3 +1,37 @@
+## 3.198.0 (2026-08-25)
+
+- TEST (sweep #14 — credential-**acceptance** coverage on the computer-control
+  plane, not a live leak). Sweeps #12/#13 pinned acceptance on the gateway HTTP
+  `check()` and the `/stop` `authorizeStop()`. This sweep carries the same
+  wrong-credential probe to the third self-authenticating gate: `verifyComputerAuth()`
+  in `computer/auth.mjs`, which fronts real machine control (mouse / keyboard /
+  screenshot) and has **two** acceptance decisions — its own token compare
+  (`got !== token`) and a full HMAC layer (a 5-minute timestamp replay window plus a
+  `timingSafeEqual` signature over `${ts}.${body}`). The three files touching it
+  (`computer-contract`, `computer-auth-client`, `auth-proxy`) only ever asserted
+  missing-token → 401, correct-token → ok, and correct-token + **correct** HMAC → ok.
+  No test ever sent a wrong non-empty token, a forged signature, a stale timestamp,
+  or missing HMAC headers when `authHmac` was on — so **both** halves were unpinned:
+  mutating `computer/auth.mjs` line 42 `if (got !== token)` to `if (!got)` (accept
+  ANY presented token) left the full suite **green (3491/0)**, and independently
+  disabling the signature compare on line 53 (accept ANY signature) **also** left it
+  **green (3491/0)**.
+- `test/computer-auth-wrong-cred.test.mjs` closes it: per carrier
+  (`Authorization: Bearer`, `X-XClaw-Computer-Token`) it rejects a wrong non-empty
+  token (with prefix / superstring / case-flip guards) and accepts only the exact
+  token; and with `authHmac` on it rejects missing HMAC headers (`missing_hmac`), a
+  forged same-length signature and a forged wrong-length signature (`bad_signature`),
+  and a stale timestamp carrying an otherwise-correct signature (`stale_timestamp`),
+  while accepting a correct timestamp+signature. Mutation-proven three ways: RED
+  (8/16) under the `if (!got)` truthiness accept, RED (2/16) under the disabled
+  signature compare, RED (15/16) under an inverted token compare, GREEN (16/16) on
+  the real code. This gate is genuinely secondary: per `gateway/computer-proxy.mjs`
+  the live single-port gateway fronts the computer prefixes with the **main** auth
+  `check()` (pinned in #12), and `verifyComputerAuth` is exercised only by the opt-in
+  auth-proxy on :4244 — so this is coverage hardening of an opt-in layer, not a live
+  leak. No production code changed — `computer/auth.mjs` is byte-identical
+  (sha256 d1906069…).
+
 ## 3.197.0 (2026-08-25)
 
 - TEST (sweep #13 — credential-**acceptance** coverage on the kill-switch, not a
