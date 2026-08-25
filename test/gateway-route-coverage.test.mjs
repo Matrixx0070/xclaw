@@ -51,6 +51,12 @@ const OPEN = {
   // dedicated stop token + optional HMAC) and fails closed under requireAuth/prod.
   "/stop": "handler runs authorizeStop; fails closed in prod",
   "/xclaw/stop": "handler runs authorizeStop; fails closed in prod",
+  // The MCP OAuth AS redirect: the authorization server sends the browser here
+  // with ?code&state. It authenticates by the state it issued, never the
+  // operator token, so the token-gate must leave it open — while every other
+  // /mcp path (agent + data plane) stays protected. gateway-auth-cost-usage
+  // pins the sibling OAuth POSTs protected; this one alone is open.
+  "/mcp/oauth/callback": "MCP OAuth AS browser redirect; state-authenticated, not token-authenticated",
 };
 
 describe("gateway route coverage: no declared route is open by omission", () => {

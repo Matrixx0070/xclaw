@@ -1,3 +1,40 @@
+## 3.194.0 (2026-08-25)
+
+- SECURITY (sweep #10 — a coverage blind spot on the **MCP JSON-RPC plane**,
+  closed before it could ship open). Unlike the 3.190.0–3.193.0 bypasses, this
+  was **not a live leak**: `/mcp` was protected in production the whole time.
+  The defect was that the entire plane — `POST /mcp` (runs the agent as an MCP
+  server), `POST /mcp/call` (invokes a tool, bash included), `POST /mcp/servers`
+  (writes MCP config **and stored credentials**), `/mcp/resources` (reads
+  resources and transcripts) — hung on a **single list term** in
+  `gateway/auth.mjs` (`p.startsWith("/mcp")`) with **zero behavioural coverage**.
+  Every MCP auth assertion in the suite went through `check()`/`isProtectedPath`
+  on the OAuth subpaths only. Measured: narrowing that one term to
+  `"/mcp/oauth"` opens the whole agent + data plane on a token gateway and the
+  **full suite stayed green (3222/0)** — the same default-ALLOW root cause, one
+  forgotten test away from a live bypass.
+- Closed at both layers, matching 3.193.0's shape:
+  - **List layer** — `routes-map.mjs` now declares the 15 served `/mcp` routes,
+    so `gateway-route-coverage.test.mjs` (which walks the gateway's own declared
+    inventory) requires each protected. The OAuth AS redirect
+    `/mcp/oauth/callback` is open-listed with its reason (state-authenticated,
+    never token-authenticated).
+  - **Wiring layer** — `gateway-auth-enforcement.test.mjs` drives real anonymous
+    requests through the child-process socket (`POST /mcp`, `POST /mcp/call`,
+    `GET /mcp/servers`, `GET /mcp/resources`, `POST /mcp/oauth/start` → `401`),
+    with operator token mirrors (`POST /mcp` JSON-RPC, `GET /mcp/servers` →
+    not-`401`) and a path-discrimination control (anonymous
+    `GET /mcp/oauth/callback` → not-`401`). This catches a *wiring* skip — a gate
+    reached only for some paths — that a list test cannot, exactly the class of
+    the `/v1`, computer-plane and `/ws/voice` defects that file exists for.
+  - Both new guards were mutation-verified RED under the narrowing (14 fails: 4
+    wiring + 10 coverage) and GREEN restored; `auth.mjs` is byte-identical
+    (`sha256 5c521c77…`), so no production behaviour changed.
+- Honest limit (unchanged, still tracked): `routes-map.mjs` still does not
+  declare every served path (`/agent-runs`, `/artifacts/file`, `/ws/voice`,
+  `/v1/*`, `/pairing/*`). One registry that the router, the auth gate and the
+  coverage test all read is the real structural close.
+
 ## 3.193.0 (2026-08-25)
 
 - SECURITY (sweeps #8 and #9 — two more authentication bypasses, same root

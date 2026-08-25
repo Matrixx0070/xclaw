@@ -39,6 +39,14 @@
  * assert on the upstream's hit counter — a 401 could come from anywhere, but
  * "the computer plane was never contacted" can only be true if the gate ran
  * before the proxy.
+ *
+ * The MCP plane block below closes the same CLASS before it could ship open.
+ * Unlike 1 and 2, /mcp was protected in prod the whole time — but by a single
+ * list term (auth.mjs: p.startsWith("/mcp")) with no behavioural test, so a
+ * one-line narrowing to "/mcp/oauth" opens the agent + data plane (POST /mcp
+ * runs the agent, /mcp/call runs a tool, /mcp/servers writes credentials) with
+ * the full suite green — measured, 3222/0. This drives those paths through the
+ * real socket so that narrowing fails here instead.
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -378,6 +386,61 @@ describe("every WebSocket endpoint is behind the same gate", () => {
     const line = await wsUpgrade(`/ws/events?token=${TOKEN}`);
 
     assert.match(line, /101 Switching Protocols/, `an authenticated event upgrade must pass (got: ${line})`);
+  });
+});
+
+describe("the MCP JSON-RPC plane is behind the same gate", () => {
+  // The same shape as the three bypasses above, waiting to happen on the whole
+  // /mcp surface. POST /mcp runs the agent as an MCP server; POST /mcp/call
+  // invokes a tool (bash included); POST /mcp/servers writes MCP config and
+  // stored credentials; /mcp/resources reads resources and transcripts. The
+  // entire plane is protected by a single list term (auth.mjs:
+  // p.startsWith("/mcp")). Narrowing it to "/mcp/oauth" keeps the only /mcp
+  // paths any prior test touched — the OAuth subpaths, pinned by
+  // gateway-auth-cost-usage.test.mjs — protected while opening every agent and
+  // data path, and the full suite stayed green (measured: 3222/0). routes-map
+  // now declares these so gateway-route-coverage sees the list drift; this
+  // drives them through the wired socket so a WIRING skip — a gate reached only
+  // for some paths, exactly the /v1 + computer + /ws/voice defects this file
+  // exists for — is caught too.
+  const ANON_401 = [
+    ["POST", "/mcp", { jsonrpc: "2.0", id: 1, method: "tools/list" }], // runs the agent
+    ["POST", "/mcp/call", { name: "bash", arguments: { command: "id" } }], // invokes a tool
+    ["GET", "/mcp/servers", null], // POST here writes config + stored credentials
+    ["GET", "/mcp/resources", null], // reads resources / transcripts
+    ["POST", "/mcp/oauth/start", { server: "x" }], // gated OAuth POST, through the socket
+  ];
+  for (const [method, p, body] of ANON_401) {
+    it(`refuses ${method} ${p} without a token`, async () => {
+      const r = await request(method, p, body ? { body } : {});
+      assert.equal(
+        r.status,
+        401,
+        `${p} exposes the MCP agent/data plane and must be gated (got ${r.status}: ${r.body.slice(0, 160)})`
+      );
+    });
+  }
+
+  it("serves POST /mcp to the operator (the gate is the only thing that moved)", async () => {
+    const r = await request("POST", "/mcp", {
+      headers: withToken,
+      body: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+    });
+    assert.notEqual(r.status, 401, `the operator must still reach the MCP server (${r.body.slice(0, 160)})`);
+  });
+
+  it("serves GET /mcp/servers to the operator", async () => {
+    const r = await request("GET", "/mcp/servers", { headers: withToken });
+    assert.notEqual(r.status, 401, `the operator must still list MCP servers (${r.body.slice(0, 160)})`);
+  });
+
+  it("leaves /mcp/oauth/callback open — path discrimination, not a blanket refusal", async () => {
+    // The one MCP path that authenticates itself (with the state it issued),
+    // never the operator token. That it answers non-401 anonymously proves the
+    // 401s above are the gate deciding per path, and that alwaysOpen still
+    // reaches through the wiring.
+    const r = await request("GET", "/mcp/oauth/callback?code=x&state=y");
+    assert.notEqual(r.status, 401, `the AS redirect must not require the operator token (got ${r.status})`);
   });
 });
 

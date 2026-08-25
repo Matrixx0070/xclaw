@@ -69,6 +69,26 @@ export function listRoutes() {
     { method: "GET", path: "/api/swarm/health", group: "swarm-ext", desc: "swarm-ext: module health (redis/plugins)" },
     { method: "GET", path: "/api/swarm/stats", group: "swarm-ext", desc: "swarm-ext: aggregate stats" },
     { method: "GET", path: "/api/swarm/sessions", group: "swarm-ext", desc: "swarm-ext: list sessions" },
+    // MCP plane. POST /mcp runs the agent as an MCP server; /mcp/call invokes a
+    // tool; POST /mcp/servers writes MCP config + stored credentials; /mcp/resources
+    // reads resources and transcripts — all operator-only. The one exception is the
+    // OAuth AS redirect (/mcp/oauth/callback), which is state-authenticated, not
+    // token-authenticated, and is open-listed in gateway-route-coverage.test.mjs.
+    { method: "POST", path: "/mcp", group: "mcp", desc: "MCP JSON-RPC — runs the agent as an MCP server" },
+    { method: "GET", path: "/mcp/status", group: "mcp", desc: "Connected MCP server status" },
+    { method: "GET", path: "/mcp/tools", group: "mcp", desc: "List tools from connected MCP servers" },
+    { method: "POST", path: "/mcp/call", group: "mcp", desc: "Invoke a tool on a connected MCP server" },
+    { method: "GET", path: "/mcp/servers", group: "mcp", desc: "List MCP servers (POST adds/writes config+creds, DELETE removes)" },
+    { method: "POST", path: "/mcp/servers/test", group: "mcp", desc: "Test an MCP server definition" },
+    { method: "GET", path: "/mcp/resources", group: "mcp", desc: "List MCP resources" },
+    { method: "POST", path: "/mcp/resources/read", group: "mcp", desc: "Read an MCP resource" },
+    { method: "GET", path: "/mcp/prompts", group: "mcp", desc: "List MCP prompts" },
+    { method: "POST", path: "/mcp/prompts/get", group: "mcp", desc: "Get an MCP prompt" },
+    { method: "POST", path: "/mcp/oauth/start", group: "mcp", desc: "Begin MCP OAuth authorization" },
+    { method: "GET", path: "/mcp/oauth/callback", group: "mcp", desc: "MCP OAuth AS redirect (state-authenticated; open by design)" },
+    { method: "POST", path: "/mcp/oauth/complete", group: "mcp", desc: "Complete MCP OAuth authorization" },
+    { method: "GET", path: "/mcp/oauth/status", group: "mcp", desc: "MCP OAuth token status" },
+    { method: "DELETE", path: "/mcp/oauth", group: "mcp", desc: "Revoke stored MCP OAuth tokens" },
     { method: "ALL", path: "/computer/proxy/*", group: "computer", desc: "Proxy to computer plane (single external port)" },
     { method: "ALL", path: "/xclaw/computer/*", group: "computer", desc: "Alias proxy to computer plane" },
   ];
