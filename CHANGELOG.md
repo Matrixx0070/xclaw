@@ -1,3 +1,30 @@
+## 3.197.0 (2026-08-25)
+
+- TEST (sweep #13 — credential-**acceptance** coverage on the kill-switch, not a
+  live leak). Sweep #12 pinned the main HTTP `check()` acceptance half; this
+  sweep applies the same wrong-credential probe to the **separate**
+  `authorizeStop()` gate that guards `POST /stop`. That gate matters: a
+  token-accept bug there lets anyone **halt the agent's running work**. It has
+  its own `tokenEqual()`, an extra `x-xclaw-stop-token` carrier the main gate
+  doesn't read, and a dedicated `stopToken` precedence — none of it covered for a
+  wrong token. The whole 44-file stop suite only asserted missing-token → 401
+  (empty) and correct-token → ok; the one body-bearing "rejects" case
+  (`stop-hmac.test.mjs`) sends the **correct** token plus a bad HMAC sig, so it
+  pins the signature half, not the token compare. Mutating `gateway/stop-auth.mjs`
+  line 92 `if (!tokenEqual(got, expected))` to `if (!got)` — accept ANY presented
+  token on the kill-switch — left the full suite **green (3464/0)**.
+- `test/stop-auth-wrong-token.test.mjs` closes it: it drives `authorizeStop()`
+  with a wrong non-empty token through every carrier `extractStopToken()` reads
+  (`Authorization: Bearer`, `x-xclaw-token`, `x-xclaw-stop-token`, `x-api-key`,
+  `?token=`) and asserts `ok:false` / `STOP_UNAUTHORIZED`, accepts only the exact
+  token, and pins the dedicated-`stopToken` precedence (once a stop token is set,
+  the general gateway token must **not** open `/stop`). Prefix and superstring
+  cases defend against a `startsWith`-style weakening either way. Mutation-proven
+  both ways: RED (21/27) under the `if (!got)` truthiness accept, RED (27/27)
+  under an inverted `tokenEqual` compare, GREEN (27/27) on the real compare. No
+  production code changed — `gateway/stop-auth.mjs` is byte-identical
+  (sha256 73d23e9a…).
+
 ## 3.196.0 (2026-08-25)
 
 - TEST (sweep #12 — credential-**acceptance** coverage, not a live leak). The
