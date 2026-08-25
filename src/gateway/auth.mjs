@@ -45,8 +45,6 @@ export function createGatewayAuth(cfg = {}) {
     null;
   const required = Boolean(token);
   const protectMetrics = cfg.gateway?.protectMetrics === true;
-  /** When true, all non-open paths require token if token is set */
-  const strict = cfg.gateway?.authStrict !== false;
 
   /** Fail-closed when profile=prod or gateway.requireAuth=true */
   const requireAuth =
@@ -94,13 +92,25 @@ export function createGatewayAuth(cfg = {}) {
     // reachable without an operator token — EXCEPT the /recent read, which
     // lists received events (operator data, token-gated below).
     if (p.startsWith("/webhooks/") && p !== "/webhooks/pagerduty/recent") return false;
+    // Telegram's inbound webhook is the same contract under a different prefix.
+    // xclaw registers it itself (setWebhook with secret_token) and the handler
+    // verifies that secret, failing closed when none is configured — but the
+    // path starts with "/channel/", so the operator-token gate answered 401
+    // before the handler ever ran. Telegram sends only its secret header, never
+    // a Bearer, so on any gateway with a token configured every inbound update
+    // was rejected and the bot went silent. Measured: 401 anonymous with a
+    // correct secret header, 503 telegram_disabled with an operator Bearer —
+    // the gate, not the handler.
+    if (p === "/channel/telegram/webhook") return false;
     // requireAuth (prod) protects API even when token is not yet configured
     if (!required && !requireAuth) return false;
-    // Protected in BOTH legacy and strict modes: state-changing or
-    // secret/conversation-exposing surface. A 2026-08-13 sweep found these in
-    // NEITHER branch — unauthenticated callers could fire real alerts
-    // (/alerts/pd), spend money (/media/jobs POST, /checkpoints/resume,
-    // /eval), install skills, and read transcripts/memory.
+    // State-changing or secret/conversation-exposing surface. Kept as its own
+    // block because a 2026-08-13 sweep found every one of these in NEITHER of
+    // the two lists that used to follow: unauthenticated callers could fire
+    // real alerts (/alerts/pd), spend money (/media/jobs POST,
+    // /checkpoints/resume, /eval), install skills, and read transcripts and
+    // memory. The two lists are now one; this block stays first because it is
+    // the surface where a miss costs money or leaks a transcript.
     const core =
       p.startsWith("/alerts") ||
       p === "/webhooks/pagerduty/recent" ||
@@ -146,45 +156,40 @@ export function createGatewayAuth(cfg = {}) {
       // completions spend provider tokens per call
       p === "/complete";
     if (core) return true;
-    if (!strict) {
-      // legacy subset
-      return (
-        p.startsWith("/security/") ||
-        p.startsWith("/pairing/") ||
-        p.startsWith("/cron/") ||
-        p.startsWith("/subagents/") ||
-        p.startsWith("/mcp") ||
-        p === "/agent" ||
-        p.startsWith("/agent/") ||
-        p.startsWith("/jobs") ||
-        p.startsWith("/queue") ||
-        p.startsWith("/sessions") ||
-        p.startsWith("/config") ||
-        p === "/dashboard" ||
-        p === "/report" ||
-        p === "/xclaw/jwks/invalidate" ||
-        p === "/xclaw/jwks/cache" ||
-        p === "/xclaw/jwks/epoch" ||
-        p.startsWith("/swarm") ||
-        p.startsWith("/subagents") ||
-        // provider management writes config + stores credentials; a base-url
-        // rewrite would aim the stored Bearer token at an attacker host
-        p.startsWith("/providers") ||
-        // channel management writes config + channel secrets (bot tokens etc.)
-        p.startsWith("/channels") ||
-        // POST /cost/pause is state-changing (pauses ALL spend); usage/logs
-        // expose session previews — protected in BOTH branches, not just
-        // strict (flagged by review: strict-only left legacy deployments open)
-        p === "/cost" ||
-        p.startsWith("/cost/") ||
-        p === "/usage" ||
-        p === "/logs" ||
-        p.startsWith("/logs/")
-      );
-    }
-    // strict: protect API surface
+    // ONE list. There were two — a "legacy" subset for gateway.authStrict:false
+    // and a strict superset — and they drifted, which is how every gateway
+    // bypass recorded in this file got in. The old legacy block said so itself
+    // ("flagged by review: strict-only left legacy deployments open") after
+    // /cost, /usage and /logs were moved across; that move missed /channel/.
+    // So on an authStrict:false gateway POST /channel/webchat/message — which
+    // RUNS THE AGENT — answered without credentials, and /channel/webchat/
+    // sessions returned the conversation list byte-identical to the
+    // authenticated response, while /agent/run, /artifacts/list and /config all
+    // refused correctly (measured on a real socket).
+    //
+    // After dropping /seats and /models (nothing has ever served either path —
+    // 404 with a valid token) and /doctor (already in `core` above), /channel/
+    // was the ONLY remaining difference between the two lists: the split's
+    // whole surviving effect was leaving agent execution open. Collapsed rather
+    // than patched, because one more entry to keep in sync is the defect, not
+    // the cure. gateway.authStrict is still accepted and still reported by
+    // /dashboard; it no longer decides what the gate protects.
     return (
       p.startsWith("/security/") ||
+      // /approvals* is the documented alias for /security/pending + /security/decide
+      // (routes-map.mjs: "Alias: pending approvals"). /security/* was gated and the
+      // alias was in NEITHER list, so on the DEFAULT gateway an anonymous caller
+      // could GET /approvals — leaking a pending's full command, the path AND
+      // content of a critical-tier write, measured on the live gateway — and POST
+      // /approvals/approve to decide that critical pending: accepted ok:true
+      // mode:"human", ledgered as actor:"operator". A separate workspace-containment
+      // guard happened to stop that one write, but the last HUMAN gate in front of a
+      // risky command had no auth of its own. /agent-runs streamed real session
+      // history the same way. Same alias-drift shape as /v1 (3.190.0) and /channel.
+      p === "/approvals" ||
+      p.startsWith("/approvals/") ||
+      p === "/agent-runs" ||
+      p.startsWith("/agent-runs/") ||
       p.startsWith("/pairing/") ||
       p.startsWith("/cron/") ||
       p.startsWith("/subagents/") ||
@@ -197,8 +202,10 @@ export function createGatewayAuth(cfg = {}) {
       p.startsWith("/config") ||
       p === "/dashboard" ||
       p === "/report" ||
+      // Agent execution and conversation history. The inbound Telegram webhook
+      // is the one path under this prefix that authenticates itself; it is
+      // exempted above, before this list is consulted.
       p.startsWith("/channel/") ||
-      p.startsWith("/doctor") ||
       // spend-pause + budget state is an operator control
       p === "/cost" ||
       p.startsWith("/cost/") ||
@@ -206,15 +213,16 @@ export function createGatewayAuth(cfg = {}) {
       p === "/usage" ||
       p === "/logs" ||
       p.startsWith("/logs/") ||
-      p.startsWith("/seats") ||
-      p.startsWith("/models") ||
       // JWKS operator endpoints (document itself is alwaysOpen)
       p === "/xclaw/jwks/invalidate" ||
       p === "/xclaw/jwks/cache" ||
       p === "/xclaw/jwks/epoch" ||
       p.startsWith("/swarm") ||
       p.startsWith("/subagents") ||
+      // provider management writes config + stores credentials; a base-url
+      // rewrite would aim the stored Bearer token at an attacker host
       p.startsWith("/providers") ||
+      // channel management writes config + channel secrets (bot tokens etc.)
       p.startsWith("/channels")
     );
   }
@@ -306,6 +314,5 @@ export function createGatewayAuth(cfg = {}) {
     required,
     requireAuth,
     protectMetrics,
-    strict,
   };
 }

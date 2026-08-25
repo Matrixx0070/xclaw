@@ -1,3 +1,67 @@
+## 3.193.0 (2026-08-25)
+
+- SECURITY (sweeps #8 and #9 — two more authentication bypasses, same root
+  cause as 3.190.0/3.191.0/3.192.0: **the gate in `gateway/auth.mjs` is
+  default-ALLOW**, so any route no list names is served without a token, and
+  every enforcement decision was split across hand-written lists that drift).
+  Both are closed here, together with the structural test that makes the *next*
+  missing route fail CI instead of shipping.
+- **Sweep #9 — `/approvals` was open on the DEFAULT gateway, and it was
+  exploited live in production before the fix.** `routes-map.mjs` declares
+  `/approvals` as `Alias: pending approvals` — the same data and the same
+  `approvalGate.decide()` call as `/security/pending` + `/security/decide`,
+  which were gated. The alias was in **neither** auth list. Measured on the
+  live gateway, no credentials:
+  - `GET /approvals` → **`200`** leaking a real **critical-tier** pending in
+    full: `xclaw_file_write` with its `file_path` **and** `content`, while the
+    canonical `GET /security/pending` → `401` (control: auth was on).
+  - `GET /agent-runs` → **`200`** streaming real persisted session history.
+  - `POST /approvals/approve` → **`200`**, `{ok:true, approved:true,
+    mode:"human"}`, ledgered `actor:"operator"`, `risk.tier:"critical"`,
+    `reversibility:"irreversible"` — the last **human** gate in front of a
+    risky command, decided by a request with no credentials. The 3.126.0
+    workspace-containment guard happened to stop that one write, so end-to-end
+    execution was not observed; defence-in-depth caught what the missing auth
+    let through. `auth.mjs` contained zero occurrences of "approval" — an
+    omission, not a decision.
+- **Sweep #8 — agent execution was open in `authStrict:false`, and the
+  Telegram webhook was closed in the default.** There were two auth lists — a
+  "legacy" subset for `gateway.authStrict:false` and a strict superset — and
+  they drifted. `/channel/` ended up in the strict list only, so on an
+  `authStrict:false` gateway `POST /channel/webchat/message`, **which runs the
+  agent**, answered without credentials (measured: `200` anon, byte-identical
+  to the authenticated response), while `/agent/run`, `/artifacts/list` and
+  `/config` all refused. Meanwhile on the strict default the `/channel/` prefix
+  swallowed the inbound **Telegram webhook**, which Telegram calls with its
+  secret header and never a Bearer: the operator gate answered `401` before the
+  handler ran (measured: `401` anon with a correct secret, `503
+  telegram_disabled` with an operator Bearer — the gate, not the handler), so a
+  tokened gateway went silent.
+- **Fix.** The two lists are collapsed into one; `gateway.authStrict` is still
+  accepted and reported but no longer decides what the gate protects.
+  `/channel/telegram/webhook` is exempted before the list (self-verifying, fails
+  closed). `/approvals`, `/approvals/*` and `/agent-runs` join the protected
+  surface beside their `/security/*` canonical. Phantom `/seats` and `/models`
+  (nothing has ever served them — `404` with a valid token) and the duplicate
+  `/doctor` were dropped: one fewer entry to keep in sync is the point.
+- **Structural fix — `test/gateway-route-coverage.test.mjs`.** It walks
+  `routes-map.mjs`'s declared inventory and requires every route to be protected
+  on a default token gateway *except* an explicit 11-entry open-list, each with
+  the reason it is safe unauthenticated (probes, public JWKS documents, the UI
+  pages, and the two self-authenticating `/stop` aliases). A unit test of the
+  auth list agrees with the list by construction; this inverts the default so a
+  route the list forgot fails with its own path. Honest limit: `routes-map`
+  does not declare every served path (`/agent-runs`, `/artifacts/file`,
+  `/ws/voice`, the `/v1/*` aliases), so this catches the class only for declared
+  routes — the undeclared ones are pinned separately and closing the
+  declaration gap is the real structural fix (tracked, not done here).
+- Tests: pure (`gateway-approvals-auth`, `gateway-channel-auth`,
+  `gateway-route-coverage`) plus a child-process live gateway
+  (`gateway-approvals-live`) that reproduces the leak on a real socket — anon
+  `POST /approvals/approve` is now `401`, not the pre-fix `404
+  APPROVAL_NOT_FOUND` that proved the handler had run. Every new enforcement
+  point was mutation-swept to RED before shipping. Full suite 3222/0.
+
 ## 3.192.0 (2026-08-25)
 
 - SECURITY (sweep #7 — two defects in the `gateway.publicUi` lockdown, plus a
