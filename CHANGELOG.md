@@ -1,3 +1,62 @@
+## 3.180.0 (2026-08-25)
+
+- SECURITY — an operator's Deny was reported as "still awaiting approval".
+  `planApprovalOutcome` treated `Boolean(auth.pendingId)` as pending, but
+  `authorize` stamps `pendingId` onto EVERY answer it returns on the human
+  path (`return {...decision, pendingId: id}`), verdicts included. So a
+  tapped Deny stopped the turn instead of continuing it, went out as
+  `approval_required` with `restate:true` (which `isNewApprovalAsk` filters,
+  so telegram's `phase === "denied"` branch never fired and
+  `recordTelegramDeny` never counted a denial), showed the operator
+  "BLOCKED … awaiting approval" for the call they had just refused, and
+  skipped `guard.record` so repeated denied retries stopped feeding
+  stagnation detection. Decide-time drift verdicts (plan_drift,
+  fingerprint_mismatch) were swallowed the same way — a TOCTOU block
+  reported as "awaiting approval". Pending is now a claim about the REASON:
+  `pending`, the timeout family (timeout / sla_timeout /
+  sla_timeout_critical — all mean the window closed with nobody answering),
+  an explicit `pending:true`, or a bare id with no reason at all.
+- The loop's post-approval ENFORCEMENT is now under behavioural test.
+  W2 moved the decision logic into pure stages and left the side effects in
+  loop.mjs; the stages got exhaustive unit tests, the half that PERFORMS
+  them got source-greps. Mutation testing proved the hole: deleting the
+  whole post-approval TOCTOU block, and deleting the approval-outcome event
+  emission, both left the full suite green. `loop-toctou-enforcement.test.mjs`
+  drives the real `runAgentLoop` and produces the drift the way the real
+  threat does — the approved cwd swapped for a symlink from inside the
+  approval window — then asserts the call never reaches execution. Both
+  mutations fail it. The deny bug above was found by writing it.
+- CHANNELS — a declined start counted as a successful restart. The manager
+  returned `{ok:true}` unconditionally, so the health watchdog reset
+  `consecutiveFail` every pass, its circuit-open alert became unreachable,
+  and it restart-looped a permanently dead channel in silence. Worse, a
+  standby instance owns no poll loop but `stop()` fired getUpdates
+  unconditionally to interrupt one — on a shared token that 409-terminates
+  whichever process IS polling, so every watchdog pass killed the real
+  writer. Declines that no restart can fix (missing webhookUrl,
+  single-writer lock held elsewhere) now report `{started:false}`; the
+  interrupter fires only when we own the loop; the watchdog skips standby.
+- COMPUTER — five sites still read the raw engine selector after ADR 0006.
+  capability-reach advertised `screenshot:false`/`fullBrowser:false` on a
+  node configured `engine:"native"`, so the agent stopped attempting two
+  capabilities the bundle has; computer-client had session reuse inverted
+  (naming the engine you actually run turned reuse off); extraction-status
+  reported ADR 0005's retired shape; computer-act-tool reported
+  `engine:"native"` on error results. Separately, `ensure-computer` lost its
+  identity check in the A6 merge and adopted ANY 200 + JSON on the computer
+  port — a foreign local service holding 4243 was adopted as the computer
+  server, the script exited 0, the real server never started, and every
+  later tool call went to a stranger. It now asserts the health shape.
+- OBJECTIVE — the post-mission reflection prompt asked for `obj.lastDirective`
+  and never received one: nothing wrote the field. What a mission had to be
+  corrected on is the most transferable thing its lesson carries.
+- OBJECTIVE — `hasApiChecks` counted ANY entry in `obj.verify`, but
+  `baselineArmChecks` arms a runtime check precisely BECAUSE it passed
+  before any work happened. A zero-work natural stop with a green
+  baseline-armed suite closed as `verdict:"verified"`, skipping the
+  independent ground-truth verifier — a green suite is evidence of no
+  REGRESSION, never of completion. The waiver now requires `source:"api"`.
+
 ## 3.179.2 (2026-08-25)
 
 - file_equals tolerates exactly ONE trailing newline on the FILE side when
