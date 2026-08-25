@@ -683,6 +683,13 @@ async function runObjectiveInner(cfg, opts = {}) {
     // ── run one segment ──────────────────────────────────────────────────
     const n = obj.totals.segments + 1;
     const firstSegment = n === 1 && !opts.resumeId;
+    // Persist the correction for the post-mission reflection prompt, which
+    // has always asked for obj.lastDirective but never received one —
+    // `directive` is a loop-local reassigned by six call sites and reset
+    // below, so the single point it flows THROUGH is the only honest place
+    // to record it. What the mission had to be corrected on is the most
+    // transferable thing a lesson can carry.
+    if (directive) obj.lastDirective = directive;
     const prompt = buildSegmentPrompt(obj, { firstSegment, directive, reconcile, lessons: firstSegment ? lessons : "" });
     directive = null;
     reconcile = false;
