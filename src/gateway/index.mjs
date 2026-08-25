@@ -103,6 +103,7 @@ import { createMcpClient } from "../mcp/client.mjs";
 import { createMcpServer } from "../mcp/server.mjs";
 import { createPairingStore } from "../pairing/pairing-store.mjs";
 import { createGatewayAuth, stripApiVersion } from "./auth.mjs";
+import { matchUiRoute, isWebchatEnabled } from "./ui-routes.mjs";
 import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
 import { ensureDoctorCronJob } from "../cron/doctor-job.mjs";
 import { ensureApprovalDigestCronJob } from "../cron/approval-digest-job.mjs";
@@ -1012,7 +1013,7 @@ export async function startGateway({ root } = {}) {
     }
   }
 
-  const webchatEnabled = cfg.channels?.webchat?.enabled !== false;
+  const webchatEnabled = isWebchatEnabled(cfg);
 
   const channelManager = createChannelManager(cfg);
   await channelManager.startAll();
@@ -1515,22 +1516,14 @@ export async function startGateway({ root } = {}) {
           return json(res, 200, { sessionId: s.id, createdAt: s.createdAt });
         }
 
-        if (p === "/control" || p === "/control/") {
-          return serveStatic(res, path.join(controlRoot, "index.html"));
-        }
-        if (p.startsWith("/control/")) {
-          const rel = p.slice("/control/".length) || "index.html";
-          const safe = path.normalize(rel).replace(/^(\.\.(\/|\\|$))+/, "");
-          return serveStatic(res, path.join(controlRoot, safe));
-        }
-
-        if (webchatEnabled && (p === "/" || p === "/chat" || p === "/chat/")) {
-          return serveStatic(res, path.join(uiRoot, "index.html"));
-        }
-        if (webchatEnabled && p.startsWith("/chat/")) {
-          const rel = p.slice("/chat/".length) || "index.html";
-          const safe = path.normalize(rel).replace(/^(\.\.(\/|\\|$))+/, "");
-          return serveStatic(res, path.join(uiRoot, safe));
+        // Static UI, from the shared route table. gateway/auth.mjs asks the
+        // same matcher which paths the publicUi lockdown covers, so a page can
+        // never be reachable at a path the gate was not told about.
+        const uiRoute = matchUiRoute(p, { webchatEnabled });
+        if (uiRoute && uiRoute.app !== "artifacts") {
+          const staticRoot = uiRoute.app === "control" ? controlRoot : uiRoot;
+          const safe = path.normalize(uiRoute.rel).replace(/^(\.\.(\/|\\|$))+/, "");
+          return serveStatic(res, path.join(staticRoot, safe));
         }
 
 

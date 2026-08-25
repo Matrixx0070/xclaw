@@ -5,6 +5,7 @@
  */
 import crypto from "node:crypto";
 import { COMPUTER_PROXY_PREFIXES } from "./computer-proxy.mjs";
+import { matchUiRoute, isWebchatEnabled } from "./ui-routes.mjs";
 
 /**
  * `/v1/<route>` is an alias for every route. The gateway strips that prefix
@@ -71,30 +72,23 @@ export function createGatewayAuth(cfg = {}) {
     "/mcp/oauth/callback",
   ]);
 
+  const webchatEnabled = isWebchatEnabled(cfg);
+
   function isProtectedPath(p) {
-    if (alwaysOpen.has(p)) return false;
-    // static UI can stay open unless strictPublicUi is false
-    if (cfg.gateway?.publicUi === false) {
-      if (
-        p.startsWith("/control") ||
-        p.startsWith("/chat/") ||
-        p.startsWith("/ui/") ||
-        p.startsWith("/artifacts")
-      ) {
-        return required;
-      }
-    } else {
-      if (
-        p.startsWith("/control/") ||
-        p === "/control" ||
-        p.startsWith("/chat/") ||
-        p.startsWith("/ui/") ||
-        p === "/artifacts" ||
-        p === "/artifacts/"
-      ) {
-        return false;
-      }
+    // The static UI, decided by the same route table that serves it. Before
+    // the table this was a second hand-written list and it disagreed with the
+    // router: "/chat" and "/" serve the webchat page, the list matched only
+    // "/chat/", so the lockdown below missed the page it was locking down.
+    // Ahead of alwaysOpen because "/" IS the webchat page when webchat is on.
+    if (matchUiRoute(p, { webchatEnabled })) {
+      if (cfg.gateway?.publicUi !== false) return false;
+      // Lockdown: the UI joins the protected surface. `required || requireAuth`
+      // and not `required` — returning `required` alone short-circuited the
+      // requireAuth fail-closed further down, so switching the lockdown ON made
+      // a token-less prod gateway MORE open than leaving it off.
+      return required || requireAuth;
     }
+    if (alwaysOpen.has(p)) return false;
     if (p === "/metrics") return protectMetrics && (required || requireAuth);
     // Inbound webhooks are HMAC-verified in their handlers and must stay
     // reachable without an operator token — EXCEPT the /recent read, which
@@ -113,6 +107,15 @@ export function createGatewayAuth(cfg = {}) {
       p.startsWith("/media") ||
       p === "/memory" ||
       p.startsWith("/transcripts") ||
+      // The artifacts API. /artifacts/list was in the strict list and
+      // /artifacts/file — which returns the file BYTES — was in neither, so on
+      // a token-protected gateway the listing answered 401 while the download
+      // answered 200 with the workspace file, byte-identical to the
+      // authenticated response (measured). One prefix, so a third artifacts
+      // route cannot land outside the gate the way the second one did. The
+      // /artifacts page itself is decided by the UI route table above and never
+      // reaches here.
+      p.startsWith("/artifacts/") ||
       p.startsWith("/checkpoints") ||
       p.startsWith("/skills") ||
       p.startsWith("/eval") ||
@@ -195,7 +198,6 @@ export function createGatewayAuth(cfg = {}) {
       p === "/dashboard" ||
       p === "/report" ||
       p.startsWith("/channel/") ||
-      p.startsWith("/artifacts/list") ||
       p.startsWith("/doctor") ||
       // spend-pause + budget state is an operator control
       p === "/cost" ||

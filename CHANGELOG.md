@@ -1,3 +1,65 @@
+## 3.192.0 (2026-08-25)
+
+- SECURITY (sweep #7 — two defects in the `gateway.publicUi` lockdown, plus a
+  fourth authentication bypass found by writing the test for them). The root
+  cause is the one 3.190.0 and 3.191.0 both had: **one route set, described by
+  two hand-written lists that drifted.**
+- `gateway.publicUi: false` is the operator's "the UI is not public" switch,
+  and it shipped **ON in the `prod` profile** (`src/config/profiles.mjs:69`)
+  with **zero test occurrences of the string `publicUi` anywhere under
+  `test/`**. Both defects below were reproduced on real sockets against real
+  child gateways before any source changed.
+- **Defect 1 — the lockdown was one character wide.** `gateway/index.mjs`
+  served the webchat page at `/`, `/chat` and `/chat/`; the auth list matched
+  `/chat/` only. Measured, token configured and lockdown on: `GET /chat/`
+  → `401`, `GET /chat/app.js` → `401`, but `GET /chat` → **`200` with the
+  page**, and `GET /` → **`200` with the same page**. The locked-down UI was
+  one keystroke away.
+- **Defect 2 — the switch INVERTED protection.** The branch returned
+  `required` (true only when a token is configured), which short-circuits the
+  `if (!required && !requireAuth) return false;` fail-closed below it. So on a
+  `requireAuth` gateway with no token yet configured — the shipped `prod`
+  shape — turning the lockdown ON opened everything it claimed to close.
+  Measured on two gateways identical but for the flag: `GET /artifacts/list`
+  → `401` with `publicUi:true`, and → **`200` with a 50-entry listing of the
+  real workspace** with `publicUi:false`.
+- **Defect 3 — `/artifacts/file` returned workspace file bytes to anyone.**
+  Found by writing the unit test for the above and refusing to loosen the
+  assertion when it failed. `/artifacts/list` was in the strict list;
+  `/artifacts/file`, which returns the **file contents**, was in neither list.
+  Measured on a default, token-protected gateway: `/artifacts/list` with no
+  credentials → `401`, `/artifacts/file?path=…` with no credentials →
+  **`200`, 76894 bytes, byte-identical to the authenticated response.** Only
+  `resolveArtifactFile`'s workspace containment and extension allowlist stood
+  between an anonymous caller and the operator's files.
+- Fix: **`src/gateway/ui-routes.mjs`** — one table that says which paths are
+  static UI pages and which app+file each maps to. `gateway/auth.mjs` asks it
+  which paths the lockdown covers, `gateway/index.mjs` asks it what to serve,
+  and `gateway/routes/artifacts.mjs` asks it whether a path is the artifacts
+  page. A page can no longer be reachable at a path the gate was not told
+  about, because there is no second list to disagree with. The lockdown branch
+  now returns `required || requireAuth`, restoring the fail-closed contract,
+  and `/artifacts/` joins `core` — protected in **both** legacy and strict
+  modes, like `/transcripts` and `/memory`, so a third artifacts route cannot
+  land outside the gate the way the second one did.
+- Tests: `test/gateway-public-ui.test.mjs` (pure — the route table, both
+  lockdown directions, and the inversion as a **property**: for every path,
+  `publicUi:false` must protect at least as much as `publicUi:true`) and
+  `test/gateway-publicui-lockdown.test.mjs` (a real child gateway on a real
+  socket). The second file is not redundant: a unit test that asserts the auth
+  list cannot catch the auth list disagreeing with the router — the list *is*
+  the bug, so the test agrees with it by construction. Every refusal has a
+  mirror differing only by the `Authorization` header, so a gate that 401s
+  everything fails too. All five new enforcement points were mutation-swept to
+  RED (2, 11, 4, 8 and 2 failures).
+- Behaviour changes, deliberate: (1) **legacy mode (`authStrict:false`) now
+  also protects the artifacts API** — a tightening, no capability lost; (2)
+  `p.startsWith("/ui/")` was removed from both auth branches — **no route has
+  ever served `/ui/*`**, so an unauthenticated request there now answers `404`
+  instead of `401`; nothing became reachable. The default (`publicUi`
+  unset/true) path is byte-identical to before, verified by re-running the
+  same three-gateway probe after the fix.
+
 ## 3.191.0 (2026-08-25)
 
 - SECURITY (a third authentication bypass, same root cause shape as the two in

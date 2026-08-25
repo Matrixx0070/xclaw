@@ -10,6 +10,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { listArtifacts } from "../../artifacts/browser.mjs";
+import { matchUiRoute } from "../ui-routes.mjs";
 
 /** @returns {Promise<boolean>} true if handled */
 export async function tryHandleArtifactsRoute({ p, method, res, url, cfg, json, root }) {
@@ -41,7 +42,9 @@ export async function tryHandleArtifactsRoute({ p, method, res, url, cfg, json, 
     res.end(data);
     return true;
   }
-  if (p === "/artifacts" || p === "/artifacts/") {
+  // Same route table gateway/auth.mjs consults, so the page and the two API
+  // routes above can never fall on the same side of the publicUi lockdown.
+  if (matchUiRoute(p)?.app === "artifacts") {
     const htmlPath = path.join(root, "ui", "artifacts", "index.html");
     const html = await fs.readFile(htmlPath, "utf8").catch(() => "<h1>artifacts UI missing</h1>");
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
