@@ -342,10 +342,16 @@ async function persistOutcome(cfg, obj) {
     try {
       const { reflectOnMission } = await import("../memory/reflection.mjs");
       const r = await reflectOnMission(cfg, obj);
-      if (r) {
+      if (r?.error) {
+        // A broken reflection used to return null and log nothing, which read
+        // exactly like a healthy quiet one — that hid a 401 on every mission
+        // from v3.179.0 until v3.181.0.
+        console.warn(
+          `[objective] reflection failed for ${obj.id}: ${r.error}`
+        );
+      } else if (r) {
         // written:0 is a real outcome (trivial mission, designed empty-lessons
-        // rule) — logging it distinguishes "nothing to learn" from a silent
-        // reflection failure (r === null).
+        // rule) — logging it distinguishes "nothing to learn" from a failure.
         console.log(
           r.written
             ? `[objective] reflection wrote ${r.written} lesson(s) for ${obj.id}`

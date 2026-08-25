@@ -19,7 +19,7 @@ import {
   planToctouRevalidation,
   planApprovalOutcome,
 } from "./loop-stages.mjs";
-import { createProvider } from "./provider.mjs";
+import { createRoutedProvider } from "./provider-factory.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
 import {
   createRoleRouter,
@@ -59,7 +59,6 @@ import {
 import { revalidatePlan, isExecTool } from "../security/system-run-plan.mjs";
 import { createRunBudget } from "./run-budget.mjs";
 import { compileToolFilter, filterToolDefs, missingAllowedTools } from "./tool-filter.mjs";
-import { resolveProviderRoute, resolveProviderRouteAsync } from "../providers/router.mjs";
 import { createSpawnTool, spawnSubagent } from "../agents/spawn.mjs";
 import { createSwarmRunTool } from "../agents/swarm-run.mjs";
 import { createMergeTools } from "../agents/swarm-merge.mjs";
@@ -324,64 +323,22 @@ export async function runAgentLoop(options) {
         phase: "fallback_single",
         message: String(err.message || err),
       });
-      route = await resolveProviderRouteAsync(cfg, {
-        model: process.env.XCLAW_MODEL || cfg.agent?.model,
-        provider: process.env.XCLAW_PROVIDER || cfg.agent?.provider,
-      });
-      provider = createProvider({
-        apiKey:
-          route.apiKey ||
-          cfg.agent?.apiKey ||
-          process.env.OPENAI_API_KEY ||
-          process.env.XCLAW_API_KEY ||
-          process.env.ANTHROPIC_API_KEY ||
-          process.env.CLAUDE_CODE_OAUTH_TOKEN ||
-          process.env.ANTHROPIC_AUTH_TOKEN,
-        baseUrl:
-          cfg.agent?.baseUrl ||
-          process.env.XCLAW_API_BASE ||
-          route.baseUrl,
-        model: route.model || process.env.XCLAW_MODEL || cfg.agent?.model || "gpt-4o-mini",
-        provider: route.provider,
-        api: route.api,
-        cfg,
+      ({ provider, route } = await createRoutedProvider(cfg, {
         onRetry: onRetryProvider,
         convId: sessionKey,
         sessionId: sessionKey,
         conversationId: transcriptId || sessionKey,
-      });
-      provider.providerName = route.provider;
+      }));
     }
   }
 
   if (!provider) {
-    route = await resolveProviderRouteAsync(cfg, {
-      model: process.env.XCLAW_MODEL || cfg.agent?.model,
-      provider: process.env.XCLAW_PROVIDER || cfg.agent?.provider,
-    });
-    provider = createProvider({
-      apiKey:
-        route.apiKey ||
-        cfg.agent?.apiKey ||
-        process.env.OPENAI_API_KEY ||
-        process.env.XCLAW_API_KEY ||
-        process.env.ANTHROPIC_API_KEY ||
-        process.env.CLAUDE_CODE_OAUTH_TOKEN ||
-        process.env.ANTHROPIC_AUTH_TOKEN,
-      baseUrl:
-        cfg.agent?.baseUrl ||
-        process.env.XCLAW_API_BASE ||
-        route.baseUrl,
-      model: route.model || process.env.XCLAW_MODEL || cfg.agent?.model || "gpt-4o-mini",
-      provider: route.provider,
-      api: route.api,
-      cfg,
+    ({ provider, route } = await createRoutedProvider(cfg, {
       onRetry: onRetryProvider,
       convId: sessionKey,
       sessionId: sessionKey,
       conversationId: transcriptId || sessionKey,
-    });
-    provider.providerName = route.provider;
+    }));
   }
 
   if (!route && provider) {

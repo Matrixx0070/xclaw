@@ -66,7 +66,9 @@ export function parseLessons(text) {
  * @param {object} cfg
  * @param {object} obj finished objective record
  * @param {{provider?: {chat: Function}}} [deps] test seam / reuse a live provider
- * @returns {Promise<{written: number}|null>} null when gated off or nothing to do
+ * @returns {Promise<{written: number, error?: string}|null>} null ONLY when gated
+ *   off; a failure returns `{written: 0, error}` so a broken reflection can never
+ *   again be indistinguishable from a quiet one.
  */
 export async function reflectOnMission(cfg, obj, deps = {}) {
   if (!obj || cfg?.memory?.enabled === false || cfg?.memory?.reflection === false)
@@ -75,8 +77,12 @@ export async function reflectOnMission(cfg, obj, deps = {}) {
   try {
     let provider = deps.provider;
     if (!provider) {
-      const { createProvider } = await import("../agent/provider.mjs");
-      provider = await createProvider(cfg);
+      // Must go through the router: createProvider(cfg) builds an
+      // unauthenticated OpenAI client and 401s on every mission.
+      const { createRoutedProvider } = await import(
+        "../agent/provider-factory.mjs"
+      );
+      ({ provider } = await createRoutedProvider(cfg));
     }
     const res = await provider.chat({
       messages: [{ role: "user", content: buildReflectionPrompt(obj) }],
@@ -97,9 +103,10 @@ export async function reflectOnMission(cfg, obj, deps = {}) {
       written += 1;
     }
     return { written };
-  } catch {
-    // reflection is best-effort — a mission never fails because of it
-    return null;
+  } catch (err) {
+    // Reflection is best-effort — a mission never fails because of it — but the
+    // failure is reported, not swallowed.
+    return { written: 0, error: String(err?.message || err) };
   }
 }
 

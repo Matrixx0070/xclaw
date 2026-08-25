@@ -1,3 +1,48 @@
+## 3.181.0 (2026-08-25)
+
+- FIX — post-mission reflection was building the wrong provider and 401'd on
+  every real mission since v3.179.0. `reflectOnMission` called
+  `createProvider(cfg)` — the config object passed where the options bag
+  (`{apiKey, baseUrl, model, provider, api}`) belongs — so it produced an
+  unauthenticated OpenAI client on `gpt-4o-mini` instead of going through the
+  router. The W3 learning write-path therefore wrote zero lessons in
+  production the entire time the tests said it worked, because every test in
+  `memory-reflection.test.mjs` injected `deps.provider` and none of them ever
+  executed the construction path. A second fault hid the first: the failure
+  path was `catch { return null }` and the caller only logged truthy results,
+  so a permanently broken reflection was byte-identical, in the log, to a
+  healthy mission with nothing to learn.
+- `src/agent/provider-factory.mjs` (new) is now the single way to build a
+  provider from config: resolve the route, then construct with the resolved
+  `apiKey`/`baseUrl`/`model`/`provider`/`api`. It is a leaf module because
+  `providers/failover-router.mjs` imports back into `agent/provider.mjs`, and
+  a cycle on that path is a TDZ hazard on the hot loop. Reflection and both
+  of the loop's own construction sites call it — the loop's two copies of
+  that 27-line block were byte-identical, which is how reflection was able to
+  drift from them unnoticed (−53 lines).
+- Reflection now returns `{written, error?}` instead of `null` on failure, and
+  `objective.mjs` logs all three outcomes distinctly: `reflection wrote N
+  lesson(s)`, `no transferable lessons` (a real result — a trivial mission),
+  and `reflection failed: <error>`. A silent failure of this shape cannot
+  recur without a log line.
+- TEST — the wiring itself is now covered, in the only way that works:
+  by NOT injecting the seam. `memory-reflection.test.mjs` gains a case that
+  omits `deps.provider`, clears every provider env var, repoints `HOME`, and
+  points `cfg.agent.baseUrl` at a local HTTP server — so only a correctly
+  routed provider can satisfy it. Reverted against the v3.179.0 code it fails
+  with the exact production error (`Provider HTTP 401: You didn't provide an
+  API key`). `loop-provider-wiring.test.mjs` (new) does the same for the loop:
+  every other loop test passes `options.provider`, so the loop's construction
+  path had no coverage at all. Both the router path and the
+  `router.enabled:false` single-provider fallback are asserted to reach the
+  configured route with the configured credential; mutating the fallback back
+  to `createProvider(cfg)` turns that case red.
+- Live-proven end to end on the real gateway, not just in tests: mission
+  `obj_mt8ncee7_e83df2` ran to `done` and logged `[objective] reflection wrote
+  2 lesson(s)`, with both typed `lesson` events landing in durable memory with
+  their `objectiveId` provenance. That closes the `reflection trigger
+  UNVERIFIED-live` item carried since v3.179.0.
+
 ## 3.180.2 (2026-08-25)
 
 - SECURITY — five more loop enforcement blocks are now under behavioural
