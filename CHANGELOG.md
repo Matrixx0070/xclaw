@@ -1,3 +1,51 @@
+## 3.189.0 (2026-08-25)
+
+- FIX (documented capability with no implementation) — `XCLAW_GATEWAY_HOST`,
+  `XCLAW_GATEWAY_PORT`, `XCLAW_COMPUTER_HOST` and `XCLAW_COMPUTER_PORT` were
+  never read by any code. They are announced in 3.76.0 as "Env bind overrides
+  (`XCLAW_GATEWAY_HOST/PORT`, `XCLAW_COMPUTER_HOST/PORT`, token via env) so
+  compose-published ports work" (CHANGELOG.md:3284), documented in
+  `INSTALL.md`, and exported by `deploy/Dockerfile`,
+  `deploy/docker-compose.yml` and `deploy/docker-compose.sidecar.yml` — with an
+  explanatory comment on the line. `loadConfig` read `XCLAW_COMPUTER_URL` and
+  a dozen other variables; it never read these four. Proven before the fix:
+  with `XCLAW_GATEWAY_HOST=0.0.0.0 XCLAW_GATEWAY_PORT=19999` exported,
+  `loadConfig()` returned `127.0.0.1:18790`.
+- Consequence was worse than "the setting does nothing". A container binds
+  inside its own network namespace, so the process listened on the container's
+  loopback and `-p 18790:18790` published a port that reached nothing — while
+  the image's own `HEALTHCHECK` (`curl -fsS http://127.0.0.1:18790/ready`, run
+  **inside** the container) hit that same loopback listener and reported
+  healthy. Docker said healthy; no client outside the container could connect.
+  Same shape for the 4243 computer port and for the sidecar layout, where the
+  computer service is reached over the compose network by name.
+- `applyEnvBindOverrides()` in `src/config/load.mjs` now applies them last, so
+  env beats the file, matching `XCLAW_MODEL` / `XCLAW_SSRF`. Each axis is
+  independent (host from env, port from config is the sidecar's exact shape).
+  A port that is not an integer in 1–65535 is **reported and ignored**, never
+  silently dropped — silent drop is the failure being fixed.
+- SECURITY (consequence of the above): honouring the host makes the 3.188.0
+  bind guard load-bearing for containers. `XCLAW_GATEWAY_HOST=0.0.0.0` with no
+  token now refuses to start instead of quietly binding loopback, so both
+  compose files require `XCLAW_GATEWAY_TOKEN` via `${XCLAW_GATEWAY_TOKEN:?…}` —
+  compose fails at parse time with the `openssl rand -hex 32` command in the
+  message rather than starting a container that dies on boot.
+  `XCLAW_GATEWAY_ALLOW_OPEN=1` remains the documented opt-out for a trusted,
+  unpublished network. `INSTALL.md` and `deploy/Dockerfile` say so at the point
+  of use.
+- Tests: `test/config-env-bind-overrides.test.mjs` (7) — every case has a
+  mirror one env var away, so a `loadConfig` that always returned the env value
+  and one that always ignored it each fail a pair; plus warn-and-ignore for a
+  non-numeric and an out-of-range port. `test/gateway-bind-guard-enforcement.test.mjs`
+  gains a 5th case for the exact container shape: config says loopback, env
+  says `0.0.0.0`, no token, must refuse. Mutation-checked — dropping the
+  `applyEnvBindOverrides` call fails 5 of 7 plus that case; making the invalid
+  port silent fails 2.
+- Method note, same as 3.188.0: the four variables were *set* in three deploy
+  files and *documented* in two, which reads exactly like a wired feature. What
+  distinguishes a wired capability from an announced one is a test that runs
+  the product path, not a grep for the variable name.
+
 ## 3.188.0 (2026-08-25)
 
 - SECURITY (regression, not a coverage gap) — the gateway bind guard had **zero

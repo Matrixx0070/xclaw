@@ -49,6 +49,7 @@ const ENV_KEYS = [
   "HOME",
   "XCLAW_GATEWAY_TOKEN",
   "XCLAW_GATEWAY_ALLOW_OPEN",
+  "XCLAW_GATEWAY_HOST",
   "XCLAW_GATEWAY_REQUIRE_AUTH",
   "XCLAW_PROFILE",
   "XCLAW_CONFIG_DIR",
@@ -159,6 +160,23 @@ describe("gateway refuses to bind beyond loopback without auth", () => {
       assert.match(out.message, PAST_THE_GUARD, `expected to reach uiRoot (got: ${out.message})`);
     } finally {
       delete process.env.XCLAW_GATEWAY_ALLOW_OPEN;
+    }
+  });
+
+  it("refuses a public host that arrived from XCLAW_GATEWAY_HOST", async () => {
+    // The container shape exactly: the config file says loopback, deploy/Dockerfile
+    // exports XCLAW_GATEWAY_HOST=0.0.0.0, and no token is set. Until the env
+    // override was implemented this booted open-looking but bound loopback; now
+    // the env value is real, so the guard has to see it. Compose supplies the
+    // token via `${XCLAW_GATEWAY_TOKEN:?...}`, which is why that is mandatory.
+    process.env.XCLAW_GATEWAY_HOST = "0.0.0.0";
+    try {
+      const out = await bootOutcome({ host: "127.0.0.1" });
+
+      assert.equal(out.refused, true, `env-supplied public host must refuse (got: ${out.message})`);
+      assert.match(out.message, /refusing to bind gateway on 0\.0\.0\.0 without auth/);
+    } finally {
+      delete process.env.XCLAW_GATEWAY_HOST;
     }
   });
 });

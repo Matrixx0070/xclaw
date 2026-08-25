@@ -15,6 +15,10 @@ COPY eval ./eval
 COPY docs ./docs
 COPY INSTALL.md CHANGELOG.md README.md XCLAW.md ./
 
+# A container binds inside its own netns, so a published port needs 0.0.0.0.
+# That makes the bind guard load-bearing here: run with XCLAW_GATEWAY_TOKEN set
+# (or XCLAW_GATEWAY_ALLOW_OPEN=1 on a trusted, unpublished network) or the
+# gateway refuses to start.
 ENV NODE_ENV=production \
     XCLAW_HOME=/data \
     HOME=/data \

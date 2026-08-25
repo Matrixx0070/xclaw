@@ -321,7 +321,47 @@ export async function loadConfig(opts = {}) {
     cfg.computer = cfg.computer || {};
     cfg.computer.remoteUrl = process.env.XCLAW_COMPUTER_URL;
   }
+  applyEnvBindOverrides(cfg);
   return cfg;
+}
+
+/**
+ * Env bind overrides — env wins over file config, the same convention as
+ * XCLAW_MODEL / XCLAW_SSRF.
+ *
+ * These four were documented in 3.76.0 ("Env bind overrides … so compose-
+ * published ports work", CHANGELOG.md:3284 and INSTALL.md), and they are set by
+ * deploy/Dockerfile, deploy/docker-compose.yml and deploy/docker-compose.
+ * sidecar.yml — but no code ever read them. Every container therefore bound
+ * 127.0.0.1 inside its own network namespace, so a published port reached
+ * nothing, while the in-container healthcheck (`curl 127.0.0.1:18790/ready`)
+ * hit the loopback listener and reported healthy. Green check, dead port.
+ *
+ * Honouring the host makes the bind guard load-bearing for containers: 0.0.0.0
+ * with no token now refuses to start instead of silently binding loopback. That
+ * is the documented contract ("Composes with bind-guard: non-loopback binds
+ * still require a token"), and both compose files now demand the token.
+ *
+ * An unusable value is reported, never silently dropped — silent-drop is the
+ * failure being fixed here.
+ */
+function applyEnvBindOverrides(cfg) {
+  const targets = [
+    ["gateway", "XCLAW_GATEWAY_HOST", "XCLAW_GATEWAY_PORT"],
+    ["computer", "XCLAW_COMPUTER_HOST", "XCLAW_COMPUTER_PORT"],
+  ];
+  for (const [section, hostVar, portVar] of targets) {
+    const host = String(process.env[hostVar] ?? "").trim();
+    const rawPort = String(process.env[portVar] ?? "").trim();
+    if (!host && !rawPort) continue;
+    cfg[section] = cfg[section] || {};
+    if (host) cfg[section].host = host;
+    if (rawPort) {
+      const n = Number(rawPort);
+      if (Number.isInteger(n) && n >= 1 && n <= 65535) cfg[section].port = n;
+      else console.warn(`[xclaw] ignoring ${portVar}=${rawPort} (want an integer 1–65535)`);
+    }
+  }
 }
 
 /** @deprecated use loadConfig */

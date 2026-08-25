@@ -68,6 +68,11 @@ Then open **http://127.0.0.1:18790/chat/**
 Notes:
 
 - Compose sets `XCLAW_GATEWAY_HOST=0.0.0.0` so published ports reach the process (profiles otherwise bind `127.0.0.1`).
+- **A gateway token is required for the Docker path**, at any profile: a published port is reachable from every host interface, and the bind guard refuses a non-loopback bind without auth. Compose fails fast with instructions if it is missing.
+  ```bash
+  echo "XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)" >> deploy/.env
+  ```
+  `XCLAW_GATEWAY_ALLOW_OPEN=1` overrides this for a trusted, unpublished network — do not set it on a host whose ports are exposed.
 - Default profile is **lab**. For stricter mode:
   ```bash
   # in .env
