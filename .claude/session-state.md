@@ -195,3 +195,9 @@ Grok's local Google-ads capture experiments (puppeteer dep + hand-edited generat
 - wake-w0/whisper probe regex treats spawn-ENOENT stderr ("spawn whisper-cli ENOENT") as ok — sloppy but pre-existing grok logic, not fixed.
 - The worktree scratch dirs (scratchpad/xclaw-grok, xclaw-merge) + branch reconcile-v3131 + synthetic commits can be pruned later (`git worktree prune`).
 - Telegram round-trip end-user validation of voice features not yet done.
+
+## W2-s4 EXECUTION BRIEF (written 2026-08-25, start here next session)
+Target: `processToolCall` closure, src/agent/loop.mjs:1245-1867 (~620 lines, defined per-turn inside the loop — anchors drift, re-grep "async function processToolCall"). Interior seams (grep the comment text): "Pin exec plans to this loop's workingDir" (1255), run-scoped allowlist (~1299 pre-drift), "Security: allowlist + optional human approval" (1356), pending-approval stop + denied-calls-feed-loop-guard, "TOCTOU: re-validate frozen systemRunPlan pins", "Spawn enforcement: carry frozen plan", "T1: single dispatch path via Tool Router", truth-channel auto assert, rank-size freeze, escalate-on-stuck tail.
+Method (same as stages 1-3, proven): extract PURE decision planners into src/agent/loop-stages.mjs one seam at a time (plan-pinning normalization, allowlist verdict, approval-outcome application plan, TOCTOU re-validation check) — stage computes, loop performs; suite + pminors-style live proof after EACH extraction; ship per slice (v3.178.x). Do NOT try the whole closure at once. The dispatch call itself (tool router) and hook executions stay in the loop.
+After W2-s4: W3 learning write-path = post-mission reflection → durable memory (preferences READ wired v3.150.0; reflection WRITE is the gap; hook site = post-run pipeline after stopReason computation).
+Baseline at brief time: v3.177.2 live (gateway restarted, telegram clean), suite 2960/0, CI 4/4 on 93f32fa, tree clean.
