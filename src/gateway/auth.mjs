@@ -202,6 +202,21 @@ export function createGatewayAuth(cfg = {}) {
       p.startsWith("/config") ||
       p === "/dashboard" ||
       p === "/report" ||
+      // diagnostics + inventory. /doctor is gated in `core`, but /gateway/doctor
+      // (the same detailed report) sits under a different prefix and fell
+      // through; /status/report is the status markdown; /routes returns every
+      // served route as JSON — the full attack surface. /gateway/info + /info
+      // stay open by omission on purpose: the supervisor polls /gateway/info
+      // every 15s as its liveness signal and reads any non-2xx as
+      // unhealthy→restart (gateway-supervisor.mjs:141,288), and the payload is
+      // sanitized config only (no user data, spend or secrets).
+      p === "/gateway/doctor" ||
+      p === "/status/report" ||
+      p === "/routes" ||
+      // voice synth + transcription run the local audio pipeline (compute);
+      // /api/voice/probe and /api/voice/metrics stay open as subsystem health.
+      p === "/api/voice/speak" ||
+      p === "/api/voice/transcribe" ||
       // Agent execution and conversation history. The inbound Telegram webhook
       // is the one path under this prefix that authenticates itself; it is
       // exempted above, before this list is consulted.
@@ -209,8 +224,21 @@ export function createGatewayAuth(cfg = {}) {
       // spend-pause + budget state is an operator control
       p === "/cost" ||
       p.startsWith("/cost/") ||
-      // usage analytics + request logs expose session previews/spend
+      // the cost/audit ledger: full command+actor+spend history — the same
+      // decision events /security/decisions serves, plus every cost row. Named
+      // in no list, so on the DEFAULT gateway an anonymous GET /ledger returned
+      // the entire 197KB audit history, /ledger/stats the cost rollup and
+      // /ledger/who-touched the per-file actor trail (measured on the live
+      // gateway). Grouped with /cost because it is the durable record behind it.
+      p === "/ledger" ||
+      p.startsWith("/ledger/") ||
+      // usage analytics + request logs expose session previews/spend. /usage had
+      // only the exact arm while its siblings /cost and /logs each gate the
+      // prefix too, so /usage/cache, /usage/dashboard and /usage/efficiency —
+      // spend and session-preview data — answered anonymously (measured); the
+      // missing startsWith("/usage/") is the whole defect.
       p === "/usage" ||
+      p.startsWith("/usage/") ||
       p === "/logs" ||
       p.startsWith("/logs/") ||
       // JWKS operator endpoints (document itself is alwaysOpen)

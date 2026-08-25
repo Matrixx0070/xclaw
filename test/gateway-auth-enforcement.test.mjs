@@ -444,6 +444,55 @@ describe("the MCP JSON-RPC plane is behind the same gate", () => {
   });
 });
 
+describe("the ledger / usage / diagnostics data plane is behind the same gate", () => {
+  // 3.195.0. Each of these was a route the router served and no auth list named,
+  // so on the default token gateway an anonymous GET answered 200 with real
+  // data: /ledger the full command+actor+spend audit history, /usage/* spend and
+  // session previews (only the exact /usage arm was gated, not the prefix its
+  // siblings /cost and /logs both gate), /gateway/doctor + /status/report + /routes
+  // the diagnostics and the whole served attack surface. /api/voice/* runs the
+  // local synth/transcribe compute. This drives them through the wired socket so
+  // a WIRING skip — the class this file exists for — is caught, not just the
+  // pure isProtectedPath check the inventory test covers.
+  const ANON_401 = [
+    ["GET", "/ledger", null], // full audit history
+    ["GET", "/ledger/stats", null], // cost rollup
+    ["GET", "/ledger/who-touched?path=x", null], // per-file actor trail
+    ["GET", "/usage/cache", null], // the sibling that fell through the missing prefix
+    ["GET", "/usage/dashboard", null], // spend + session preview
+    ["GET", "/usage/efficiency", null],
+    ["GET", "/gateway/doctor", null], // detailed diagnostics under the un-gated prefix
+    ["GET", "/status/report", null], // status markdown
+    ["GET", "/routes", null], // the entire served attack surface as JSON
+    ["POST", "/api/voice/speak", { text: "x" }], // local synth compute
+    ["POST", "/api/voice/transcribe", { audio: "x" }], // local transcribe compute
+  ];
+  for (const [method, p, body] of ANON_401) {
+    it(`refuses ${method} ${p} without a token`, async () => {
+      const r = await request(method, p, body ? { body } : {});
+      assert.equal(
+        r.status,
+        401,
+        `${p} exposed data/compute unauthenticated and must be gated (got ${r.status}: ${r.body.slice(0, 160)})`
+      );
+    });
+  }
+
+  it("serves GET /ledger to the operator (the gate is the only thing that moved)", async () => {
+    const r = await request("GET", "/ledger", { headers: withToken });
+    assert.notEqual(r.status, 401, `the operator must still read the ledger (${r.body.slice(0, 160)})`);
+  });
+
+  it("leaves /gateway/info open — the supervisor's liveness poll, not a data leak", async () => {
+    // The one diagnostics-adjacent path that must answer anonymously: the
+    // supervisor polls it every 15s and restarts on any non-2xx. That it is
+    // non-401 while /gateway/doctor above is 401 proves the gate decides per
+    // path, and that the open decision reaches through the wiring.
+    const r = await request("GET", "/gateway/info");
+    assert.notEqual(r.status, 401, `the supervisor liveness path must stay open (got ${r.status})`);
+  });
+});
+
 describe("the 401 stays usable from a browser", () => {
   it("answers a refused cross-origin call with CORS headers", async () => {
     // The gate moved above applyCors in 3.190.0; without an explicit call on

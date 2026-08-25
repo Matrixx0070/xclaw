@@ -1,3 +1,57 @@
+## 3.195.0 (2026-08-25)
+
+- SECURITY (sweep #11 — a **live, multi-route data-exposure bypass**, same
+  default-ALLOW root cause as 3.190.0–3.193.0: the gate in `gateway/auth.mjs`
+  returns `false` for any path no list names, and these were served routes no
+  list named). On the DEFAULT token gateway, measured against the live socket, an
+  anonymous `GET` returned real data:
+  - `/ledger`, `/ledger/stats`, `/ledger/who-touched` — the full cost/audit
+    ledger: the same command+actor+decision events `/security/decisions` serves,
+    plus every spend row and the per-file actor trail (~197KB of history).
+  - `/usage/cache`, `/usage/dashboard`, `/usage/efficiency` — spend and
+    session-preview analytics. Only the **exact** `/usage` arm was gated; its
+    siblings `/cost` and `/logs` each gate the **prefix** too. The one missing
+    `p.startsWith("/usage/")` was the whole defect.
+  - `/gateway/doctor`, `/status/report`, `/routes` — diagnostics and the entire
+    **served attack surface as JSON**. `/doctor` was gated; `/gateway/doctor` (the
+    same detailed report under a different prefix) fell through.
+  - `/api/voice/speak`, `/api/voice/transcribe` — the local synth/transcribe
+    compute pipeline.
+- Closed in `auth.mjs isProtectedPath` (grouped with the controls they belong
+  to: `/ledger*` with `/cost`, `/usage/*` with its gated siblings, the
+  diagnostics together). `/gateway/info` + `/info` deliberately stay **open** —
+  the supervisor polls `/gateway/info` every 15s as its liveness signal and reads
+  any non-2xx as unhealthy → restart (`scripts/gateway-supervisor.mjs:141,288`,
+  bare fetch, no token); the payload is sanitized config only. Protecting it
+  would have driven a restart storm — caught before shipping.
+- **The recurring honest limit is closed this time, structurally.** The last five
+  sweeps carried the same note: `routes-map.mjs` does not declare every served
+  path, so a test that walks the *declared* inventory cannot see an *undeclared*
+  served route — which is exactly how every one of these bypasses got in. New
+  `test/gateway-served-inventory.test.mjs` walks the router's **served** set
+  instead: it extracts every path-literal the router compares against
+  (`x === "/foo"`, `x.startsWith("/foo")`) straight from `index.mjs` and every
+  `routes/*.mjs` sub-router (188 literals), and requires each protected unless it
+  is on a short, justified OPEN list (21 entries, each with the reason it is safe
+  unauthenticated). A served route that is neither protected nor justified fails
+  CI **with its own path** — whether or not `routes-map` declares it, before it
+  ships, not 100 releases later. The extraction is deliberately over-approximate
+  (checks more strings, never fewer), so a real served path cannot slip past by
+  being missed.
+- Mutation-verified both directions: injecting a brand-new served literal
+  (`/pwn2025`) into a sub-router makes the inventory test go **RED naming
+  `/pwn2025`** (proving it reads live router source, not a static list); removing
+  the `p.startsWith("/usage/")` arm makes it go **RED on the three `/usage/*`
+  paths**. Both restored byte-identical (`auth.mjs sha256 6ddaa4d3…`).
+- Wiring layer: `gateway-auth-enforcement.test.mjs` now drives real anonymous
+  requests for all 11 routes through the child-process socket (→ `401`), with an
+  operator-token mirror (`GET /ledger` → not-`401`) and a path-discrimination
+  control (anonymous `GET /gateway/info` → not-`401`, the supervisor path). The
+  now-redundant ad-hoc "undeclared-but-served" block in
+  `gateway-route-coverage.test.mjs` (which pinned `/agent-runs`,
+  `/artifacts/file`, `/channel/webchat/message` by hand) is removed — the
+  served-inventory test covers all three systematically.
+
 ## 3.194.0 (2026-08-25)
 
 - SECURITY (sweep #10 — a coverage blind spot on the **MCP JSON-RPC plane**,

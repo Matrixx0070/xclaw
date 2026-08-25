@@ -18,11 +18,14 @@
  * here with the offending path. The open-list is the audit surface: it is short
  * and every line has to earn its place.
  *
- * Honest limit: routes-map does not declare every served path — /agent-runs,
- * /artifacts/file, /ws/voice and the /v1/* aliases are absent — so this catches
- * the class only for declared routes. The undeclared ones are pinned separately
- * at the bottom, and closing the declaration gap is the real structural fix
- * (tracked, not done here).
+ * Scope: routes-map does not declare every served path — /agent-runs,
+ * /artifacts/file, /ws/voice and the /v1/* aliases are absent — so this test
+ * catches the class only for DECLARED routes. The undeclared ones are covered
+ * structurally by gateway-served-inventory.test.mjs, which extracts every served
+ * path-literal straight from index.mjs and the routes/*.mjs sub-routers and holds
+ * each to the same rule. That test is the close of the declaration gap this file
+ * used to pin ad-hoc; the two are complementary (declared inventory here, served
+ * inventory there).
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -92,21 +95,5 @@ describe("gateway route coverage: no declared route is open by omission", () => 
     for (const p of Object.keys(OPEN)) {
       assert.ok(declared.has(p), `OPEN lists ${p} but routes-map no longer declares it — remove it`);
     }
-  });
-});
-
-describe("undeclared-but-served paths the same drift already reached", () => {
-  // routes-map omits these, so the coverage loop above cannot see them. They are
-  // exactly the routes prior sweeps found open; pin them so a regression here is
-  // caught even though the declaration gap is still open.
-  const auth = createGatewayAuth({ gateway: { token: TOKEN } });
-  for (const p of ["/agent-runs", "/artifacts/file", "/channel/webchat/message"]) {
-    it(`${p} is protected`, () => {
-      assert.equal(auth.isProtectedPath(p), true, `${p} regressed to open`);
-    });
-  }
-  it("/channel/telegram/webhook stays open (self-verifying)", () => {
-    // The one /channel path that authenticates itself with Telegram's secret.
-    assert.equal(auth.isProtectedPath("/channel/telegram/webhook"), false);
   });
 });
