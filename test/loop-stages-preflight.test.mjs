@@ -318,3 +318,29 @@ describe("loop stage: final-answer rescue plan", () => {
     assert.equal(p.stubText, "Stopped after 45 turns (turn cap).");
   });
 });
+
+// W2 stage 4a — tool-call intake.
+import { parseToolCallArgs } from "../src/agent/loop-stages.mjs";
+
+describe("loop stage: tool-call intake", () => {
+  it("parses args; malformed JSON degrades to {}", () => {
+    assert.deepEqual(
+      parseToolCallArgs({ function: { arguments: '{"a":1}' } }, null),
+      { a: 1 }
+    );
+    assert.deepEqual(parseToolCallArgs({ function: { arguments: "not json" } }, null), {});
+    assert.deepEqual(parseToolCallArgs({ function: {} }, null), {});
+  });
+  it("pins cwd to workingDir only when the model gave neither cwd nor workingDir", () => {
+    assert.deepEqual(parseToolCallArgs({ function: { arguments: "{}" } }, "/w"), { cwd: "/w" });
+    assert.deepEqual(
+      parseToolCallArgs({ function: { arguments: '{"cwd":"/m"}' } }, "/w"),
+      { cwd: "/m" }
+    );
+    assert.deepEqual(
+      parseToolCallArgs({ function: { arguments: '{"workingDir":"/m"}' } }, "/w"),
+      { workingDir: "/m" }
+    );
+    assert.deepEqual(parseToolCallArgs({ function: { arguments: "{}" } }, null), {});
+  });
+});

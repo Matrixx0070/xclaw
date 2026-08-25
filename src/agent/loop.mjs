@@ -14,6 +14,7 @@ import {
   computeStopReason,
   terminalStatus,
   planFinalAnswerRescue,
+  parseToolCallArgs,
 } from "./loop-stages.mjs";
 import { createProvider } from "./provider.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
@@ -1246,16 +1247,8 @@ export async function runAgentLoop(options) {
         if (signal?.aborted) throw new Error("aborted");
 
         const name = call.function?.name;
-        let args = {};
-        try {
-          args = JSON.parse(call.function?.arguments || "{}");
-        } catch {
-          args = {};
-        }
-        // Pin exec plans to this loop's workingDir (subagent / swarm isolate)
-        if (workingDir && args.cwd == null && args.workingDir == null) {
-          args = { ...args, cwd: workingDir };
-        }
+        // W2 stage 4a — intake (parse + workingDir pin) is pure (loop-stages.mjs)
+        let args = parseToolCallArgs(call, workingDir);
 
         // Run-scoped allowlist: excluded tools are never advertised, but a
         // hallucinated name must not reach the router either (defense in depth).

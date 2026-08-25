@@ -260,7 +260,29 @@ export function planFinalAnswerRescue(inp) {
   };
 }
 
+/**
+ * Stage 4a — tool-call intake. Parse the model's JSON arguments (malformed
+ * JSON degrades to {}, historical) and pin exec plans to the loop's
+ * workingDir so subagent/swarm isolates cannot drift (only when the model
+ * supplied neither cwd nor workingDir).
+ * @param {{function?: {arguments?: string}}} call
+ * @param {string|null|undefined} workingDir
+ */
+export function parseToolCallArgs(call, workingDir) {
+  let args = {};
+  try {
+    args = JSON.parse(call.function?.arguments || "{}");
+  } catch {
+    args = {};
+  }
+  if (workingDir && args.cwd == null && args.workingDir == null) {
+    args = { ...args, cwd: workingDir };
+  }
+  return args;
+}
+
 export default {
+  parseToolCallArgs,
   evaluateTurnPreflight,
   planPairingBackfill,
   computeStopReason,

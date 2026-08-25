@@ -1,3 +1,12 @@
+## 3.177.3 (2026-08-25)
+
+- W2 STAGE 4a — processToolCall extraction begins: tool-call intake
+  (JSON-args parse with malformed-JSON degrade-to-{} + workingDir cwd
+  pinning for subagent/swarm isolates) is now pure
+  (`parseToolCallArgs` in loop-stages.mjs). 2 new tests (24 stage tests).
+  Remaining stage-4 seams (allowlist verdict, approval plan, TOCTOU check)
+  per the session-state execution brief.
+
 ## 3.177.2 (2026-08-25)
 
 - W2 STAGE 3 — final-answer rescue staged: `planFinalAnswerRescue` in
