@@ -1,3 +1,45 @@
+## 3.180.2 (2026-08-25)
+
+- SECURITY — five more loop enforcement blocks are now under behavioural
+  test. The mutation sweep continued through the rest of the pre-dispatch
+  chain and found four blocks that can be replaced with a no-op while all
+  3016 tests stay green, plus one already closed by the pairing work:
+  `guardToolPaths` (workspace containment), `guardToolEgress` (the outbound
+  network screen), `guardHighRiskReceipt`, and the `systemRunPlan` carry
+  that hands the gate's frozen plan to the executor. Every one of those
+  guards has unit tests — which call the guard directly, prove the verdict
+  is COMPUTED correctly, and say nothing about whether the loop obeys it.
+  Delete the three `if (!ok) return;` blocks and every unit test still
+  passes while containment, egress and the receipt requirement are off in
+  the product. `loop-guard-enforcement.test.mjs` drives the real
+  `runAgentLoop` for each: a `cwd` pointing at a sibling of the workspace, a
+  `curl` under `egress.mode=deny`, a high-risk exec with no evidence — each
+  asserted to emit its denial, never reach dispatch, and never land its side
+  effect on disk. Each has a mirror running the SAME tool under the SAME
+  config with only the guarded field changed, so no pair can be satisfied by
+  a guard that denies everything. The plan carry is asserted on the payload
+  dispatch actually receives: `argv` and `cwd` chosen by the test at runtime,
+  so no constant plan satisfies it. Without that block the router cannot
+  compensate — it backfills from `req.plan`, which the loop sources from the
+  very field the block sets — so the bundle's spawn-time argv/cwd check
+  would have had nothing to compare against. All four mutations fail the new
+  tests; each is killed only by its own.
+- The tool_call/tool_result pairing invariant is now enforced under test.
+  Mutating loop.mjs's backfill to `for (const skip of [])` disables it for
+  every run and left the suite green. In production a mid-batch stop —
+  pending approval, guard denial, quota — leaves later calls unexecuted with
+  their ids already in the transcript, and an orphaned `tool_use` id 400s the
+  very next Anthropic request. `loop-stage-enforcement.test.mjs` drives a
+  real two-call batch where the first pends unanswered, asserts the dropped
+  call is answered with `turn_stopped` and never executed, and mirrors it
+  with a batch that completes and must stay silent.
+- Recorded honestly: a fifth candidate — the workspace `cwd` pin at intake —
+  is an equivalent mutant, not a blind spot. Removing it changes nothing
+  observable because the property is held by three redundant mechanisms
+  (intake pin, local-tool binding at registry creation, the gate's plan
+  root); only removing all three fails, and three existing tests already
+  catch that. No test was written for it.
+
 ## 3.180.1 (2026-08-25)
 
 - Approval pendency is now a DECLARED field instead of an inference.
