@@ -1,3 +1,33 @@
+## 3.208.0 (2026-08-25)
+
+- TEST (sweep #26 — the **OAuth callback `state` authenticator**,
+  `createPending` / `takePending` in `connected/oauth-pending.mjs`; a coverage
+  blind spot, not a live leak; production byte-identical). `/oauth/callback` and
+  `/auth/callback` (GET) are intentionally OPEN to gateway auth: an IdP browser
+  redirect cannot carry a Bearer token. `auth.mjs` treats them as not-protected
+  and `gateway-served-inventory.test.mjs` registers them as "OAuth AS browser
+  redirect; state-authenticated, not token" — i.e. those tests pin the OPENNESS
+  (the intended state), not the guard. The SOLE authenticator of who may complete
+  a callback (drive the PKCE token exchange in `routes/oauth-callback.mjs` and
+  `setAppToken` a connected app) is therefore the `state` token minted by
+  `createPending` and consumed by `takePending` — and it had **ZERO** behavioural
+  test: no test imported `connected/oauth-pending.mjs`.
+- Proof it was a blind spot: mutating `takePending`'s unknown-state return to
+  accept — `if (!entry) return { state, forged: true }` — left the FULL suite
+  green (3570/0). A callback carrying an unknown/forged `state` would then be
+  treated as a legitimate pending login.
+- Close: `test/oauth-pending-state.test.mjs` (+5) pins the authenticator's
+  decisions against a real temp `configDir` (so consume exercises BOTH the
+  in-memory Map and the on-disk `oauth-pending.json`) — accept a genuine state
+  once (round-trip); REJECT an unknown/forged state; treat every state as
+  SINGLE-USE (a replayed callback URL cannot re-drive the exchange — the crux);
+  REJECT an expired state; and bind each state to its own record (state B never
+  yields A's entry, consuming B never consumes A). Mutation-verified RED three
+  directions: accept-unknown → reddens reject + single-use; drop the mem consume
+  → reddens single-use only; drop the expiry check → reddens expired only.
+  `oauth-pending.mjs` byte-identical (`e485b031…`) — coverage-hole close, no
+  production change. Suite 3570 → **3575/0**.
+
 ## 3.207.0 (2026-08-25)
 
 - TEST (sweep #25 — the **inbound PagerDuty webhook HMAC verifier**,
