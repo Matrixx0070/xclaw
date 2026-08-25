@@ -1,5 +1,11 @@
 /**
- * Unified computer actuation (CUA) — native engine.
+ * Unified computer actuation (CUA).
+ *
+ * Maintained source for the single bundle engine (ADR 0006): the runtime
+ * loads this module through loadNativeMergeModule, and registry/browser-tab/
+ * eval import it directly. Engine identity in results comes from the
+ * canonical resolver, never from a raw env read — the retired selectors
+ * ("native"/"thin"/…) must not leak back into operator-visible output.
  *
  * Policy: tools → observe → GUI act.
  *
@@ -18,6 +24,7 @@ import { planClick, planType, planScroll, executeSteps } from "../../browser/mot
 import { runDesktopAct, runDesktopObserve, probeDesktopDriver } from "./desktop-driver.mjs";
 import { enrichCuaError, classifyCdpError } from "../cua-errors.mjs";
 import { withCuaRetry } from "../cua-retry.mjs";
+import { resolveComputerEngine } from "../engine.mjs";
 
 /** @type {Map<string, { elements: object[], at: number, url?: string }>} */
 const observeCache = new Map();
@@ -111,7 +118,7 @@ async function resolveClickTarget(tab, input = {}) {
 /**
  * CDP endpoint: operator-attached (XCLAW_CDP_URL) wins; otherwise the
  * managed headless Chrome is ensured (spawned on first use). GUI actuation
- * works out of the box on the native engine — no env var, no bundle.
+ * works out of the box — no env var, no operator-attached browser required.
  */
 async function resolveCdpEndpoint() {
   const external = externalCdpEndpoint();
@@ -141,7 +148,7 @@ async function runComputerActImpl(input = {}) {
       error:
         "Use xclaw_browser_tab with action=observe (structure). computer_act is for GUI actuation only.",
       code: "USE_BROWSER_OBSERVE",
-      engine: process.env.XCLAW_COMPUTER_ENGINE || "native",
+      engine: resolveComputerEngine(),
     };
   }
 
@@ -170,12 +177,12 @@ async function runComputerActImpl(input = {}) {
         ok: false,
         error: "navigate requires url",
         code: "CUA_ACT_NEED_URL",
-        engine: "native",
+        engine: resolveComputerEngine(),
       };
     }
   }
 
-  const engine = process.env.XCLAW_COMPUTER_ENGINE || "native";
+  const engine = resolveComputerEngine();
   let cdpEp;
   try {
     cdpEp = await resolveCdpEndpoint();
@@ -184,7 +191,7 @@ async function runComputerActImpl(input = {}) {
       ok: false,
       error: `no browser available for GUI actuation: ${e?.message || e}`,
       code: "CUA_BROWSER_UNAVAILABLE",
-      engine: engine === "thin" ? "native" : engine,
+      engine,
       cuaPolicy: "tools_first_then_observe_then_gui",
       hint: "install chromium (or set XCLAW_BROWSER_BINARY / XCLAW_CDP_URL)",
     };

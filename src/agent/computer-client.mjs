@@ -149,9 +149,13 @@ function reuseEnabled(cfg) {
   if (process.env.XCLAW_COMPUTER_REUSE_SESSION === "1") return true;
   if (cfg.computer?.reuseSession === false) return false;
   if (cfg.computer?.reuseSession === true) return true;
-  // Default on for native/thin (cheap sessions still benefit multi-run); off for explicit remote
-  const eng = process.env.XCLAW_COMPUTER_ENGINE || cfg.computer?.engine || "";
-  return eng === "native" || eng === "thin" || eng === "";
+  // Default on for a local engine (cheap sessions still benefit multi-run);
+  // off for an explicit remote. This used to be keyed to the engine NAMES
+  // "native"/"thin"/unset, which inverted after ADR 0006: the canonical name
+  // is now "bundle", so naming the engine you actually run silently turned
+  // reuse off, while naming a retired one turned it on. remoteUrl is the
+  // condition the comment always meant.
+  return !cfg.computer?.remoteUrl;
 }
 
 function poolKey(baseUrl, workingDir) {

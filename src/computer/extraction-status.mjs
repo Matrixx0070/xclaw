@@ -2,12 +2,16 @@
  * /extraction — engine composition report.
  *
  * Historical purpose: track extraction progress out of the vendored CDP
- * bundle. Unification is COMPLETE (ADR 0005, 2026-08-24): every capability
- * runs from maintained native modules; the endpoint stays (frozen surface)
- * and now reports the unified state.
+ * bundle. Unification is COMPLETE, but in the direction ADR 0006 set
+ * (2026-08-24, reversing ADR 0005): the bundle `xclaw-server.mjs` is the one
+ * computer server and the native module tree is the maintained source it
+ * bridges to. The endpoint stays (frozen surface) and reports that state —
+ * it previously reported ADR 0005's retired-bundle shape, which is the
+ * opposite of what ships.
  */
 
 import { listNativeTools } from "./native-tools.mjs";
+import { resolveComputerEngine } from "./engine.mjs";
 
 /**
  * @returns {Promise<object>}
@@ -17,7 +21,7 @@ export async function getExtractionStatus() {
   return {
     ok: true,
     complete: true,
-    engine: "native",
+    engine: resolveComputerEngine(),
     cleanNativeTools: native.map((t) => t.name),
     browser: {
       runtime: "managed headless Chrome (chrome-session.mjs) + CDP tab layer (modules/browser-cdp.mjs)",
@@ -31,7 +35,7 @@ export async function getExtractionStatus() {
       ],
     },
     note:
-      "Engine unification complete — the vendored CDP bundle was retired 2026-08-24. Archived artifact: GitHub release computer-bundle.",
+      "Engine unification complete (ADR 0006, 2026-08-24) — the bundle xclaw-server.mjs is the single computer server, carrying the retired thin server's functions via the A6 merge patch; these native modules are its maintained source.",
   };
 }
 

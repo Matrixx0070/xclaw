@@ -15,7 +15,7 @@ describe("A3 capability reach", () => {
       const r = resolveReach({ computer: { engine: "native" } });
       assert.equal(r.cdpAttach, true);
       assert.equal(r.cdpUrl, "http://127.0.0.1:9222");
-      assert.equal(r.engine, "native");
+      assert.equal(r.engine, "bundle", "retired selectors resolve, never pass through");
     } finally {
       if (prev === undefined) delete process.env.XCLAW_CDP_URL;
       else process.env.XCLAW_CDP_URL = prev;
@@ -57,4 +57,26 @@ describe("A3 capability reach", () => {
       if (prev !== undefined) process.env.XCLAW_COMPUTER_ENGINE = prev;
     }
   });
+
+  // ADR 0006 promises a deployment carrying a retired selector keeps working
+  // unchanged. The banner used to pass the selector through instead of
+  // resolving it, so such a node advertised screenshot:false / fullBrowser:false
+  // and the agent stopped attempting two capabilities the bundle has.
+  for (const legacy of ["native", "thin", "generated", "c3"]) {
+    it(`retired selector "${legacy}" does not deny bundle capabilities`, () => {
+      const prevEng = process.env.XCLAW_COMPUTER_ENGINE;
+      const prevCdp = process.env.XCLAW_CDP_URL;
+      delete process.env.XCLAW_COMPUTER_ENGINE;
+      delete process.env.XCLAW_CDP_URL; // no attach: capabilities must come from the engine alone
+      try {
+        const r = resolveReach({ computer: { engine: legacy } });
+        assert.equal(r.engine, "bundle");
+        assert.equal(r.screenshot, true);
+        assert.equal(r.fullBrowser, true);
+      } finally {
+        if (prevEng !== undefined) process.env.XCLAW_COMPUTER_ENGINE = prevEng;
+        if (prevCdp !== undefined) process.env.XCLAW_CDP_URL = prevCdp;
+      }
+    });
+  }
 });

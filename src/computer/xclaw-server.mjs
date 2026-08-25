@@ -395760,10 +395760,14 @@ function setupToolRoutes(app) {
     // metadata:{name, engine} (thin-server.mjs:63-67); this engine put the tool's
     // own structured data under `metadata` and left the envelope unlabelled, so a
     // thin-era caller reading metadata.name got undefined. Merged in rather than
-    // assigned: the tool payload owns the object and none of the six tools emits a
-    // `name` or `engine` key, so nothing is overwritten. The engine string stays
-    // "bundle" — doctor and status describe the one merged engine that way
-    // (src/computer/engine.mjs).
+    // assigned so the tool payload keeps every key it set — EXCEPT these two,
+    // which the envelope owns and deliberately wins on. That is not vacuous:
+    // xclaw_computer_act's error results carry their own `engine`
+    // (modules/computer-act-tool.mjs), and it is overwritten here. Both now
+    // read "bundle" because that module takes its value from the canonical
+    // resolver, so a tool needing to report something else must pick another
+    // key. The engine string stays "bundle" — doctor and status describe the
+    // one merged engine that way (src/computer/engine.mjs).
     result.metadata = { ...result.metadata, name: request.params.name, engine: "bundle" };
     log_default.info({
       tool: request.params.name,

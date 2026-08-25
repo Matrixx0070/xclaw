@@ -8,16 +8,20 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { resolveComputerEngine } from "../computer/engine.mjs";
 
 /**
  * @param {object} [cfg]
  * @param {{ computerUrl?: string|null, computerOk?: boolean|null, workingDir?: string }} [live]
  */
 export function resolveReach(cfg = {}, live = {}) {
-  const engine =
-    process.env.XCLAW_COMPUTER_ENGINE ||
-    cfg.computer?.engine ||
-    "bundle";
+  // Engine identity comes from the canonical resolver (ADR 0006), never a raw
+  // env/cfg read. ADR 0006 promises deployments carrying a retired selector
+  // ("native"/"thin"/…) keep working, but this banner used to pass the
+  // selector straight through — so such a node reported screenshot:false and
+  // fullBrowser:false and the agent believed it had lost two capabilities the
+  // bundle actually has.
+  const engine = resolveComputerEngine(cfg);
   const cdpUrl =
     process.env.XCLAW_CDP_URL ||
     process.env.CDP_URL ||
@@ -63,7 +67,7 @@ export function resolveReach(cfg = {}, live = {}) {
     cuaPolicy,
     cdpUrl: cdpUrl || null,
     /** true when we can drive a browser beyond native fetch tabs */
-    fullBrowser: cdpAttach || engine === "bundle" || engine === "generated",
+    fullBrowser: cdpAttach || engine === "bundle",
     remoteOnly: Boolean(cfg.computer?.remoteUrl) && !cdpAttach,
   };
 }
