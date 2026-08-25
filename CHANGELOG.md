@@ -1,3 +1,27 @@
+## 3.203.0 (2026-08-25)
+
+- TEST (sweep #20 — the WebSocket **header carriers**' wrong-token rejection; a
+  coverage blind spot, not a live leak, extending #18). `authorizeWebSocket`
+  accepts a token from four separately-extracted carriers before the shared
+  `tokenEqual` compare: `Authorization: Bearer <t>`, `x-xclaw-token` / `x-api-key`
+  headers, `?token=` query, and the `xclaw.token.<t>` subprotocol
+  (`got = bearer || x || q || sub`). Sweep #18 pinned the subprotocol carrier's own
+  reject; the query carrier had `?token=nope`. But NO test ever sent a WRONG token
+  through any HEADER carrier, and two of them (Bearer, x-api-key) had no accept test
+  at all. Proof it was blind: weakening just the Bearer extraction to accept any
+  value — `const bearer = hdr.startsWith("Bearer ") ? token : ""` — left the FULL
+  suite **green (3528/0)**; an `Authorization: Bearer <wrong>` would reach the
+  runAgent socket on `/ws/voice` unauthenticated. Fix (`test/ws-auth.test.mjs`,
+  19→27): a wrong token via each of Bearer / x-xclaw-token / x-api-key is rejected
+  on BOTH `/ws/events` and `/ws/voice` (neither path more open than the other), and
+  a valid token via Bearer + x-api-key is accepted (the two carriers that had no
+  positive test). Mutation-verified both directions: the Bearer accept-anything
+  weakening turns exactly the two Bearer reject cases RED (25/2); dropping the
+  x-api-key alternative from the `x` extraction turns only the x-api-key accept case
+  RED (26/1). Production code UNCHANGED — `auth.mjs` byte-identical (sha256
+  `6ddaa4d3…`); the live gateway already 401s every wrong-token header carrier on
+  both upgrade paths. Suite **3536/0**.
+
 ## 3.202.0 (2026-08-25)
 
 - TEST (sweep #19 — the gateway **CORS reflection policy**'s exact-match branches;

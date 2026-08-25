@@ -169,6 +169,50 @@ describe("WebSocket upgrade auth", () => {
         assert.match(r.statusLine, /401/, `wrong subprotocol token ${JSON.stringify(w)} must be rejected on /ws/voice`);
       });
     }
+
+    // Header carriers (Authorization: Bearer / x-xclaw-token / x-api-key).
+    // authorizeWebSocket extracts each of these separately before the shared
+    // tokenEqual compare (`got = bearer || x || q || sub`). The subprotocol
+    // cases above pin that shared compare's exactness; these pin each HEADER
+    // carrier's own extraction. Before this, NO test ever sent a WRONG token
+    // through any header carrier — the only wrong-token rejects went via
+    // ?token= (query) and xclaw.token.* (subprotocol). Mutating just the
+    // Bearer extraction to accept any value (`const bearer = hdr.startsWith(
+    // "Bearer ") ? token : ""`) left the FULL suite green (3528/0): an
+    // `Authorization: Bearer <wrong>` reached the runAgent socket on /ws/voice
+    // unauthenticated. The rejects below run on BOTH upgrade paths so neither
+    // can be more open than the other (voice-ws and the event hub share ONE
+    // authorize fn, but the wiring is asserted, not assumed).
+    const headerReject = [
+      { name: "Authorization: Bearer", bad: { authorization: "Bearer nope" } },
+      { name: "x-xclaw-token", bad: { "x-xclaw-token": "nope" } },
+      { name: "x-api-key", bad: { "x-api-key": "nope" } },
+    ];
+    for (const c of headerReject) {
+      it(`rejects a wrong token via ${c.name} on /ws/events (401)`, async () => {
+        const r = await wsHandshake(ctx.port, { headers: c.bad });
+        assert.match(r.statusLine, /401/, `wrong ${c.name} must be rejected on /ws/events`);
+      });
+      it(`rejects a wrong token via ${c.name} on /ws/voice (401)`, async () => {
+        const r = await wsHandshake(ctx.port, { pathQuery: "/ws/voice", headers: c.bad });
+        assert.match(r.statusLine, /401/, `wrong ${c.name} must be rejected on /ws/voice`);
+      });
+    }
+
+    // Positive side of the two header carriers that had NO accept test at all
+    // (query, x-xclaw-token, and subprotocol accepts are covered above). These
+    // pin the Bearer + x-api-key extractions themselves: a wrong slice offset
+    // or a dropped header key makes `got` empty and turns these RED.
+    const headerAccept = [
+      { name: "Authorization: Bearer", good: { authorization: `Bearer ${TOKEN}` } },
+      { name: "x-api-key", good: { "x-api-key": TOKEN } },
+    ];
+    for (const c of headerAccept) {
+      it(`accepts a valid token via ${c.name}`, async () => {
+        const r = await wsHandshake(ctx.port, { headers: c.good });
+        assert.match(r.statusLine, /101/, `valid token via ${c.name} must be accepted`);
+      });
+    }
   });
 
   describe("requireAuth with no token — fail closed", () => {
