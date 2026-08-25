@@ -147,6 +147,15 @@ await step("a-enforcement", async () => {
   return { code: r.code, detail: (r.out + r.err).split("\n").slice(-5).join(" | ") };
 }, { required: false });
 
+await step("openapi-stop-dryrun", async () => {
+  const { checkOpenapiStopContract } = await import("../src/ci/openapi-stop-contract.mjs");
+  const r = checkOpenapiStopContract(root);
+  if (!r.ok) {
+    console.error("[release-gate] OpenAPI /stop missing", (r.missing || []).join(",") || r.error);
+  }
+  return { code: r.ok ? 0 : 1, detail: r.ok ? "openapi /stop contract ok" : (r.missing || [r.error]) };
+}, { required: Boolean(strict) });
+
 await step("engine-entry", async () => {
   // Single bundle engine (ADR 0006): blob + bridge + merged act tool present.
   for (const rel of [
@@ -216,28 +225,6 @@ if (strict) {
     const r = await run(process.execPath, ["scripts/land-batch3.mjs", "--check"], { quiet: true });
     console.log((r.out + r.err).slice(-400));
     return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-8) };
-  }, { required: true });
-
-  await step("land-batch-n1-check", async () => {
-    const script = path.join(root, "scripts/land-batch-n1.mjs");
-    if (!fsSync.existsSync(script)) {
-      console.error("[release-gate] land-batch-n1.mjs missing");
-      return { code: 1, detail: "missing land-batch-n1.mjs" };
-    }
-    const r = await run(process.execPath, [script, "--check"], { quiet: true });
-    console.log((r.out + r.err).slice(-500));
-    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
-  }, { required: true });
-
-  await step("land-batch-n2-check", async () => {
-    const script = path.join(root, "scripts/land-batch-n2.mjs");
-    if (!fsSync.existsSync(script)) {
-      console.error("[release-gate] land-batch-n2.mjs missing");
-      return { code: 1, detail: "missing land-batch-n2.mjs" };
-    }
-    const r = await run(process.execPath, [script, "--check"], { quiet: true });
-    console.log((r.out + r.err).slice(-500));
-    return { code: r.code, detail: (r.err || r.out).trim().split("\n").slice(-10) };
   }, { required: true });
 }
 

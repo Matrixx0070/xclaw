@@ -1,24 +1,24 @@
 {
-  "at": "2026-08-24T19:54:34.752Z",
+  "at": "2026-08-25T07:06:42.991Z",
   "quick": false,
-  "strict": false,
+  "strict": true,
   "live": false,
   "steps": [
     {
       "name": "unit tests",
       "ok": true,
       "required": true,
-      "ms": 49610,
-      "detail": "# tests 2934 | # pass 2934 | # fail 0",
+      "ms": 54170,
+      "detail": "# tests 2939 | # pass 2939 | # fail 0",
       "code": 0
     },
     {
       "name": "security-audit",
       "ok": true,
       "required": true,
-      "ms": 58,
+      "ms": 48,
       "detail": {
-        "at": "2026-08-24T19:54:32.788Z",
+        "at": "2026-08-25T07:06:39.305Z",
         "ok": true,
         "errors": 0,
         "warnings": 1,
@@ -67,7 +67,7 @@
       "name": "sandbox-redteam",
       "ok": true,
       "required": true,
-      "ms": 140,
+      "ms": 107,
       "detail": null,
       "code": 0
     },
@@ -75,7 +75,7 @@
       "name": "fire-drill",
       "ok": true,
       "required": true,
-      "ms": 1478,
+      "ms": 1714,
       "detail": null,
       "code": 0
     },
@@ -83,15 +83,15 @@
       "name": "stop-fire-drill",
       "ok": true,
       "required": true,
-      "ms": 67,
+      "ms": 59,
       "detail": null,
       "code": 0
     },
     {
       "name": "evidence",
       "ok": true,
-      "required": false,
-      "ms": 197,
+      "required": true,
+      "ms": 180,
       "detail": null,
       "code": 0
     },
@@ -99,16 +99,189 @@
       "name": "a-enforcement",
       "ok": true,
       "required": false,
-      "ms": 77,
+      "ms": 74,
       "detail": " | Summary: 0 fail(s), 0 warning(s) — exit 0 | [xclaw] config: security.bypassApprovals=true — FULL AUTONOMY: no tool call will ever ask for approval, at any risk tier | [xclaw] config: security.autoApprove=true with requireApproval list — approvals may be auto-granted | ",
+      "code": 0
+    },
+    {
+      "name": "openapi-stop-dryrun",
+      "ok": true,
+      "required": true,
+      "ms": 0,
+      "detail": "openapi /stop contract ok",
       "code": 0
     },
     {
       "name": "engine-entry",
       "ok": true,
       "required": false,
-      "ms": 0,
+      "ms": 1,
       "detail": "bundle",
+      "code": 0
+    },
+    {
+      "name": "ensure-cold-start",
+      "ok": true,
+      "required": true,
+      "ms": 0,
+      "detail": {
+        "wrote": false,
+        "reason": "exists",
+        "path": "/root/.xclaw/cold-start.json",
+        "report": {
+          "ok": true,
+          "totalMs": 53,
+          "maxMs": 5000,
+          "importMs": 41,
+          "listenMs": 4,
+          "healthMs": 8,
+          "healthStatus": 200,
+          "at": "2026-08-25T07:05:54.352Z"
+        }
+      },
+      "code": 0
+    },
+    {
+      "name": "land-all-check",
+      "ok": true,
+      "required": true,
+      "ms": 117,
+      "detail": [
+        "[land-batch4] OK patches/doctor-ops-bundle.patch",
+        "[land-batch4] OK patches/gateway-stop-route.patch",
+        "[land-batch4] OK patches/release-gate-land-batch3.patch",
+        "[land-batch4] OK patches/checkpoint-restore-receipt.patch",
+        "[land-batch4] done applied=4 need=0",
+        "[land-batch5] OK patches/authorize-quota-job.patch",
+        "[land-batch5] OK patches/job-receipt-collector.patch",
+        "[land-batch5] OK patches/loop-authorize-job.patch",
+        "[land-batch5] done applied=3 need=0",
+        "[land-all] check OK"
+      ],
+      "code": 0
+    },
+    {
+      "name": "land-batch-n1-check",
+      "ok": true,
+      "required": true,
+      "ms": 25,
+      "detail": [
+        "[land-n1] check OK"
+      ],
+      "code": 0
+    },
+    {
+      "name": "land-batch-n2-check",
+      "ok": true,
+      "required": true,
+      "ms": 31,
+      "detail": [
+        "[land-n2] check OK"
+      ],
+      "code": 0
+    },
+    {
+      "name": "land-batch3-check",
+      "ok": true,
+      "required": true,
+      "ms": 26,
+      "detail": [
+        "[land-batch3] OK patches/loop-authorize-job.patch",
+        "[land-batch3] OK patches/job-mid-quota-escalate.patch",
+        "[land-batch3] OK patches/checkpoint-hash-verify-wire.patch",
+        "[land-batch3] OK patches/checkpoint-require-tip-delta.patch",
+        "[land-batch3] OK patches/checkpoint-quota-escalate.patch",
+        "[land-batch3] OK patches/tls-stop-proxy.patch",
+        "[land-batch3] OK patches/doctor-receipt-metrics.patch",
+        "[land-batch3] done applied=10 need=0"
+      ],
+      "code": 0
+    },
+    {
+      "name": "strict-extras",
+      "ok": true,
+      "required": true,
+      "ms": 1347,
+      "detail": [
+        "test/dual-preflight.test.mjs",
+        "test/job-dual-preflight.test.mjs",
+        "test/receipt-metrics.test.mjs",
+        "test/history-receipt-metrics.test.mjs",
+        "test/doctor-receipt-metrics.test.mjs",
+        "test/stop-proxy.test.mjs",
+        "test/gateway-stop-route.test.mjs",
+        "test/stop-drain-stats.test.mjs",
+        "test/checkpoint-quota-escalate.test.mjs",
+        "test/checkpoint-restore-receipt.test.mjs",
+        "test/stop-auth.test.mjs",
+        "test/doctor-ops-bundle.test.mjs",
+        "test/doctor-stop-auth.test.mjs",
+        "test/last-drain.test.mjs",
+        "test/autonomy-smoke-quota.test.mjs",
+        "test/autonomy-smoke-compare.test.mjs",
+        "test/doctor-single-port-stop.test.mjs",
+        "test/doctor-quota-escalate.test.mjs",
+        "test/stop-hmac.test.mjs",
+        "test/land-batch-check.test.mjs",
+        "test/checkpoint-require-tip.test.mjs",
+        "test/doctor-stop-probe.test.mjs",
+        "test/doctor-stop-hmac.test.mjs",
+        "test/autonomy-metrics-a4.test.mjs",
+        "test/ship-pack-land-batch-wire.test.mjs",
+        "test/land-all.test.mjs",
+        "test/quota-hard-circuit.test.mjs",
+        "test/quota-hard-circuit-wire.test.mjs",
+        "test/stop-control-auth.test.mjs",
+        "test/ws-stop-control.test.mjs",
+        "test/tls-stop-parity.test.mjs",
+        "test/doctor-auth-refresh-prod.test.mjs",
+        "test/release-gate-land-all-applied.test.mjs",
+        "test/doctor-stop-health.test.mjs",
+        "test/stop-health.test.mjs",
+        "test/hard-block-rate-ceiling.test.mjs",
+        "test/stop-drain-auth-method.test.mjs",
+        "test/cost-preflight-auth-record.test.mjs",
+        "test/ship-pack-land-all-preflight.test.mjs",
+        "test/doctor-quota-hard-circuit.test.mjs",
+        "test/land-remaining-wires.test.mjs",
+        "test/readiness-stop.test.mjs",
+        "test/doctor-hmac-missing-prod.test.mjs",
+        "test/doctor-last-drain-auth.test.mjs",
+        "test/openapi-stop.test.mjs",
+        "test/land-kill-switch-wires.test.mjs",
+        "test/quota-hard-circuit-collector.test.mjs",
+        "test/routes-stop.test.mjs",
+        "test/stop-sign.test.mjs",
+        "test/stop-fire-drill.test.mjs",
+        "test/ship-pack-land-ks.test.mjs",
+        "test/land-batch-apply-remaining.test.mjs",
+        "test/doctor-stop-summary.test.mjs",
+        "test/stop-dry-run.test.mjs",
+        "test/stop-hmac-canonical.test.mjs",
+        "test/ws-stop-last-drain.test.mjs",
+        "test/quota-hard-circuit-history.test.mjs",
+        "test/openapi-stop-runbook.test.mjs",
+        "test/land-batch-n1.test.mjs",
+        "test/doctor-stop-fire-drill.test.mjs",
+        "test/ship-pack-stop-fire-drill.test.mjs",
+        "test/sse-stop-control.test.mjs",
+        "test/job-copy-collector.test.mjs",
+        "test/openapi-stop-contract.test.mjs",
+        "test/stop-help.test.mjs",
+        "test/land-batch-n2.test.mjs",
+        "test/cost-hard-block.test.mjs",
+        "test/checkpoint-receipt.test.mjs",
+        "test/autonomy-compare-channel.test.mjs",
+        "test/smoke-last-drain.test.mjs"
+      ],
+      "code": 0
+    },
+    {
+      "name": "flake-cold-start",
+      "ok": true,
+      "required": true,
+      "ms": 1,
+      "detail": "flake_budget:ok | cold_start:ok",
       "code": 0
     }
   ],
@@ -125,6 +298,6 @@
       "docs/STOP.md",
       "docs/openapi-stop.yaml"
     ],
-    "at": "2026-08-24T19:54:34.756Z"
+    "at": "2026-08-25T07:06:42.996Z"
   }
 }

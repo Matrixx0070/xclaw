@@ -1669,6 +1669,11 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     case "stop-sign": {
       // xclaw stop --sign | xclaw stop-sign  → mint X-XClaw-Stop-Sig
       const rest = args.slice(1);
+      if (rest.includes("--help") || rest.includes("-h")) {
+        const { printStopHelp } = await import("../src/cli/stop-help.mjs");
+        printStopHelp();
+        break;
+      }
       if (cmd === "stop-sign" || rest.includes("--sign") || rest[0] === "sign") {
         const { stopSignMain } = await import("../src/cli/stop-sign.mjs");
         const cleaned = rest.filter((a) => a !== "--sign" && a !== "sign");

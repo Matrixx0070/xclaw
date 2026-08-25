@@ -1,0 +1,247 @@
+{
+  "version": "3.176.1",
+  "at": "2026-08-25T07:06:41.357Z",
+  "scoreboard": {
+    "at": "2026-08-25T07:06:41.356Z",
+    "passRate": 1,
+    "passed": 20,
+    "total": 20,
+    "meanTurns": 2.789473684210526,
+    "meanWallMs": 6382.263157894737,
+    "costUsd": 2.581677,
+    "tokens": 721063,
+    "hardPack": {
+      "total": 5,
+      "passed": 5
+    },
+    "longPack": {
+      "total": 4,
+      "passed": 4
+    },
+    "campaignPack": {
+      "total": 2,
+      "passed": 2,
+      "passRate": 1
+    },
+    "skillLoop": {
+      "samples": 0,
+      "helped": 0,
+      "helpRate": null
+    },
+    "soak": {
+      "nights": 3,
+      "runs": 3,
+      "passRate": 1,
+      "flakes": 0,
+      "flakeBudgetOk": true,
+      "gate": {
+        "minNights": 3,
+        "nightsOk": true,
+        "passOk": true
+      }
+    },
+    "trend": [],
+    "spendWindow": {
+      "runs": 12,
+      "totalUsd": 2.581677,
+      "avgUsdPerRun": 0.21514
+    },
+    "historyRuns": 12,
+    "imperfectRuns": 4,
+    "quarantine": {
+      "count": 2,
+      "ids": [
+        "refactor-rename-greet",
+        "skill-ab-trap"
+      ],
+      "excludedFromGate": [
+        "refactor-rename-greet"
+      ]
+    },
+    "releaseGate": {
+      "minPassRate": 0.9,
+      "ok": true,
+      "note": "excluded 2 quarantined case(s)"
+    }
+  },
+  "soak": {
+    "at": "2026-08-25T02:50:08.338Z",
+    "nights": 3,
+    "runs": 3,
+    "totalCases": 21,
+    "passed": 21,
+    "failed": 0,
+    "passRate": 1,
+    "flakes": 0,
+    "flakeRate": 0,
+    "flakeBudgetOk": true,
+    "lastRuns": [
+      {
+        "at": "2026-08-23T21:31:41.465Z",
+        "tags": [
+          "smoke",
+          "campaign"
+        ],
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "passRate": 1,
+        "results": [
+          {
+            "id": "fs-write-readme",
+            "pass": true,
+            "turns": 1
+          },
+          {
+            "id": "fs-write-hello",
+            "pass": true,
+            "turns": 1
+          },
+          {
+            "id": "campaign-svc-admin",
+            "pass": true,
+            "turns": 5
+          },
+          {
+            "id": "campaign-static-site",
+            "pass": true,
+            "turns": 3
+          },
+          {
+            "id": "campaign-chaos-calc",
+            "pass": true,
+            "turns": 4
+          },
+          {
+            "id": "campaign-api-health",
+            "pass": true,
+            "turns": 4
+          },
+          {
+            "id": "campaign-migrate-v2",
+            "pass": true,
+            "turns": 4
+          }
+        ]
+      },
+      {
+        "at": "2026-08-24T02:46:18.630Z",
+        "tags": [
+          "smoke",
+          "campaign"
+        ],
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "passRate": 1,
+        "results": [
+          {
+            "id": "fs-write-readme",
+            "pass": true,
+            "turns": 2
+          },
+          {
+            "id": "fs-write-hello",
+            "pass": true,
+            "turns": 1
+          },
+          {
+            "id": "campaign-svc-admin",
+            "pass": true,
+            "turns": 4
+          },
+          {
+            "id": "campaign-static-site",
+            "pass": true,
+            "turns": 3
+          },
+          {
+            "id": "campaign-chaos-calc",
+            "pass": true,
+            "turns": 4
+          },
+          {
+            "id": "campaign-api-health",
+            "pass": true,
+            "turns": 5
+          },
+          {
+            "id": "campaign-migrate-v2",
+            "pass": true,
+            "turns": 4
+          }
+        ]
+      },
+      {
+        "at": "2026-08-25T02:50:08.336Z",
+        "tags": [
+          "smoke",
+          "campaign"
+        ],
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "passRate": 1,
+        "results": [
+          {
+            "id": "fs-write-readme",
+            "pass": true,
+            "turns": 2
+          },
+          {
+            "id": "fs-write-hello",
+            "pass": true,
+            "turns": 1
+          },
+          {
+            "id": "campaign-svc-admin",
+            "pass": true,
+            "turns": 4
+          },
+          {
+            "id": "campaign-static-site",
+            "pass": true,
+            "turns": 3
+          },
+          {
+            "id": "campaign-chaos-calc",
+            "pass": true,
+            "turns": 4
+          },
+          {
+            "id": "campaign-api-health",
+            "pass": true,
+            "turns": 6
+          },
+          {
+            "id": "campaign-migrate-v2",
+            "pass": true,
+            "turns": 5
+          }
+        ]
+      }
+    ],
+    "gate": {
+      "minNights": 3,
+      "nightsOk": true,
+      "passOk": true
+    }
+  },
+  "baseline": {
+    "passRate": 1,
+    "total": 21,
+    "passed": 21
+  },
+  "campaign": {
+    "passRate": 1,
+    "total": 2,
+    "passed": 2
+  },
+  "skillLoop": {
+    "samples": 0,
+    "helped": 0,
+    "helpRate": null
+  },
+  "releaseOk": true,
+  "requireSoak": true
+}

@@ -1,3 +1,21 @@
+## 3.176.2 (2026-08-25)
+
+- STRICT RELEASE GATE PASSES FOR THE FIRST TIME — the multi-night soak
+  completed its contract: 3 distinct UTC nights (08-23/24/25), aggregate
+  passRate 21/21 = 1.000 (gate >= 3 nights, >= 0.9), zero flakes, last night
+  run on v3.176.1. Evidence recorded (soak.gate nightsOk+passOk in
+  evidence-v3.176.1.json); the soak crontab removed per its own
+  "remove after >= 3 green nights" contract. Two flaky cases remain
+  quarantined (refactor-rename-greet, skill-ab-trap) with 0 greens —
+  excluded from the gate per the quarantine contract, honestly recorded.
+- Landed the last land-batch-n2 items the strict gate checks for (the batch
+  had been half-landed): `xclaw stop --help` prints the kill-switch help
+  (printStopHelp — the live kill-by-default semantics of bare `xclaw stop`
+  are unchanged), and the release gate gained the `openapi-stop-dryrun` step
+  (validates the OpenAPI /stop contract, required under --strict).
+- Removed a verbatim duplicated land-batch-n1/n2 check pair in
+  release-gate.mjs (the strict block ran both checks twice).
+
 ## 3.176.1 (2026-08-24)
 
 - TELEGRAM CHANNEL HARDENING (live outage found minutes after the 3.176.0
