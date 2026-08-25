@@ -189,3 +189,97 @@ describe("loop stage: turn pre-flight", () => {
     assert.equal(r.stop.cause, "governor");
   });
 });
+
+// W2 stage 2 — pairing backfill + stop-reason classification.
+import {
+  planPairingBackfill,
+  computeStopReason,
+  terminalStatus,
+} from "../src/agent/loop-stages.mjs";
+
+describe("loop stage: pairing-invariant backfill", () => {
+  const calls = [
+    { id: "c1", function: { name: "xclaw_bash" } },
+    { id: "c2", function: { name: "xclaw_file_read" } },
+    { id: "c3", function: { name: "xclaw_file_write" } },
+    { function: { name: "no-id-call" } },
+  ];
+
+  it("backfills exactly the unanswered call ids, in call order", () => {
+    const messages = [
+      { role: "tool", tool_call_id: "c2" },
+      { role: "assistant" },
+    ];
+    const plan = planPairingBackfill(calls, messages);
+    assert.deepEqual(plan.map((p) => p.callId), ["c1", "c3"]);
+    assert.equal(plan[0].event.phase, "skipped");
+    assert.equal(plan[0].event.reason, "turn_stopped");
+    assert.equal(plan[0].name, "xclaw_bash");
+    assert.match(plan[0].content, /Not executed/);
+  });
+
+  it("no orphans → empty plan; calls without ids are never backfilled", () => {
+    const messages = [
+      { role: "tool", tool_call_id: "c1" },
+      { role: "tool", tool_call_id: "c2" },
+      { role: "tool", tool_call_id: "c3" },
+    ];
+    assert.deepEqual(planPairingBackfill(calls, messages), []);
+    assert.deepEqual(planPairingBackfill([], []), []);
+    assert.deepEqual(planPairingBackfill(null, []), []);
+  });
+
+  it("a non-tool message with a matching id does not count as answered", () => {
+    const messages = [{ role: "assistant", tool_call_id: "c1" }];
+    const plan = planPairingBackfill([calls[0]], messages);
+    assert.equal(plan.length, 1);
+  });
+});
+
+describe("loop stage: stop-reason priority chain", () => {
+  const none = {
+    signalAborted: false,
+    aborted: false,
+    hookAbort: false,
+    loopGuardStop: false,
+    lastPendingApproval: null,
+    toolHaltStop: false,
+    budgetStop: false,
+    maxTurnsStop: false,
+  };
+
+  it("clean run is natural; each flag alone maps to its reason", () => {
+    assert.equal(computeStopReason(none), "natural");
+    assert.equal(computeStopReason({ ...none, signalAborted: true }), "aborted");
+    assert.equal(computeStopReason({ ...none, aborted: true }), "aborted");
+    assert.equal(computeStopReason({ ...none, hookAbort: true }), "hook");
+    assert.equal(computeStopReason({ ...none, loopGuardStop: true }), "guard");
+    assert.equal(computeStopReason({ ...none, lastPendingApproval: {} }), "approval");
+    assert.equal(computeStopReason({ ...none, toolHaltStop: true }), "policy");
+    assert.equal(computeStopReason({ ...none, budgetStop: true }), "budget");
+    assert.equal(computeStopReason({ ...none, maxTurnsStop: true }), "maxTurns");
+  });
+
+  it("priority: earlier causes win when several flags are set", () => {
+    assert.equal(
+      computeStopReason({ ...none, aborted: true, budgetStop: true, maxTurnsStop: true }),
+      "aborted"
+    );
+    assert.equal(
+      computeStopReason({ ...none, loopGuardStop: true, toolHaltStop: true }),
+      "guard"
+    );
+    assert.equal(
+      computeStopReason({ ...none, budgetStop: true, maxTurnsStop: true }),
+      "budget"
+    );
+  });
+
+  it('terminal status: only natural/hook persist as "completed" (honest cutoff)', () => {
+    assert.equal(terminalStatus("natural"), "completed");
+    assert.equal(terminalStatus("hook"), "completed");
+    for (const r of ["aborted", "guard", "approval", "policy", "budget", "maxTurns"]) {
+      assert.equal(terminalStatus(r), r, `${r} must never masquerade as completed`);
+    }
+  });
+});

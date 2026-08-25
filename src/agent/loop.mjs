@@ -8,7 +8,12 @@ import {
   formatToolResult,
 } from "./computer-client.mjs";
 import { ensureComputer } from "../computer/ensure.mjs";
-import { evaluateTurnPreflight } from "./loop-stages.mjs";
+import {
+  evaluateTurnPreflight,
+  planPairingBackfill,
+  computeStopReason,
+  terminalStatus,
+} from "./loop-stages.mjs";
 import { createProvider } from "./provider.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
 import {
@@ -1867,31 +1872,18 @@ export async function runAgentLoop(options) {
         cfg,
         onEvent,
       });
-      // Pairing invariant: EVERY tool_call id in this assistant turn must get
-      // a tool message — a mid-batch stop (pending approval, guard critical)
-      // skips the remaining calls, and an orphaned tool_use makes the next
-      // Anthropic request fail with HTTP 400 ("tool_use ids were found
-      // without tool_result blocks"). Backfill explicit not-executed results.
-      for (const call of calls) {
-        if (
-          call?.id &&
-          !messages.some((m) => m.role === "tool" && m.tool_call_id === call.id)
-        ) {
-          onEvent({
-            type: "tool",
-            phase: "skipped",
-            name: call.function?.name,
-            callId: call.id,
-            reason: "turn_stopped",
-          });
-          messages.push(
-            makeToolMessage({
-              tool_call_id: call.id,
-              content: "Not executed — the turn stopped before this tool call ran.",
-              source: "skipped",
-            })
-          );
-        }
+      // W2 stage 2a — pairing invariant (see loop-stages.mjs): every tool_call
+      // id gets a tool message even when a mid-batch stop skipped it; an
+      // orphaned tool_use 400s the next Anthropic request.
+      for (const skip of planPairingBackfill(calls, messages)) {
+        onEvent(skip.event);
+        messages.push(
+          makeToolMessage({
+            tool_call_id: skip.callId,
+            content: skip.content,
+            source: "skipped",
+          })
+        );
       }
 
       // Honor the batch stop: a "stop" from processToolCall (guard critical,
@@ -2228,21 +2220,17 @@ export async function runAgentLoop(options) {
   // return value. Orchestrators must distinguish "the model finished" from
   // "the runtime cut it off" (a turn cap is an execution constraint, never
   // evidence the user's objective is complete).
-  const stopReason = signal?.aborted || aborted
-    ? "aborted"
-    : hookAbort
-      ? "hook"
-      : loopGuardStop
-        ? "guard"
-        : lastPendingApproval
-          ? "approval"
-          : toolHaltStop
-            ? "policy"
-            : budgetStop
-              ? "budget"
-              : maxTurnsStop
-                ? "maxTurns"
-                : "natural";
+  // (W2 stage 2b — priority chain lives in loop-stages.mjs computeStopReason.)
+  const stopReason = computeStopReason({
+    signalAborted: signal?.aborted,
+    aborted,
+    hookAbort,
+    loopGuardStop,
+    lastPendingApproval,
+    toolHaltStop,
+    budgetStop,
+    maxTurnsStop,
+  });
 
   // Feature 2 — durable snapshot for resume
   try {
@@ -2257,11 +2245,8 @@ export async function runAgentLoop(options) {
         turns,
         // Honest terminal state: "completed" is reserved for runs the model
         // actually finished — a cutoff persists AS its stopReason so restart
-        // recovery can tell resumable work from done work.
-        status:
-          stopReason === "natural" || stopReason === "hook"
-            ? "completed"
-            : stopReason,
+        // recovery can tell resumable work from done work (loop-stages.mjs).
+        status: terminalStatus(stopReason),
         stopReason,
         meta: { goal: typeof userMessage === "string" ? userMessage.slice(0, 200) : null },
       });

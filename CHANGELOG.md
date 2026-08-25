@@ -1,3 +1,19 @@
+## 3.177.1 (2026-08-25)
+
+- W2 STAGE 2 — two more verdict-critical blocks staged out of runAgentLoop
+  into `loop-stages.mjs`, behavior identical:
+  - `planPairingBackfill(calls, messages)` — the pairing invariant (every
+    tool_call id gets a tool message; an orphan 400s the next Anthropic
+    request) as a pure plan the loop applies.
+  - `computeStopReason(flags)` + `terminalStatus(stopReason)` — the
+    stop-cause priority chain (aborted > hook > guard > approval > policy >
+    budget > maxTurns > natural) and the honest-terminal-state mapping
+    ("completed" reserved for natural/hook; every cutoff persists AS its
+    stopReason) — S2's completion-trust contract, now unit-pinned.
+- 7 new tests: orphan detection in call order, id-less calls never
+  backfilled, non-tool messages don't count as answered, every flag's
+  mapping, multi-flag priority, cutoff-never-masquerades-as-completed.
+
 ## 3.177.0 (2026-08-25)
 
 - W2 (30-day plan) STAGE 1 — runAgentLoop staging begins: the turn pre-flight

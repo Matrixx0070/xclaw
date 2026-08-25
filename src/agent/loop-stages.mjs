@@ -159,4 +159,79 @@ export async function evaluateTurnPreflight(inp) {
   return { segment, stop: null, events };
 }
 
-export default { evaluateTurnPreflight };
+/**
+ * Stage 2a — pairing-invariant backfill plan. EVERY tool_call id in an
+ * assistant turn must get a tool message: a mid-batch stop (pending approval,
+ * guard critical) skips the remaining calls, and an orphaned tool_use makes
+ * the next Anthropic request fail with HTTP 400 ("tool_use ids were found
+ * without tool_result blocks"). Pure: given the turn's calls and the message
+ * list, returns the skip event + tool-message content for every orphan, in
+ * call order. The loop pushes the messages and emits the events.
+ *
+ * @param {Array<{id?: string, function?: {name?: string}}>} calls
+ * @param {Array<{role: string, tool_call_id?: string}>} messages
+ * @returns {Array<{callId: string, name: string|undefined, event: object, content: string}>}
+ */
+export function planPairingBackfill(calls, messages) {
+  const answered = new Set(
+    messages
+      .filter((m) => m.role === "tool" && m.tool_call_id)
+      .map((m) => m.tool_call_id)
+  );
+  const out = [];
+  for (const call of calls || []) {
+    if (!call?.id || answered.has(call.id)) continue;
+    out.push({
+      callId: call.id,
+      name: call.function?.name,
+      event: {
+        type: "tool",
+        phase: "skipped",
+        name: call.function?.name,
+        callId: call.id,
+        reason: "turn_stopped",
+      },
+      content: "Not executed — the turn stopped before this tool call ran.",
+    });
+  }
+  return out;
+}
+
+/**
+ * Stage 2b — why the run ended, computed once from the loop's terminal flags.
+ * Orchestrators must distinguish "the model finished" from "the runtime cut
+ * it off" (a turn cap is an execution constraint, never evidence the user's
+ * objective is complete). Priority order is a contract — earlier causes win.
+ *
+ * @param {object} f terminal flags
+ * @returns {"aborted"|"hook"|"guard"|"approval"|"policy"|"budget"|"maxTurns"|"natural"}
+ */
+export function computeStopReason(f) {
+  if (f.signalAborted || f.aborted) return "aborted";
+  if (f.hookAbort) return "hook";
+  if (f.loopGuardStop) return "guard";
+  if (f.lastPendingApproval) return "approval";
+  if (f.toolHaltStop) return "policy";
+  if (f.budgetStop) return "budget";
+  if (f.maxTurnsStop) return "maxTurns";
+  return "natural";
+}
+
+/**
+ * Honest terminal state for the durable snapshot: "completed" is reserved for
+ * runs the model actually finished — a cutoff persists AS its stopReason so
+ * restart recovery can tell resumable work from done work.
+ * @param {string} stopReason
+ */
+export function terminalStatus(stopReason) {
+  return stopReason === "natural" || stopReason === "hook"
+    ? "completed"
+    : stopReason;
+}
+
+export default {
+  evaluateTurnPreflight,
+  planPairingBackfill,
+  computeStopReason,
+  terminalStatus,
+};
