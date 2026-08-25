@@ -4,6 +4,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import net from "node:net";
 import { attachWebSocketHub } from "../src/gateway/ws-hub.mjs";
+import { attachVoiceWebSocket } from "../src/gateway/voice-ws.mjs";
 import { createGatewayAuth } from "../src/gateway/auth.mjs";
 
 /** Raw WS upgrade handshake; resolves with the HTTP status line + headers. */
@@ -40,10 +41,19 @@ function wsHandshake(port, { pathQuery = "/ws/events", headers = {} } = {}) {
   });
 }
 
+/**
+ * Both upgrade endpoints, wired the way the gateway wires them: ONE decision
+ * function. /ws/voice used to be handed the auth object instead and asked
+ * isProtectedPath("/ws/voice") — false in every mode, so its gate never ran and
+ * the socket that reaches runAgent answered unauthenticated clients from 3.131.0
+ * to 3.191.0. Every case below therefore runs against both paths.
+ */
 function startServer(cfg) {
   const server = http.createServer((_req, res) => res.end("ok"));
   const auth = createGatewayAuth(cfg);
-  attachWebSocketHub(server, { authorize: (req) => auth.authorizeWebSocket(req) });
+  const authorize = (req) => auth.authorizeWebSocket(req);
+  attachWebSocketHub(server, { authorize });
+  attachVoiceWebSocket(server, { cfg, authorize });
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => resolve({ server, port: server.address().port }));
   });
@@ -57,6 +67,11 @@ describe("WebSocket upgrade auth", () => {
 
     it("accepts the upgrade without credentials", async () => {
       const r = await wsHandshake(ctx.port);
+      assert.match(r.statusLine, /101 Switching Protocols/);
+    });
+
+    it("accepts a voice upgrade without credentials", async () => {
+      const r = await wsHandshake(ctx.port, { pathQuery: "/ws/voice" });
       assert.match(r.statusLine, /101 Switching Protocols/);
     });
   });
@@ -94,6 +109,32 @@ describe("WebSocket upgrade auth", () => {
       assert.match(r.statusLine, /101/);
       assert.match(r.raw, new RegExp(`Sec-WebSocket-Protocol: xclaw\\.token\\.${TOKEN}`));
     });
+
+    it("rejects a voice upgrade with no token (401)", async () => {
+      // The socket that reaches runAgent. It must never be more open than the
+      // read-only event stream above.
+      const r = await wsHandshake(ctx.port, { pathQuery: "/ws/voice" });
+      assert.match(r.statusLine, /401 Unauthorized/);
+    });
+
+    it("rejects a voice upgrade with the wrong token (401)", async () => {
+      const r = await wsHandshake(ctx.port, { pathQuery: "/ws/voice?token=nope" });
+      assert.match(r.statusLine, /401/);
+    });
+
+    it("accepts a valid token on the voice path", async () => {
+      const r = await wsHandshake(ctx.port, { pathQuery: `/ws/voice?token=${TOKEN}` });
+      assert.match(r.statusLine, /101 Switching Protocols/);
+    });
+
+    it("accepts + echoes a token subprotocol on the voice path", async () => {
+      const r = await wsHandshake(ctx.port, {
+        pathQuery: "/ws/voice",
+        headers: { "Sec-WebSocket-Protocol": `xclaw.token.${TOKEN}` },
+      });
+      assert.match(r.statusLine, /101/);
+      assert.match(r.raw, new RegExp(`Sec-WebSocket-Protocol: xclaw\\.token\\.${TOKEN}`));
+    });
   });
 
   describe("requireAuth with no token — fail closed", () => {
@@ -103,6 +144,11 @@ describe("WebSocket upgrade auth", () => {
 
     it("rejects every upgrade (401)", async () => {
       const r = await wsHandshake(ctx.port, { pathQuery: "/ws/events?token=anything" });
+      assert.match(r.statusLine, /401/);
+    });
+
+    it("rejects every voice upgrade (401)", async () => {
+      const r = await wsHandshake(ctx.port, { pathQuery: "/ws/voice?token=anything" });
       assert.match(r.statusLine, /401/);
     });
   });

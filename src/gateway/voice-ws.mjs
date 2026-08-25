@@ -49,7 +49,9 @@ function sendJson(socket, obj) {
 
 /**
  * @param {import('node:http').Server} server
- * @param {{ cfg?: object, path?: string, auth?: { check: Function } }} opts
+ * @param {{ cfg?: object, path?: string, authorize?: (req: object) => { ok: boolean, protocol?: string } }} opts
+ *   `authorize` is the SAME function /ws/events uses (gatewayAuth.authorizeWebSocket).
+ *   One decision function for every upgrade — see the gate below.
  */
 export function attachVoiceWebSocket(server, opts = {}) {
   const path = opts.path || "/ws/voice";
@@ -66,13 +68,31 @@ export function attachVoiceWebSocket(server, opts = {}) {
     }
     if (url.pathname !== path) return; // other handlers may claim
 
-    if (opts.auth?.isProtectedPath?.(path) && opts.auth?.check) {
-      const auth = opts.auth.check(req);
-      if (!auth.ok) {
-        socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+    // Auth gate BEFORE the 101 handshake, using the same path-independent
+    // decision as /ws/events. This used to ask `auth.isProtectedPath("/ws/voice")`
+    // first — and no protection list contains "/ws/voice", so the answer was
+    // always false and the gate never ran. From 3.131.0 (b4ecb14) to 3.191.0
+    // ANY unauthenticated client could open this socket on a token-protected
+    // gateway and send {"type":"command"}, which reaches runAgent with the full
+    // tool pack. The events hub was never affected: it asks authorizeWebSocket,
+    // which gates on "is a token configured", not on the path. Two decision
+    // functions for one question is the bug; there is now one.
+    let authProtocol;
+    if (typeof opts.authorize === "function") {
+      let verdict;
+      try {
+        verdict = opts.authorize(req);
+      } catch (err) {
+        verdict = { ok: false, error: err?.message || "authorize error" };
+      }
+      if (!verdict?.ok) {
+        socket.write(
+          "HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
+        );
         socket.destroy();
         return;
       }
+      authProtocol = verdict.protocol;
     }
 
     const key = req.headers["sec-websocket-key"];
@@ -86,6 +106,9 @@ export function attachVoiceWebSocket(server, opts = {}) {
       "Upgrade: websocket",
       "Connection: Upgrade",
       `Sec-WebSocket-Accept: ${acceptKey(key)}`,
+      // Echo the token subprotocol or a browser fails the handshake — that
+      // carrier is the only way a browser can authenticate an upgrade.
+      ...(authProtocol ? [`Sec-WebSocket-Protocol: ${authProtocol}`] : []),
       "",
       "",
     ].join("\r\n");

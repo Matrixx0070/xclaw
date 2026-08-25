@@ -1,3 +1,49 @@
+## 3.191.0 (2026-08-25)
+
+- SECURITY (a third authentication bypass, same root cause shape as the two in
+  3.190.0: one question answered by two different functions). **`/ws/voice`,
+  the WebSocket that runs the agent, accepted unauthenticated upgrades on a
+  token-protected gateway** from 3.131.0 (`b4ecb14`, 2026-08-17) through
+  3.190.0 — roughly 66 releases.
+- The gateway has two upgrade endpoints. `/ws/events` is read-only and asks
+  `gatewayAuth.authorizeWebSocket(req)`, which answers a path-independent
+  question: *is a token configured, and did the caller present it?*
+  `/ws/voice` was handed the auth object instead of that function, and its
+  gate opened with `if (auth.isProtectedPath("/ws/voice") && auth.check)`.
+  No protection list — `core`, legacy, strict, or the publicUi branches —
+  contains a `/ws/` entry, because that list describes HTTP routes. So the
+  condition was false in every configuration, `check` was never called, and
+  the guard was dead code that read like enforcement.
+- What that socket reaches: a client message `{"type":"command","text":"…"}`
+  is handed to `runVoiceTurn` → `runAgent({ goal, cfg, channel: "voice", … })`
+  with the full tool pack, streaming tool events back. Unauthenticated agent
+  execution, not an information leak.
+- Reproduced on the running production gateway before any source was changed:
+  an upgrade to `/ws/voice` with no credentials returned `101 Switching
+  Protocols`, the server sent `{"type":"ready","sessionId":…,"workingDir":
+  "/root/.xclaw/workspaces"}`, and a client `{"type":"ping"}` was answered
+  with `pong`. The same socket to `/ws/events`, same server, same token,
+  returned `401`.
+- Fix: `/ws/voice` is given the **same** `authorize` lambda `/ws/events` gets,
+  and the voice module now performs that one decision before the handshake —
+  401 on refusal, and on success it echoes `Sec-WebSocket-Protocol` so the
+  browser token carrier still completes. `isProtectedPath` was deliberately
+  **not** extended with `/ws/` paths: adding a second source for the same
+  answer is what caused this bug three times running.
+- Tests at both levels, because only one of them can catch this. `ws-auth`
+  (6 → 13 cases) runs every credential case against both endpoints through a
+  single shared `authorize`, with a mirror-pair accept for every refusal.
+  `gateway-auth-enforcement` (10 → 15) drives raw upgrade sockets against a
+  real spawned `bin/xclaw.mjs gateway`. Mutation-swept: no-op the gate → both
+  go red; **revert only the `index.mjs` wiring → the unit test stays green and
+  only the child-process test goes red**, which is the exact defect that
+  shipped, so the in-process test alone would never have found it.
+- The blind spot is the same one the previous five sweeps found: the pure
+  decision (`authorizeWebSocket`) was correct and tested; the half that
+  *performs* it had no behavioural test. `voice-pcm-ws.test.mjs` tested frame
+  encoding and `voice-ws-protocol.test.mjs` grepped the source for handler
+  strings — neither had ever opened a socket to `/ws/voice`.
+
 ## 3.190.0 (2026-08-25)
 
 - SECURITY (two authentication bypasses on the gateway, one root cause shape:

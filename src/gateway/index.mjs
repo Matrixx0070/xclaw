@@ -1607,7 +1607,9 @@ export async function startGateway({ root } = {}) {
   const voiceWs = attachVoiceWebSocket(server, {
     cfg,
     path: "/ws/voice",
-    auth: gatewayAuth,
+    // Same gate as /ws/events above — this socket runs the agent, so it must
+    // never be more open than the read-only event stream.
+    authorize: (req) => gatewayAuth.authorizeWebSocket(req),
   });
   console.log(`[xclaw] Voice WS: ${proto === "https" ? "wss" : "ws"}://${cfg.gateway.host}:${cfg.gateway.port}${voiceWs.path}`);
   console.log(`[xclaw] Computer at http://${cfg.computer.host}:${cfg.computer.port}`);

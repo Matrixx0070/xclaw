@@ -43,8 +43,10 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,6 +100,43 @@ function request(method, p, { headers = {}, body = null } = {}) {
 }
 
 const withToken = { authorization: `Bearer ${TOKEN}` };
+
+/**
+ * One raw WebSocket upgrade against the child gateway; resolves with the HTTP
+ * status line. Raw sockets because an upgrade is refused before any WS library
+ * would hand back a usable error, and the status line is the whole assertion.
+ */
+function wsUpgrade(pathQuery, headers = {}) {
+  return new Promise((resolve) => {
+    const key = crypto.randomBytes(16).toString("base64");
+    const sock = net.connect(gwPort, "127.0.0.1", () => {
+      sock.write(
+        [
+          `GET ${pathQuery} HTTP/1.1`,
+          "Host: 127.0.0.1",
+          "Upgrade: websocket",
+          "Connection: Upgrade",
+          `Sec-WebSocket-Key: ${key}`,
+          "Sec-WebSocket-Version: 13",
+          ...Object.entries(headers).map(([k, v]) => `${k}: ${v}`),
+          "",
+          "",
+        ].join("\r\n")
+      );
+    });
+    let buf = "";
+    const done = (statusLine) => {
+      sock.destroy();
+      resolve(statusLine);
+    };
+    sock.on("data", (c) => {
+      buf += c.toString("latin1");
+      if (buf.includes("\r\n\r\n")) done(buf.split("\r\n")[0]);
+    });
+    sock.on("error", (e) => done(`ERROR ${e.message}`));
+    setTimeout(() => done("TIMEOUT"), 10_000);
+  });
+}
 
 before(async () => {
   // Stands in for the computer plane. Records every request that reaches it:
@@ -260,6 +299,85 @@ describe("the computer plane is behind gateway auth", () => {
 
     assert.equal(r.status, 200, `an authenticated alias call must still forward (${r.body.slice(0, 160)})`);
     assert.deepEqual(upstreamHits, ["GET /tools"]);
+  });
+});
+
+describe("every WebSocket endpoint is behind the same gate", () => {
+  // The third bypass of this shape, live from 3.131.0 (b4ecb14) to 3.191.0.
+  // /ws/voice asked `auth.isProtectedPath("/ws/voice")` before consulting
+  // check() — and no protection list contains "/ws/voice", so the gate was
+  // dead code and the socket answered everyone. Proven on the production
+  // gateway (token configured) before the fix: the upgrade returned 101, the
+  // server sent its `ready` frame with workingDir /root/.xclaw/workspaces, and
+  // a client {"type":"ping"} was answered — one frame short of
+  // {"type":"command"}, which reaches runAgent with the full tool pack.
+  //
+  // /ws/events was never affected: it asks authorizeWebSocket, which gates on
+  // "is a token configured", not on the path. Both now ask that one function,
+  // and both are asserted here because the unit test (test/ws-auth.test.mjs)
+  // passes the correct lambda by hand — only the real process proves the
+  // WIRING in index.mjs, which is where this defect lived.
+  it("refuses a /ws/voice upgrade without a token", async () => {
+    const line = await wsUpgrade("/ws/voice");
+
+    assert.match(line, /401/, `the voice socket runs the agent and must be gated (got: ${line})`);
+  });
+
+  it("accepts /ws/voice once the token is presented", async () => {
+    // Only the credential moves; a gate that refuses every upgrade would pass
+    // the case above while taking the feature offline.
+    const line = await wsUpgrade(`/ws/voice?token=${TOKEN}`);
+
+    assert.match(line, /101 Switching Protocols/, `an authenticated voice upgrade must pass (got: ${line})`);
+  });
+
+  it("echoes the token subprotocol so a browser can complete the handshake", async () => {
+    // Browsers cannot set Authorization on an upgrade; the subprotocol is the
+    // only carrier they have, and an unechoed subprotocol fails the handshake
+    // client-side even after a 101.
+    const line = await new Promise((resolve) => {
+      const key = crypto.randomBytes(16).toString("base64");
+      const sock = net.connect(gwPort, "127.0.0.1", () => {
+        sock.write(
+          [
+            "GET /ws/voice HTTP/1.1",
+            "Host: 127.0.0.1",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            `Sec-WebSocket-Key: ${key}`,
+            "Sec-WebSocket-Version: 13",
+            `Sec-WebSocket-Protocol: xclaw.token.${TOKEN}`,
+            "",
+            "",
+          ].join("\r\n")
+        );
+      });
+      let buf = "";
+      sock.on("data", (c) => {
+        buf += c.toString("latin1");
+        if (buf.includes("\r\n\r\n")) {
+          sock.destroy();
+          resolve(buf.split("\r\n\r\n")[0]);
+        }
+      });
+      sock.on("error", (e) => resolve(`ERROR ${e.message}`));
+      setTimeout(() => resolve("TIMEOUT"), 10_000);
+    });
+
+    assert.match(line, /101 Switching Protocols/);
+    assert.match(line, new RegExp(`Sec-WebSocket-Protocol: xclaw\\.token\\.${TOKEN}`));
+  });
+
+  it("refuses a /ws/events upgrade without a token", async () => {
+    const line = await wsUpgrade("/ws/events");
+
+    assert.match(line, /401/, `the event stream must stay gated (got: ${line})`);
+  });
+
+  it("accepts /ws/events once the token is presented", async () => {
+    const line = await wsUpgrade(`/ws/events?token=${TOKEN}`);
+
+    assert.match(line, /101 Switching Protocols/, `an authenticated event upgrade must pass (got: ${line})`);
   });
 });
 
