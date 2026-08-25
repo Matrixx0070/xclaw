@@ -1786,6 +1786,18 @@ export async function runAgentLoop(options) {
 
     // ── Hook: on_stop — only on clean tool-free completions (never on
     // guard stops, pending approvals, budget stops, or aborts).
+    //
+    // Defense in depth, deliberately kept: the loopGuardStop and
+    // lastPendingApproval conjuncts are dominated by naturalStop as the loop
+    // stands today. Both flags are set only on a "stop" from processToolCall,
+    // which breaks the turn loop at the batch-stop check above, in a turn where
+    // naturalStop was reset to false at the top and never reached the clean
+    // tool-free completion that sets it. Deleting either is an equivalent
+    // mutant — no test can distinguish it — so the 2026-08-25 sweep left them
+    // untested on purpose rather than pinning a tautology. They are the guard
+    // against a future edit that lets the loop continue past either state.
+    // The abort check is NOT dominated: a signal can fire between a clean
+    // finish and this gate, so it decides real behaviour.
     if (
       naturalStop &&
       finalText &&

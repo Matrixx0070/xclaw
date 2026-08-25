@@ -1,3 +1,36 @@
+## 3.184.0 (2026-08-25)
+
+- TEST — context eviction was covered as an algorithm and nowhere as wiring.
+  `evictMessages` has exactly one caller in the tree, and both suites that
+  exercise it import the pure functions directly, so no-op'ing the loop's
+  branch (`if (false && evictOpts.enabled && ...)`) left the suite green while
+  every tool result a session ever produced went to the provider.
+  `test/loop-eviction-enforcement.test.mjs` drives four ~1.4KB results against a
+  4000-char budget and asserts on the array the model is handed: oldest shed and
+  marked, newest intact; the mirror flips only `tokens.eviction.enabled` and
+  requires all four whole. Per-result truncation and compaction are switched off
+  in the fixture — with compaction on, it, not eviction, was doing the shedding.
+  `cache`/`pressure` is deliberately not asserted: it is measured above the
+  branch and fires under the mutation too.
+
+- TEST — the per-turn system-prefix re-pin (`restorePrefixEachTurn`) could be
+  deleted with the suite green: `ensurePrefixStable` had one caller and its test
+  imported it directly. Under the mutation every run falls through to the
+  assert-only branch, which warns and sends the drifted prefix anyway — losing
+  the cache hit and the guarantee that turn N+1 carries turn 1's instructions.
+  `test/loop-prefix-enforcement.test.mjs` corrupts the live prefix from inside
+  `provider.chat` (the messages array is shared by reference; the frozen system
+  object is not assignable, but a rogue system message can be unshifted ahead of
+  it) and asserts turn 2 is byte-identical to turn 1; the mirror sets
+  `tokens.restorePrefixEachTurn:false` and requires the drift to survive with a
+  `prefix_drift` report.
+
+- DOCS — `src/agent/loop.mjs` on_stop gate: recorded why the `loopGuardStop` and
+  `lastPendingApproval` conjuncts are dominated by `naturalStop` today (both are
+  set only on a batch stop, which breaks out in a turn where `naturalStop` is
+  false), making their deletion an equivalent mutant, and why the abort check is
+  not. They stay as defense in depth against a future edit.
+
 ## 3.183.0 (2026-08-25)
 
 - TEST — tool-output truncation was covered as a pure function and nowhere as
