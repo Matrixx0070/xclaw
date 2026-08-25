@@ -404,3 +404,55 @@ describe("loop stage: TOCTOU plan re-validation", () => {
     assert.equal(r.guardNote, "DENIED: plan_drift");
   });
 });
+
+// W2 stage 4d — approval-outcome plan.
+import { planApprovalOutcome } from "../src/agent/loop-stages.mjs";
+
+describe("loop stage: approval-outcome plan", () => {
+  const fbr = (i) => `BLOCKED ${i.tool} (${i.reason}) pending=${i.pendingId}`;
+  const inp = { name: "xclaw_bash", args: { command: "rm x" }, formatBlockedReply: fbr };
+
+  it("auto-approved proceeds silently; human approval proceeds with the approved event", () => {
+    assert.deepEqual(planApprovalOutcome({ ok: true, mode: "auto" }, inp), { action: "proceed", event: null });
+    const h = planApprovalOutcome({ ok: true, mode: "human", note: "frank", plan: { fingerprint: "f" } }, inp);
+    assert.equal(h.action, "proceed");
+    assert.equal(h.event.phase, "approved");
+    assert.equal(h.event.planFingerprint, "f");
+  });
+
+  it("pending stops the turn: record, user-visible reply, restate event, pending policy", () => {
+    const r = planApprovalOutcome({ ok: false, reason: "pending", pendingId: "p1" }, inp);
+    assert.equal(r.action, "stop");
+    assert.deepEqual(r.pendingRecord, { id: "p1", tool: "xclaw_bash", args: inp.args, reason: "pending" });
+    assert.equal(r.message, 'BLOCKED xclaw_bash (pending) pending=p1');
+    assert.equal(r.event.phase, "approval_required");
+    assert.equal(r.event.restate, true);
+    assert.equal(r.event.timedOut, false);
+    assert.equal(r.policyInput.decision, "pending");
+    assert.equal(r.guardNote, null);
+  });
+
+  it("timeout counts as pending and marks timedOut; auth.id is a pendingId fallback", () => {
+    const r = planApprovalOutcome({ ok: false, reason: "timeout", id: "p9" }, inp);
+    assert.equal(r.action, "stop");
+    assert.equal(r.pendingId, "p9");
+    assert.equal(r.event.timedOut, true);
+  });
+
+  it("hard denial continues the turn with a guard note and deny policy", () => {
+    const r = planApprovalOutcome({ ok: false, reason: "allowlist" }, inp);
+    assert.equal(r.action, "deny");
+    assert.equal(r.message, "Tool xclaw_bash blocked (allowlist).");
+    assert.equal(r.event.phase, "denied");
+    assert.equal(r.policyInput.decision, "deny");
+    assert.equal(r.guardNote, "DENIED: Tool xclaw_bash blocked (allowlist).");
+  });
+
+  it("denial message from the gate wins; args preview is capped at 180", () => {
+    const r = planApprovalOutcome({ ok: false, reason: "denied", message: "custom deny" }, inp);
+    assert.equal(r.message, "custom deny");
+    const big = { name: "t", args: { x: "y".repeat(500) }, formatBlockedReply: (i) => i.argsPreview };
+    const p = planApprovalOutcome({ ok: false, reason: "pending", pendingId: "p" }, big);
+    assert.equal(p.message.length, 180);
+  });
+});

@@ -1,3 +1,20 @@
+## 3.178.0 (2026-08-25)
+
+- W2 STAGE 4d (the last stage-4 seam) — approval outcome staged:
+  `planApprovalOutcome` in loop-stages.mjs is the pure verdict-to-action
+  map (proceed / STOP-on-pending / deny-and-continue) with the pending
+  record, user-visible reply, restate+timedOut state-update event, typed
+  policy input, and loop-guard note; the gate call and side effects stay in
+  the loop. 5 new tests (35 stage tests). Restate-dedupe tripwire
+  re-anchored to the staged chain.
+- Fixed in passing: the authorize options object carried a DUPLICATE
+  `job:` key (identical value, second silently overrode the first).
+- W2 "rewrite runAgentLoop into composable stages" now covers every
+  decision surface the audit named: pre-flight budgets/segments, pairing
+  invariant, stop-reason/terminal-status, rescue plan, call intake,
+  allowlist verdict, TOCTOU gate, approval outcome — all pure, all fed real
+  input shapes in tests.
+
 ## 3.177.5 (2026-08-25)
 
 - W2 STAGE 4c — TOCTOU plan re-validation staged: `planToctouRevalidation`

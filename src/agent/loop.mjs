@@ -17,6 +17,7 @@ import {
   parseToolCallArgs,
   evaluateRunAllowlist,
   planToctouRevalidation,
+  planApprovalOutcome,
 } from "./loop-stages.mjs";
 import { createProvider } from "./provider.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
@@ -1355,7 +1356,6 @@ export async function runAgentLoop(options) {
         const auth = await approvalGate.authorize(name, authArgs, {
           job: options.job || options.receiptCollector || null,
           timeoutMs: cfg.security?.approvalTimeoutMs ?? 120_000,
-          job: options.job || options.receiptCollector || null,
           // risk scope must resolve against THIS run's workspace (session dir
           // or mission worktree), not the gateway's cwd — without this, file
           // tools' targets scoped against the wrong root (live blind spot)
@@ -1383,55 +1383,17 @@ export async function runAgentLoop(options) {
             });
           },
         });
-        if (!auth.ok) {
-          const isPending =
-            auth.reason === "pending" ||
-            auth.reason === "timeout" ||
-            auth.pending === true ||
-            Boolean(auth.pendingId);
-          const pendingId = auth.pendingId || auth.id || null;
-          if (isPending) {
-            lastPendingApproval = {
-              id: pendingId,
-              tool: name,
-              args,
-              reason: auth.reason || "pending",
-            };
-          }
-          const msg = isPending
-            ? formatBlockedReply({
-                tool: name,
-                reason: auth.reason || "awaiting approval",
-                pendingId,
-                argsPreview: JSON.stringify(args || {}).slice(0, 180),
-              })
-            : auth.message ||
-              `Tool ${name} blocked (${auth.reason || "denied"}).`;
+        // W2 stage 4d — outcome plan is pure (loop-stages.mjs); side effects here.
+        const outcome = planApprovalOutcome(auth, { name, args, formatBlockedReply });
+        if (outcome.action !== "proceed") {
+          if (outcome.pendingRecord) lastPendingApproval = outcome.pendingRecord;
           // Prefer a clear user-visible reply when we stop on approval
-          if (isPending && !finalText) {
-            finalText = msg;
-          }
-          onEvent({
-            type: "security",
-            phase: isPending ? "approval_required" : "denied",
-            name,
-            reason: auth.reason,
-            pendingId,
-            // authorize already emitted approval_required via onPending when
-            // the pending was created; this second emission after a timeout is
-            // a STATE UPDATE, not a new ask. `restate` says so on the event
-            // itself so a consumer does not have to know this history —
-            // telegram and webchat each had to rediscover it and dedupe by
-            // hand, months apart. Anything that prompts a human should gate on
-            // isNewApprovalAsk().
-            restate: true,
-            timedOut: auth.reason === "timeout",
-            message: msg,
-          });
+          if (outcome.isPending && !finalText) finalText = outcome.message;
+          onEvent(outcome.event);
           messages.push(
             makeToolMessage({
               tool_call_id: call.id,
-              content: msg,
+              content: outcome.message,
               source: "security",
             })
           );
@@ -1439,39 +1401,20 @@ export async function runAgentLoop(options) {
             finalizeToolTraceEntry(
               beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
               {
-                resultText: msg,
+                resultText: outcome.message,
                 blocked: true,
-                policy: (lastPolicyDecision = policyDecision({
-                  phase: "approval",
-                  decision: isPending ? "pending" : "deny",
-                  reason: auth.reason || (isPending ? "pending" : "denied"),
-                  tool: name,
-                  pendingId,
-                  message: msg,
-                })),
+                policy: (lastPolicyDecision = policyDecision(outcome.policyInput)),
               }
             )
           );
           // Stop the turn on pending approval — don't keep calling tools
-          if (isPending) {
-            return "stop";
-          }
+          if (outcome.action === "stop") return "stop";
           // Denied calls MUST feed the loop guard: repeated retries of a
-          // blocked tool are exactly the stagnation the guard exists to
-          // catch (they previously bypassed guard.record entirely).
-          guard.record(name, args, `DENIED: ${msg}`);
+          // blocked tool are exactly the stagnation the guard exists to catch.
+          guard.record(name, args, outcome.guardNote);
           return;
         }
-        if (auth.mode === "human") {
-          onEvent({
-            type: "security",
-            phase: "approved",
-            name,
-            mode: auth.mode,
-            note: auth.note,
-            planFingerprint: auth.planFingerprint || auth.plan?.fingerprint || null,
-          });
-        }
+        if (outcome.event) onEvent(outcome.event);
 
         // TOCTOU: re-validate frozen systemRunPlan pins after approval, before spawn
         // (Decision logic in loop-stages.mjs planToctouRevalidation.)

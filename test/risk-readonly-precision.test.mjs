@@ -79,11 +79,15 @@ describe("read-only exec precision (live-derived)", () => {
 // live-observed identical prompts exactly 120s apart).
 describe("approval prompt dedupe wiring", () => {
   it("loop marks the timeout re-emission, and marks it as a restate", async () => {
-    const src = await fs.readFile(new URL("../src/agent/loop.mjs", import.meta.url), "utf8");
-    assert.match(src, /timedOut: auth\.reason === "timeout"/);
+    // W2 staging: the re-emission event is built in loop-stages.mjs
+    // (planApprovalOutcome) and emitted by the loop.
+    const stage = await fs.readFile(new URL("../src/agent/loop-stages.mjs", import.meta.url), "utf8");
+    assert.match(stage, /timedOut: auth\.reason === "timeout"/);
     // the re-emission must say what it is on the event itself, so a consumer
     // does not have to know the history to avoid a bogus second prompt
-    assert.match(src, /restate: true/);
+    assert.match(stage, /restate: true/);
+    const src = await fs.readFile(new URL("../src/agent/loop.mjs", import.meta.url), "utf8");
+    assert.match(src, /planApprovalOutcome\(auth/);
   });
   it("telegram gates on the shared reader and dedupes by pendingId", async () => {
     const src = await fs.readFile(new URL("../src/channels/telegram/index.mjs", import.meta.url), "utf8");

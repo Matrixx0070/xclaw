@@ -344,7 +344,84 @@ export function planToctouRevalidation(inp) {
   };
 }
 
+/**
+ * Stage 4d — approval-outcome plan. Given the gate's verdict, decide the
+ * turn's next move: proceed (with the human-approved event when a human
+ * answered), STOP on a pending ask (re-asking just retries the blocked
+ * action — the approval-storm mechanism), or deny-and-continue with the
+ * denial fed to the loop guard. The gate call itself stays in the loop;
+ * formatBlockedReply is injected.
+ * @param {object} auth  approvalGate.authorize result
+ * @param {{name: string, args: object, formatBlockedReply: Function}} inp
+ */
+export function planApprovalOutcome(auth, inp) {
+  if (auth.ok) {
+    return {
+      action: "proceed",
+      event:
+        auth.mode === "human"
+          ? {
+              type: "security",
+              phase: "approved",
+              name: inp.name,
+              mode: auth.mode,
+              note: auth.note,
+              planFingerprint:
+                auth.planFingerprint || auth.plan?.fingerprint || null,
+            }
+          : null,
+    };
+  }
+  const isPending =
+    auth.reason === "pending" ||
+    auth.reason === "timeout" ||
+    auth.pending === true ||
+    Boolean(auth.pendingId);
+  const pendingId = auth.pendingId || auth.id || null;
+  const message = isPending
+    ? inp.formatBlockedReply({
+        tool: inp.name,
+        reason: auth.reason || "awaiting approval",
+        pendingId,
+        argsPreview: JSON.stringify(inp.args || {}).slice(0, 180),
+      })
+    : auth.message || `Tool ${inp.name} blocked (${auth.reason || "denied"}).`;
+  return {
+    action: isPending ? "stop" : "deny",
+    isPending,
+    pendingId,
+    message,
+    pendingRecord: isPending
+      ? { id: pendingId, tool: inp.name, args: inp.args, reason: auth.reason || "pending" }
+      : null,
+    event: {
+      type: "security",
+      phase: isPending ? "approval_required" : "denied",
+      name: inp.name,
+      reason: auth.reason,
+      pendingId,
+      // authorize already emitted approval_required via onPending when the
+      // pending was created; this second emission after a timeout is a STATE
+      // UPDATE, not a new ask — `restate` says so on the event itself so
+      // consumers gate on isNewApprovalAsk() instead of deduping by hand.
+      restate: true,
+      timedOut: auth.reason === "timeout",
+      message,
+    },
+    policyInput: {
+      phase: "approval",
+      decision: isPending ? "pending" : "deny",
+      reason: auth.reason || (isPending ? "pending" : "denied"),
+      tool: inp.name,
+      pendingId,
+      message,
+    },
+    guardNote: isPending ? null : `DENIED: ${message}`,
+  };
+}
+
 export default {
+  planApprovalOutcome,
   planToctouRevalidation,
   evaluateRunAllowlist,
   parseToolCallArgs,
