@@ -1,3 +1,16 @@
+## 3.181.1 (2026-08-25)
+
+- TEST — deflake `approval SLA`. The test started `authorize()`, slept a fixed
+  20ms, then asserted `listPending()` was non-empty. `authorize` registers the
+  pending entry only after its own awaits, so under a loaded event loop —
+  the full suite, or CI — 20ms of wall clock can pass before registration and
+  the list comes back empty. It never fails solo (25/25 clean) but reproduces
+  under CPU contention (1/15). Now polls to the registration with a 4s
+  deadline, still well inside the 5s authorize timeout, so the entry is
+  genuinely pending when read: 0/20 under the same load. The assertion still
+  bites — stubbing `listPending()` to return `[]` fails it at the deadline
+  with "authorize never registered a pending approval".
+
 ## 3.181.0 (2026-08-25)
 
 - FIX — post-mission reflection was building the wrong provider and 401'd on

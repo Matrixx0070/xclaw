@@ -14,9 +14,19 @@ describe("approval SLA", () => {
     });
     // start authorize without awaiting fully
     const p = gate.authorize("bash", { command: "true" }, { timeoutMs: 5_000 });
-    await new Promise((r) => setTimeout(r, 20));
-    const list = gate.listPending();
-    assert.ok(list.length >= 1);
+    // authorize registers the pending entry only after its own awaits, so a
+    // fixed sleep is a race: under a loaded event loop (the full suite, or CI)
+    // 20ms of wall clock can pass before registration and listPending() comes
+    // back empty. Poll to the registration instead — still well inside the 5s
+    // authorize timeout, so the entry is genuinely pending when we read it.
+    let list = [];
+    const deadline = Date.now() + 4_000;
+    while (Date.now() < deadline) {
+      list = gate.listPending();
+      if (list.length >= 1) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    assert.ok(list.length >= 1, "authorize never registered a pending approval");
     assert.ok(typeof list[0].ageMs === "number");
     assert.ok(list[0].remainingMs != null);
     const st = gate.slaStats();
