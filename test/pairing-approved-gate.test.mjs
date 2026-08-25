@@ -22,9 +22,13 @@
  * embedding of an approved id must not pass, per sweep #21) and CHANNEL-SCOPED
  * (an approval on one channel must not admit the same id on another).
  *
- * Honest limit (same as #21/#23): this pins the pure store decision, not the
- * channel handler's `!staticOk && !approved` combination, which stays untested
- * wiring — no clean seam drives the stateful live handler.
+ * This pins the pure store decision. The channel handler's `!staticOk &&
+ * !approved` combination — that `approved` is actually consulted at the live
+ * call site and admits the sender past the gate — is closed for Telegram by
+ * `test/pairing-gate-wiring.test.mjs` (sweep #30, 3.212.0), which drives the real
+ * handler through the mock-Bot-API webhook seam and observes admission. Discord
+ * is the twin (`channels/discord/index.mjs` has the same composite gate but no
+ * webhook-style seam) and stays the recorded next candidate.
  */
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";

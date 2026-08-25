@@ -1,3 +1,42 @@
+## 3.212.0 (2026-08-25)
+
+- TEST (sweep #30 — the **composite pairing GATE wiring**, `!staticOk &&
+  !approved` at the live Telegram call site, `channels/telegram/index.mjs:625-652`;
+  a coverage blind spot, not a live leak; production byte-identical). In
+  `dmPolicy:"pairing"` the live handler admits a DM iff a STATIC allowlist match OR
+  an APPROVED pairing: `const allowedStatic = policy.gateTelegram(update).ok; const
+  approved = pairing.isApproved("telegram", chatId); if (!allowedStatic &&
+  !approved) { …pairing request…; return; }`. Who gets PAST this gate to the agent
+  is the channel's DM authorization decision.
+- Proof it was a blind spot: the two ARMS were pinned only in isolation — the
+  static allowlist (`isSenderIdAllowed` sweep #21 / `gateTelegram` #23) and the
+  pure `isApproved` store (#24) — and every one of those files carried the same
+  honest limit (`pairing-approved-gate.test.mjs:25`): "this pins the pure store
+  decision, not the channel handler's `!staticOk && !approved` combination, which
+  stays untested wiring." No test drove the ADMIT direction through the real
+  handler. Dropping the approval arm — `if (!allowedStatic)` — so an APPROVED (but
+  not statically-allowed) sender is re-pairing-requested instead of admitted, left
+  the FULL pre-existing suite green (3590/0): the wiring that consults `approved`
+  at the call site could silently break and ship. Only a test that drives the
+  handler and observes admission can catch it.
+- Close: `test/pairing-gate-wiring.test.mjs` (+3) drives the real `handleUpdate`
+  through the same mock-Bot-API webhook seam the webhook-wiring test uses (sweep
+  #17). An admitted `/status` DM sends a DETERMINISTIC reply ("XClaw Telegram up …")
+  and returns BEFORE the agent runs, so the ADMIT direction is observable with no
+  model call. Pins BOTH admit arms AND the deny direction through the live handler:
+  a statically-allowlisted DM is ADMITTED (reaches `/status`, 0 pending requests);
+  a pairing-APPROVED DM is ADMITTED (proves `approved` is consulted here); neither
+  is DENIED (pairing reply + a pending request recorded).
+- Mutation-verified both directions against the live gate: dropping the approval
+  arm (`if (!allowedStatic)`) reddens the approved-admit test (`# fail 1`); dropping
+  the static arm (`if (!approved)`) reddens the static-admit test (`# fail 1`); the
+  pristine gate leaves all three green (3593/0). Closes the honest limit carried
+  since #21/#23/#24 for the Telegram channel — `pairing-approved-gate.test.mjs`
+  note updated to point here.
+- No production code changed — `channels/telegram/index.mjs` is byte-identical
+  (sha256 `b523645f…`). Discord is the twin (`channels/discord/index.mjs` has the
+  same composite gate but no webhook-style seam) and is the recorded next candidate.
+
 ## 3.211.0 (2026-08-25)
 
 - TEST (sweep #29 — the **Telegram forum-topic per-user allowlist**, the
