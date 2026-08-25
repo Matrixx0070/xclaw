@@ -166,4 +166,11 @@ export function proxyComputerRequest(req, res, cfg, url) {
   });
 }
 
+/**
+ * src/gateway/auth.mjs protects exactly these prefixes off this export, so the
+ * protected-path list cannot fall behind the proxy's own routing. It matters:
+ * the plane behind them answers POST /tool with any tool (bash included) and
+ * authenticates nothing itself — verifyComputerAuth is used only by the opt-in
+ * auth-proxy on :4244, which nothing in the default path starts.
+ */
 export const COMPUTER_PROXY_PREFIXES = PREFIXES;

@@ -1,3 +1,66 @@
+## 3.190.0 (2026-08-25)
+
+- SECURITY (two authentication bypasses on the gateway, one root cause shape:
+  the same decision made in two places). Both let an unauthenticated caller
+  reach routes the gateway believes are protected. Both were found by mutation
+  sweeping the auth surface — no-op an enforcement line, run the suite — and
+  both were reproduced over a real socket against a real spawned gateway
+  before a line of source was changed.
+- **1. `/v1/<route>` bypassed auth entirely.** The router treats `/v1/` as an
+  alias for every route: it strips the prefix and dispatches the remainder.
+  `check()` did not. It re-derived the path from the raw `req.url`, saw
+  `/v1/hooks`, matched nothing in the protected list (which holds `/hooks`)
+  and returned `{ ok: true, mode: "open" }`. So every protected route had an
+  unauthenticated twin, one prefix away — `/v1/hooks`, `/v1/tokens`,
+  `/v1/computer/...`, `/v1/profile`. Command hooks execute arbitrary shell on
+  the host, which is why the protected list carries them. Shipped in 3.83.0
+  (`d4f48d6`, "API versioning: /v1 alias"), open for 161 releases; proven
+  pre-fix by writing a command hook to disk through `POST /v1/hooks/commands`
+  with no credential. `stripApiVersion()` is now the single normalization both
+  callers use, and the gateway passes `check()` the exact string it routes on.
+- **2. The computer plane was reachable through the gateway with no token.**
+  `/computer/proxy/*` and `/xclaw/computer/*` forward to the computer plane,
+  whose `POST /tool` runs any tool — `bash` included — and authenticates
+  nothing itself, by design: it is meant to sit behind the gateway. It did
+  not. `createHttpServer` (`src/gateway/tls.mjs`) dispatched the proxy in its
+  wrapper, *ahead of the request listener* — and the 401 gate lives inside
+  that listener. Every request to those prefixes returned before reaching it.
+  Any gateway with the proxy enabled — it is **default-on** — served the full
+  computer plane to anyone who could open a socket to the port. Shipped in
+  3.132.0 (`7d57f68`, 2026-08-18), open for 88 releases.
+- Reordering the dispatch inside `index.mjs` alone was a **no-op** — the first
+  run of the new test caught exactly that, still returning 200 without a
+  token, because the wrapper answered first. The fix is that the wrapper no
+  longer proxies at all: `wrapWithStopIntercept` now runs only the `/stop`
+  kill switch (which carries its own `authorizeStop`, needs the body unparsed,
+  and has no route in the router to fall through to), and the proxy is
+  dispatched from exactly one place — inside the listener, below the gate.
+- The protected-path list also missed `/xclaw/computer/` outright:
+  `p.startsWith("/computer/")` covers one of the two prefixes and not the
+  other. It is now derived from `COMPUTER_PROXY_PREFIXES`, the same constant
+  the proxy matches on, so the list cannot fall behind the router again.
+- Auth now runs **before** the proxy and before `applyCors`; a 401 applies CORS
+  headers explicitly, or a browser client sees an opaque network error instead
+  of the status. Proxied responses still keep the upstream's own CORS headers.
+- `test/gateway-auth-enforcement.test.mjs` — new, 10 cases, all over real
+  sockets against `bin/xclaw.mjs gateway` spawned in a temp `HOME` (the pure
+  `createGatewayAuth()` half was already well covered; the half that *performs*
+  the 401 had no test at all, which is what let both defects live). Cases come
+  in mirror pairs differing only by the `Authorization` header, so a gate that
+  refuses everything fails as loudly as one that refuses nothing. The proxy
+  cases assert the upstream hit list is **empty** without a token — a 401 can
+  come from anywhere, but "the computer plane was never contacted" can only be
+  true if the gate ran first. `/health` and `/v1/health` must both still
+  answer 200, pinning that the prefix is stripped rather than blanket-refused.
+- Mutation-verified, each turns the suite red: gate no-op → 5 fail; `check()`
+  re-deriving from `req.url` → 1 fail; dropping `COMPUTER_PROXY_PREFIXES` from
+  the protected list → 1 fail; restoring the proxy in the wrapper → 3 fail.
+- `test/gateway-tls-proxy-wrap.test.mjs` **pinned the vulnerable ordering**
+  ("proxies before the inner listener") and passed for 88 releases. It now
+  pins the inverse, plus that the kill switch still runs ahead of the router.
+  Three other proxy tests dispatched through the wrapper the same way; they
+  now mirror the real gateway and dispatch inside their listener.
+
 ## 3.189.0 (2026-08-25)
 
 - FIX (documented capability with no implementation) — `XCLAW_GATEWAY_HOST`,

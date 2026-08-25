@@ -102,7 +102,7 @@ import { createChannelPolicy } from "../channels/policy.mjs";
 import { createMcpClient } from "../mcp/client.mjs";
 import { createMcpServer } from "../mcp/server.mjs";
 import { createPairingStore } from "../pairing/pairing-store.mjs";
-import { createGatewayAuth } from "./auth.mjs";
+import { createGatewayAuth, stripApiVersion } from "./auth.mjs";
 import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
 import { ensureDoctorCronJob } from "../cron/doctor-job.mjs";
 import { ensureApprovalDigestCronJob } from "../cron/approval-digest-job.mjs";
@@ -1232,25 +1232,35 @@ export async function startGateway({ root } = {}) {
 
   const { server, tls: tlsOn } = createHttpServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${cfg.gateway.host}`);
+    // API versioning: /v1/<route> is an alias for every route (clients can pin
+    // a version prefix today; a breaking v2 surface can then coexist later).
+    // This exact string is what auth decides on — see stripApiVersion.
+    const { path: p, versioned } = stripApiVersion(url.pathname);
+    if (versioned) res.setHeader("X-XClaw-Api-Version", "1");
+    // Auth first, and in particular BEFORE the computer proxy: /computer/proxy/*
+    // and /xclaw/computer/* forward straight to the computer plane's POST /tool,
+    // which runs any tool (bash included) and authenticates nothing itself.
+    // Until 3.190.0 the proxy returned above this gate, so those prefixes were
+    // open on every gateway that had the (default-on) proxy enabled.
+    if (req.method !== "OPTIONS") {
+      const auth = gatewayAuth.check(req, p);
+      if (!auth.ok) {
+        // A 401 still needs CORS headers or a browser client sees an opaque
+        // network error instead of the status.
+        applyCors(req, res, cfg);
+        return json(res, 401, { error: "unauthorized" });
+      }
+    }
     // Single external port: /computer/proxy/* and /xclaw/computer/* → computer plane
     if (isComputerProxyEnabled(cfg)) {
       const proxied = await proxyComputerRequest(req, res, cfg, url);
       if (proxied) return;
     }
-    let p = url.pathname;
-    // API versioning: /v1/<route> is an alias for every route (clients can pin
-    // a version prefix today; a breaking v2 surface can then coexist later).
-    if (p === "/v1" || p.startsWith("/v1/")) {
-      p = p.slice(3) || "/";
-      res.setHeader("X-XClaw-Api-Version", "1");
-    }
     // CORS decided once per request (loopback-reflect by default, wildcard only
     // when cfg.gateway.corsOrigin === "*"); writeHead calls must not set ACAO.
+    // Proxied responses keep the upstream's own CORS headers (applyCors is not
+    // reached above), which is why this stays below the proxy.
     applyCors(req, res, cfg);
-      if (gatewayAuth.isProtectedPath(p) && req.method !== "OPTIONS") {
-        const auth = gatewayAuth.check(req);
-        if (!auth.ok) return json(res, 401, { error: "unauthorized" });
-      }
 
     if (req.method === "OPTIONS") {
       res.writeHead(204, {

@@ -1,0 +1,279 @@
+/**
+ * The gateway's 401 gate must actually be REACHED (src/gateway/index.mjs).
+ *
+ * Two shipped bypasses, both of the same shape as the v3.188.0 bind guard: the
+ * pure function was right the whole time and the half that PERFORMS had no
+ * test. Every auth test in the suite calls createGatewayAuth().check() or
+ * .isProtectedPath() directly; nothing drove an HTTP request through the real
+ * request handler, so neither of these was visible.
+ *
+ *   1. /v1/<route>, open since 3.83.0 (d4f48d6, 2026-08-12) — 106 releases.
+ *      index.mjs stripped the version prefix and asked
+ *      isProtectedPath("/hooks"), while check() re-derived the path from the
+ *      raw req.url, saw "/v1/hooks", matched no protection list and returned
+ *      { ok: true, mode: "open" }. Proven before the fix on a real socket with
+ *      a token configured: GET /hooks -> 401, GET /v1/hooks -> 200 with the
+ *      hook configuration; POST /v1/hooks/commands -> 200 {"ok":true} and the
+ *      shell command was persisted to xclaw.json and hot-applied. That is
+ *      unauthenticated remote command installation.
+ *
+ *   2. /computer/proxy/* and /xclaw/computer/*. proxyComputerRequest returned
+ *      above the gate, so the request never reached it, and the plane behind
+ *      it answers POST /tool with any tool (bash included) while
+ *      authenticating nothing itself. The proxy is on by default
+ *      (isComputerProxyEnabled opts out, not in). "/xclaw/computer/" was not
+ *      in the protected list at all, which is why auth.mjs now derives both
+ *      prefixes from COMPUTER_PROXY_PREFIXES.
+ *
+ * Both landed the same way the bind guard did: a normalization added above an
+ * enforcement point that was never told about it. The fix is one shared
+ * stripApiVersion() and one gate — not two agreeing copies.
+ *
+ * A real child gateway on a real socket, because that is exactly the surface
+ * the unit tests could not see. startGateway never resolves (it ends in
+ * `await new Promise(() => {})`), so it cannot be awaited in-process.
+ *
+ * Both directions, one thing apart: every refusal case has a mirror that
+ * changes only the Authorization header, because a gate that refuses
+ * everything satisfies the negative cases alone. The proxy cases additionally
+ * assert on the upstream's hit counter — a 401 could come from anywhere, but
+ * "the computer plane was never contacted" can only be true if the gate ran
+ * before the proxy.
+ */
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const TOKEN = "t".repeat(64);
+const BOOT_TIMEOUT_MS = 60_000;
+
+let home;
+let child;
+let childLog = "";
+let upstream;
+let upstreamHits = [];
+let gwPort;
+
+/** One request against the child gateway. Never throws; 0 = no answer. */
+function request(method, p, { headers = {}, body = null } = {}) {
+  return new Promise((resolve) => {
+    const payload = body == null ? null : JSON.stringify(body);
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port: gwPort,
+        path: p,
+        method,
+        timeout: 10_000,
+        headers: {
+          ...(payload
+            ? {
+                "content-type": "application/json",
+                "content-length": Buffer.byteLength(payload),
+              }
+            : {}),
+          ...headers,
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
+      }
+    );
+    req.on("error", (e) => resolve({ status: 0, headers: {}, body: String(e.message) }));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve({ status: 0, headers: {}, body: "timeout" });
+    });
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+const withToken = { authorization: `Bearer ${TOKEN}` };
+
+before(async () => {
+  // Stands in for the computer plane. Records every request that reaches it:
+  // an empty log is the proof that the gate ran before the proxy.
+  upstream = http.createServer((req, res) => {
+    upstreamHits.push(`${req.method} ${req.url}`);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, upstream: req.url }));
+  });
+  await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
+  const upstreamPort = upstream.address().port;
+
+  // A free port for the gateway: bind 0, read it, release it.
+  const probe = http.createServer();
+  await new Promise((r) => probe.listen(0, "127.0.0.1", r));
+  gwPort = probe.address().port;
+  await new Promise((r) => probe.close(r));
+
+  home = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-authenf-"));
+  fs.mkdirSync(path.join(home, ".xclaw"), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, ".xclaw", "xclaw.json"),
+    JSON.stringify(
+      {
+        profile: "lab",
+        gateway: { host: "127.0.0.1", port: gwPort, token: TOKEN },
+        // autoStart false: the proxy still forwards, but to the fake above.
+        computer: { host: "127.0.0.1", port: upstreamPort, autoStart: false },
+        channels: { telegram: { enabled: false }, webchat: { enabled: false } },
+        tokens: { probeOnStart: false },
+      },
+      null,
+      2
+    )
+  );
+
+  child = spawn(process.execPath, ["bin/xclaw.mjs", "gateway"], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      HOME: home,
+      XCLAW_HOME: home,
+      XCLAW_PROFILE: "lab",
+      XAI_API_KEY: "xai-test-dummy",
+      NODE_ENV: "test",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout.on("data", (d) => (childLog += d));
+  child.stderr.on("data", (d) => (childLog += d));
+
+  const deadline = Date.now() + BOOT_TIMEOUT_MS;
+  let up = false;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) break;
+    const r = await request("GET", "/health");
+    if (r.status === 200) {
+      up = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  assert.ok(up, `gateway never became healthy on :${gwPort}\n${childLog.slice(-2000)}`);
+  upstreamHits = [];
+});
+
+after(async () => {
+  if (child) {
+    child.kill("SIGTERM");
+    await new Promise((r) => setTimeout(r, 600));
+    child.kill("SIGKILL");
+  }
+  if (upstream) await new Promise((r) => upstream.close(r));
+  if (home) fs.rmSync(home, { recursive: true, force: true });
+});
+
+describe("the /v1 alias does not bypass gateway auth", () => {
+  it("refuses a protected route without a token", async () => {
+    const r = await request("GET", "/hooks");
+
+    assert.equal(r.status, 401, `expected 401 (got ${r.status}: ${r.body.slice(0, 120)})`);
+  });
+
+  it("refuses the same route through /v1 without a token", async () => {
+    // The bypass itself. Returned 200 with the hook configuration before 3.190.0.
+    const r = await request("GET", "/v1/hooks");
+
+    assert.equal(r.status, 401, `/v1 must not be an auth bypass (got ${r.status}: ${r.body.slice(0, 160)})`);
+  });
+
+  it("serves the same /v1 route once the token is presented", async () => {
+    // Only the header moves. Without this a gate that 401s every /v1 request
+    // passes the case above while breaking the alias for real clients.
+    const r = await request("GET", "/v1/hooks", { headers: withToken });
+
+    assert.notEqual(r.status, 401, `an authenticated /v1 call must pass (${r.body.slice(0, 160)})`);
+    assert.equal(r.headers["x-xclaw-api-version"], "1", "the version header still marks the alias");
+  });
+
+  it("keeps open routes open, with and without the version prefix", async () => {
+    // Proves the prefix is still being STRIPPED, not merely refused: /v1/health
+    // only resolves to the alwaysOpen /health if normalization happened.
+    const plain = await request("GET", "/health");
+    const aliased = await request("GET", "/v1/health");
+
+    assert.equal(plain.status, 200);
+    assert.equal(aliased.status, 200, `/v1/health must still resolve to /health (got ${aliased.status})`);
+  });
+
+  it("does not let a doubled prefix reach a route auth did not see", async () => {
+    // Auth and routing normalize with the same function, so both see
+    // "/v1/hooks" here: auth leaves it open, routing has no such route. The
+    // property that matters is that no reachable route skipped the gate.
+    const r = await request("GET", "/v1/v1/hooks", { headers: {} });
+
+    assert.notEqual(r.status, 200, `a doubled prefix must not serve a protected route (${r.body.slice(0, 160)})`);
+    assert.equal(r.status, 404);
+  });
+});
+
+describe("the computer plane is behind gateway auth", () => {
+  it("refuses POST /computer/proxy/tool without a token, before contacting the plane", async () => {
+    upstreamHits = [];
+
+    const r = await request("POST", "/computer/proxy/tool", {
+      body: { name: "bash", arguments: { command: "id" } },
+    });
+
+    assert.equal(r.status, 401, `expected 401 (got ${r.status}: ${r.body.slice(0, 160)})`);
+    assert.deepEqual(upstreamHits, [], "the computer plane must never be contacted by an unauthenticated caller");
+  });
+
+  it("forwards the same call once the token is presented", async () => {
+    upstreamHits = [];
+
+    const r = await request("POST", "/computer/proxy/tool", {
+      headers: withToken,
+      body: { name: "bash", arguments: { command: "id" } },
+    });
+
+    assert.equal(r.status, 200, `an authenticated proxy call must still forward (${r.body.slice(0, 160)})`);
+    assert.deepEqual(upstreamHits, ["POST /tool"], "the prefix must still be stripped for the upstream");
+  });
+
+  it("refuses the /xclaw/computer alias without a token", async () => {
+    // The half no protected-path entry covered: "/computer/" does not prefix
+    // "/xclaw/computer/", so this route answered every caller.
+    upstreamHits = [];
+
+    const r = await request("GET", "/xclaw/computer/tools");
+
+    assert.equal(r.status, 401, `expected 401 (got ${r.status}: ${r.body.slice(0, 160)})`);
+    assert.deepEqual(upstreamHits, [], "the computer plane must never be contacted by an unauthenticated caller");
+  });
+
+  it("forwards the /xclaw/computer alias once the token is presented", async () => {
+    upstreamHits = [];
+
+    const r = await request("GET", "/xclaw/computer/tools", { headers: withToken });
+
+    assert.equal(r.status, 200, `an authenticated alias call must still forward (${r.body.slice(0, 160)})`);
+    assert.deepEqual(upstreamHits, ["GET /tools"]);
+  });
+});
+
+describe("the 401 stays usable from a browser", () => {
+  it("answers a refused cross-origin call with CORS headers", async () => {
+    // The gate moved above applyCors in 3.190.0; without an explicit call on
+    // the refusal path a browser client sees an opaque network error instead
+    // of the status.
+    const r = await request("GET", "/hooks", { headers: { origin: "http://127.0.0.1:5173" } });
+
+    assert.equal(r.status, 401);
+    assert.ok(
+      r.headers["access-control-allow-origin"],
+      `a 401 must still carry CORS headers (saw: ${JSON.stringify(r.headers)})`
+    );
+  });
+});

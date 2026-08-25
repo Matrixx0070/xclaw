@@ -9,6 +9,7 @@ import { listRoutes } from "../src/gateway/routes-map.mjs";
 import {
   matchComputerProxyPath,
   isComputerProxyEnabled,
+  proxyComputerRequest,
 } from "../src/gateway/computer-proxy.mjs";
 
 describe("gateway proxy routes catalog", () => {
@@ -51,7 +52,11 @@ describe("gateway proxy HTTP smoke", () => {
       computer: { host: "127.0.0.1", port: upPort },
       gateway: { proxyComputer: true },
     };
-    const { server } = createHttpServer((req, res) => {
+    // Same dispatch order as the real gateway: the listener owns the proxy,
+    // which is what puts it below the 401 gate (see tls.mjs).
+    const { server } = createHttpServer(async (req, res) => {
+      const url = new URL(req.url || "/", "http://127.0.0.1");
+      if (isComputerProxyEnabled(cfg) && (await proxyComputerRequest(req, res, cfg, url))) return;
       res.writeHead(404);
       res.end("not-proxy");
     }, cfg);

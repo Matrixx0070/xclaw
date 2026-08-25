@@ -4,6 +4,29 @@
  * Headers: Authorization: Bearer <token>  or  x-xclaw-token / x-api-key
  */
 import crypto from "node:crypto";
+import { COMPUTER_PROXY_PREFIXES } from "./computer-proxy.mjs";
+
+/**
+ * `/v1/<route>` is an alias for every route. The gateway strips that prefix
+ * before routing, so auth has to decide on the SAME string or the alias is an
+ * auth bypass — which it was from 3.83.0 (d4f48d6) to 3.190.0: index.mjs
+ * stripped and asked isProtectedPath("/hooks") while check() re-derived the
+ * path from the raw req.url, saw "/v1/hooks", matched no protection list and
+ * returned { ok: true, mode: "open" }. Two derivations of one decision input
+ * always drift; this is the one derivation both callers use.
+ *
+ * Single strip on purpose. The point is that routing and auth agree, not how
+ * many prefixes are peeled: "/v1/v1/hooks" normalizes to "/v1/hooks" on both
+ * sides, so auth leaves it open and routing 404s it — no route is reachable
+ * that auth did not see.
+ * @param {string} pathname
+ * @returns {{ path: string, versioned: boolean }}
+ */
+export function stripApiVersion(pathname) {
+  const p = String(pathname ?? "/").split("?")[0] || "/";
+  if (p === "/v1" || p.startsWith("/v1/")) return { path: p.slice(3) || "/", versioned: true };
+  return { path: p, versioned: false };
+}
 
 /** Constant-time token compare (sha256 both sides to equalize length). */
 function tokenEqual(got, expected) {
@@ -96,6 +119,10 @@ export function createGatewayAuth(cfg = {}) {
       p.startsWith("/tokens") ||
       p === "/profile" ||
       p.startsWith("/computer/") ||
+      // The single-port computer plane. Prefixes come from the proxy module so
+      // this list cannot fall behind it; "/computer/" above misses the
+      // "/xclaw/computer/" half entirely.
+      COMPUTER_PROXY_PREFIXES.some((pref) => p === pref.slice(0, -1) || p.startsWith(pref)) ||
       p.startsWith("/events/") ||
       p.startsWith("/doctor") ||
       // hook management: command hooks EXECUTE arbitrary shell on the host
@@ -190,8 +217,15 @@ export function createGatewayAuth(cfg = {}) {
     );
   }
 
-  function check(req) {
-    const p = (req.url || "/").split("?")[0];
+  /**
+   * @param {object} req
+   * @param {string} [pathOverride] Already normalized by the caller with
+   *   stripApiVersion — the gateway passes the exact string it routes on, so
+   *   the two can never disagree. Omitted callers get the same normalization
+   *   applied here to req.url.
+   */
+  function check(req, pathOverride) {
+    const p = pathOverride ?? stripApiVersion(req.url).path;
     if (!isProtectedPath(p)) return { ok: true, mode: "open" };
     // No token configured: open only in lab/dev unless requireAuth
     if (!token) {

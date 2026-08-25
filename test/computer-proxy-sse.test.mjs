@@ -5,7 +5,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { createHttpServer } from "../src/gateway/tls.mjs";
-import { matchComputerProxyPath } from "../src/gateway/computer-proxy.mjs";
+import {
+  matchComputerProxyPath,
+  isComputerProxyEnabled,
+  proxyComputerRequest,
+} from "../src/gateway/computer-proxy.mjs";
 
 describe("computer proxy SSE", () => {
   it("forwards event-stream chunks without waiting for end", async () => {
@@ -28,7 +32,11 @@ describe("computer proxy SSE", () => {
       computer: { host: "127.0.0.1", port: upPort },
       gateway: { proxyComputer: true },
     };
-    const { server } = createHttpServer((_req, res) => {
+    // Same dispatch order as the real gateway: the listener owns the proxy,
+    // which is what puts it below the 401 gate (see tls.mjs).
+    const { server } = createHttpServer(async (req, res) => {
+      const url = new URL(req.url || "/", "http://127.0.0.1");
+      if (isComputerProxyEnabled(cfg) && (await proxyComputerRequest(req, res, cfg, url))) return;
       res.writeHead(404);
       res.end("no");
     }, cfg);
