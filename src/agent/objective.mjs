@@ -335,6 +335,19 @@ async function persistOutcome(cfg, obj) {
     );
     obj._outcomeLogged = true;
     await saveObjective(cfg, obj);
+    // W3 — learning write-path: one tool-free reflection call turns the
+    // finished mission into up to three durable "lesson" events, which the
+    // recall above feeds into the NEXT mission's first segment. Best-effort,
+    // gated by memory.reflection (default on).
+    try {
+      const { reflectOnMission } = await import("../memory/reflection.mjs");
+      const r = await reflectOnMission(cfg, obj);
+      if (r?.written) {
+        console.log(`[objective] reflection wrote ${r.written} lesson(s) for ${obj.id}`);
+      }
+    } catch {
+      /* reflection is additive — never block on it */
+    }
   } catch {
     /* memory is best-effort — never let a logging failure surface */
   }

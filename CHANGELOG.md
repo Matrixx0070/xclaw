@@ -1,3 +1,19 @@
+## 3.179.0 (2026-08-25)
+
+- W3 (30-day plan) — THE LEARNING WRITE-PATH, the last unstarted plan item:
+  `src/memory/reflection.mjs` reflects over every finished mission with ONE
+  tool-free model call and writes up to three typed "lesson" events
+  (kind worked/failed/avoid, 200-char cap, provenance objectiveId+verdict)
+  to durable workspace memory. Wired at the objective outcome boundary
+  (persistOutcome), where the existing recall already feeds "lessons from
+  past missions" into the NEXT mission's first segment — the loop is now
+  closed: missions stop repeating their own mistakes.
+- Contract: best-effort (a mission never fails on reflection), gated by
+  memory.reflection (default on) and memory.enabled, objectives-only (no
+  per-chat-turn cost), tolerant JSON extraction (fences/garbage → no writes).
+- 5 tests: parse tolerance + caps, durable writes with provenance, both
+  gates skip the provider entirely, failure/empty paths, wiring tripwire.
+
 ## 3.178.0 (2026-08-25)
 
 - W2 STAGE 4d (the last stage-4 seam) — approval outcome staged:
