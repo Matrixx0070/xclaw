@@ -1,3 +1,32 @@
+## 3.207.0 (2026-08-25)
+
+- TEST (sweep #25 — the **inbound PagerDuty webhook HMAC verifier**,
+  `verifyPagerDutySignature`; a coverage blind spot, not a live leak; production
+  byte-identical). `/webhooks/pagerduty` (POST) is intentionally OPEN to gateway
+  auth — a PagerDuty delivery cannot carry a Bearer token (`auth.mjs:94` returns
+  not-protected for `/webhooks/*`; `gateway-auth-cost-usage.test.mjs` pins it "must
+  stay open for signed deliveries"). The SOLE authenticator of who may POST a
+  webhook that runs `handlePagerDutyWebhook` (mirrors events to channels, appends
+  history) is therefore `verifyPagerDutySignature` — and it had **ZERO** behavioural
+  test: no test imported `pagerduty-webhooks.mjs`. The only two tests naming the path
+  assert it is a known served literal / stays auth-open; neither exercises signature
+  acceptance or rejection. (`computer-auth-wrong-cred` tests a DIFFERENT verifier, the
+  computer plane's `verifyComputerAuth`.)
+- Proof it was a blind spot: mutating the bad-signature return to accept —
+  `return { ok: true, mode: "hmac", matchedVersion: "v1" }` — left the FULL suite
+  green (3562/0). A FORGED webhook would then be accepted and processed: a total
+  inbound-webhook-auth bypass on an open route.
+- Close: `test/pagerduty-webhook-signature.test.mjs` (+8) pins the verifier's
+  decisions — accept a genuine signature; REJECT a forged one (`bad_signature`);
+  REJECT a missing header (`missing_signature`); OPEN when no secret + not required;
+  FAIL CLOSED when required but unconfigured (`secret_not_configured`); honor the
+  rotation list (any configured secret matches, one not in the list is rejected);
+  accept a bare-hex header; and — the crux — REJECT a signature that is valid for a
+  DIFFERENT body (the HMAC must bind the exact bytes). Mutation-verified RED three
+  directions: accept-forged → 3, reject-genuine → 3, body-not-bound → 1 (that one
+  isolates the body-binding test). `pagerduty-webhooks.mjs` byte-identical
+  (`d9a10d70…`) — coverage-hole close, no production change. Suite 3562 → **3570/0**.
+
 ## 3.206.0 (2026-08-25)
 
 - TEST (sweep #24 — the **`approved` arm** of the channel pairing gate,
