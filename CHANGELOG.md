@@ -52,6 +52,11 @@
   mirror differing only by the `Authorization` header, so a gate that 401s
   everything fails too. All five new enforcement points were mutation-swept to
   RED (2, 11, 4, 8 and 2 failures).
+- The live file seeds its own artifact into a temp workspace via
+  `agent.workingDir`. The first cut read whatever the checkout happened to
+  contain, which passed locally against 50 real artifacts and failed on a
+  fresh CI clone that has none — caught by CI on the tagged commit, fixed
+  before the release moved.
 - Behaviour changes, deliberate: (1) **legacy mode (`authStrict:false`) now
   also protects the artifacts API** — a tightening, no capability lost; (2)
   `p.startsWith("/ui/")` was removed from both auth branches — **no route has

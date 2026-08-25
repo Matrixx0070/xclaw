@@ -34,6 +34,12 @@ let home;
 let child;
 let childLog = "";
 let gwPort;
+/** Artifact the gateway will list and serve. Created here so the test does not
+ *  depend on whatever happens to sit in the checkout — a fresh CI clone has no
+ *  artifacts at all, which made an earlier version of this file pass locally
+ *  and fail on the runner. */
+const ARTIFACT_REL = "artifacts/leak-probe.txt";
+const ARTIFACT_BODY = "workspace bytes that must not leave without a token\n";
 
 function request(p, headers = {}) {
   return new Promise((resolve) => {
@@ -67,6 +73,12 @@ before(async () => {
 
   home = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-publicui-"));
   fs.mkdirSync(path.join(home, ".xclaw"), { recursive: true });
+
+  const workspace = path.join(home, "workspace");
+  const artifact = path.join(workspace, ARTIFACT_REL);
+  fs.mkdirSync(path.dirname(artifact), { recursive: true });
+  fs.writeFileSync(artifact, ARTIFACT_BODY);
+
   fs.writeFileSync(
     path.join(home, ".xclaw", "xclaw.json"),
     JSON.stringify(
@@ -78,6 +90,9 @@ before(async () => {
         computer: { autoStart: false },
         channels: { telegram: { enabled: false }, webchat: { enabled: true } },
         tokens: { probeOnStart: false },
+        // Both /artifacts routes resolve against this, so the listing and the
+        // download are the one file written above.
+        agent: { workingDir: workspace },
       },
       null,
       2
@@ -171,24 +186,23 @@ describe("publicUi:false on a live gateway", () => {
     // gateway hits, since matchUiRoute("/artifacts/file") is null either way.
     const listing = await request("/artifacts/list", withToken);
     const files = JSON.parse(listing.body).files || [];
-    assert.ok(files.length > 0, "no artifacts to ask for — test would be vacuous");
-    const target = `/artifacts/file?path=${encodeURIComponent(files[0].path)}`;
+    assert.deepEqual(
+      files.map((f) => f.path),
+      [ARTIFACT_REL],
+      "the seeded artifact is what the gateway lists"
+    );
 
-    const anon = await request(target);
+    const anon = await request(`/artifacts/file?path=${encodeURIComponent(ARTIFACT_REL)}`);
 
-    assert.equal(anon.status, 401, `artifact bytes leaked (${anon.body.length} bytes)`);
+    assert.equal(anon.status, 401, `artifact bytes leaked (${anon.body.slice(0, 160)})`);
+    assert.ok(!anon.body.includes(ARTIFACT_BODY.trim()), "the file contents came back anyway");
   });
 
   it("serves the artifact BYTES to the operator", async () => {
-    const listing = await request("/artifacts/list", withToken);
-    const files = JSON.parse(listing.body).files || [];
-    assert.ok(files.length > 0);
-    const target = `/artifacts/file?path=${encodeURIComponent(files[0].path)}`;
-
-    const r = await request(target, withToken);
+    const r = await request(`/artifacts/file?path=${encodeURIComponent(ARTIFACT_REL)}`, withToken);
 
     assert.equal(r.status, 200, `operator lost the download (${r.body.slice(0, 160)})`);
-    assert.ok(r.body.length > 0);
+    assert.equal(r.body, ARTIFACT_BODY);
   });
 
   it("serves the same page at / and /chat", async () => {
