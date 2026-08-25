@@ -35,7 +35,7 @@ describe("W3 reflection write-path", () => {
 
   it("writes lesson events with provenance to the workspace memory", async () => {
     const ws = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-refl-"));
-    const cfg = { memory: { dir: path.join(ws, ".mem") } };
+    const cfg = { paths: { configDir: path.join(ws, ".xclaw") } };
     const r = await reflectOnMission(cfg, obj(ws), {
       provider: providerWith('{"lessons":[{"kind":"worked","lesson":"Arm the runtime baseline before editing crons."},{"kind":"avoid","lesson":"Do not edit the live crontab without a dry-run."}]}'),
     });
@@ -59,7 +59,7 @@ describe("W3 reflection write-path", () => {
 
   it("provider failure or empty lessons never throws; empty writes 0", async () => {
     const ws = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-refl2-"));
-    const cfg = { memory: { dir: path.join(ws, ".mem") } };
+    const cfg = { paths: { configDir: path.join(ws, ".xclaw") } };
     assert.equal(await reflectOnMission(cfg, obj(ws), { provider: { chat: async () => { throw new Error("boom"); } } }), null);
     const r = await reflectOnMission(cfg, obj(ws), { provider: providerWith('{"lessons":[]}') });
     assert.deepEqual(r, { written: 0 });
