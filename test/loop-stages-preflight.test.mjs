@@ -439,6 +439,26 @@ describe("loop stage: approval-outcome plan", () => {
     assert.equal(r.event.timedOut, true);
   });
 
+  // The whole timeout family means the window closed with nobody answering.
+  // Only the 120s fallback was named, so the two SLA expiries were classified
+  // by the pendingId fallback rather than by what they mean.
+  for (const reason of ["sla_timeout", "sla_timeout_critical"]) {
+    it(`${reason} is an unanswered ask, not a verdict`, () => {
+      const r = planApprovalOutcome({ ok: false, reason, pendingId: "p8" }, inp);
+      assert.equal(r.action, "stop");
+      assert.equal(r.event.phase, "approval_required");
+      assert.equal(r.event.timedOut, true);
+      assert.equal(r.guardNote, null);
+    });
+  }
+
+  // A gate that hands back an id and nothing else is asking for a human.
+  it("a bare pendingId with no reason is still pending", () => {
+    const r = planApprovalOutcome({ ok: false, pendingId: "p7" }, inp);
+    assert.equal(r.action, "stop");
+    assert.equal(r.event.phase, "approval_required");
+  });
+
   it("hard denial continues the turn with a guard note and deny policy", () => {
     const r = planApprovalOutcome({ ok: false, reason: "allowlist" }, inp);
     assert.equal(r.action, "deny");
@@ -446,6 +466,36 @@ describe("loop stage: approval-outcome plan", () => {
     assert.equal(r.event.phase, "denied");
     assert.equal(r.policyInput.decision, "deny");
     assert.equal(r.guardNote, "DENIED: Tool xclaw_bash blocked (allowlist).");
+  });
+
+  // REGRESSION: every deny case here used to be hand-built WITHOUT a
+  // pendingId — a shape the real gate never produces for a human path, since
+  // authorize returns `{...decision, pendingId: id}` on every answer. So these
+  // tests passed while production classified an operator's Deny as pending.
+  it("an operator's deny is a verdict even though it carries a pendingId", () => {
+    const r = planApprovalOutcome(
+      { ok: false, reason: "denied", message: "Denied by operator.", pendingId: "p3" },
+      inp
+    );
+    assert.equal(r.action, "deny", "the turn continues; the model must try something else");
+    assert.equal(r.event.phase, "denied", "telegram/webchat render denials off this phase");
+    assert.equal(r.message, "Denied by operator.", "the operator's words, not 'awaiting approval'");
+    assert.equal(r.pendingRecord, null, "a decided ask must not be resurrected as pending");
+    assert.equal(r.policyInput.decision, "deny");
+    assert.equal(r.guardNote, "DENIED: Denied by operator.", "repeated denied retries feed the guard");
+  });
+
+  // revalidateOnDecide (default on) resolves the pending with the drift
+  // reason: a terminal security verdict that was also being read as pending.
+  it("decide-time drift is a verdict, not a pending ask", () => {
+    const r = planApprovalOutcome(
+      { ok: false, reason: "plan_drift", message: "Environment drifted (TOCTOU).", pendingId: "p4" },
+      inp
+    );
+    assert.equal(r.action, "deny");
+    assert.equal(r.event.phase, "denied");
+    assert.equal(r.event.reason, "plan_drift");
+    assert.equal(r.guardNote, "DENIED: Environment drifted (TOCTOU).");
   });
 
   it("denial message from the gate wins; args preview is capped at 180", () => {

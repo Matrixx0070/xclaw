@@ -345,6 +345,40 @@ export function planToctouRevalidation(inp) {
 }
 
 /**
+ * The timeout family — the 120s fallback timer plus both SLA expiries
+ * (sla_timeout, sla_timeout_critical). Every one of them means the window
+ * closed with nobody answering, so the ask is still open.
+ * @param {unknown} reason
+ */
+function isTimeoutReason(reason) {
+  return typeof reason === "string" && reason.includes("timeout");
+}
+
+/**
+ * Is the gate still waiting on a human?
+ *
+ * That is a claim about the gate's REASON, never about whether an id exists:
+ * authorize stamps `pendingId` onto every answer it returns for a human-path
+ * call, verdicts included. Keying on the id read an operator's Deny as
+ * "awaiting approval" — the turn stopped instead of continuing, the event went
+ * out as approval_required with restate:true so consumers rendered nothing
+ * (Telegram's `phase === "denied"` branch never fired and recordTelegramDeny
+ * never counted), the operator was shown "blocked, awaiting approval" for the
+ * call they had just refused, and guard.record was skipped so repeated denied
+ * retries stopped feeding stagnation detection. Decide-time drift verdicts
+ * (plan_drift/fingerprint_mismatch, when revalidateOnDecide is on) were
+ * swallowed the same way.
+ * @param {object} auth approvalGate.authorize result
+ */
+function isAwaitingHuman(auth) {
+  if (auth.pending === true) return true;
+  const reason = typeof auth.reason === "string" ? auth.reason : "";
+  // A bare id with no reason at all is the gate asking for a human.
+  if (!reason) return Boolean(auth.pendingId);
+  return reason === "pending" || isTimeoutReason(reason);
+}
+
+/**
  * Stage 4d — approval-outcome plan. Given the gate's verdict, decide the
  * turn's next move: proceed (with the human-approved event when a human
  * answered), STOP on a pending ask (re-asking just retries the blocked
@@ -372,11 +406,7 @@ export function planApprovalOutcome(auth, inp) {
           : null,
     };
   }
-  const isPending =
-    auth.reason === "pending" ||
-    auth.reason === "timeout" ||
-    auth.pending === true ||
-    Boolean(auth.pendingId);
+  const isPending = isAwaitingHuman(auth);
   const pendingId = auth.pendingId || auth.id || null;
   const message = isPending
     ? inp.formatBlockedReply({
@@ -405,7 +435,7 @@ export function planApprovalOutcome(auth, inp) {
       // UPDATE, not a new ask — `restate` says so on the event itself so
       // consumers gate on isNewApprovalAsk() instead of deduping by hand.
       restate: true,
-      timedOut: auth.reason === "timeout",
+      timedOut: isTimeoutReason(auth.reason),
       message,
     },
     policyInput: {

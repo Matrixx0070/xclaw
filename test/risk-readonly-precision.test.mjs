@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import fs from "node:fs/promises";
 import { isReadOnlyExecCommand } from "../src/security/risk.mjs";
+import { planApprovalOutcome } from "../src/agent/loop-stages.mjs";
 
 // Precision fixes derived from Frank's real blocked commands (2026-08-14
 // live session): 2>&1 and /dev/null sinks are harmless; pm2 logs --nostream
@@ -80,12 +81,21 @@ describe("read-only exec precision (live-derived)", () => {
 describe("approval prompt dedupe wiring", () => {
   it("loop marks the timeout re-emission, and marks it as a restate", async () => {
     // W2 staging: the re-emission event is built in loop-stages.mjs
-    // (planApprovalOutcome) and emitted by the loop.
-    const stage = await fs.readFile(new URL("../src/agent/loop-stages.mjs", import.meta.url), "utf8");
-    assert.match(stage, /timedOut: auth\.reason === "timeout"/);
-    // the re-emission must say what it is on the event itself, so a consumer
-    // does not have to know the history to avoid a bogus second prompt
-    assert.match(stage, /restate: true/);
+    // (planApprovalOutcome) and emitted by the loop. That function is pure, so
+    // assert the event it builds rather than grepping for the expression that
+    // builds it — the grep pinned one reason string and blessed any edit that
+    // kept the spelling.
+    for (const reason of ["timeout", "sla_timeout", "sla_timeout_critical"]) {
+      const r = planApprovalOutcome(
+        { ok: false, reason, pendingId: "apr_1" },
+        { name: "xclaw_bash", args: {}, formatBlockedReply: () => "blocked" }
+      );
+      assert.equal(r.event.phase, "approval_required", reason);
+      assert.equal(r.event.timedOut, true, reason);
+      // the re-emission must say what it is on the event itself, so a consumer
+      // does not have to know the history to avoid a bogus second prompt
+      assert.equal(r.event.restate, true, reason);
+    }
     const src = await fs.readFile(new URL("../src/agent/loop.mjs", import.meta.url), "utf8");
     assert.match(src, /planApprovalOutcome\(auth/);
   });
