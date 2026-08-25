@@ -1,3 +1,29 @@
+## 3.206.0 (2026-08-25)
+
+- TEST (sweep #24 — the **`approved` arm** of the channel pairing gate,
+  `isApproved`; a coverage blind spot, not a live leak; production byte-identical).
+  In `dmPolicy:"pairing"` mode the live channel handler admits a DM sender iff a
+  STATIC allowlist match OR an APPROVED pairing: `discord/index.mjs:265-267` does
+  `const staticOk = isAllowed(channelId); const approved =
+  pairing.isApproved("discord", authorId); if (!staticOk && !approved) { …request…;
+  return; }` (telegram is the twin). Sweeps #21/#23 pinned the STATIC arm; the
+  `approved` arm — `pairing.isApproved(channel, id)` in `pairing-store.mjs` — had
+  ZERO direct test coverage (`grep -rn isApproved test/` → nothing: `account-pairing`
+  tests a different system, `account-links.mjs`; `pairing-routes` drives
+  approve/revoke/pending through the HTTP handler but never `isApproved`). Mutating
+  `isApproved` to `return true` — every sender reads as approved — left the FULL
+  suite **green (3555/0)**: in pairing mode that admits ANY DM sender to the agent, a
+  total channel-auth bypass. Fix (`test/pairing-approved-gate.test.mjs`, +7) pins the
+  gate's two authz properties — it is EXACT-match (an approved id's superstring `5551`
+  and prefix `55` are both denied, per sweep #21's embedding-negative rule) and
+  CHANNEL-SCOPED (a telegram approval never admits the same id on discord) — plus the
+  accept, the string/number coercion on both sides, and revoke de-authorizing.
+  Mutation-verified RED in four directions (approve-anyone → 6 RED; deny-anyone → 3
+  accept RED; channel-ignore → 1 scoping RED; `===`→`.includes` → 1 prefix RED);
+  `pairing-store.mjs` restored byte-identical (`bc3dfe83…`). Suite 3555→**3562/0**.
+  Honest limit (as #21/#23): pins the pure store decision, not the handler's
+  `!staticOk && !approved` combination, which stays untested wiring.
+
 ## 3.205.0 (2026-08-25)
 
 - TEST (sweep #23 — the **Discord** call site of the channel sender-auth gate; a
