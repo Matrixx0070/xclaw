@@ -1,3 +1,14 @@
+## 3.179.2 (2026-08-25)
+
+- file_equals tolerates exactly ONE trailing newline on the FILE side when
+  the expected content does not end with one — every shell write (echo,
+  heredoc) terminates files with \n, and that single byte held BOTH live
+  proof missions at awaiting_human with otherwise-correct content
+  (obj_mt8e2yrr, obj_mt8ernt8; hex-confirmed 0a). Content strictness is
+  otherwise unchanged: an expected ending in newline stays fully strict,
+  double newlines and any content drift still fail. \r\n accepted the
+  same way. 2 new tests (7 cases).
+
 ## 3.179.1 (2026-08-25)
 
 - COMPLETION FRICTION FIX (found live while proving W3, obj_mt8e2yrr): a

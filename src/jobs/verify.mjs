@@ -64,7 +64,17 @@ async function runOne(workspace, check) {
             detail: "file_equals missing expected 'content' (or 'value')",
           };
         }
-        const pass = text === expected;
+        // Tolerate exactly ONE trailing newline on the FILE side when the
+        // expected string does not end with one: every shell write (echo,
+        // heredoc, editors) terminates the file with \n, and both live
+        // missions on 2026-08-25 held awaiting_human on that byte alone
+        // (obj_mt8e2yrr, obj_mt8ernt8 — content correct, \x0a mismatch).
+        // Content strictness is unchanged; an expected ending in \n still
+        // requires it, and \r\n is accepted the same way.
+        const pass =
+          text === expected ||
+          (!expected.endsWith("\n") &&
+            (text === expected + "\n" || text === expected + "\r\n"));
         return { type, path: check.path, pass, detail: pass ? undefined : "content mismatch" };
       }
       case "file_not_exists": {

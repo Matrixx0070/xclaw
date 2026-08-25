@@ -99,3 +99,44 @@ describe("scoreCase budgets", () => {
     assert.ok(scored.failures.some((f) => f.includes("maxTurns")));
   });
 });
+
+// 2026-08-25: both live proof missions held on the trailing \n every shell
+// write produces — file_equals now tolerates exactly one trailing newline on
+// the FILE side when the expected content does not end with one.
+describe("file_equals trailing-newline tolerance", () => {
+  const mk = async (content) => {
+    const ws = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-feq-"));
+    await fs.writeFile(path.join(ws, "f.txt"), content);
+    return ws;
+  };
+  const passOf = async (ws, expected) => {
+    const r = await runVerifyChecks(ws, [{ type: "file_equals", path: "f.txt", content: expected }]);
+    return r.results?.[0]?.pass ?? r.ok;
+  };
+
+  it("echo-style trailing newline passes; double newline and drift fail", async () => {
+    for (const [file, exp, want] of [
+      ["proof\n", "proof", true],
+      ["proof\r\n", "proof", true],
+      ["proof", "proof", true],
+      ["proof\n\n", "proof", false],
+      ["proofX\n", "proof", false],
+    ]) {
+      const ws = await mk(file);
+      assert.equal(await passOf(ws, exp), want, JSON.stringify([file, exp]));
+      await fs.rm(ws, { recursive: true, force: true });
+    }
+  });
+
+  it("an expected content that itself ends with newline stays fully strict", async () => {
+    const ws = await mk("proof\n");
+    assert.equal(await passOf(ws, "proof\n"), true, "exact match");
+    const ws2 = await mk("proof\n\n");
+    assert.equal(await passOf(ws2, "proof\n"), false, "no tolerance once expected ends with newline");
+    const ws3 = await mk("proof");
+    assert.equal(await passOf(ws3, "proof\n"), false, "missing the required newline");
+    await fs.rm(ws, { recursive: true, force: true });
+    await fs.rm(ws2, { recursive: true, force: true });
+    await fs.rm(ws3, { recursive: true, force: true });
+  });
+});
