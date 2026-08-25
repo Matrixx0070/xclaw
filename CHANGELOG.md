@@ -1,3 +1,36 @@
+## 3.182.0 (2026-08-25)
+
+- FIX — the loop's budget pre-check re-threw its own refusal by matching
+  substrings of the error message: `"hard cap"` or `"Hard daily"`. The daily
+  cap message happens to contain those words; the other refusals the same gate
+  produces do not. `Seat <label> is paused`, `Seat <label> disabled`, `Per-job
+  cap $X exceeded` and every `SEAT_CHECK_ERROR` were therefore caught and
+  discarded right where they were raised. Those runs were still stopped — the
+  per-turn pre-flight calls the same `checkLoopCostBudget` a moment later — but
+  they got there by way of `ensureComputer()` and `createSession()`, which is
+  precisely what a *pre*-check exists to happen before. The refusal now carries
+  `budgetBlock`/`code`/`blockedBy` on the Error and the catch keys on the
+  marker, so a genuinely optional failure (missing module, unreadable ledger)
+  still falls through and control flow no longer depends on wording.
+- TEST — `test/loop-budget-enforcement.test.mjs` (new, 6 tests) covers the two
+  enforcement blocks the mutation sweep could delete with the suite green: the
+  cost pre-check (`if (false && !budget.ok)`) and the quota hard-block circuit
+  (`if (false && circ && circ.ok === false)`). Both survived because a second
+  gate absorbs them, so "the run was blocked" is not a discriminating
+  assertion — these tests require the loop to *throw* and to emit no
+  `computer/session` event, which is exactly the property the mutation
+  destroys. The circuit cases source the tripped flag from `receiptCollector`
+  rather than `job`: a tripped circuit on `job` is also read by the cost
+  governor at turn pre-flight, which would stop the run with the dispatch guard
+  deleted. Every case has a mirror that flips one field — the cap, the seat's
+  `paused`, the circuit's `tripped` — and requires the run to complete and the
+  model to be called, so a gate that refuses everything fails.
+- TEST — `quota-hard-circuit-wire` and `loop-cost-auth-wire` each asserted that
+  a file under `patches/` mentions the guard. Those files are inputs to a past
+  migration, not the shipped code: both guards could be deleted from
+  `src/agent/loop.mjs` and both assertions still held. Replaced with pointers
+  to the behavioural coverage above.
+
 ## 3.181.1 (2026-08-25)
 
 - TEST — deflake `approval SLA`. The test started `authorize()`, slept a fixed

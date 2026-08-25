@@ -24,10 +24,12 @@ describe("loop cost auth wire", () => {
     assert.equal(r.auth.results[0].appId, "xai");
   });
 
-  it("loop-cost-check module and patch exist", () => {
+  // This used to assert that patches/loop-cost-auth-refresh.patch mentions
+  // checkLoopCostBudget — a past migration's input, not the shipped code, so it
+  // held whether or not the loop still called the check. What the loop DOES
+  // with a refusal (rejects before ensureComputer/createSession, never reaching
+  // the model) is covered behaviourally in test/loop-budget-enforcement.test.mjs.
+  it("loop-cost-check module exists", () => {
     assert.ok(fs.existsSync(path.join(root, "src/tokens/loop-cost-check.mjs")));
-    const patch = fs.readFileSync(path.join(root, "patches/loop-cost-auth-refresh.patch"), "utf8");
-    assert.ok(patch.includes("checkLoopCostBudget"));
-    assert.ok(patch.includes("loop-cost-check.mjs"));
   });
 });

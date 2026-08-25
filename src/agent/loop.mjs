@@ -469,7 +469,11 @@ export async function runAgentLoop(options) {
         spentUsd: budget.spentUsd,
         message: budget.message,
       });
-      throw new Error(budget.message || "cost hard cap exceeded");
+      const blocked = new Error(budget.message || "cost hard cap exceeded");
+      blocked.budgetBlock = true;
+      blocked.code = budget.code || "BUDGET_EXCEEDED";
+      blocked.blockedBy = budget.blockedBy || "cost";
+      throw blocked;
     }
     if (budget.soft) {
       onEvent({
@@ -480,9 +484,18 @@ export async function runAgentLoop(options) {
       });
     }
   } catch (e) {
-    if (String(e?.message || e).includes("hard cap") || String(e?.message || "").includes("Hard daily")) {
-      throw e;
-    }
+    // Re-throw only OUR refusal, identified by a marker rather than by its
+    // wording. The previous filter matched the substrings "hard cap"/"Hard
+    // daily", which the daily-cap message happens to contain and the other
+    // real refusals do not: "Seat <label> is paused", "Seat <label> disabled",
+    // "Per-job cap $X exceeded" and any SEAT_CHECK_ERROR text were swallowed
+    // here. Those runs were still stopped a moment later by the per-turn
+    // pre-flight (loop-stages.evaluateTurnPreflight calls the same
+    // checkLoopCostBudget), so nothing ran unbudgeted — but they got there by
+    // way of ensureComputer() + createSession(), which is exactly what this
+    // block exists to happen before. Everything else (missing module,
+    // unreadable ledger) still leaves the governor optional.
+    if (e?.budgetBlock) throw e;
     /* governor optional if module/fs fails */
   }
 

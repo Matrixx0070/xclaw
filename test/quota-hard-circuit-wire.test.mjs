@@ -13,14 +13,12 @@ describe("quota hard-circuit wire", () => {
     assert.ok(aq.includes("recordHardBlock"));
   });
 
-  it("loop patch exists for guard", () => {
-    const patch = fs.readFileSync(
-      path.join(root, "patches/quota-hard-circuit-loop.patch"),
-      "utf8"
-    );
-    assert.ok(patch.includes("guardToolAgainstHardCircuit"));
-    assert.ok(patch.includes("job: options.job"));
-  });
+  // The loop side used to be "covered" here by asserting that
+  // patches/quota-hard-circuit-loop.patch mentions guardToolAgainstHardCircuit.
+  // That file is the input to a past migration, not the shipped code: the guard
+  // could be deleted from src/agent/loop.mjs and the assertion still passed.
+  // The real coverage — a tripped circuit stops dispatch, an untripped one does
+  // not — lives in test/loop-budget-enforcement.test.mjs.
 
   it("circuit trip blocks tools", () => {
     const job = {};
