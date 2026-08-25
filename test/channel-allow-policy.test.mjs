@@ -117,4 +117,57 @@ describe("channel sender authorization", () => {
       assert.equal(g.reason, "no_chat");
     });
   });
+
+  // Discord is the OTHER live call site of the same shared gate. isSenderIdAllowed
+  // is pinned above, but that does NOT pin its Discord wiring: allowedDiscordChannel
+  // -> isSenderIdAllowed(dcAllow, ...) is the sole guard before the agent runs on a
+  // Discord message (discord/index.mjs:287-291 `return` on !isAllowed). Sweep #23
+  // (3.205.0): no test drove gateDiscord/allowedDiscordChannel. Two mutations left
+  // the FULL suite green (3549/0): (A) allowedDiscordChannel -> `return true` admits
+  // ANY channel; (B) dcAllow dropping the `allowedChannelIds` config key compiles an
+  // EMPTY allowlist so allowWhenEmpty admits everyone — a silent, config-shaped
+  // bypass. Both are closed here. (The both-layers discipline of sweep #15.)
+  describe("gateDiscord — the wiring (allowlist)", () => {
+    const policy = createChannelPolicy({
+      channels: { discord: { allowedChannelIds: ["123"] } },
+    });
+
+    it("allows a message from a listed channel", () => {
+      assert.equal(policy.gateDiscord({ channelId: "123" }).ok, true);
+    });
+
+    it("DENIES a message from an unlisted channel (channel_not_allowed)", () => {
+      // Catches BOTH proven mutations: accept-anything, and the dropped
+      // `allowedChannelIds` key (which would compile an empty admit-all list).
+      const g = policy.gateDiscord({ channelId: "999" });
+      assert.equal(
+        g.ok,
+        false,
+        "an unlisted channel must be denied — accept-anything is a full channel-auth bypass"
+      );
+      assert.equal(g.reason, "channel_not_allowed");
+    });
+
+    it("reads the channel id from snake_case (channel_id) too", () => {
+      assert.equal(policy.gateDiscord({ channel_id: "123" }).ok, true);
+      assert.equal(policy.gateDiscord({ channel_id: "999" }).ok, false);
+    });
+
+    it("rejects a message with no channel id (no_channel)", () => {
+      const g = policy.gateDiscord({});
+      assert.equal(g.ok, false);
+      assert.equal(g.reason, "no_channel");
+    });
+
+    it("honors the documented allowFrom alias key when allowedChannelIds is absent", () => {
+      const p2 = createChannelPolicy({ channels: { discord: { allowFrom: ["abc"] } } });
+      assert.equal(p2.allowedDiscordChannel("abc"), true);
+      assert.equal(p2.allowedDiscordChannel("xyz"), false);
+    });
+
+    it("an unconfigured Discord allowlist admits (open default, matching Telegram)", () => {
+      const p3 = createChannelPolicy({ channels: { discord: {} } });
+      assert.equal(p3.allowedDiscordChannel("anything"), true);
+    });
+  });
 });

@@ -1,3 +1,28 @@
+## 3.205.0 (2026-08-25)
+
+- TEST (sweep #23 — the **Discord** call site of the channel sender-auth gate; a
+  coverage blind spot, not a live leak; production code byte-identical). Sweep #21
+  pinned the pure `isSenderIdAllowed` and its Telegram wiring (`gateTelegram`), but
+  per the both-layers discipline of sweep #15 that does NOT pin the Discord wiring.
+  `allowedDiscordChannel(id)` → `isSenderIdAllowed(dcAllow, …)` is the sole guard
+  before the agent runs on a Discord message — `discord/index.mjs:287-291` does a
+  bare `return` on `!isAllowed(channelId)` in allowlist / non-open mode — yet NO
+  test drove `gateDiscord` or `allowedDiscordChannel` (the only test file to mention
+  them did so in a comment). Two mutations left the FULL suite **green (3549/0)**:
+  (A) `allowedDiscordChannel` → `return true` admits ANY Discord channel; (B)
+  `dcAllow = compileAllowlist(discord.allowedChannelIds || discord.allowFrom || [])`
+  dropping the `allowedChannelIds` key compiles an EMPTY allowlist, so
+  `allowWhenEmpty` admits everyone — a silent, config-shaped bypass invisible to a
+  green suite. Fix (`test/channel-allow-policy.test.mjs`, +6) pins the wiring:
+  listed channel → allow; unlisted → deny (`channel_not_allowed`) with
+  `allowedChannelIds` configured (this one test catches BOTH mutation A and mutation
+  B); `channel_id` snake_case extraction; no-channel → `no_channel`; the `allowFrom`
+  alias key; and the open-default when unconfigured. Mutation-verified RED in three
+  directions (accept-anything → 3 deny/alias RED; deny-anything → 4 allow RED; drop
+  key → 2 configured-deny RED); `policy.mjs` restored byte-identical
+  (`bacec9f8…`). Suite 3549→**3555/0**. The recurring lesson: a shared auth gate has
+  one test-home per call site — pinning it through one wrapper never pins another.
+
 ## 3.204.0 (2026-08-25)
 
 - TEST (sweep #21 — the channel **sender-authorization gate**, `isSenderIdAllowed`
