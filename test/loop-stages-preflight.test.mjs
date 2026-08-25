@@ -360,3 +360,47 @@ describe("loop stage: run allowlist verdict", () => {
     assert.deepEqual(b.policy, { phase: "filter", decision: "deny", reason: "allowTools" });
   });
 });
+
+// W2 stage 4c — TOCTOU plan re-validation.
+import { planToctouRevalidation } from "../src/agent/loop-stages.mjs";
+
+describe("loop stage: TOCTOU plan re-validation", () => {
+  const basec = { name: "xclaw_bash", plan: { fingerprint: "fp1" }, planFingerprint: null, isExec: true, bindEnabled: true };
+
+  it("not applicable without a plan, on non-exec tools, or when binding is off", () => {
+    assert.equal(planToctouRevalidation({ ...basec, plan: null, revalidate: () => ({ ok: true }) }), null);
+    assert.equal(planToctouRevalidation({ ...basec, isExec: false, revalidate: () => ({ ok: true }) }), null);
+    assert.equal(planToctouRevalidation({ ...basec, bindEnabled: false, revalidate: () => ({ ok: true }) }), null);
+  });
+
+  it("passing re-validation emits plan_revalidated with the fingerprint", () => {
+    const r = planToctouRevalidation({ ...basec, revalidate: () => ({ ok: true }) });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.event, { type: "security", phase: "plan_revalidated", name: "xclaw_bash", planFingerprint: "fp1" });
+  });
+
+  it("explicit planFingerprint wins over the plan's own", () => {
+    const r = planToctouRevalidation({ ...basec, planFingerprint: "fp-auth", revalidate: () => ({ ok: true }) });
+    assert.equal(r.event.planFingerprint, "fp-auth");
+  });
+
+  it("drift denies with message, event, typed policy input, and guard note", () => {
+    const r = planToctouRevalidation({
+      ...basec,
+      revalidate: () => ({ ok: false, reason: "command_mismatch", drift: { was: "a", now: "b" } }),
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.message, "Plan revalidation failed (command_mismatch).");
+    assert.equal(r.event.phase, "plan_revalidate_failed");
+    assert.deepEqual(r.event.drift, { was: "a", now: "b" });
+    assert.deepEqual(r.policyInput, { phase: "plan_revalidate", decision: "deny", reason: "command_mismatch", tool: "xclaw_bash" });
+    assert.equal(r.guardNote, "DENIED: command_mismatch");
+  });
+
+  it("reason-less drift falls back to plan_drift; custom message wins", () => {
+    const r = planToctouRevalidation({ ...basec, revalidate: () => ({ ok: false, message: "custom" }) });
+    assert.equal(r.message, "custom");
+    assert.equal(r.policyInput.reason, "plan_drift");
+    assert.equal(r.guardNote, "DENIED: plan_drift");
+  });
+});

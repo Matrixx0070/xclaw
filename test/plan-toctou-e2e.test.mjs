@@ -86,13 +86,20 @@ describe("TOCTOU e2e — plan bind then drift deny", () => {
     assert.equal(rv.reason, "fingerprint_mismatch");
   });
 
-  it("loop source revalidates before spawn", () => {
+  it("loop source revalidates before spawn (via the TOCTOU stage)", () => {
+    // W2 staging moved the decision into loop-stages.mjs; the chain is now
+    // loop → planToctouRevalidation({revalidate: revalidatePlan}) → deny/pass.
     const src = fs.readFileSync(
       new URL("../src/agent/loop.mjs", import.meta.url),
       "utf8"
     );
-    assert.match(src, /revalidatePlan\(auth\.plan\)/);
-    assert.match(src, /plan_revalidate_failed/);
-    assert.match(src, /plan_revalidated/);
+    const stage = fs.readFileSync(
+      new URL("../src/agent/loop-stages.mjs", import.meta.url),
+      "utf8"
+    );
+    assert.match(src, /planToctouRevalidation\(\{/);
+    assert.match(src, /revalidate: revalidatePlan/);
+    assert.match(stage, /plan_revalidate_failed/);
+    assert.match(stage, /plan_revalidated/);
   });
 });

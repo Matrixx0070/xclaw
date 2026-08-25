@@ -16,6 +16,7 @@ import {
   planFinalAnswerRescue,
   parseToolCallArgs,
   evaluateRunAllowlist,
+  planToctouRevalidation,
 } from "./loop-stages.mjs";
 import { createProvider } from "./provider.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
@@ -1473,61 +1474,38 @@ export async function runAgentLoop(options) {
         }
 
         // TOCTOU: re-validate frozen systemRunPlan pins after approval, before spawn
-        if (
-          auth.plan &&
-          isExecTool(name) &&
-          cfg.security?.bindSystemRunPlan !== false
-        ) {
-          const rv = revalidatePlan(auth.plan);
-          if (!rv.ok) {
-            const msg =
-              rv.message ||
-              `Plan revalidation failed (${rv.reason || "drift"}).`;
-            onEvent({
-              type: "security",
-              phase: "plan_revalidate_failed",
-              name,
-              reason: rv.reason,
-              drift: rv.drift || null,
-              planFingerprint: auth.planFingerprint || auth.plan?.fingerprint || null,
-              message: msg,
-            });
+        // (Decision logic in loop-stages.mjs planToctouRevalidation.)
+        const toctou = planToctouRevalidation({
+          name,
+          plan: auth.plan,
+          planFingerprint: auth.planFingerprint,
+          isExec: isExecTool(name),
+          bindEnabled: cfg.security?.bindSystemRunPlan !== false,
+          revalidate: revalidatePlan,
+        });
+        if (toctou) {
+          onEvent(toctou.event);
+          if (!toctou.ok) {
             messages.push(
               makeToolMessage({
                 tool_call_id: call.id,
-                content: msg,
+                content: toctou.message,
                 source: "security",
               })
             );
             recordTrace(
               finalizeToolTraceEntry(
-                beginToolTraceEntry({
-                  name,
-                  args,
-                  toolCallId: call.id,
-                  turn: turns + 1,
-                }),
+                beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
                 {
-                  resultText: msg,
+                  resultText: toctou.message,
                   blocked: true,
-                  policy: (lastPolicyDecision = policyDecision({
-                    phase: "plan_revalidate",
-                    decision: "deny",
-                    reason: rv.reason || "plan_drift",
-                    tool: name,
-                  })),
+                  policy: (lastPolicyDecision = policyDecision(toctou.policyInput)),
                 }
               )
             );
-            guard.record(name, args, "DENIED: " + (rv.reason || "plan_drift"));
+            guard.record(name, args, toctou.guardNote);
             return;
           }
-          onEvent({
-            type: "security",
-            phase: "plan_revalidated",
-            name,
-            planFingerprint: auth.planFingerprint || auth.plan?.fingerprint || null,
-          });
         }
 
         // Spawn enforcement: carry frozen plan into computer plane (bash checks at spawn)

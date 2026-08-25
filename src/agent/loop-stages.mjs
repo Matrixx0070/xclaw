@@ -298,7 +298,54 @@ export function evaluateRunAllowlist(name, toolFilter) {
   };
 }
 
+/**
+ * Stage 4c — TOCTOU plan re-validation plan. After approval and before spawn,
+ * a frozen systemRunPlan must still match what will execute — approval-time
+ * checks alone are a time-of-check/time-of-use hole. Pure: null when
+ * re-validation does not apply; else {ok:true, event} or the deny plan
+ * (message, event, policyInput, guardNote). The revalidate check is injected.
+ * @param {object} inp {name, plan, planFingerprint, isExec, bindEnabled, revalidate}
+ */
+export function planToctouRevalidation(inp) {
+  if (!inp.plan || !inp.isExec || inp.bindEnabled === false) return null;
+  const fingerprint = inp.planFingerprint || inp.plan?.fingerprint || null;
+  const rv = inp.revalidate(inp.plan);
+  if (rv.ok) {
+    return {
+      ok: true,
+      event: {
+        type: "security",
+        phase: "plan_revalidated",
+        name: inp.name,
+        planFingerprint: fingerprint,
+      },
+    };
+  }
+  const message = rv.message || `Plan revalidation failed (${rv.reason || "drift"}).`;
+  return {
+    ok: false,
+    message,
+    event: {
+      type: "security",
+      phase: "plan_revalidate_failed",
+      name: inp.name,
+      reason: rv.reason,
+      drift: rv.drift || null,
+      planFingerprint: fingerprint,
+      message,
+    },
+    policyInput: {
+      phase: "plan_revalidate",
+      decision: "deny",
+      reason: rv.reason || "plan_drift",
+      tool: inp.name,
+    },
+    guardNote: "DENIED: " + (rv.reason || "plan_drift"),
+  };
+}
+
 export default {
+  planToctouRevalidation,
   evaluateRunAllowlist,
   parseToolCallArgs,
   evaluateTurnPreflight,

@@ -1,3 +1,11 @@
+## 3.177.5 (2026-08-25)
+
+- W2 STAGE 4c — TOCTOU plan re-validation staged: `planToctouRevalidation`
+  in loop-stages.mjs is the pure decision (applicability, pass event with
+  fingerprint, deny plan with message/event/typed policy input/guard note);
+  the loop injects `revalidatePlan` and applies the plan. 5 new tests
+  (30 stage tests); plan-toctou e2e tripwire re-anchored to the new chain.
+
 ## 3.177.4 (2026-08-25)
 
 - W2 STAGE 4b — run-scoped allowlist verdict pure (`evaluateRunAllowlist`
