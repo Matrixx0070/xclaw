@@ -51,17 +51,28 @@ describe("per-run budget caps", () => {
 
   // Tripwire: refactors have silently dropped loop wiring before (3.78.0 MCP
   // regression) — assert the budget gate is still wired into the turn loop.
-  it("loop.mjs keeps the budget gate wired", async () => {
+  // W2 staging moved the check itself into loop-stages.mjs; the chain is now
+  // loop → evaluateTurnPreflight({runBudget}) → runBudget.check → budget event.
+  it("loop.mjs keeps the budget gate wired (via the pre-flight stage)", async () => {
     const fs = await import("node:fs/promises");
-    const src = await fs.readFile(
+    const loopSrc = await fs.readFile(
       new URL("../src/agent/loop.mjs", import.meta.url),
       "utf8"
     );
-    assert.ok(src.includes("createRunBudget(cfg)"), "budget created from cfg");
-    assert.ok(src.includes("runBudget.check("), "budget checked in loop");
+    const stageSrc = await fs.readFile(
+      new URL("../src/agent/loop-stages.mjs", import.meta.url),
+      "utf8"
+    );
+    assert.ok(loopSrc.includes("createRunBudget(cfg)"), "budget created from cfg");
     assert.ok(
-      src.includes('type: "budget", phase: "exceeded"'),
-      "budget event emitted"
+      loopSrc.includes("evaluateTurnPreflight({") &&
+        /evaluateTurnPreflight\(\{[\s\S]{0,600}runBudget,/.test(loopSrc),
+      "loop passes runBudget into the pre-flight stage"
+    );
+    assert.ok(stageSrc.includes("runBudget.check("), "stage checks the budget");
+    assert.ok(
+      stageSrc.includes('type: "budget", phase: "exceeded"'),
+      "stage emits the budget event"
     );
   });
 });

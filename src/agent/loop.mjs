@@ -8,6 +8,7 @@ import {
   formatToolResult,
 } from "./computer-client.mjs";
 import { ensureComputer } from "../computer/ensure.mjs";
+import { evaluateTurnPreflight } from "./loop-stages.mjs";
 import { createProvider } from "./provider.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
 import {
@@ -923,20 +924,26 @@ export async function runAgentLoop(options) {
     for (turns = 0; !hookAbort && turns < totalTurnCap; turns++) {
       if (signal?.aborted) throw new Error("aborted");
 
-      // Segment boundary: checkpoint durable state and tell the model to
-      // keep going. Context is NOT reset — the window-eviction machinery
-      // manages size; this converts the old hard stop into a supervised
-      // continuation with an audit trail.
-      if (continuationEnabled && turns > 0 && turns % maxTurns === 0) {
-        const segment = Math.floor(turns / maxTurns) + 1;
-        onEvent({
-          type: "segment",
-          phase: "continue",
-          segment,
-          turns,
-          segmentSize: maxTurns,
-          cap: totalTurnCap,
-        });
+      // W2 stage 1 — turn pre-flight (segment boundary, cost governor, daily/
+      // job budgets, unattended caps). The stage computes the decision; the
+      // side effects (events, checkpoint, notice, flags) stay here so the
+      // detectors are testable in isolation (src/agent/loop-stages.mjs).
+      const preflight = await evaluateTurnPreflight({
+        turns,
+        maxTurns,
+        totalTurnCap,
+        continuationEnabled,
+        toolCallCount: toolTrace.length,
+        totalTokens: usageTracker.snapshot()?.totalTokens || 0,
+        jobSpentUsd: options.jobSpentUsd,
+        costStrict: Boolean(cfg?.cost?.strict),
+        costGovCheck: (u) => costGov.check(u),
+        checkDailyBudget: () => checkLoopCostBudget(cfg),
+        checkJobBudget: (spent) => checkJobCostBudget(cfg, spent),
+        runBudget,
+      });
+      if (preflight.segment) {
+        onEvent(preflight.segment.event);
         try {
           if (options.sessionId || options.persistRun) {
             await saveAgentRun(cfg, {
@@ -959,73 +966,21 @@ export async function runAgentLoop(options) {
         } catch {
           /* checkpoint is best-effort — the run continues regardless */
         }
-        messages.push(
-          makeEphemeralNotice(
-            `Turn checkpoint (${turns}/${totalTurnCap} turns used). The task is NOT finished — continue working toward the goal. Take the next concrete action; do not restart completed steps or stop to summarize.`
-          )
-        );
+        messages.push(makeEphemeralNotice(preflight.segment.noticeText));
       }
-
-      try {
-        const cg = costGov.check({ toolCalls: toolTrace.length });
-        if (cg.blocked) {
-          onEvent({ type: "cost", phase: "governor_blocked", ...cg });
-          try { stampCostBlock(options.job || options.jobState || {}, cg); } catch { /* */ }
-          finalText = finalText || `COST_GOVERNOR: ${cg.reason}`;
-          budgetStop = true;
-          aborted = true;
-          break;
+      for (const ev of preflight.events) onEvent(ev);
+      if (preflight.strictError) throw preflight.strictError;
+      if (preflight.stop) {
+        onEvent(preflight.stop.event);
+        if (preflight.stop.stampCost) {
+          try {
+            stampCostBlock(options.job || options.jobState || {}, preflight.stop.stampCost);
+          } catch { /* */ }
         }
-      } catch { /* */ }
-
-      // Feature 3 — cost governor hard stop (no provider call when over budget)
-      try {
-        const budget = await checkLoopCostBudget(cfg);
-        if (!budget.ok) {
-          const msg = budget.message || "BUDGET_EXCEEDED";
-          onEvent({
-            type: "cost",
-            phase: "blocked",
-            code: budget.code || "BUDGET_EXCEEDED",
-            ...budget,
-          });
-          finalText = finalText || msg;
-          aborted = true;
-          break;
-        }
-        if (budget.soft) {
-          onEvent({ type: "cost", phase: "soft_warn", ...budget });
-        }
-        if (options.jobSpentUsd != null) {
-          const jobB = checkJobCostBudget(cfg, options.jobSpentUsd);
-          if (!jobB.ok) {
-            onEvent({ type: "cost", phase: "blocked", ...jobB });
-            finalText = finalText || jobB.message;
-            aborted = true;
-            break;
-          }
-        }
-      } catch (e) {
-        onEvent({ type: "cost", phase: "check_error", error: e?.message || String(e) });
-        // fail open on ledger errors unless strict
-        if (cfg?.cost?.strict) throw e;
-      }
-
-      // Unattended-operation caps (cfg.agent.budget) — graceful stop, the
-      // post-run pipeline (verify, metrics, receipts) still runs.
-      if (runBudget.enabled) {
-        const bx = runBudget.check({
-          toolCalls: toolTrace.length,
-          totalTokens: usageTracker.snapshot()?.totalTokens || 0,
-        });
-        if (bx) {
-          onEvent({ type: "budget", phase: "exceeded", ...bx });
-          budgetStop = true;
-          if (!finalText) {
-            finalText = `Stopped: run budget exceeded (${bx.reason}: ${bx.used}/${bx.limit}).`;
-          }
-          break;
-        }
+        finalText = finalText || preflight.stop.finalTextFallback;
+        if (preflight.stop.flags.aborted) aborted = true;
+        if (preflight.stop.flags.budgetStop) budgetStop = true;
+        break;
       }
 
       onEvent({ type: "model", phase: "request", turn: turns + 1 });

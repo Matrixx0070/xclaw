@@ -1,3 +1,23 @@
+## 3.177.0 (2026-08-25)
+
+- W2 (30-day plan) STAGE 1 — runAgentLoop staging begins: the turn pre-flight
+  decision logic (segment-boundary continuation, per-run cost governor,
+  daily/job cost budgets, unattended-operation caps) extracted from the
+  ~2,200-line loop closure into `src/agent/loop-stages.mjs`
+  `evaluateTurnPreflight()` — a pure decision stage the loop composes.
+  The stage COMPUTES (typed {segment, stop, events, strictError}); the loop
+  PERFORMS (event emission, checkpointing, notice push, flag flips), so
+  behavior is unchanged — including the exact check order (segment → governor
+  → daily → job → run caps), fail-open ledger semantics, strict-mode rethrow
+  AFTER the check_error event, and set-true-only flag application.
+- 12 new unit tests feed the detectors the loop's real input shapes
+  (boundary arithmetic, governor block/throw, daily hard/soft, job gating,
+  strict vs lax ledger errors, graceful run-cap stop, ordering, segment-then-
+  stop) — the audit's W2 acceptance ("loop detectors testable, fed real
+  inputs") now holds for this stage.
+- run-budget tripwire updated to assert the new wiring chain
+  (loop → evaluateTurnPreflight({runBudget}) → check → event).
+
 ## 3.176.2 (2026-08-25)
 
 - STRICT RELEASE GATE PASSES FOR THE FIRST TIME — the multi-night soak
