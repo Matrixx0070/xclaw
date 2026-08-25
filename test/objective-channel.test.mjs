@@ -12,6 +12,27 @@ async function cfgTmp() {
   return { paths: { configDir: dir }, objectives: { progressEverySegments: 0, requireChecked: false, deriveChecks: false }, _dir: dir };
 }
 
+/**
+ * Teardown, not an assertion.
+ *
+ * Flake history (fixed 2026-08-25): these cases failed intermittently in full
+ * suite runs, never in isolation. Reproduced against a loaded box (12 spinners
+ * on 4 cores), where they failed 4 of 5 rounds, always as
+ * `ENOTEMPTY: directory not empty, rmdir '/tmp/xclaw-objch-*'`. A detached
+ * mission keeps writing after the status this file polls for lands — the final
+ * save and the notify — and saveObjective writes a per-call `.tmp-*` file
+ * before renaming, so a plain recursive rm can list a directory, then find a
+ * fresh temp file in it before the rmdir. That is the writer working normally,
+ * not a defect, but it must not turn a green test red.
+ *
+ * fs.rm's own maxRetries/retryDelay handles exactly this class (ENOTEMPTY,
+ * EBUSY) with linear backoff, up to ~5s here. Errors still propagate if it
+ * never settles — a directory that stays busy past that is a real signal.
+ */
+async function cleanup(cfg) {
+  await fs.rm(cfg._dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 25 });
+}
+
 function block(state) {
   return "```" + STATE_FENCE + "\n" + JSON.stringify(state) + "\n```";
 }
@@ -64,7 +85,7 @@ describe("objective channel routing", () => {
     const settled = await waitStatus(cfg, obj.id, ["done"]);
     assert.equal(settled.status, "done");
     assert.ok(notes.some((n) => n.kind === "done"));
-    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await cleanup(cfg);
   });
 
   it("normal turn cut off by maxTurns AUTO-PROMOTES into a mission (the live failure, healed)", async () => {
@@ -99,7 +120,7 @@ describe("objective channel routing", () => {
     assert.equal(obj.objective, "Read, analyze, and fully understand the entire DEMO project.");
     const settled = await waitStatus(cfg, obj.id, ["done"]);
     assert.equal(settled.status, "done");
-    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await cleanup(cfg);
   });
 
   it("message during a running mission is NOT treated as a new task", async () => {
@@ -119,7 +140,7 @@ describe("objective channel routing", () => {
     });
     assert.equal(out.via, "objective");
     assert.match(out.reply, /is running/);
-    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await cleanup(cfg);
   });
 
   it("awaiting_human: the owner's next message is routed as the answer", async () => {
@@ -144,7 +165,7 @@ describe("objective channel routing", () => {
     const settled = await waitStatus(cfg, obj.id, ["done"]);
     assert.equal(settled.status, "done");
     assert.ok(sawAnswer, "answer reached the resumed segment");
-    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await cleanup(cfg);
   });
 
   it("/objective list + resume <id> adopts an orphaned mission into this chat", async () => {
@@ -168,7 +189,7 @@ describe("objective channel routing", () => {
     const settled = await waitStatus(cfg, obj.id, ["done"]);
     assert.equal(settled.channel, "telegram", "adopted into this chat");
     assert.equal(String(settled.chatId), "42");
-    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await cleanup(cfg);
   });
 
   it("/objective stop + status work; no notify → graceful degradation", async () => {
@@ -187,6 +208,6 @@ describe("objective channel routing", () => {
     });
     assert.match(stop.reply, /Stop requested/);
     assert.equal((await loadObjective(cfg, obj.id)).stopRequested, true);
-    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await cleanup(cfg);
   });
 });

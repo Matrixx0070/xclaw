@@ -1,3 +1,23 @@
+## 3.185.0 (2026-08-25)
+
+- TEST — the two suite flakes seen across nine full runs are fixed at the root.
+  Neither was what the symptom suggested. Both files pass in isolation every
+  time, so they were reproduced against a deliberately loaded box (12 spinners
+  on 4 cores): `approval-path-latency` then failed 3 of 5 rounds and
+  `objective-channel` 4 of 5, deterministically enough to work with.
+  `approval-path-latency` was failing on `list.length >= 1`, never on a latency
+  bound — a fixed 15ms sleep was standing in for synchronisation, and under
+  contention that much wall clock can pass without the gate's pending-record
+  continuation running at all. It now polls. The elapsed-time assertions
+  (`< 1500ms`, `>= 50ms`, `< 100ms`) never fired in any loaded round and are
+  left exactly as they were, rather than loosened on suspicion.
+  `objective-channel` was failing in teardown: a detached mission keeps writing
+  after the status the test polls for lands, and `saveObjective` renames through
+  a per-call `.tmp-*` file, so a recursive `fs.rm` could list a directory and
+  then meet a fresh temp file before the `rmdir` — `ENOTEMPTY`. Teardown now
+  uses `fs.rm`'s own `maxRetries`/`retryDelay` backoff and still propagates if
+  the directory never settles. Same load, same commands, after: 12/12 green.
+
 ## 3.184.0 (2026-08-25)
 
 - TEST — context eviction was covered as an algorithm and nowhere as wiring.
