@@ -135,6 +135,40 @@ describe("WebSocket upgrade auth", () => {
       assert.match(r.statusLine, /101/);
       assert.match(r.raw, new RegExp(`Sec-WebSocket-Protocol: xclaw\\.token\\.${TOKEN}`));
     });
+
+    // The subprotocol carrier is the ONLY one a browser can set on a WS
+    // handshake — it cannot send Authorization or x-xclaw-token, and ?token=
+    // leaks the token into access logs — so `xclaw.token.<t>` is the Control
+    // UI's real auth path. Every case above presents the CORRECT token through
+    // it; none proved a WRONG token is rejected. Mutating the extraction in
+    // authorizeWebSocket (`sub = p.slice("xclaw.token.".length)` -> `sub =
+    // token`, i.e. accept ANY xclaw.token.* value) left the full suite green
+    // (3518/0): the shared compare is pinned only by the ?token=nope cases on
+    // the query carrier, and no test ever sent a wrong non-empty token through
+    // the subprotocol. These pin the subprotocol carrier's rejection on BOTH
+    // upgrade paths, with prefix and superstring values so a startsWith-style
+    // weakening (got a prefix of token, or token a prefix of got) is caught too.
+    const wrongSubproto = [
+      "nope",
+      "s3cr3t-toke", // one char short — got is a prefix of the real token
+      "s3cr3t-token-extra", // superstring — the real token is a prefix of got
+    ];
+    for (const w of wrongSubproto) {
+      it(`rejects an events upgrade with a wrong subprotocol token ${JSON.stringify(w)} (401)`, async () => {
+        const r = await wsHandshake(ctx.port, {
+          headers: { "Sec-WebSocket-Protocol": `xclaw.token.${w}` },
+        });
+        assert.match(r.statusLine, /401/, `wrong subprotocol token ${JSON.stringify(w)} must be rejected on /ws/events`);
+      });
+
+      it(`rejects a voice upgrade with a wrong subprotocol token ${JSON.stringify(w)} (401)`, async () => {
+        const r = await wsHandshake(ctx.port, {
+          pathQuery: "/ws/voice",
+          headers: { "Sec-WebSocket-Protocol": `xclaw.token.${w}` },
+        });
+        assert.match(r.statusLine, /401/, `wrong subprotocol token ${JSON.stringify(w)} must be rejected on /ws/voice`);
+      });
+    }
   });
 
   describe("requireAuth with no token — fail closed", () => {

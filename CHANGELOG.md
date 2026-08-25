@@ -1,3 +1,28 @@
+## 3.201.0 (2026-08-25)
+
+- TEST (sweep #18 — the WebSocket **subprotocol carrier**'s rejection half; a
+  coverage blind spot, not a live leak). A browser cannot set `Authorization` or
+  `x-xclaw-token` on a WS handshake, and `?token=` leaks the token into access
+  logs, so `Sec-WebSocket-Protocol: xclaw.token.<t>` is the ONLY carrier the
+  Control UI can use — the real-world WS auth path. `ws-auth` drove that carrier
+  with the CORRECT token only (accept + echo, on both `/ws/events` and
+  `/ws/voice`); both of its wrong-token rejections went through the `?token=nope`
+  query carrier instead. `authorizeWebSocket` EXTRACTS the subprotocol token
+  separately (`sub = p.slice("xclaw.token.".length)`) before the shared
+  `tokenEqual`, so that extraction had no rejection test of its own. Proof it was
+  blind: mutating the extraction to `sub = token` — accept ANY `xclaw.token.*`
+  value regardless of what the client presented — left the full suite **green
+  (3518/0)**: the shared compare is pinned only by the query carrier's
+  `?token=nope`, and no test ever sent a wrong non-empty token through the
+  subprotocol. This is the WS analog of the HTTP acceptance gap closed in 3.196.0.
+  Fix: six cases in `ws-auth.test.mjs` pin the subprotocol carrier's rejection on
+  BOTH upgrade paths, with `nope` + a one-char-short prefix + a superstring so a
+  `startsWith`-style weakening is caught in either direction too. Mutation-verified:
+  `sub = token` now fails exactly the six new cases (13 pre-existing still pass),
+  and the accept direction stays pinned by the existing correct-token subprotocol
+  cases. Production code UNCHANGED — `auth.mjs` byte-identical (sha256
+  `6ddaa4d3…`). Suite **3524/0**.
+
 ## 3.200.0 (2026-08-25)
 
 - TEST (sweep #16 — the `/stop` gate's config-driven **fail-closed** branches; a
