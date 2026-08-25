@@ -29,6 +29,44 @@ let slaTimer = null;
 let sharedGate = null;
 let sharedGateSecurityKey = null;
 
+/**
+ * The reasons that mean "the approval window closed and NOBODY answered":
+ * the 120s fallback timer plus both SLA expiries. The ask stays open, so the
+ * caller must stop and wait rather than treat the answer as a verdict.
+ *
+ * Enumerated, not pattern-matched. Callers used to sniff for the substring
+ * "timeout", which would misread any future verdict reason that happens to
+ * contain it (say `exec_timeout_policy`) as "still pending" — the same class of
+ * bug as keying on pendingId. Add new unanswered-window reasons HERE.
+ */
+export const UNANSWERED_APPROVAL_REASONS = Object.freeze(
+  new Set(["pending", "timeout", "sla_timeout", "sla_timeout_critical"])
+);
+
+/**
+ * Stamp `awaitingHuman` on an answer leaving the gate.
+ *
+ * authorize AWAITS the pending promise, so every result it returns is already a
+ * resolution — there is no "still deciding" state to observe from outside. What
+ * a caller actually needs to know is whether a human ANSWERED: an unanswered
+ * window leaves the ask open (stop the turn and wait), while a verdict — deny,
+ * drift, policy block — is final and the turn continues with the denial.
+ *
+ * Read this field. Never infer pendency from `pendingId`: authorize stamps that
+ * id onto every human-path answer, verdicts included, which is exactly how
+ * every operator Deny was once misread as "still pending" (3.180.0).
+ * @template {object} T
+ * @param {T} res
+ * @returns {T & {awaitingHuman: boolean}}
+ */
+function stampAwaitingHuman(res) {
+  if (!res || typeof res !== "object") return res;
+  const unanswered =
+    res.pending === true ||
+    (res.ok === false && UNANSWERED_APPROVAL_REASONS.has(res.reason));
+  return { ...res, awaitingHuman: unanswered };
+}
+
 function ensureSlaTimer(cfg) {
   if (slaTimer) return;
   const tickMs = cfg?.security?.approvalSlaTickMs ?? 5_000;
@@ -287,9 +325,18 @@ export function createApprovalGate(cfg = {}) {
   }
 
   /**
-   * @returns {Promise<{ok, approved?, reason?, message?, mode?, pendingId?, plan?, planFingerprint?}>}
+   * Authorize a tool call, awaiting a human when policy requires one.
+   *
+   * Every answer carries `awaitingHuman`, stamped at this one boundary so no
+   * caller has to guess pendency from a reason string or an id. See
+   * stampAwaitingHuman.
+   * @returns {Promise<{ok, awaitingHuman: boolean, approved?, reason?, message?, mode?, pendingId?, plan?, planFingerprint?}>}
    */
-  async function authorize(name, args, { timeoutMs = 120_000, onPending, forceHuman = false, ignoreBypass = false, riskWorkingDir = null, job = null } = {}) {
+  async function authorize(name, args, opts = {}) {
+    return stampAwaitingHuman(await authorizeInner(name, args, opts));
+  }
+
+  async function authorizeInner(name, args, { timeoutMs = 120_000, onPending, forceHuman = false, ignoreBypass = false, riskWorkingDir = null, job = null } = {}) {
     if (!isToolAllowed(name)) {
       return {
         ok: false,

@@ -345,37 +345,63 @@ export function planToctouRevalidation(inp) {
 }
 
 /**
- * The timeout family — the 120s fallback timer plus both SLA expiries
- * (sla_timeout, sla_timeout_critical). Every one of them means the window
- * closed with nobody answering, so the ask is still open.
+ * Reasons that mean the approval window closed with NOBODY answering: the
+ * gate's 120s fallback timer plus both SLA expiries. The ask stays open, so the
+ * turn must stop and wait instead of treating the answer as a verdict.
+ *
+ * This module stays dependency-free (that is what makes every stage trivially
+ * testable), so the list is duplicated from UNANSWERED_APPROVAL_REASONS in
+ * src/security/approvals.mjs rather than imported. The two are pinned equal by
+ * test/approval-pendency-contract.test.mjs — add new reasons to BOTH.
+ *
+ * Enumerated, never pattern-matched: the old test was `reason.includes(
+ * "timeout")`, which would misread any future verdict reason containing that
+ * substring as "still pending".
+ */
+const APPROVAL_TIMEOUT_REASONS = new Set(["timeout", "sla_timeout", "sla_timeout_critical"]);
+export const UNANSWERED_APPROVAL_REASONS = new Set([
+  "pending",
+  ...APPROVAL_TIMEOUT_REASONS,
+]);
+
+/**
+ * The window EXPIRED (as opposed to "pending", which is an ask just created).
+ * Surfaced on the event as `timedOut` so a consumer can tell a re-emission from
+ * a first ask without keeping history.
  * @param {unknown} reason
  */
 function isTimeoutReason(reason) {
-  return typeof reason === "string" && reason.includes("timeout");
+  return APPROVAL_TIMEOUT_REASONS.has(reason);
 }
 
 /**
  * Is the gate still waiting on a human?
  *
- * That is a claim about the gate's REASON, never about whether an id exists:
- * authorize stamps `pendingId` onto every answer it returns for a human-path
- * call, verdicts included. Keying on the id read an operator's Deny as
- * "awaiting approval" — the turn stopped instead of continuing, the event went
- * out as approval_required with restate:true so consumers rendered nothing
- * (Telegram's `phase === "denied"` branch never fired and recordTelegramDeny
- * never counted), the operator was shown "blocked, awaiting approval" for the
- * call they had just refused, and guard.record was skipped so repeated denied
+ * Prefer the gate's own `awaitingHuman` claim — createApprovalGate stamps it on
+ * every answer authorize returns, so the real gate never needs the fallback.
+ * The reason-based fallback below covers injected gates (test doubles, the
+ * deprecated check() shape) that predate the field.
+ *
+ * Pendency is NEVER a claim about whether an id exists: authorize stamps
+ * `pendingId` onto every answer it returns for a human-path call, verdicts
+ * included. Keying on the id read an operator's Deny as "awaiting approval" —
+ * the turn stopped instead of continuing, the event went out as
+ * approval_required with restate:true so consumers rendered nothing (Telegram's
+ * `phase === "denied"` branch never fired and recordTelegramDeny never
+ * counted), the operator was shown "blocked, awaiting approval" for the call
+ * they had just refused, and guard.record was skipped so repeated denied
  * retries stopped feeding stagnation detection. Decide-time drift verdicts
  * (plan_drift/fingerprint_mismatch, when revalidateOnDecide is on) were
  * swallowed the same way.
  * @param {object} auth approvalGate.authorize result
  */
 function isAwaitingHuman(auth) {
+  if (typeof auth.awaitingHuman === "boolean") return auth.awaitingHuman;
   if (auth.pending === true) return true;
   const reason = typeof auth.reason === "string" ? auth.reason : "";
   // A bare id with no reason at all is the gate asking for a human.
   if (!reason) return Boolean(auth.pendingId);
-  return reason === "pending" || isTimeoutReason(reason);
+  return UNANSWERED_APPROVAL_REASONS.has(reason);
 }
 
 /**

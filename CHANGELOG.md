@@ -1,3 +1,36 @@
+## 3.180.1 (2026-08-25)
+
+- Approval pendency is now a DECLARED field instead of an inference.
+  3.180.0 fixed the loop reading `pendingId` as "still pending" by
+  enumerating reason strings, which was the declared weakest point of that
+  release: a convention the gate was never obliged to honour. Any future
+  verdict reason containing the substring "timeout" — say
+  `exec_timeout_policy` — would have reproduced the same bug one level up.
+  `authorize` now stamps a boolean `awaitingHuman` on every answer it
+  returns, at ONE boundary (a `stampAwaitingHuman` wrapper, mirroring the
+  existing `stampOperatorChecks` idiom) rather than at eight return sites,
+  and `UNANSWERED_APPROVAL_REASONS` is exported as the single source of
+  truth. The loop believes the gate's claim and falls back to the
+  enumerated list only for injected doubles and gates that predate the
+  field. `approval-pendency-contract.test.mjs` drives the real gate through
+  all four paths — policy verdict, approve, deny, timeout — and pins the
+  deny/timeout pair, identical down to the `pendingId` and opposite on
+  pendency, which is what makes a constant stamp impossible. Six mutations
+  (constant stamp, no stamp, loop ignores the field, either list drifting,
+  reverting to `reason.includes("timeout")`) all fail it.
+- SECURITY — the run-scoped tool allowlist (`cfg.agent.allowTools`) is now
+  under behavioural test. Same blind spot class as the TOCTOU block in
+  3.180.0, found by continuing the mutation sweep: changing loop.mjs's
+  enforcement to `if (false && allowBlock)` disables the allowlist for every
+  run in the product and left all 3012 tests green. The pure stage
+  `evaluateRunAllowlist` had unit tests; the half that performs the block
+  had none. `loop-allowtools-enforcement.test.mjs` drives the real
+  `runAgentLoop` with a model that hallucinates a tool the run was never
+  offered, and asserts the exec never reaches dispatch and its side effect
+  never lands on disk — plus the mirror case, where the same tool under a
+  permissive allowlist must actually run, so the pair cannot be satisfied
+  by a filter that blocks everything. Both mutations fail it.
+
 ## 3.180.0 (2026-08-25)
 
 - SECURITY — an operator's Deny was reported as "still awaiting approval".
