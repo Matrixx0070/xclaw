@@ -83,6 +83,43 @@ describe("telegram group policy P2", () => {
     assert.equal(r.ok, false);
   });
 
+  // --- topic-level per-user allowlist (forum threads): WHO may command the bot
+  // inside a specific forum topic. gateGroupMessage is wired on the live inbound
+  // path (channels/telegram/index.mjs:608-614): a non-ok result `return`s and the
+  // agent never runs. The topicRule.allowFrom branch (group-policy.mjs:96-102) is
+  // a sender-authorization gate, but sweep #29 (3.211.0) found it had ZERO test:
+  // the P2 tests reach gateGroupMessage's mention / group-allowlist / topic-
+  // requireMention branches but none exercises topic.allowFrom. Making the deny
+  // unreachable (`if (false && ...)` — admit any sender to any restricted topic)
+  // left the FULL suite green (3587/0). These pin both directions of the gate.
+  const topicConf = { groups: { policy: "open", topics: { "7": { allowFrom: ["1"] } } } };
+  const topicMsg = (fromId) => ({
+    chat: { id: -100, type: "supergroup" },
+    message_thread_id: 7,
+    text: "do stuff",
+    from: { id: fromId },
+  });
+
+  it("topic allowFrom: a sender NOT in the topic list is DENIED (topic_user_not_allowed)", () => {
+    // The proven mutation: dropping this deny admits ANY sender to a restricted topic.
+    const r = gateGroupMessage({ msg: topicMsg(2), conf: topicConf, botInfo: bot });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, "topic_user_not_allowed");
+  });
+
+  it("topic allowFrom: a sender IN the topic list is ALLOWED", () => {
+    // Catches an over-strict regression (deny-everyone / inverted include).
+    const r = gateGroupMessage({ msg: topicMsg(1), conf: topicConf, botInfo: bot });
+    assert.equal(r.ok, true);
+  });
+
+  it("topic allowFrom: an empty list does not restrict (open convention)", () => {
+    // `allowed.length &&` guard: an empty topic allowFrom must not deny everyone.
+    const conf = { groups: { policy: "open", topics: { "7": { allowFrom: [] } } } };
+    const r = gateGroupMessage({ msg: topicMsg(2), conf, botInfo: bot });
+    assert.equal(r.ok, true);
+  });
+
   it("stripBotMention", () => {
     assert.equal(stripBotMention("hi @xxclaw_bot there", bot), "hi there");
   });

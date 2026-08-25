@@ -1,3 +1,30 @@
+## 3.211.0 (2026-08-25)
+
+- TEST (sweep #29 — the **Telegram forum-topic per-user allowlist**, the
+  `topicRule.allowFrom` branch of `gateGroupMessage` in
+  `channels/telegram/group-policy.mjs:96-102`; a coverage blind spot, not a live
+  leak; production byte-identical). `gateGroupMessage` is wired on the live
+  inbound path (`channels/telegram/index.mjs:608-614`): for a group/supergroup
+  message a non-ok result `return`s and the agent never runs. Inside a specific
+  forum topic (thread), if that topic declares `allowFrom: [...]`, only the listed
+  senders may command the bot there — a sender-authorization decision.
+- Proof it was a blind spot: `test/telegram-p2.test.mjs` reached
+  `gateGroupMessage`'s mention, group-allowlist (`group_not_allowlisted`), and
+  topic-`requireMention` branches, but **NO** test exercised the topic
+  `allowFrom` gate. Making the deny unreachable
+  (`if (false && fromId && allowed.length && !allowed.includes(fromId))` — admit
+  any sender to any restricted topic) left the FULL suite green (3587/0): a silent
+  revert of this per-user topic gate would ship unnoticed.
+- Close: `test/telegram-p2.test.mjs` (+3) pins both directions — a sender NOT in
+  the topic `allowFrom` is DENIED (`topic_user_not_allowed`); a listed sender is
+  ALLOWED; an empty topic `allowFrom` does not restrict (the `allowed.length`
+  open convention). Mutation-verified both directions: `if (false && …)`
+  (accept anyone) reddens the deny test (`# fail 1`); inverting the include to
+  `allowed.includes(fromId)` (deny-everyone / misroute) reddens the deny + allow
+  tests (`# fail 2`); the pristine file leaves all three green.
+- No production code changed — `group-policy.mjs` is byte-identical
+  (sha256 `de786139…`).
+
 ## 3.210.0 (2026-08-25)
 
 - TEST (sweep #28 — the **Telegram `sug` suggestion-button sender-authorization
