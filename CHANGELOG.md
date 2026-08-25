@@ -1,3 +1,31 @@
+## 3.202.0 (2026-08-25)
+
+- TEST (sweep #19 — the gateway **CORS reflection policy**'s exact-match branches;
+  a coverage blind spot, not a live leak). `corsOriginFor` decides which
+  cross-origin pages may READ gateway responses; on a tokenless lab gateway it is
+  the only thing between a drive-by web page and `/sessions`, `/config`, etc. Every
+  allow-branch is an EXACT match — `Set` membership for loopback origins
+  (127.0.0.1 / localhost / ::1), and `=== ` / `Array.includes` for the operator
+  allowlist. `gateway-cors.test.mjs` had five cases, but every negative one
+  presented an origin DISJOINT from an allowed value (`https://evil.example`,
+  `https://other.example`), so it never exercised the exactness of the compare.
+  Proof it was blind: two independent one-line weakenings each left the suite
+  **green (5/5)** — (A) loopback `LOOPBACK_HOSTS.has(host)` → `host.includes(h)`
+  reflected `http://127.0.0.1.evil.com` (attacker registers a domain that EMBEDS a
+  loopback label), and (B) the string-config `conf === origin` → `origin.startsWith(conf)`
+  reflected `https://app.example.evil.com` against config `https://app.example`
+  (attacker registers a suffix domain). Both are textbook CORS-bypass classes and
+  both survived CI. Fix: four cases pin the exactness — a loopback host embedded as
+  a substring (incl. `notlocalhost` and a port variant) is NOT reflected, userinfo
+  that looks like a loopback host (`http://127.0.0.1@evil.com`, real host wins) is
+  NOT reflected, and a configured string/list origin is matched exactly (a suffix
+  domain AND a one-char-short prefix both rejected, in both directions). Mutation-
+  verified: weakening (A) and weakening (B) each turn this file RED (8/1); the
+  accept direction stays pinned by the existing loopback + exact-match cases.
+  Production code UNCHANGED — `cors.mjs` byte-identical (sha256 `b5c1cfb4…`), the
+  live gateway already returns `null` for every adversarial origin above. Suite
+  **3528/0**.
+
 ## 3.201.0 (2026-08-25)
 
 - TEST (sweep #18 — the WebSocket **subprotocol carrier**'s rejection half; a
