@@ -1,3 +1,28 @@
+## 3.196.0 (2026-08-25)
+
+- TEST (sweep #12 — credential-**acceptance** coverage, not a live leak). The
+  forgotten-route class (3.190.0–3.195.0) asks "is this path protected?"; this
+  sweep asks the other half — "given a protected path, does the gate accept only
+  the correct token?" It does in production (`tokenEqual` is a sound
+  constant-time compare), but the HTTP `check()` acceptance decision was
+  **untested**: every in-process auth test asserted only no-token → 401 and
+  correct-token → 200. Neither notices a compare weakened to a truthiness test.
+  Mutating `gateway/auth.mjs` line 292 `if (tokenEqual(got, token))` to
+  `if (got)` — accept ANY presented token — left the full suite **green
+  (3444/0)**: no-token requests still fell through to 401, the correct token
+  still passed, and no HTTP test ever sent a wrong non-empty token. Only the WS
+  path (`ws-auth.test.mjs`, `?token=nope`) pinned wrong-token → 401, and that
+  drives the separate `authorizeWebSocket()`.
+- `test/gateway-auth-wrong-token.test.mjs` closes it: on a protected path it
+  drives `check()` with a wrong non-empty token through every carrier
+  (`Authorization: Bearer`, `x-xclaw-token`, `x-api-key`, `?token=`) and asserts
+  `ok:false`, and accepts only the exact token. Prefix and superstring cases
+  additionally defend against a `startsWith`-style weakening in either direction.
+  Mutation-proven both ways: RED (16/20) under the `if (got)` truthiness accept,
+  RED (20/20) under an inverted `!tokenEqual` compare, GREEN (20/20) on the real
+  compare. No production code changed — `gateway/auth.mjs` is byte-identical
+  (sha256 6ddaa4d3…).
+
 ## 3.195.0 (2026-08-25)
 
 - SECURITY (sweep #11 — a **live, multi-route data-exposure bypass**, same
