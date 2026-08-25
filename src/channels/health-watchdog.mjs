@@ -196,6 +196,15 @@ async function tick() {
 
       if (!dead) continue;
 
+      // A single-writer standby (another process owns the update stream)
+      // reports running:false by design. Restarting cannot promote it, and
+      // each restart's stop() used to fire a getUpdates that 409-killed the
+      // real writer's poll in the owning process.
+      if (st.standby === true) {
+        state.lastError = null;
+        continue;
+      }
+
       // Restart path
       if (state.lastRestartAt && Date.now() - Date.parse(state.lastRestartAt) < minGap) {
         state.lastError = `${name}: restart backoff`;
@@ -217,10 +226,11 @@ async function tick() {
 
       console.warn(`[channels:watchdog] ${name} dead — restarting…`);
       try {
+        let res = null;
         if (typeof managerRef.restart === "function") {
-          await managerRef.restart(name);
+          res = await managerRef.restart(name);
         } else if (typeof managerRef.restartChannel === "function") {
-          await managerRef.restartChannel(name);
+          res = await managerRef.restartChannel(name);
         } else {
           // stopAll/startAll is heavy; try per-channel if exposed
           const ch = managerRef.get?.(name);
@@ -230,6 +240,12 @@ async function tick() {
           } else {
             throw new Error("no restart hook on channel manager");
           }
+        }
+        // A start the channel refused is a failed restart, not a successful
+        // one: counting it is what lets the circuit open and alert instead of
+        // looping forever on a channel that will never come back by itself.
+        if (res && res.ok === false) {
+          throw new Error(`start declined: ${res.reason || "unknown"}`);
         }
         state.restarts += 1;
         state.lastRestartAt = new Date().toISOString();

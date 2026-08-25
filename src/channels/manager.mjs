@@ -64,8 +64,21 @@ export function createChannelManager(cfg) {
         } catch {
           /* */
         }
-        await ch.start();
-        return { ok: true, name };
+        const res = await ch.start();
+        // A channel that DECLINES to start (misconfigured, or standby behind
+        // a single-writer lock) used to be indistinguishable from a clean
+        // start, so the watchdog reset consecutiveFail on every pass and its
+        // circuit-open alert was unreachable — it restart-looped a dead
+        // channel forever in silence. Channels whose start() returns nothing
+        // keep the old assume-started shape.
+        return res && res.started === false
+          ? {
+              ok: false,
+              name,
+              reason: res.reason || "declined",
+              standby: res.standby === true,
+            }
+          : { ok: true, name };
       });
     },
     async restart(name) {

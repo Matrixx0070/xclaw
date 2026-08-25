@@ -123,6 +123,10 @@ export function createTelegramChannel(cfg) {
   let lastOkAt = null;
   let loopAlive = false;
   let writerLock = null;
+  // Set when singleWriter mode declines the start because another process
+  // holds the lock. running:false is then BY DESIGN, not a fault, and the
+  // health watchdog must not try to restart its way out of it.
+  let writerStandby = false;
   let seenUpdateIds = new Set();
   const SEEN_MAX = 2000;
   /** @type {Map<string, { prompt: string, chatId: string|number, at: number }>} */
@@ -1015,17 +1019,20 @@ export function createTelegramChannel(cfg) {
       // live loop makes start a no-op, and a start already in flight is not
       // begun twice; createChannelManager additionally serializes lifecycle
       // calls per channel.
+      // Neither no-op is a failed start: the channel is up, or the call that
+      // is up-ing it is already in flight. Only startInner's own declines
+      // count against the watchdog.
       if (starting) {
         console.warn(`[telegram] start already in flight — skip`);
-        return;
+        return { started: true, reason: "start_in_flight" };
       }
       if (loopAlive && !stopped) {
         console.warn(`[telegram] already running — start skipped`);
-        return;
+        return { started: true, reason: "already_running" };
       }
       starting = true;
       try {
-        await this.startInner();
+        return await this.startInner();
       } finally {
         starting = false;
       }
@@ -1040,8 +1047,10 @@ export function createTelegramChannel(cfg) {
             `[telegram] single-writer lock not acquired (${writerLock.reason}) — skip start (another process owns updates)`
           );
           lastError = `writer_lock:${writerLock.reason}`;
-          return;
+          writerStandby = true;
+          return { started: false, reason: lastError, standby: true };
         }
+        writerStandby = false;
         console.log(`[telegram] writer lock ok pid=${process.pid}`);
       }
       // Retried: one transient Bad Gateway here at gateway boot (2026-08-24
@@ -1073,7 +1082,10 @@ export function createTelegramChannel(cfg) {
         if (!webhookUrl) {
           lastError = "webhook_url_missing";
           console.error(`[telegram] transport=webhook but channels.telegram.webhookUrl not set`);
-          return;
+          // A misconfiguration no restart can fix. Reported as a declined
+          // start so the watchdog counts it and its circuit-open alert
+          // ("manual intervention needed") is actually reachable.
+          return { started: false, reason: lastError };
         }
         if (!webhookSecret) {
           console.warn(`[telegram] webhook without secret_token — set channels.telegram.webhookSecret`);
@@ -1093,7 +1105,7 @@ export function createTelegramChannel(cfg) {
         );
         loopAlive = true;
         console.log(`[telegram] webhook set → ${webhookUrl}`);
-        return;
+        return { started: true };
       }
 
       // poll mode: ensure webhook cleared
@@ -1106,6 +1118,7 @@ export function createTelegramChannel(cfg) {
       loopPromise = pollLoop().finally(() => {
         loopAlive = false;
       });
+      return { started: true };
     },
     markError(msg) {
       lastError = msg;
@@ -1113,18 +1126,31 @@ export function createTelegramChannel(cfg) {
     async stop() {
       stopped = true;
       loopAlive = false;
+      const ownedLoop = Boolean(loopPromise);
       try {
-        if (token && transport === "poll") await api("getUpdates", { offset, timeout: 0 });
+        // The interrupter exists to cut short OUR OWN in-flight long poll so
+        // stop() returns promptly. Firing it without a loop of our own is not
+        // a harmless no-op: getUpdates on a shared token 409-terminates
+        // whichever process IS polling. A standby instance (writer lock held
+        // elsewhere) would otherwise kill the real writer's poll on every
+        // watchdog restart pass.
+        if (token && transport === "poll" && ownedLoop) {
+          await api("getUpdates", { offset, timeout: 0 });
+        }
       } catch {
         /* ignore */
       }
-      if (loopPromise) await loopPromise.catch(() => {});
+      if (loopPromise) {
+        await loopPromise.catch(() => {});
+        loopPromise = null;
+      }
       try {
         writerLock?.release?.();
       } catch {
         /* */
       }
       writerLock = null;
+      writerStandby = false;
     },
     status() {
       return {
@@ -1139,6 +1165,7 @@ export function createTelegramChannel(cfg) {
         ownerChatId: ownerChatId ? String(ownerChatId) : null,
         singleWriter,
         writerLock: Boolean(writerLock?.ok),
+        standby: writerStandby,
         running: enabled && loopAlive && !stopped,
         loopAlive,
         stopped,
