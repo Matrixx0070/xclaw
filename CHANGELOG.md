@@ -1,3 +1,35 @@
+## 3.199.0 (2026-08-25)
+
+- TEST (sweep #15 — the Telegram webhook **wiring**, not the verifier; a coverage
+  blind spot, not a live leak). Sweeps #12–#14 pinned wrong-credential *acceptance*
+  on self-authenticating gates. This one is different: the pure verifier
+  `verifyTelegramWebhookSecret()` is already unit-tested for the wrong-secret reject
+  (`telegram-p0`), so the compare is covered — but a pure-function test proves nothing
+  about the **call site**. `/channel/telegram/webhook` is deliberately EXEMPT from the
+  gateway's main auth gate (`isProtectedPath("/channel/telegram/webhook") === false` —
+  it self-authenticates with Telegram's secret header instead of a Bearer), so the
+  ONLY thing between a forged inbound POST and `handleUpdate()` driving the bot is one
+  line in `handleWebhookRequest` (`src/channels/telegram/index.mjs`):
+  `if (!v.ok) return { ok: false, ...v };`. NO test drove that wiring — the only
+  references to `handleWebhookRequest` were its definition and the gateway call site.
+  Deleting the refusal (so a POST with a WRONG or MISSING secret is processed as a
+  genuine update) left the full suite **green (3507/0)**. This is the sweep #6
+  wiring-defect class on an intentionally auth-exempt route: a regression dropping the
+  check would ship, and an attacker reaching the exempt path could inject arbitrary
+  inbound updates.
+- `test/telegram-webhook-wiring.test.mjs` closes it by driving the real handler
+  through `createTelegramChannel` + a mock Bot API, observing the **side effect**
+  (did `handleUpdate` run?) rather than the return value alone: correct secret →
+  `{ok:true}` AND ≥1 outbound call (the pairing reply fired); wrong secret →
+  `{ok:false, reason:"bad_secret"}` AND **zero** outbound (the forged update was never
+  processed); missing header → `missing_secret_header` + zero outbound; no configured
+  secret → fails CLOSED (`secret_not_configured`) + zero outbound. A non-matching
+  `allowedChatIds` forces the deterministic no-LLM pairing branch (`allowWhenEmpty`
+  defaults true, so an empty allowlist would send the DM to the agent). Mutation-proven
+  both directions: RED (3/4) when the refusal is dropped, RED (4/4) when the guard is
+  inverted to `if (v.ok)`, GREEN (4/4) on the real code. No production code changed —
+  `src/channels/telegram/index.mjs` is byte-identical (sha256 b523645f…).
+
 ## 3.198.0 (2026-08-25)
 
 - TEST (sweep #14 — credential-**acceptance** coverage on the computer-control
