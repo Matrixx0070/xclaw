@@ -1,3 +1,38 @@
+## 3.200.0 (2026-08-25)
+
+- TEST (sweep #16 — the `/stop` gate's config-driven **fail-closed** branches; a
+  coverage blind spot, not a live leak). `/stop` is the session kill-switch: an
+  accepted request aborts every running loop and drains WS+SSE. Sweep #16 began as
+  an accept-symmetry check, but the accept side was already pinned twice
+  (`stop-hmac` "accepts valid signature" + `stop-hmac-canonical` "accepts reordered
+  body") and the token accept/reject too. Reading the source surfaced the real gap:
+  the two branches that only fire when a deployment is **misconfigured** —
+  `authorizeStop` refusing when a prod/strict/`requireAuth` gateway has NO token
+  (`STOP_AUTH_REQUIRED`, `stop-auth.mjs:86`), and `verifyStopSignature` refusing when
+  hmac is required but NO secret is set (`STOP_HMAC_REQUIRED`, `stop-auth.mjs:39`).
+  Both are the defense-in-depth that stops a fat-fingered prod deploy from shipping
+  an unauthenticated kill-switch. Neither reject code was asserted anywhere — the
+  only occurrences of `STOP_AUTH_REQUIRED`/`STOP_HMAC_REQUIRED` in the whole suite
+  were descriptive strings in `gateway-route-coverage`'s routes map. Proof they were
+  blind: neutering `if (prod/strict/requireAuth)` to `if (false)` — so an
+  unconfigured prod gateway falls through to `{ok:true, skipped, no_token_lab}` and
+  accepts ANY unauthenticated `/stop` — left the full suite **green (3511/0)**; same
+  for `const required = false` in the hmac branch.
+- `test/stop-auth-failclosed.test.mjs` closes it by pinning the third row of each
+  decision table ("required, but nothing configured → refuse") plus, for symmetry so
+  a mutation that *closes* the deliberately-open lab path is also caught, the
+  "not-required, nothing configured → skip" row: prod/strict/`requireAuth` + no token
+  → `STOP_AUTH_REQUIRED`; lab + no token → open (`no_token_lab`); hmac required + no
+  secret → `STOP_HMAC_REQUIRED`; hmac unset + no secret → skipped. One case drives the
+  wired route (`handleStopAll`) to prove the decision reaches an actual **HTTP 401**,
+  even for a dry-run body (auth is checked before the dry-run bypass). Override env
+  (`XCLAW_STOP_TOKEN`/`XCLAW_GATEWAY_TOKEN`/`XCLAW_STOP_AUTH`/`XCLAW_STOP_HMAC`/
+  `XCLAW_STOP_HMAC_SECRET`) is neutralized so cfg drives deterministically.
+  Mutation-proven both directions: RED (4/7 — the 3 token rejects + the wired 401)
+  when the prod branch is neutered, RED (1/7 — the hmac reject) when the hmac branch
+  is neutered, GREEN (7/7) on the real code. No production code changed —
+  `src/gateway/stop-auth.mjs` is byte-identical (sha256 73d23e9a…). Suite 3518/0.
+
 ## 3.199.0 (2026-08-25)
 
 - TEST (sweep #15 — the Telegram webhook **wiring**, not the verifier; a coverage
