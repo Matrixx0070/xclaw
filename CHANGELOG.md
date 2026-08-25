@@ -1,3 +1,48 @@
+## 3.187.0 (2026-08-25)
+
+- SECURITY/TEST — mutation sweep of the approval GATE itself
+  (`src/security/approvals.mjs`), the counterpart to batches A–E which swept its
+  caller. Twelve enforcement lines in `authorizeInner`/`needsApproval` were
+  replaced with no-ops one at a time against the full suite; nine were caught,
+  three were not. The gate could refuse nothing in three ways and 3042 tests
+  stayed green:
+  - `if (!isExecCommandAllowed(name, args))` — the operator's
+    `security.execAllowlist` / `execPatterns`. `commandMatchesExecAllowlist` has
+    its own suite and exactly one call site in the product (approvals.mjs:210),
+    reached only from this refusal; no test anywhere sets the config key, so the
+    allowlist was inert product-wide with nothing to notice.
+  - `if (q && q.ok === false)` — the workspace quota preflight.
+    `authorizeQuotaPreflight` has four dedicated test files, every one of which
+    imports it directly and never builds a gate. It too has one call site, and
+    `src/security/workspace-quota.mjs` is consumed only through it — with the
+    refusal gone the whole subsystem measured, warned, tripped its circuit and
+    then let the write proceed.
+  - `if (critical) return true;` — the novel-danger rule, and the most serious
+    of the three. `security.requireApproval` defaults to `EXEC_TOOLS`
+    (bash/shell/exec/…) with no file tools in it, so the name-list line below
+    says "auto" for a `file_write` however dangerous. This one line is the only
+    reason a critical-tier write pends under the shipped default: exactly the
+    live-fired v3.126.0 behaviour, where an outside-workspace write used to
+    auto-run with no record.
+  Same shape as every earlier finding — the pure half exhaustively covered, the
+  call site not — and no product code needed changing: the enforcement was
+  correct, only unpinned.
+- TEST — `test/approval-gate-enforcement.test.mjs` closes all three, both
+  directions, one field apart: the command, the byte ceiling, the target path.
+  Each was verified red under its own single mutation (`# fail 1`, and only its
+  own case) and green reverted. The exec and quota pairs set
+  `autoApprove` + `criticalOverride: "legacy"` so the approval decision cannot
+  become what stops the call; the critical pair must do the opposite, running
+  the shipped defaults and asserting a human was ASKED — under the mutant the
+  same call returns `mode:"auto"` with `onPending` never fired. `awaitingHuman`
+  is `false` on a deny, which is the point of the field: an operator answer is
+  final, and reading `pendingId` as pendency was the 3.180.0 bug.
+- Note — the gate's `check()` (approvals.mjs:536) has zero callers in `src/`,
+  `bin/` or `test/` and is a weaker duplicate of `authorize` (no risk argument,
+  so none of the A2/critical logic). Left in place as part of an exported
+  object's public shape; recorded here as a deletion candidate.
+  3048 tests, 0 failures.
+
 ## 3.186.0 (2026-08-25)
 
 - SECURITY — the gateway belt for browser-tab calls failed OPEN. `loop.mjs`
