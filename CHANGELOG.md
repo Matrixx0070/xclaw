@@ -1,3 +1,13 @@
+## 3.179.1 (2026-08-25)
+
+- COMPLETION FRICTION FIX (found live while proving W3, obj_mt8e2yrr): a
+  mission whose deterministic api verify checks ALL PASS could still land
+  awaiting_human when the model skipped the state block and answered in
+  under 40 characters — the prose-length heuristic gated the deterministic
+  gate itself. Checks now waive the heuristic on both natural-stop paths:
+  ground truth beats prose length. Fail-closed unchanged — failing checks
+  still directive/escalate exactly as before (regression-tested both ways).
+
 ## 3.179.0 (2026-08-25)
 
 - W3 (30-day plan) — THE LEARNING WRITE-PATH, the last unstarted plan item:

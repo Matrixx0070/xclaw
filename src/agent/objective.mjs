@@ -758,14 +758,25 @@ async function runObjectiveInner(cfg, opts = {}) {
       const prose = stripStateBlocks(text).trim();
       const modelEndedTurn = seg?.stopReason === "natural" || seg?.stopReason === "hook";
       const openCriteria = obj.criteria.filter((c) => !c.done);
-      if (modelEndedTurn && prose.length >= 40 && !openCriteria.length) {
+      // Deterministic checks waive the prose-length heuristic: a mission with
+      // api verify checks that all pass is provably complete no matter how
+      // terse the model's answer was (live: a 1-tool-call file mission ended
+      // awaiting_human because its answer was under 40 chars while its
+      // file_equals check passed — obj_mt8e2yrr, 2026-08-25). The gate stays
+      // fail-closed: failing checks still directive/escalate as before.
+      const hasApiChecks = Array.isArray(obj.verify) && obj.verify.length > 0;
+      if (modelEndedTurn && (prose.length >= 40 || hasApiChecks) && !openCriteria.length) {
         {
-          const g = await deterministicGate("unverified", { finalAnswer: prose });
+          const g = await deterministicGate("unverified", {
+            finalAnswer:
+              prose ||
+              "(no final prose — completion earned by deterministic verify checks)",
+          });
           if (g === "continue") continue;
           if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
         }
         obj.status = "done";
-        obj.finalAnswer = prose.slice(0, 12000);
+        obj.finalAnswer = (prose || "(deterministic verify checks passed)").slice(0, 12000);
         if (Array.isArray(obj.progress)) {
           obj.progress.push("Segment ended naturally with a final answer (no state block emitted — accepted as complete).");
         }
@@ -801,14 +812,18 @@ async function runObjectiveInner(cfg, opts = {}) {
       // chance. (Common shape: the model recorded criterion EVIDENCE but
       // never flipped the done flag, so a strict open-criteria gate would
       // pause a genuinely finished mission — the exact friction seen live.)
-      if (modelEndedTurn && prose.length >= 40) {
+      if (modelEndedTurn && (prose.length >= 40 || hasApiChecks)) {
         {
-          const g = await deterministicGate("unverified", { finalAnswer: prose });
+          const g = await deterministicGate("unverified", {
+            finalAnswer:
+              prose ||
+              "(no final prose — completion earned by deterministic verify checks)",
+          });
           if (g === "continue") continue;
           if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
         }
         obj.status = "done";
-        obj.finalAnswer = prose.slice(0, 12000);
+        obj.finalAnswer = (prose || "(deterministic verify checks passed)").slice(0, 12000);
         if (Array.isArray(obj.progress)) {
           obj.progress.push("Completed on a natural final answer after a state-block reminder (criteria flags not machine-set this segment).");
         }
@@ -926,7 +941,7 @@ ${missing || JSON.stringify(vUpdate).slice(0, 800)}`;
       // resumable, with the model's actual answer surfaced (never a bare
       // "lost state" error).
       obj.status = "awaiting_human";
-      if (prose) obj.finalAnswer = prose.slice(0, 12000);
+      if (prose) obj.finalAnswer = (prose || "(deterministic verify checks passed)").slice(0, 12000);
       obj.humanQuestion =
         "The mission was cut off without a machine-readable state block — its partial answer is above. Reply to continue, or /objective stop.";
       await saveObjective(cfg, obj);

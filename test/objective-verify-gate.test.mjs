@@ -317,3 +317,55 @@ describe("verify derivation + model-check sanitization", () => {
     assert.ok(obj.verify.every((c) => c.source === "model"));
   });
 });
+
+// Live obj_mt8e2yrr (2026-08-25): a 1-tool-call mission with a PASSING
+// file_equals check ended awaiting_human because the model emitted no state
+// block and its prose was under 40 chars — the deterministic gate was never
+// consulted. Checks now waive the prose-length heuristic.
+describe("terse no-state-block completion with passing api checks", () => {
+  it("closes verified on a natural stop with passing checks and no prose", async () => {
+    const { default: fsn } = await import("node:fs");
+    const cfg = await cfgTmp();
+    const wd = await workDirTmp();
+    fsn.writeFileSync(path.join(wd, "w3.txt"), "proof");
+    const res = await runObjective(cfg, {
+      objective: "create w3.txt with proof",
+      workingDir: wd,
+      verify: [{ type: "file_equals", path: "w3.txt", content: "proof" }],
+      runSegment: async () => ({
+        text: "Done.", // < 40 chars, NO state block — the live shape
+        turns: 1,
+        toolTrace: [{}],
+        stopReason: "natural",
+      }),
+      notify: async () => {},
+    });
+    assert.equal(res.status, "done", "passing checks must close the mission");
+    const onDisk = await loadObjective(cfg, res.id);
+    assert.equal(onDisk.verdict, "verified", "closure earned by checks, not prose");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await fs.rm(wd, { recursive: true, force: true });
+  });
+
+  it("failing checks still never close on a terse natural stop", async () => {
+    const cfg = await cfgTmp();
+    const wd = await workDirTmp(); // file absent → check fails
+    const res = await runObjective(cfg, {
+      objective: "create w3.txt with proof",
+      workingDir: wd,
+      verify: [{ type: "file_equals", path: "w3.txt", content: "proof" }],
+      runSegment: async () => ({
+        text: "Done.",
+        turns: 1,
+        toolTrace: [{}],
+        stopReason: "natural",
+      }),
+      notify: async () => {},
+    });
+    assert.notEqual(res.status, "done", "failing checks must not close");
+    const onDisk = await loadObjective(cfg, res.id);
+    assert.notEqual(onDisk.verdict, "verified");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await fs.rm(wd, { recursive: true, force: true });
+  });
+});
