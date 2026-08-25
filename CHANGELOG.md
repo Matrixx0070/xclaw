@@ -1,3 +1,41 @@
+## 3.186.0 (2026-08-25)
+
+- SECURITY — the gateway belt for browser-tab calls failed OPEN. `loop.mjs`
+  wrapped the whole belt in one `try`: resolve role, ask the fabric hooks for a
+  verdict, dispatch if permitted — and its `catch (beltErr)` dispatched the call
+  anyway, with the error bound and never read. No event, no log, and the
+  metadata the normal path attaches (`plane`, `durationMs`) lost. Any throw in
+  the DECISION phase therefore performed the ACTION unchecked. A second defect
+  sat in the same block: when the dispatch INSIDE the try threw, the catch
+  dispatched a second time — one browser action executed twice.
+  `test/loop-browser-hook-enforcement.test.mjs` had noted the fail-open and
+  declined to test it, reasoning that "today's hooks return typed results and do
+  not throw". True of the two entry points, false of the graph beneath them:
+  `beforeInput` → `requireTabLease` → `acquireTabLease` → `withFabricLock` →
+  `fs.mkdir(fabricRoot())`, uncaught the whole way. Under
+  `XCLAW_FABRIC_ENFORCE` with auto-acquire, an unwritable fabric root — full
+  disk, revoked mount, stale `XCLAW_FABRIC_DIR` — turned a lease requirement
+  into a browser action with no lease and no verdict at all. The stronger the
+  enforcement config, the more code runs inside the try and the more ways it
+  has to fail open. Decision and action are now separate phases: hook errors
+  deny with a typed `[xclaw-hooks] HOOK_ERROR:` result the model sees and a
+  `security`/`browser_belt_error` event carrying the cause, and
+  `toolRouter.dispatch` runs exactly once, outside the try — so a dispatch
+  throw propagates like every other tool's instead of re-running the action.
+  Not reachable on the live gateway today (`fabricEnforce()` is off there, so no
+  lease work runs), which is what made the fix safe to land unattended.
+- TEST — `test/loop-belt-failclosed.test.mjs` pins it, both directions under one
+  config. The throw is forced hermetically by pointing `XCLAW_FABRIC_DIR` under
+  a parent that is a regular FILE, so the recursive `mkdir` raises `ENOTDIR`;
+  mode bits would not do, since the suite runs as root and root ignores them.
+  Verified against the unfixed loop: the call reached the tool (the schema's
+  `InputValidationError` came back), which is the fail-open. The mirror changes
+  only the fabric root and must reach dispatch, so a belt that refused every
+  browser call cannot satisfy the pair. Also required
+  `XCLAW_ROLE_FROM_ENV=1`: strict mode ignores `XCLAW_AGENT_ROLE` and defaults
+  to `observer`, which the hook denies for motor before any lease is touched.
+  3042 tests, 0 failures.
+
 ## 3.185.0 (2026-08-25)
 
 - TEST — the two suite flakes seen across nine full runs are fixed at the root.

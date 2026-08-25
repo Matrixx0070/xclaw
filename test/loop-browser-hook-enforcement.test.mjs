@@ -45,11 +45,13 @@
  * a lease heartbeat timer that outlives the test. The role is pinned so the
  * pair differs in exactly one field.
  *
- * NOT covered here, and worth knowing: the belt's catch is fail-OPEN — if a
- * hook throws rather than returning {ok:false}, control lands in `catch
- * (beltErr)` and dispatches anyway. Today's hooks return typed results and do
- * not throw, so there is no behaviour to pin; a test asserting the current
- * outcome would only cement the fallback.
+ * This header used to say the belt's fail-OPEN catch had "no behaviour to pin,
+ * because today's hooks return typed results and do not throw". That was true
+ * of the two entry points and wrong about the graph beneath them — beforeInput
+ * → requireTabLease → acquireTabLease → fs.mkdir(fabricRoot) throws, and the
+ * catch dispatched the call anyway. Reproduced and fixed on 2026-08-25
+ * (v3.186.0); the coverage lives in test/loop-belt-failclosed.test.mjs. Read
+ * the transitive call graph, not the signature of the function you call.
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";

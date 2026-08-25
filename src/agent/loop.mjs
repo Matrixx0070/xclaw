@@ -1546,13 +1546,21 @@ export async function runAgentLoop(options) {
             let dispatchArgs = args;
             // A3 gateway belt: fabric hooks for browser tab tools before computer plane
             if (name === "xclaw_browser_tab" || name === "browser_tab") {
+              // Decision and action are deliberately in SEPARATE phases. The
+              // hooks return typed verdicts, but the graph beneath them can
+              // throw (beforeInput → requireTabLease → acquireTabLease →
+              // fs.mkdir on the fabric root), and a single try spanning both
+              // meant any such throw dispatched the call unchecked — no lease,
+              // no verdict, error swallowed. A throw here now DENIES.
+              let hr = null;
+              let beltErr = null;
               try {
                 const act = args?.url ? "navigate" : args?.jsCode ? "evaluate" : args?.screenshot ? "observe" : "act";
                 const resolvedRole = await resolveRole({
                   sessionId,
                   agentId: sessionId,
                 });
-                const hr = act === "navigate"
+                hr = act === "navigate"
                   ? await beforeNavigate({
                       url: args.url,
                       tabId: args.tabId,
@@ -1571,31 +1579,26 @@ export async function runAgentLoop(options) {
                       action: act,
                       jsCode: args.jsCode,
                     });
-                if (hr && hr.ok === false) {
-                  result = {
-                    isError: true,
-                    content: [{ type: "text", text: `[xclaw-hooks] ${hr.code}: ${hr.reason}` }],
-                    metadata: hr,
-                  };
-                } else {
-                  const routed = await toolRouter.dispatch({
-                    callId: call.id,
-                    name,
-                    args: dispatchArgs,
-                    plan: args.systemRunPlan || null,
-                    signal,
-                  });
-                  result = routed.result ?? {
-                    isError: !routed.ok,
-                    content: [{ type: "text", text: routed.error || "tool failed" }],
-                  };
-                  if (hr?.actionId && result && typeof result === "object") {
-                    result.metadata = { ...(result.metadata || {}), actionId: hr.actionId, hook: hr, plane: routed.plane };
-                  } else if (result && typeof result === "object") {
-                    result.metadata = { ...(result.metadata || {}), plane: routed.plane, durationMs: routed.durationMs };
-                  }
-                }
-              } catch (beltErr) {
+              } catch (e) {
+                beltErr = e;
+              }
+              if (beltErr) {
+                const reason = beltErr?.message || String(beltErr);
+                onEvent({ type: "security", phase: "browser_belt_error", tool: name, error: reason });
+                result = {
+                  isError: true,
+                  content: [
+                    { type: "text", text: `[xclaw-hooks] HOOK_ERROR: enforcement check failed — ${reason}` },
+                  ],
+                  metadata: { ok: false, code: "HOOK_ERROR", reason, phase: "belt" },
+                };
+              } else if (hr && hr.ok === false) {
+                result = {
+                  isError: true,
+                  content: [{ type: "text", text: `[xclaw-hooks] ${hr.code}: ${hr.reason}` }],
+                  metadata: hr,
+                };
+              } else {
                 const routed = await toolRouter.dispatch({
                   callId: call.id,
                   name,
@@ -1607,6 +1610,11 @@ export async function runAgentLoop(options) {
                   isError: !routed.ok,
                   content: [{ type: "text", text: routed.error || "tool failed" }],
                 };
+                if (hr?.actionId && result && typeof result === "object") {
+                  result.metadata = { ...(result.metadata || {}), actionId: hr.actionId, hook: hr, plane: routed.plane };
+                } else if (result && typeof result === "object") {
+                  result.metadata = { ...(result.metadata || {}), plane: routed.plane, durationMs: routed.durationMs };
+                }
               }
             } else {
               const routed = await toolRouter.dispatch({
