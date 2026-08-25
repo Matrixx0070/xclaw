@@ -1,3 +1,31 @@
+## 3.210.0 (2026-08-25)
+
+- TEST (sweep #28 — the **Telegram `sug` suggestion-button sender-authorization
+  gate** under the DEFAULT `pairing` policy, `authorizeTelegramCallback` in
+  `channels/telegram/callback-auth.mjs`; a coverage blind spot, not a live leak;
+  production byte-identical). Tapping a `sug` inline button re-injects its stored
+  prompt as a user message and RUNS the agent
+  (`channels/telegram/index.mjs` ~L534), so who may activate a suggestion is a
+  command-execution authorization decision, not cosmetic. Under `pairing` — the
+  default (`dmPolicy = opts.dmPolicy || "pairing"`) — a `sug` tap is allowed only
+  by a three-way OR: the chat is paired, OR the individual sender is paired, OR
+  the sender is allowlisted; otherwise `CALLBACK_DENY`.
+- Proof it was a blind spot: the dedicated `test/telegram-callback-auth.test.mjs`
+  covered `apr`/`pair` (owner check) and the `sug`+`allowlist` deny, but had
+  **NO** `sug`+`pairing` test. The one existing `sug`+`pairing` case
+  (`RATE_LIMITED`) uses the owner as the tapper, so it short-circuits at the
+  owner check and never reaches this block. Replacing the whole three-way OR with
+  `if (false)` (accept anyone) left the FULL suite green (3583/0): a silent
+  revert of this default-policy gate would ship unnoticed.
+- Close: `test/telegram-callback-auth.test.mjs` (+4) pins each arm — the unpaired,
+  non-allowlisted sender is DENIED; a sender paired by `fromId` is allowed; a
+  sender paired only by `chatId` is allowed; an allowlisted-but-unpaired sender
+  is allowed. Mutation-verified both directions: `if (false)` (accept anyone)
+  reddens the deny test only (`# fail 1`); `if (true)` (deny everyone) reddens
+  the three allow tests (`# fail 3`); the pristine file leaves all four green.
+- No production code changed — `callback-auth.mjs` is byte-identical
+  (sha256 `59ff0f2e…`).
+
 ## 3.209.0 (2026-08-25)
 
 - TEST (sweep #27 — the **swarm ToolPolicy egress gate**,
