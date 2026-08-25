@@ -85,6 +85,23 @@ export function normalizeBudget(budget) {
   return out.maxUsd == null && out.maxToolCalls == null ? null : out;
 }
 
+/**
+ * Stamp operator-provided verify checks with their trust level.
+ *
+ * objective-verify.mjs documents three levels — "api" (operator), "runtime"
+ * (derived), "model" (proposed) — but only the latter two were ever written
+ * down, leaving operator checks identifiable solely by the ABSENCE of a
+ * field. Completion logic has to tell a mission's own contract apart from a
+ * baseline-armed suite check, so the level is recorded explicitly here, at
+ * the one boundary operator checks enter through.
+ */
+export function stampOperatorChecks(verify) {
+  if (!Array.isArray(verify) || !verify.length) return null;
+  return verify.map((c) =>
+    c && typeof c === "object" && !c.source ? { ...c, source: "api" } : c
+  );
+}
+
 /** Migrate pre-Trust-Sprint objective JSONs: counters + gate fields. */
 export function ensureCounters(obj) {
   if (!obj || typeof obj !== "object") return obj;
@@ -99,6 +116,11 @@ export function ensureCounters(obj) {
   if (obj.pendingCompletion === undefined) obj.pendingCompletion = null;
   if (obj.inFlightSegment === undefined) obj.inFlightSegment = null;
   if (obj.verifyDeriveTried === undefined) obj.verifyDeriveTried = false;
+  // Operator checks predating the source stamp: an unstamped check can only
+  // have come from newObjective (runtime and model checks are stamped where
+  // they are derived), so hydrate it to its real trust level rather than
+  // leaving completion logic to infer trust from a missing field.
+  if (Array.isArray(obj.verify)) obj.verify = stampOperatorChecks(obj.verify) || [];
   // W3a: richer durable state + operator guardrails on pre-W3a JSONs.
   if (!Array.isArray(obj.assumptions)) obj.assumptions = [];
   if (typeof obj.planVersion !== "number")
@@ -154,7 +176,7 @@ export function newObjective({
     // Deterministic completion checks (jobs/verify.mjs shape). When set,
     // NO done-path may complete the mission while any check fails — the
     // verdict is earned, not narrated (S2 semantics, wired here in E-A).
-    verify: Array.isArray(verify) && verify.length ? verify : null,
+    verify: stampOperatorChecks(verify),
     verifyDeriveTried: false, // Trust Sprint: runtime derivation attempted once
     verdict: null, // "verified" | "model-verified" | "unverified" | "owner-approved" — set at done
     // Completion held for owner approval (fail-closed gate, no trusted checks)

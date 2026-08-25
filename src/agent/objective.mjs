@@ -342,8 +342,15 @@ async function persistOutcome(cfg, obj) {
     try {
       const { reflectOnMission } = await import("../memory/reflection.mjs");
       const r = await reflectOnMission(cfg, obj);
-      if (r?.written) {
-        console.log(`[objective] reflection wrote ${r.written} lesson(s) for ${obj.id}`);
+      if (r) {
+        // written:0 is a real outcome (trivial mission, designed empty-lessons
+        // rule) — logging it distinguishes "nothing to learn" from a silent
+        // reflection failure (r === null).
+        console.log(
+          r.written
+            ? `[objective] reflection wrote ${r.written} lesson(s) for ${obj.id}`
+            : `[objective] reflection: no transferable lessons for ${obj.id}`
+        );
       }
     } catch {
       /* reflection is additive — never block on it */
@@ -758,14 +765,22 @@ async function runObjectiveInner(cfg, opts = {}) {
       const prose = stripStateBlocks(text).trim();
       const modelEndedTurn = seg?.stopReason === "natural" || seg?.stopReason === "hook";
       const openCriteria = obj.criteria.filter((c) => !c.done);
-      // Deterministic checks waive the prose-length heuristic: a mission with
-      // api verify checks that all pass is provably complete no matter how
-      // terse the model's answer was (live: a 1-tool-call file mission ended
+      // Operator checks waive the prose-length heuristic: a mission whose own
+      // stated contract passes is provably complete no matter how terse the
+      // model's answer was (live: a 1-tool-call file mission ended
       // awaiting_human because its answer was under 40 chars while its
       // file_equals check passed — obj_mt8e2yrr, 2026-08-25). The gate stays
       // fail-closed: failing checks still directive/escalate as before.
-      const hasApiChecks = Array.isArray(obj.verify) && obj.verify.length > 0;
-      if (modelEndedTurn && (prose.length >= 40 || hasApiChecks) && !openCriteria.length) {
+      //
+      // ONLY operator checks earn the waiver. baselineArmChecks arms a
+      // runtime check precisely BECAUSE it passed before any work happened,
+      // so a green suite is evidence of no REGRESSION, never of completion —
+      // waiving on one would close a zero-work mission as "verified" on a
+      // tautology, which is the spec-gaming shape the Trust Sprint closed.
+      // Model checks never close a mission at all (objective-verify.mjs).
+      const hasOperatorChecks =
+        Array.isArray(obj.verify) && obj.verify.some((c) => c?.source === "api");
+      if (modelEndedTurn && (prose.length >= 40 || hasOperatorChecks) && !openCriteria.length) {
         {
           const g = await deterministicGate("unverified", {
             finalAnswer:
@@ -812,7 +827,11 @@ async function runObjectiveInner(cfg, opts = {}) {
       // chance. (Common shape: the model recorded criterion EVIDENCE but
       // never flipped the done flag, so a strict open-criteria gate would
       // pause a genuinely finished mission — the exact friction seen live.)
-      if (modelEndedTurn && (prose.length >= 40 || hasApiChecks)) {
+      // Prose keeps that leniency; checks do not. With no prose at all there
+      // is no completion assertion to be lenient toward, so a mission whose
+      // operator checks cover only SOME criteria still routes to the
+      // ground-truth verifier segment instead of closing over open criteria.
+      if (modelEndedTurn && (prose.length >= 40 || (hasOperatorChecks && !openCriteria.length))) {
         {
           const g = await deterministicGate("unverified", {
             finalAnswer:

@@ -369,3 +369,102 @@ describe("terse no-state-block completion with passing api checks", () => {
     await fs.rm(wd, { recursive: true, force: true });
   });
 });
+
+// The waiver above is COMPLETION EVIDENCE, and only the operator's own
+// checks are that. baselineArmChecks arms a runtime check precisely BECAUSE
+// it passed before any work happened, so it can prove no regression and
+// never proves completion — waiving on one lets a mission that did nothing
+// at all close as "verified", the spec-gaming shape the Trust Sprint closed.
+describe("only operator checks waive the prose gate", () => {
+  it("a zero-work natural stop with a green suite is HELD, not closed verified", async () => {
+    const { default: fsn } = await import("node:fs");
+    const cfg = await cfgTmp();
+    const wd = await workDirTmp();
+    fsn.writeFileSync(
+      path.join(wd, "package.json"),
+      JSON.stringify({ name: "demo", scripts: { test: 'node -e "process.exit(0)"' } })
+    );
+    const res = await runObjective(cfg, {
+      objective: "migrate all the records",
+      workingDir: wd,
+      runSegment: async () => ({
+        text: "Done.", // < 40 chars, no state block, and zero tool calls
+        turns: 1,
+        toolTrace: [],
+        stopReason: "natural",
+      }),
+      notify: async () => {},
+    });
+    const onDisk = await loadObjective(cfg, res.id);
+    assert.ok(
+      (onDisk.verify || []).some((c) => c.source === "runtime"),
+      "precondition: the green suite WAS baseline-armed"
+    );
+    assert.notEqual(res.status, "done", "a tautological check must not close a mission");
+    assert.notEqual(onDisk.verdict, "verified");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await fs.rm(wd, { recursive: true, force: true });
+  });
+
+  it("operator checks are stamped source:api so they still earn the waiver", async () => {
+    const { default: fsn } = await import("node:fs");
+    const cfg = await cfgTmp();
+    const wd = await workDirTmp();
+    fsn.writeFileSync(path.join(wd, "w3.txt"), "proof");
+    const res = await runObjective(cfg, {
+      objective: "create w3.txt with proof",
+      workingDir: wd,
+      verify: [{ type: "file_equals", path: "w3.txt", content: "proof" }],
+      runSegment: async () => ({ text: "Done.", turns: 1, toolTrace: [{}], stopReason: "natural" }),
+      notify: async () => {},
+    });
+    const onDisk = await loadObjective(cfg, res.id);
+    assert.equal(onDisk.verify[0].source, "api", "operator trust level is recorded, not inferred");
+    assert.equal(res.status, "done");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await fs.rm(wd, { recursive: true, force: true });
+  });
+
+  it("checks covering only SOME criteria never close over open ones", async () => {
+    const { default: fsn } = await import("node:fs");
+    const cfg = await cfgTmp();
+    const wd = await workDirTmp();
+    fsn.writeFileSync(path.join(wd, "w3.txt"), "proof");
+    let seg = 0;
+    const res = await runObjective(cfg, {
+      objective: "write w3.txt AND migrate the records",
+      workingDir: wd,
+      verify: [{ type: "file_equals", path: "w3.txt", content: "proof" }],
+      runSegment: async () => {
+        seg += 1;
+        // Segment 1 records two criteria, one still open; every later
+        // segment ends naturally with no state block and no real answer.
+        if (seg === 1) {
+          return {
+            text: block({
+              status: "continue",
+              criteria: [
+                { id: "c1", text: "w3.txt written", done: true },
+                { id: "c2", text: "records migrated", done: false },
+              ],
+            }),
+            turns: 1,
+            toolTrace: [{}],
+            stopReason: "natural",
+          };
+        }
+        return { text: "Done.", turns: 1, toolTrace: [{}], stopReason: "natural" };
+      },
+      notify: async () => {},
+    });
+    const onDisk = await loadObjective(cfg, res.id);
+    assert.ok(
+      onDisk.criteria.some((c) => !c.done),
+      "precondition: a criterion is still machine-recorded OPEN"
+    );
+    assert.notEqual(res.status, "done", "a passing subset check must not close open criteria");
+    assert.notEqual(onDisk.verdict, "verified");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await fs.rm(wd, { recursive: true, force: true });
+  });
+});
