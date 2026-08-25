@@ -32,6 +32,7 @@ import { tryHandleCompletionRoute } from "./routes/completion.mjs";
 import { tryHandleProvidersRoute } from "./routes/providers.mjs";
 import { tryHandleChannelsRoute } from "./routes/channels.mjs";
 import { applyCors } from "./cors.mjs";
+import { assertBindSafety } from "./bind-guard.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import { attachVoiceWebSocket } from "./voice-ws.mjs";
 import fs from "node:fs/promises";
@@ -974,6 +975,21 @@ async function streamWebChatMessage(req, res, { message, sessionId, cfg, mode, v
 
 export async function startGateway({ root } = {}) {
   const cfg = await loadConfig();
+
+  // Bind safety, before anything is constructed or any socket is opened. A
+  // non-loopback host with no token publishes /agent, /config, /sessions and
+  // /hooks (command hooks EXECUTE shell) to every interface, and auth.check()
+  // answers `{ ok: true, mode: "open" }` for protected paths when no token is
+  // set outside prod — the bind guard is the only thing that stops it.
+  //
+  // The guard shipped wired in 3.76.1 (3ad09af) and lost its call site 34
+  // minutes later to an unrelated feature merge (c9a5b10) whose tree predated
+  // it. Nothing noticed for ~110 releases: both test files call
+  // assertBindSafety directly, so the pure function stayed green while the
+  // product stopped asking it. Keep this call adjacent to the config load.
+  const bindSafety = assertBindSafety(cfg);
+  if (!bindSafety.ok) throw new Error(`[xclaw] ${bindSafety.error}`);
+
   const uiRoot = path.join(root, "ui", "webchat");
   const controlRoot = path.join(root, "ui", "control");
 

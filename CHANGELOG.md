@@ -1,3 +1,43 @@
+## 3.188.0 (2026-08-25)
+
+- SECURITY (regression, not a coverage gap) — the gateway bind guard had **zero
+  production call sites**. `assertBindSafety` was wired into `startGateway` by
+  3ad09af (v3.76.1, 2026-08-12 16:29:12) and lost its call site 34 minutes later
+  to c9a5b10 ("feat(automations): schedule prompts…", 17:03:07), an unrelated
+  feature authored against a pre-guard tree. c9a5b10 is an ancestor of HEAD, so
+  from that commit until now the product never asked the guard anything, while
+  CHANGELOG (3.76.1) and `docs/GROK-PROGRESS.md:162` both kept advertising the
+  protection. Effect: `gateway.host` set to a non-loopback address with no token
+  bound and served, because `createGatewayAuth().check()` answers
+  `{ ok: true, mode: "open" }` for protected paths when no token is configured
+  outside prod — exposing `/agent`, `/config`, `/sessions` and `/hooks` (command
+  hooks EXECUTE shell) to every interface. The only remaining notice was
+  `validateConfig`'s advisory "gateway.host is 0.0.0.0 (public bind)" warning,
+  which refuses nothing. Confirmed empirically before the fix: `0.0.0.0` with no
+  token behaved identically to `127.0.0.1`.
+  Not currently exploitable on this host — the live gateway runs `profile: lab`,
+  `host: 127.0.0.1`, token set — but latent for any operator who opens the host.
+- SECURITY — guard re-wired in `startGateway`, deliberately EARLIER than the
+  original placement: adjacent to `loadConfig()` rather than just before
+  `server.listen`, so a refusal happens before channels, the computer subprocess
+  or any other resource is constructed. `XCLAW_GATEWAY_ALLOW_OPEN=1` and
+  `gateway.token` remain the two documented ways to bind wide on purpose.
+- TEST — `test/gateway-bind-guard-enforcement.test.mjs` pins the call site, four
+  cases, one field apart: public host with no token must refuse; loopback with
+  no token must not; public host WITH a token must not; public host with
+  `XCLAW_GATEWAY_ALLOW_OPEN=1` must not. Verified red under the single mutation
+  `if (false && !bindSafety.ok)` (`# fail 1`, only the refusal case) and green
+  reverted. No port is ever bound: `startGateway({})` is called with no `root`,
+  so a case that gets past the guard dies on the very next statement
+  (`path.join(root, "ui", "webchat")` → `TypeError`), which is the pass-through
+  marker the mirror cases assert on.
+- Note — the two existing files (`test/bind-safety-prod.test.mjs`,
+  `test/security-top-fixes.test.mjs`) both call `assertBindSafety` directly and
+  were correct the whole time. This is the sweep's recurring shape — pure half
+  covered, call site not — taken to its limit: the call site did not exist. A
+  guard with no callers is indistinguishable, in a green suite, from a guard
+  that works.
+
 ## 3.187.0 (2026-08-25)
 
 - SECURITY/TEST — mutation sweep of the approval GATE itself
