@@ -1,3 +1,34 @@
+## 3.209.0 (2026-08-25)
+
+- TEST (sweep #27 — the **swarm ToolPolicy egress gate**,
+  `ToolPolicy.canExecute` in `swarm/decompose/tool-policy.mjs`; a coverage blind
+  spot, not a live leak; production byte-identical). This is the operator egress
+  gate for the swarm tool plane: `createXclawToolBridge` instantiates it whenever
+  `cfg.swarm.decompose.tools.policy` is set (the bridge is built for the inbound
+  `/swarm` plane in `swarm/runtime.mjs`), and `tool-bridge.mjs` runs it BEFORE
+  the risk gate on EVERY tool — including `alwaysAllow` ones — so the operator's
+  deny beats the research bypass. It decides four things: blocklist
+  (`tool_blocked`), allowlist-mode tool names (`not_in_allowlist`),
+  network-egress deny (`egress_denied`), and a URL host-allowlist for any tool
+  carrying a `url` (`url_not_allowed`).
+- Proof it was a blind spot: that host match had a real bypass once — the
+  vendored form was `hostname.includes(entry)`, which let
+  `allowed.com.attacker.io` satisfy an allowlist of `allowed.com` (fixed
+  2026-08-24 to exact-host OR dot-suffix only). `canExecute` had **ZERO**
+  behavioural test — no test imported `tool-policy.mjs` and no bridge test set
+  `tools.policy` — so mutating the host match back to the vulnerable
+  `host.includes(entry)` left the FULL suite green (3575/0): a silent revert of a
+  known security fix would ship unnoticed.
+- Close: `test/swarm-tool-policy-egress.test.mjs` (+8) pins all four `canExecute`
+  decisions, with the substring-bypass rejection asserted BOTH at the pure
+  decision AND end-to-end through the bridge's `execute()` — proving the handler
+  actually HONORS the deny (blocked, never dispatched), not just that the
+  function returns the right object. Mutation-verified both directions: the
+  substring-bypass mutation reddens the decision test and the wiring test
+  (`# fail 2`); the pristine file leaves all 8 green.
+- No production code changed — `tool-policy.mjs` is byte-identical
+  (sha256 `f483693a…`).
+
 ## 3.208.0 (2026-08-25)
 
 - TEST (sweep #26 — the **OAuth callback `state` authenticator**,
