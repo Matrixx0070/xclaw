@@ -1,0 +1,120 @@
+/**
+ * Channel sender authorization — WHO may command the bot.
+ *
+ * `isSenderIdAllowed` (src/channels/allow-from.mjs) is the decision behind every
+ * channel access gate. It is used ONLY by createChannelPolicy (gateTelegram /
+ * allowedChatId / allowedDiscordChannel) — the Telegram callback path
+ * (authorizeTelegramCallback) has its OWN inline `allow.includes()` and does not
+ * touch it. In allowlist mode the live wiring is the sole gate to the agent:
+ *
+ *   // src/channels/telegram/index.mjs
+ *   if (dmPolicy === "allowlist") {
+ *     const gate = policy.gateTelegram(update);
+ *     if (!gate.ok) { recordTelegramDeny("allowlist"); return; }  // <- stops here
+ *   }
+ *
+ * Why this file exists (sweep #21, 3.204.0): NO test drove isSenderIdAllowed or
+ * gateTelegram's allow/deny. Mutating the core compare to accept anyone
+ * (`return allow.entries.includes(id)` -> `return true`) left the FULL suite
+ * green (3536/0): a configured allowlist would admit ANY chat id, so a chat NOT
+ * in `allowedChatIds` could drive the agent over Telegram. The webhook-wiring
+ * test (sweep #15) uses gateTelegram()=false only as a mechanism to reach the
+ * pairing branch and never distinguishes allow from deny (an outbound fires
+ * either way). These tests pin BOTH the pure gate and its wiring.
+ */
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { compileAllowlist, isSenderIdAllowed } from "../src/channels/allow-from.mjs";
+import { createChannelPolicy } from "../src/channels/policy.mjs";
+
+describe("channel sender authorization", () => {
+  describe("isSenderIdAllowed — the pure gate", () => {
+    it("allows a sender listed in a configured allowlist", () => {
+      assert.equal(isSenderIdAllowed(compileAllowlist(["555"]), "555", true), true);
+    });
+
+    it("DENIES a sender not in a configured allowlist", () => {
+      // The proven mutation: `return true` here admits every non-listed sender.
+      assert.equal(
+        isSenderIdAllowed(compileAllowlist(["555"]), "999", true),
+        false,
+        "a non-listed sender must be denied — accept-anything is a full channel-auth bypass"
+      );
+    });
+
+    // The compare is exact (`entries.includes(id)`). An embedding negative — a
+    // value that CONTAINS or is a PREFIX of an allowed id — is the only thing
+    // that separates `includes`/`startsWith` weakenings from a real `===` match.
+    it("DENIES a superstring of an allowed id (1000 vs 100)", () => {
+      assert.equal(isSenderIdAllowed(compileAllowlist(["100"]), "1000", true), false);
+    });
+    it("DENIES a prefix of an allowed id (100 vs 1000)", () => {
+      assert.equal(isSenderIdAllowed(compileAllowlist(["1000"]), "100", true), false);
+    });
+
+    it("wildcard '*' admits any sender", () => {
+      assert.equal(isSenderIdAllowed(compileAllowlist(["*"]), "anything", true), true);
+    });
+
+    it("empty allowlist honors the allowWhenEmpty policy (open vs fail-closed)", () => {
+      const empty = compileAllowlist([]);
+      assert.equal(isSenderIdAllowed(empty, "x", true), true, "open default admits");
+      assert.equal(isSenderIdAllowed(empty, "x", false), false, "fail-closed default denies");
+    });
+
+    it("a missing senderId against a configured allowlist is denied", () => {
+      assert.equal(isSenderIdAllowed(compileAllowlist(["555"]), undefined, true), false);
+    });
+
+    it("matches case-insensitively (username entries)", () => {
+      const allow = compileAllowlist(["Alice"]);
+      assert.equal(isSenderIdAllowed(allow, "alice", true), true);
+      assert.equal(isSenderIdAllowed(allow, "bob", true), false);
+    });
+  });
+
+  describe("gateTelegram — the wiring (allowlist mode)", () => {
+    const policy = createChannelPolicy({
+      channels: {
+        telegram: {
+          dmPolicy: "allowlist",
+          allowedChatIds: ["555"],
+          groupAllowFrom: ["777"],
+        },
+      },
+    });
+    const dm = (id) => ({ message: { chat: { id, type: "private" }, from: { id } } });
+    const group = (id) => ({ message: { chat: { id, type: "supergroup" } } });
+    const cbq = (id) => ({ callback_query: { message: { chat: { id, type: "private" } } } });
+
+    it("allows a DM from a listed chat", () => {
+      assert.equal(policy.gateTelegram(dm(555)).ok, true);
+    });
+
+    it("DENIES a DM from an unlisted chat (chat_not_allowed)", () => {
+      const g = policy.gateTelegram(dm(999));
+      assert.equal(g.ok, false);
+      assert.equal(g.reason, "chat_not_allowed");
+    });
+
+    it("uses the GROUP allowlist for group chats, distinct from the DM list", () => {
+      assert.equal(policy.gateTelegram(group(777)).ok, true, "a group id in groupAllowFrom passes");
+      assert.equal(
+        policy.gateTelegram(group(555)).ok,
+        false,
+        "a DM-only id must NOT pass the group gate"
+      );
+    });
+
+    it("extracts the chat id from callback_query updates too", () => {
+      assert.equal(policy.gateTelegram(cbq(555)).ok, true);
+      assert.equal(policy.gateTelegram(cbq(999)).ok, false);
+    });
+
+    it("rejects an update with no chat id (no_chat)", () => {
+      const g = policy.gateTelegram({});
+      assert.equal(g.ok, false);
+      assert.equal(g.reason, "no_chat");
+    });
+  });
+});

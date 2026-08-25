@@ -1,3 +1,32 @@
+## 3.204.0 (2026-08-25)
+
+- TEST (sweep #21 — the channel **sender-authorization gate**, `isSenderIdAllowed`
+  / `gateTelegram`; a coverage blind spot, not a live leak). This is a NEW authz
+  axis: distinct from gateway token auth (#1–#20) and from CORS response-read authz
+  (#19), it decides WHO — which chat id — may command the agent over Telegram /
+  Discord in allowlist or pairing mode. `isSenderIdAllowed(allow, senderId,
+  allowWhenEmpty)` is the decision behind every channel gate, yet it had ZERO
+  behavioural test: it is reached only through `createChannelPolicy`
+  (`gateTelegram` / `allowedChatId` / `allowedDiscordChannel`), and the Telegram
+  callback path (`authorizeTelegramCallback`) has its OWN inline `allow.includes()`
+  so its tests never exercised it. Proof it was blind: mutating the core compare to
+  admit everyone — `return allow.entries.includes(id)` → `return true` — left the
+  FULL suite **green (3536/0)**; a configured `allowedChatIds` allowlist would then
+  accept ANY chat id, letting a non-listed chat drive the agent (in allowlist mode
+  `if (!policy.gateTelegram(update).ok) return;` is the sole gate to the agent). The
+  webhook-wiring test (sweep #15) uses `gateTelegram()=false` only as a mechanism to
+  reach the pairing branch and never distinguishes allow from deny. Fix
+  (`test/channel-allow-policy.test.mjs`, +13) pins BOTH layers: the pure gate
+  (listed→allow, unlisted→deny, superstring/prefix embedding negatives so an
+  `includes`/`startsWith` weakening is caught, wildcard `*`, empty-list
+  `allowWhenEmpty` open-vs-fail-closed, missing-senderId deny, case-insensitive
+  match) AND the `gateTelegram` wiring (DM allow/deny with `reason:"chat_not_allowed"`,
+  the GROUP allowlist used distinctly from the DM list, `callback_query` chat-id
+  extraction, `no_chat`). Mutation-verified both directions: accept-anything
+  (`return true`) turns 7 deny tests RED; always-deny (`return false`) turns 5 allow
+  tests RED. Production code UNCHANGED — `allow-from.mjs` byte-identical (sha256
+  `4301b1ab…`). Suite **3549/0**.
+
 ## 3.203.0 (2026-08-25)
 
 - TEST (sweep #20 — the WebSocket **header carriers**' wrong-token rejection; a
