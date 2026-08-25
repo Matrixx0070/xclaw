@@ -229,9 +229,41 @@ export function terminalStatus(stopReason) {
     : stopReason;
 }
 
+/**
+ * Stage 3 — final-answer rescue plan. Hitting the turn budget mid-work used to
+ * discard EVERYTHING (live: a 5-node research swarm returned 0/5 ballots).
+ * The plan is pure: whether to rescue, the no-tools rescue message (an
+ * orchestrated segment overrides it — a segment boundary wants the mission
+ * state block, not a user-facing answer), how a rescued answer is stamped,
+ * and the stub when no rescue lands. The loop makes the provider call.
+ *
+ * @param {object} inp
+ * @param {object} [inp.cfg]
+ * @param {string|null} [inp.rescuePrompt]
+ * @param {number} inp.totalTurnCap
+ */
+export function planFinalAnswerRescue(inp) {
+  return {
+    enabled: inp.cfg?.agent?.finalAnswerRescue !== false,
+    userMessage: {
+      role: "user",
+      content:
+        inp.rescuePrompt ||
+        "Turn budget exhausted — no more tool calls are possible. " +
+          "Produce your final answer NOW from the work above. If you were asked " +
+          "for structured output (ballot, JSON, verdict), emit it based on what " +
+          "you found so far; state clearly what remains unverified.",
+    },
+    formatRescuedText: (text) =>
+      `${text}\n\n_[stopped at turn cap ${inp.totalTurnCap}; this is a best-effort final answer]_`,
+    stubText: `Stopped after ${inp.totalTurnCap} turns (turn cap).`,
+  };
+}
+
 export default {
   evaluateTurnPreflight,
   planPairingBackfill,
   computeStopReason,
   terminalStatus,
+  planFinalAnswerRescue,
 };

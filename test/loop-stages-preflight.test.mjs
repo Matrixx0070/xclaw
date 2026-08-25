@@ -283,3 +283,38 @@ describe("loop stage: stop-reason priority chain", () => {
     }
   });
 });
+
+// W2 stage 3 — final-answer rescue plan.
+import { planFinalAnswerRescue } from "../src/agent/loop-stages.mjs";
+
+describe("loop stage: final-answer rescue plan", () => {
+  it("enabled by default; agent.finalAnswerRescue:false disables", () => {
+    assert.equal(planFinalAnswerRescue({ cfg: {}, totalTurnCap: 90 }).enabled, true);
+    assert.equal(
+      planFinalAnswerRescue({ cfg: { agent: { finalAnswerRescue: false } }, totalTurnCap: 90 }).enabled,
+      false
+    );
+  });
+
+  it("default message demands a final answer; rescuePrompt overrides it (segments)", () => {
+    const d = planFinalAnswerRescue({ cfg: {}, totalTurnCap: 90 });
+    assert.equal(d.userMessage.role, "user");
+    assert.match(d.userMessage.content, /Turn budget exhausted/);
+    assert.match(d.userMessage.content, /remains unverified/);
+    const seg = planFinalAnswerRescue({
+      cfg: {},
+      rescuePrompt: "Emit the xclaw-objective-state block.",
+      totalTurnCap: 90,
+    });
+    assert.equal(seg.userMessage.content, "Emit the xclaw-objective-state block.");
+  });
+
+  it("rescued text is stamped best-effort with the cap; stub names the cap", () => {
+    const p = planFinalAnswerRescue({ cfg: {}, totalTurnCap: 45 });
+    assert.equal(
+      p.formatRescuedText("The answer is 42."),
+      "The answer is 42.\n\n_[stopped at turn cap 45; this is a best-effort final answer]_"
+    );
+    assert.equal(p.stubText, "Stopped after 45 turns (turn cap).");
+  });
+});

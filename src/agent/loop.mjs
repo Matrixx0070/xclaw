@@ -13,6 +13,7 @@ import {
   planPairingBackfill,
   computeStopReason,
   terminalStatus,
+  planFinalAnswerRescue,
 } from "./loop-stages.mjs";
 import { createProvider } from "./provider.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
@@ -1949,37 +1950,27 @@ export async function runAgentLoop(options) {
       // node stopped at maxTurns with only the stub text below, and the run
       // still claimed success). One more model call with NO tools asks for the
       // best answer from work done so far. Off via agent.finalAnswerRescue:false.
-      if (cfg.agent?.finalAnswerRescue !== false) {
+      // W2 stage 3 — the rescue plan (message, stamp, stub) is pure
+      // (loop-stages.mjs); the provider call stays here.
+      const rescuePlan = planFinalAnswerRescue({ cfg, rescuePrompt, totalTurnCap });
+      if (rescuePlan.enabled) {
         try {
           const rescue = await provider.chat({
-            messages: [
-              ...messages,
-              {
-                role: "user",
-                content:
-                  // orchestrated segments override this: a segment boundary
-                  // wants the mission state block, not a user-facing answer
-                  rescuePrompt ||
-                  "Turn budget exhausted — no more tool calls are possible. " +
-                    "Produce your final answer NOW from the work above. If you were asked " +
-                    "for structured output (ballot, JSON, verdict), emit it based on what " +
-                    "you found so far; state clearly what remains unverified.",
-              },
-            ],
+            messages: [...messages, rescuePlan.userMessage],
           });
           const text =
             typeof rescue?.message?.content === "string"
               ? rescue.message.content.trim()
               : "";
           if (text) {
-            finalText = `${text}\n\n_[stopped at turn cap ${totalTurnCap}; this is a best-effort final answer]_`;
+            finalText = rescuePlan.formatRescuedText(text);
             onEvent({ type: "lifecycle", phase: "final_answer_rescue", turns });
           }
         } catch {
           /* rescue is best-effort — fall through to the stub */
         }
       }
-      if (!finalText) finalText = `Stopped after ${totalTurnCap} turns (turn cap).`;
+      if (!finalText) finalText = rescuePlan.stubText;
     }
 
     // ── Hook: post_process — system/trusted hooks may transform the final

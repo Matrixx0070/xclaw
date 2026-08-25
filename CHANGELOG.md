@@ -1,3 +1,15 @@
+## 3.177.2 (2026-08-25)
+
+- W2 STAGE 3 — final-answer rescue staged: `planFinalAnswerRescue` in
+  `loop-stages.mjs` is the pure plan (enable flag, the no-tools rescue
+  message with the orchestrated-segment rescuePrompt override, the
+  best-effort stamp, the turn-cap stub); the loop keeps only the provider
+  call. Behavior identical; 3 new tests (22 stage tests total).
+- runAgentLoop staging status after stages 1-3: pre-flight detectors,
+  pairing invariant, stop-reason/terminal-status chain, and rescue plan are
+  pure and unit-pinned. Still inline: provider-call phase and the per-call
+  security/dispatch pipeline (the next, largest extraction).
+
 ## 3.177.1 (2026-08-25)
 
 - W2 STAGE 2 — two more verdict-critical blocks staged out of runAgentLoop
