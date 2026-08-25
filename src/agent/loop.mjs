@@ -15,6 +15,7 @@ import {
   terminalStatus,
   planFinalAnswerRescue,
   parseToolCallArgs,
+  evaluateRunAllowlist,
 } from "./loop-stages.mjs";
 import { createProvider } from "./provider.mjs";
 import { createFailoverProvider } from "../providers/failover-router.mjs";
@@ -1252,20 +1253,16 @@ export async function runAgentLoop(options) {
 
         // Run-scoped allowlist: excluded tools are never advertised, but a
         // hallucinated name must not reach the router either (defense in depth).
-        if (toolFilter && !toolFilter.match(name)) {
-          const msg = `Tool ${name} is not available in this run (allowTools).`;
-          onEvent({ type: "tool", phase: "blocked", name, reason: "allowTools" });
+        const allowBlock = evaluateRunAllowlist(name, toolFilter);
+        if (allowBlock) {
+          onEvent(allowBlock.event);
           messages.push(
-            makeToolMessage({ tool_call_id: call.id, content: msg, source: "filter" })
+            makeToolMessage({ tool_call_id: call.id, content: allowBlock.message, source: "filter" })
           );
           recordTrace(
             finalizeToolTraceEntry(
               beginToolTraceEntry({ name, args, toolCallId: call.id, turn: turns + 1 }),
-              {
-                resultText: msg,
-                blocked: true,
-                policy: { phase: "filter", decision: "deny", reason: "allowTools" },
-              }
+              { resultText: allowBlock.message, blocked: true, policy: allowBlock.policy }
             )
           );
           return;

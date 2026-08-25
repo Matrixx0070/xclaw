@@ -1,3 +1,9 @@
+## 3.177.4 (2026-08-25)
+
+- W2 STAGE 4b — run-scoped allowlist verdict pure (`evaluateRunAllowlist`
+  in loop-stages.mjs): null when allowed, else the deny plan (message, event,
+  trace policy) the loop applies. Defense-in-depth contract pinned by tests.
+
 ## 3.177.3 (2026-08-25)
 
 - W2 STAGE 4a — processToolCall extraction begins: tool-call intake

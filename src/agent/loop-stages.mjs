@@ -281,7 +281,25 @@ export function parseToolCallArgs(call, workingDir) {
   return args;
 }
 
+/**
+ * Stage 4b — run-scoped allowlist verdict. Excluded tools are never
+ * advertised, but a hallucinated name must not reach the router either
+ * (defense in depth). Pure: null when allowed; otherwise the block plan
+ * (message, event, trace policy) the loop applies.
+ * @param {string|undefined} name
+ * @param {{match: (n: string) => boolean}|null|undefined} toolFilter
+ */
+export function evaluateRunAllowlist(name, toolFilter) {
+  if (!toolFilter || toolFilter.match(name)) return null;
+  return {
+    message: `Tool ${name} is not available in this run (allowTools).`,
+    event: { type: "tool", phase: "blocked", name, reason: "allowTools" },
+    policy: { phase: "filter", decision: "deny", reason: "allowTools" },
+  };
+}
+
 export default {
+  evaluateRunAllowlist,
   parseToolCallArgs,
   evaluateTurnPreflight,
   planPairingBackfill,

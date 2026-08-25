@@ -344,3 +344,19 @@ describe("loop stage: tool-call intake", () => {
     assert.deepEqual(parseToolCallArgs({ function: { arguments: "{}" } }, null), {});
   });
 });
+
+// W2 stage 4b — run-scoped allowlist verdict.
+import { evaluateRunAllowlist } from "../src/agent/loop-stages.mjs";
+
+describe("loop stage: run allowlist verdict", () => {
+  it("no filter or a matching name → allowed (null)", () => {
+    assert.equal(evaluateRunAllowlist("xclaw_bash", null), null);
+    assert.equal(evaluateRunAllowlist("xclaw_bash", { match: () => true }), null);
+  });
+  it("non-matching name → deny plan with message/event/trace policy", () => {
+    const b = evaluateRunAllowlist("made_up_tool", { match: () => false });
+    assert.equal(b.message, "Tool made_up_tool is not available in this run (allowTools).");
+    assert.deepEqual(b.event, { type: "tool", phase: "blocked", name: "made_up_tool", reason: "allowTools" });
+    assert.deepEqual(b.policy, { phase: "filter", decision: "deny", reason: "allowTools" });
+  });
+});
