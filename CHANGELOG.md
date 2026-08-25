@@ -1,3 +1,29 @@
+## 3.183.0 (2026-08-25)
+
+- TEST — tool-output truncation was covered as a pure function and nowhere as
+  wiring, so the loop was free to stop calling it. Deleting the call in
+  `src/agent/loop.mjs` (`const trunc = (truncOpts.enabled && false) ? ... `)
+  left the suite green at 3032 tests while a 23,893-char command result went to
+  the provider whole — the context blow-up the cap exists to prevent.
+  `test/loop-truncate-enforcement.test.mjs` asserts on the tool message the
+  provider is actually handed: capped, marked `[truncated N of M chars]`, middle
+  omitted; the mirror flips only `tokens.truncate.enabled` and requires all
+  23,893 chars through. The `tool/end` truncated/originalChars/keptChars fields
+  are checked but not relied on — they are emitted either way.
+
+- TEST — the gateway belt's hook refusal for browser tab calls
+  (`if (hr && hr.ok === false)`) could be deleted with the suite green.
+  `assertJsCodeAllowed` has exactly one caller, `src/browser/hooks.mjs`, and the
+  bundled engine carries no jsCode policy of its own, so with the short-circuit
+  gone a motor-pattern `jsCode` aimed at a live tab is dispatched and runs
+  against the page — the synthesized-click bypass the hook exists to close. The
+  mutation still LOOKS refused when the tab does not exist, which is why
+  `test/loop-browser-hook-enforcement.test.mjs` asserts the `[xclaw-hooks] `
+  prefix (written by that block alone) rather than that the call failed, and
+  why `!started` is unusable here: the belt runs after `tool/start` is emitted.
+  Both cases return before any Chrome or network work, per the house rule in
+  `test/browser-tab-native-cdp.test.mjs`.
+
 ## 3.182.0 (2026-08-25)
 
 - FIX — the loop's budget pre-check re-threw its own refusal by matching
