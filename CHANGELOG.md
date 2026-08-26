@@ -1,3 +1,32 @@
+## 3.230.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #48 — a coverage pin, NOT a behavior change; the shipping
+  enforcement source `src/auth/secure-inject.mjs` is unchanged and its sha256 is
+  byte-identical before and after: `1177173336e0…`). Enforcement family: the
+  cookie-injection host allowlist matcher (`isHostAllowed`,
+  `src/auth/secure-inject.mjs:32-39`) — `h === x || h.endsWith("." + x)`, the
+  boundary that decides which target host may receive injected Grok/xAI SESSION
+  COOKIES.
+- Why it matters: `buildSecureInjectPlan` gates both the page URL (`:68`) and every
+  per-cookie `Domain` (`:96`) through `isHostAllowed` before session cookies are
+  written into a browser context. The `"." +` is the subdomain-boundary guard: a
+  host whose NAME merely shares an allowlisted domain's trailing string (allow
+  `grok.com`, host `evilgrok.com`; allow `x.ai`, host `notx.ai`) is NOT a subdomain
+  of it and must be REFUSED — otherwise credentials are injected into an
+  attacker-registered lookalike host.
+- Blind spot proven: every pre-existing test hit either the exact-match arm
+  (`grok.com` === `grok.com`) or a fully disjoint reject (`evil.com` /
+  `evil.example` / `.evil.com`), so NONE exercised the suffix boundary. Dropping
+  `"." +` (→ `endsWith(x)`) left the FULL suite green (3654/0). This is RULE(a)'s
+  hostname suffix-boundary discipline (already carried by the email-sender and
+  egress gates) re-proven at this distinct call site, because coverage does NOT
+  transfer across the call sites of an identical matcher shape.
+- Fix (test-only): `test/secure-inject.test.mjs` gains a `describe` pinning the
+  sibling REJECT (`evilgrok.com`, `notx.ai` → not allowlisted; lookalike page URL
+  → inject plan throws) with a real-subdomain ADMIT (`accounts.grok.com` → allowed,
+  green both ways). Mutation-verified BOTH directions: correct → pass; mutated
+  (`endsWith(x)`) → the two sibling-reject tests RED. Suite 3654 → 3657.
+
 ## 3.229.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #47 — a coverage pin, NOT a behavior change; the shipping

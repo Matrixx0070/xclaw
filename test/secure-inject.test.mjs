@@ -87,3 +87,44 @@ describe("secure cookie injection", () => {
     assert.equal(added[0].secure, true);
   });
 });
+
+// RULE(a) boundary — the cookie-injection host allowlist matcher
+//   (secure-inject.mjs:37) is  h === x || h.endsWith("." + x)
+// The `"." +` is the subdomain-boundary guard: a host whose NAME merely shares an
+// allowlisted domain's trailing string ("grok.com" vs "evilgrok.com", "x.ai" vs
+// "notx.ai") is NOT a subdomain of it and must be REFUSED — otherwise Grok/xAI
+// SESSION COOKIES get injected into an attacker-registered lookalike host (via the
+// page-URL gate at :68 and the per-cookie domain gate at :96). Every pre-existing
+// test hit either the exact-match arm ("grok.com" === "grok.com") or a fully
+// disjoint reject ("evil.com" / "evil.example" / ".evil.com"), so NONE exercised
+// the suffix boundary: dropping `"." +` (endsWith(x)) left the FULL suite green
+// (3654/0), silently widening injection to any shared-suffix sibling of an
+// allowlisted domain. These pin the sibling REJECT (mutated → RED) with a
+// real-subdomain ADMIT (green both ways) — the same hostname suffix-boundary
+// discipline the email-sender (allow-from.mjs) and egress (egress.mjs) gates
+// already carry, re-proven here because coverage does NOT transfer across the
+// distinct call sites of an identical matcher shape.
+describe("secure-inject host allowlist suffix boundary", () => {
+  it("REFUSES a lookalike host that only shares an allowlisted domain's suffix", () => {
+    // "evilgrok.com" ends with the STRING "grok.com" but is not under ".grok.com"
+    assert.equal(isHostAllowed("evilgrok.com"), false);
+    // and the x.ai family: "notx.ai" ends with "x.ai" but is not under ".x.ai"
+    assert.equal(isHostAllowed("notx.ai"), false);
+  });
+
+  it("admits a real subdomain of an allowlisted domain (boundary admit)", () => {
+    assert.equal(isHostAllowed("accounts.grok.com"), true);
+  });
+
+  it("rejects a lookalike page URL for the full inject plan", () => {
+    assert.throws(
+      () =>
+        buildSecureInjectPlan({
+          cookieHeader: "a=1",
+          url: "https://evilgrok.com",
+        }),
+      /not allowlisted/,
+      "a shared-suffix lookalike of an allowlisted host must be refused for inject"
+    );
+  });
+});
