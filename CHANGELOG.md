@@ -1,3 +1,33 @@
+## 3.235.0 (2026-08-26)
+
+- SECURITY test-coverage (mutation sweep #52; shipping code
+  `src/gateway/auth.mjs` is UNCHANGED — sha256
+  `6ddaa4d3612ba77b5d38fadab319629da320938aebef4babb9d212865adef862` before and
+  after). Structurally pins the operator-token protection of the `/complete`
+  code-completion route (`src/gateway/routes/completion.mjs`, wired at
+  `index.mjs:1299`), a POST that spends provider tokens on every call — its gate
+  arm is `p === "/complete"` in `isProtectedPath` (`src/gateway/auth.mjs:157`).
+- Blind spot: the served-inventory guard (`test/gateway-served-inventory.test.mjs`)
+  proves every ROUTER-served path literal is protected-or-justified, but its
+  extraction regex captured only `=== "/x"` and `.startsWith("/x")`. Route files
+  that dispatch with an early-return guard name their served path through `!==`
+  (`if (p !== "/complete") return false;` — completion.mjs, objectives.mjs), so
+  `/complete` never entered the served set and NO test pinned its auth. Mutating
+  the gate arm `p === "/complete"` → `false` (so an unauthenticated caller could
+  spend provider tokens via POST `/complete`) left the FULL suite GREEN
+  (`# tests 3664 / # fail 0`) — the blind spot, proven.
+- Catch: the extraction regex now also captures `!== "/x"`
+  (`(?:===|!==|\.startsWith\()`), bringing `/complete`, `/objectives`,
+  `/cron/eval`, `/cron/eval/run` into the served set — all four already protected
+  by `isProtectedPath`, so the suite stays green on correct code while any future
+  drop of one of their gate arms fails here with its own path. Mutation-verified
+  both directions: correct code → `/complete — protected` passes (191/191);
+  mutated (`false`) → `not ok - /complete — protected` (190/1). Full suite
+  `# tests 3664 / # fail 0 / NODE_EXIT=0`.
+- Fixes the extraction oracle rather than adding a one-off assertion (capability
+  over feature): the whole `!==`-guard class of served routes is now covered, not
+  just `/complete`.
+
 ## 3.234.0 (2026-08-26)
 
 - SECURITY test-coverage (mutation sweep #51; shipping code

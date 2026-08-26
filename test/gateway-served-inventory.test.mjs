@@ -14,7 +14,7 @@
  * only ever agree with the list.
  *
  * This test walks the router's *served* set instead. It extracts every
- * path-literal the router compares against — `x === "/foo"` and
+ * path-literal the router compares against — `x === "/foo"`, `x !== "/foo"`, and
  * `x.startsWith("/foo")` — from index.mjs and every routes/*.mjs sub-router, and
  * requires each to be protected on a default token gateway EXCEPT the paths in
  * OPEN below, each with the reason it is safe to serve without the operator
@@ -46,9 +46,16 @@ function servedPaths() {
     `${gwDir}index.mjs`,
     ...readdirSync(routesDir).filter((f) => f.endsWith(".mjs")).map((f) => `${routesDir}${f}`),
   ];
-  // Any `=== "/x"` or `.startsWith("/x")`, any left-hand variable, tolerant of
-  // the space the codebase writes after `===`.
-  const re = /(?:===|\.startsWith\()\s*"(\/[^"]*)"/g;
+  // Any `=== "/x"`, `!== "/x"`, or `.startsWith("/x")`, any left-hand variable,
+  // tolerant of the space the codebase writes after the operator. The `!==` arm
+  // matters: a route file that dispatches with an early-return guard
+  // (`if (p !== "/complete") return false;` — completion.mjs, objectives.mjs)
+  // names its served path only through `!==`. Without this arm those literals
+  // never entered the served set, so `/complete` — a POST that spends provider
+  // tokens on every call — was protected in auth.mjs but pinned by no test; a
+  // refactor dropping its gate arm would have shipped an unauthenticated,
+  // token-spending route green. Over-approximation stays the safe direction.
+  const re = /(?:===|!==|\.startsWith\()\s*"(\/[^"]*)"/g;
   const served = new Set();
   for (const f of files) {
     const src = readFileSync(f, "utf8");
