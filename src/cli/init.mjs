@@ -19,6 +19,7 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { pathToFileURL } from "node:url";
 import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
+import { findTailscaleBinary } from "../net/tailscale.mjs";
 
 function flag(args, name) {
   return args.indexOf(name) >= 0;
@@ -120,6 +121,11 @@ export async function initMain(args = []) {
     process.env.OPENAI_API_KEY ||
     null;
 
+  // Tailscale exposure choices (set during the interactive prompt below).
+  let tsExposure = null; // { mode, resetOnExit? } written to gateway.tailscale
+  let tsBind = null; // "loopback" forced when serve/funnel is chosen
+  let tsForceAuthStrict = false; // funnel is public → require a gateway token
+
   // Legacy onboard flags
   const authChoice = opt(args, "--auth-choice");
   if (authChoice === "openai-api-key") provider = "openai";
@@ -155,6 +161,49 @@ export async function initMain(args = []) {
             ? "openai/gpt-4o-mini"
             : "");
       model = await promptLine(rl, "Default model", defaultModel);
+
+      // Tailscale exposure — reach this gateway from your other devices without
+      // opening a public port. off (default) keeps it local; serve is private to
+      // your tailnet; funnel is public on the internet (ports 443/8443/10000).
+      console.log(
+        "\nTailscale exposure (reach this gateway from your other devices):\n" +
+          "  off    — keep the gateway on this machine only (default)\n" +
+          "  serve  — private HTTPS for devices on your tailnet\n" +
+          "  funnel — public HTTPS on the internet (ports 443/8443/10000 only)\n" +
+          "  docs:  docs/TAILSCALE.md"
+      );
+      let tsMode = (
+        await promptLine(rl, "Tailscale exposure (off|serve|funnel)", "off")
+      ).toLowerCase();
+      if (!["off", "serve", "funnel"].includes(tsMode)) {
+        console.log(`(unrecognised "${tsMode}" — using off)`);
+        tsMode = "off";
+      }
+      tsExposure = { mode: tsMode };
+      if (tsMode !== "off") {
+        if (!findTailscaleBinary()) {
+          console.log(
+            "! tailscale was not found on this machine. Setup will continue, but\n" +
+              "  serve/funnel won't activate until Tailscale is installed and up\n" +
+              "  (https://tailscale.com/download)."
+          );
+        }
+        // serve/funnel front a loopback gateway → force the bind to loopback.
+        tsBind = "loopback";
+        console.log("→ Gateway will bind loopback; Tailscale becomes the front door.");
+        const reset = await promptLine(
+          rl,
+          "Reset the tailscale route when the gateway stops? (y/N)",
+          "N"
+        );
+        tsExposure.resetOnExit = /^y(es)?$/i.test(reset);
+        if (tsMode === "funnel") {
+          console.log(
+            "→ Funnel is public on the internet — a gateway auth token will be required."
+          );
+          tsForceAuthStrict = true;
+        }
+      }
     } finally {
       rl.close();
     }
@@ -184,8 +233,23 @@ export async function initMain(args = []) {
     } else if (provider) {
       patch.agent = { provider };
     }
+    if (tsExposure) {
+      patch.gateway = { ...(patch.gateway || {}), tailscale: tsExposure };
+      if (tsBind) patch.gateway.bind = tsBind;
+      if (tsForceAuthStrict) patch.gateway.authStrict = true;
+    }
     const generatedToken = ensureGatewayToken(profile, cfg, patch);
     if (generatedToken) result.gatewayTokenGenerated = true;
+    // Funnel is public on the internet — never write it without a gateway token.
+    if (
+      tsForceAuthStrict &&
+      !patch.gateway?.token &&
+      !cfg?.gateway?.token &&
+      !process.env.XCLAW_GATEWAY_TOKEN
+    ) {
+      patch.gateway = { ...(patch.gateway || {}), token: crypto.randomBytes(32).toString("hex") };
+      result.gatewayTokenGenerated = true;
+    }
     result.configPath = await writeConfigPatch(patch);
   } catch (err) {
     result.ok = false;

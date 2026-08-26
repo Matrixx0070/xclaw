@@ -33,6 +33,7 @@ import { tryHandleProvidersRoute } from "./routes/providers.mjs";
 import { tryHandleChannelsRoute } from "./routes/channels.mjs";
 import { applyCors } from "./cors.mjs";
 import { assertBindSafety } from "./bind-guard.mjs";
+import { resolveGatewayBindHost, startGatewayTailscaleExposure } from "../net/tailscale.mjs";
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import { attachVoiceWebSocket } from "./voice-ws.mjs";
 import fs from "node:fs/promises";
@@ -988,6 +989,14 @@ export async function startGateway({ root } = {}) {
   // it. Nothing noticed for ~110 releases: both test files call
   // assertBindSafety directly, so the pure function stayed green while the
   // product stopped asking it. Keep this call adjacent to the config load.
+  //
+  // Resolve the bind mode to a concrete host FIRST so the guard evaluates the
+  // socket host it will actually listen on. gateway.bind:"tailnet" resolves to
+  // this node's tailnet IP (non-loopback) — the guard then rightly demands a
+  // token, exactly as it would for lan. serve/funnel modes were already pinned
+  // to loopback by coupleTailscaleExposure() at config load, so this is a no-op
+  // for them. Degrades to 127.0.0.1 when the tailnet is unreachable.
+  cfg.gateway.host = resolveGatewayBindHost(cfg);
   const bindSafety = assertBindSafety(cfg);
   if (!bindSafety.ok) throw new Error(`[xclaw] ${bindSafety.error}`);
 
@@ -1613,6 +1622,20 @@ export async function startGateway({ root } = {}) {
   console.log(`[xclaw] Stream: POST /agent/run/stream (SSE|NDJSON) · POST /swarm/run/stream (SSE|NDJSON) · POST /channel/webchat/message/stream (SSE|NDJSON)`);
   console.log(`[xclaw] WS:  /ws/events (subscribe admission|queue|eviction|swarm|all)`);
 
+  // Tailscale exposure: bring up serve/funnel AFTER the socket is listening so
+  // the route fronts an already-open port. Never throws — a tailscale failure
+  // logs and leaves the gateway running on loopback. mode:"off" returns null.
+  let tailscaleExposure = null;
+  try {
+    tailscaleExposure = startGatewayTailscaleExposure({
+      cfg,
+      port: cfg.gateway.port,
+      log: (m) => console.log(`[xclaw] ${m}`),
+    });
+  } catch (err) {
+    console.warn("[xclaw] tailscale exposure start failed:", err.message);
+  }
+
   let shuttingDown = false;
   const shutdown = async (signal = "signal") => {
     if (shuttingDown) return;
@@ -1622,6 +1645,16 @@ export async function startGateway({ root } = {}) {
       await gracefulShutdown(cfg, { timeoutMs: cfg.shutdown?.drainMs ?? 15_000 });
     } catch (err) {
       console.warn("[xclaw] queue drain:", err.message);
+    }
+    // Reset the tailscale route before closing the socket (only when the
+    // operator opted into resetOnExit — otherwise the route persists across
+    // restarts, which is the tailscale default and usually what you want).
+    if (tailscaleExposure?.stop) {
+      try {
+        await tailscaleExposure.stop();
+      } catch (err) {
+        console.warn("[xclaw] tailscale reset failed:", err.message);
+      }
     }
     try {
       server.close();

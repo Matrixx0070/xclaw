@@ -4,6 +4,7 @@ import os from "os";
 import { DEFAULT_CONFIG, CONFIG_DIR_NAME, CONFIG_FILE_NAME } from "./defaults.mjs";
 import { applyProfile } from "./profiles.mjs";
 import { applyAutonomyLevel } from "./autonomy-policy.mjs";
+import { coupleTailscaleExposure } from "../net/tailscale.mjs";
 
 export function getConfigDir() {
   return path.join(os.homedir(), CONFIG_DIR_NAME);
@@ -322,6 +323,10 @@ export async function loadConfig(opts = {}) {
     cfg.computer.remoteUrl = process.env.XCLAW_COMPUTER_URL;
   }
   applyEnvBindOverrides(cfg);
+  // Tailscale serve/funnel fronts a loopback gateway — force that invariant
+  // (bind=loopback, host=127.0.0.1, funnel⇒authStrict) AFTER env overrides so a
+  // stray XCLAW_GATEWAY_HOST can never expose the gateway behind a public funnel.
+  cfg = coupleTailscaleExposure(cfg);
   return cfg;
 }
 

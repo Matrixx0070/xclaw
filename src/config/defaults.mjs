@@ -14,6 +14,22 @@ export const DEFAULT_CONFIG = {
     protectMetrics: false,
     host: "127.0.0.1",
     port: 18790,
+    /**
+     * Effective listen host is resolved from this at startup
+     * (src/net/tailscale.mjs resolveGatewayBindHost):
+     *   loopback|auto → 127.0.0.1, lan → 0.0.0.0, tailnet → the tailnet IP,
+     *   custom (default) → the explicit `host` above, unchanged (back-compat).
+     */
+    bind: "custom",
+    /**
+     * Tailscale exposure (docs/TAILSCALE.md):
+     *   off    — no exposure; gateway stays on loopback (default)
+     *   serve  — private HTTPS for machines on your tailnet
+     *   funnel — public HTTPS on the internet (ports 443/8443/10000 only)
+     * serve/funnel force the gateway to bind loopback; funnel forces auth on.
+     * resetOnExit runs `tailscale serve|funnel reset` on gateway shutdown.
+     */
+    tailscale: { mode: "off", resetOnExit: false },
   },
   /**
    * Stream resume buffers (agent / swarm / webchat) + client backoff defaults.

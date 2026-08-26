@@ -1,3 +1,46 @@
+## 3.240.0 (2026-08-26)
+
+- FEATURE: Tailscale exposure for the gateway. A loopback gateway can now be
+  fronted by a stable HTTPS route without opening a router port or standing up a
+  reverse proxy — `serve` (private to your tailnet) or `funnel` (public on the
+  internet; ports 443/8443/10000 only). New `src/net/tailscale.mjs` drives the
+  `tailscale` CLI directly (`spawnSync` with an argument array and NO shell — no
+  command-injection surface; no new dependency), degrading non-fatally
+  everywhere: host resolution, whois, and route setup return null / an inactive
+  handle and log, so a Tailscale hiccup can never take the gateway down.
+- Config: `gateway.bind` (`loopback|auto|lan|tailnet|custom`; default `custom`
+  for back-compat — the explicit host is used verbatim) resolves to a concrete
+  listen host at gateway start, BEFORE the bind-safety guard, so a non-loopback
+  bind (`lan`/`tailnet`) is held to the same no-token-no-start rule as any other
+  public bind; `tailnet` degrades to loopback when the tailnet is unreachable.
+  `gateway.tailscale` = `{ mode: "off"|"serve"|"funnel", resetOnExit: false }`.
+- Safety coupling (`coupleTailscaleExposure`, applied at config load): choosing
+  `serve`/`funnel` pins the gateway to loopback (Tailscale is the single front
+  door — binding LAN/tailnet under a live public Funnel would bypass it), and
+  `funnel` additionally forces `gateway.authStrict = true`. A public Funnel is
+  never written without a gateway token (one is generated at onboarding if none
+  exists). Overrides are recorded on `_tailscaleCoupling` for honest doctor/log
+  reporting.
+- Onboarding: `xclaw init` / `xclaw onboard` asks for the exposure interactively
+  (off/serve/funnel), warns if the `tailscale` binary is missing (setup still
+  completes), pins loopback and offers reset-on-exit, and guarantees a gateway
+  token for funnel.
+- Gateway wiring: `resolveGatewayBindHost` sets the effective listen host before
+  the bind guard; `startGatewayTailscaleExposure` brings the route up AFTER the
+  socket is listening (and appends the tailnet HTTPS origin to an existing
+  `corsOrigin` allowlist); the route is reset on shutdown when `resetOnExit` is
+  set.
+- Tests: `test/net-tailscale.test.mjs` (+34) — exact serve/funnel/reset argv,
+  noisy-JSON parse, host/IP resolution (DNSName trailing-dot strip, IP fallback),
+  whois `{login,name}` extraction + TTL cache (60s success / 5s error),
+  bind-host resolution for every mode, coupling invariants (off no-op / serve
+  loopback / funnel authStrict), and the exposure orchestrator (off→null,
+  missing-binary→inactive, success→active, funnel-port warning). Full suite
+  green (3711/0).
+- Docs: `docs/TAILSCALE.md`, plus the documented follow-ups left for a later
+  slice (tailnet identity-header auth via `readTailscaleWhoisIdentity`; the
+  live auth/CORS paths are untouched by this slice).
+
 ## 3.239.0 (2026-08-26)
 
 - SECURITY coverage pin (mutation sweep #56): the OS sandbox (bubblewrap) mounts
