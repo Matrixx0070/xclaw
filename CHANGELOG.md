@@ -1,3 +1,36 @@
+## 3.223.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #41 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement source is unchanged and its sha256 is
+  identical before and after: `934c0aec…`). Enforcement family: the contents of
+  the prod/supervised auto-approve lists produced by `buildProdSecurityOverlay()`
+  (`src/security/policy-matrix.mjs:43`) — the SOLE producer of
+  `security.safeAuto` / `security.requireApproval` for the `supervised` overlay,
+  applied on every `prod` OR `dev` profile via `autonomyOverlay("supervised")` →
+  `applyAutonomyLevel` whenever the operator has not hand-tuned those keys.
+- The blind spot: the overlay deliberately does NOT set `autoApproveMaxTier`, so
+  in a prod/supervised config the gate's `effectiveMaxTier` is null →
+  `needsApproval`'s risk-tier path (`src/security/approvals.mjs:281`) is skipped
+  and the LEGACY path governs. There, `safeAuto.has(n)` (line 290) is an
+  UNCONDITIONAL auto-approve short-circuit and only listed `requireApproval`
+  names pend (line 302). So the list CONTENTS are the whole auto-approval
+  decision in prod — yet `policy-matrix.mjs` had ZERO test references (direct or
+  indirect): nothing asserted the list membership, and no test drove a
+  prod-overlay gate to prove a dangerous tool actually pends because of it.
+- Proof (mutation): widening the safeAuto filter from `r === "safe"` to
+  `r === "safe" || r === "exec"` leaked `bash`/`xclaw_bash`/`shell` into the prod
+  auto-approve list (exec tools auto-running unapproved under supervised mode);
+  the FULL suite stayed GREEN 3636/3636/0 — the leak was entirely unpinned.
+- Fix (test only): `test/prod-overlay-safeauto.test.mjs` pins (a) the overlay
+  list membership tool-by-tool against `TOOL_RISK` (every non-safe tool excluded
+  from safeAuto AND present in requireApproval), (b) that a gate built from the
+  overlay pends bash/xclaw_bash/shell/file_write/browser_tab and auto-approves
+  reads, and (c) that a real `prod` profile wires those lists and leaves
+  `autoApproveMaxTier` unset so the legacy path governs end-to-end. Verified both
+  directions: reddens under the exec-leak mutation (and any requireApproval
+  narrowing) and passes on the restored byte-identical code.
+- Suite: 3639/3639, 0 fail (was 3636; +3).
+
 ## 3.222.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #40 — a byte-identical coverage pin, NOT a behavior
