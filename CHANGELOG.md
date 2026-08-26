@@ -1,3 +1,13 @@
+## 3.246.0 (2026-08-26)
+
+- DURABLE SQL doorway (spec §11.2 + §11.3): `loadBuiltinSql()` now arms a
+  one-shot notice filter before `require("node:sqlite")` so the builtin
+  ExperimentalWarning is swallowed and every other warning still reaches
+  stderr / previously-registered listeners. New `src/persist/query-kit.mjs`
+  is the single-handle kit later stores sit on (`openLocalSql` + WAL keeper +
+  `runAtomic`) — no second driver, no new npm package. Tests:
+  `test/notice-filter.test.mjs`, `test/query-kit.test.mjs`.
+
 ## 3.245.0 (2026-08-26)
 
 - SECURITY (hardening + coverage, RULE(m) — mutation sweep #60): the pending-PKCE
