@@ -1,3 +1,37 @@
+## 3.228.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #46 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement source is unchanged and its sha256 is
+  identical before and after: `59ff0f2e…`). Enforcement family: the
+  user-principal approval arm of the Telegram inline `sug` callback gate
+  (`src/channels/telegram/callback-auth.mjs:53`) — `isApproved("telegram",
+  fromId)`, the arm that authorizes an approved USER to activate a suggestion
+  even in a chat that is not itself paired.
+- Why it matters: tapping a `sug` button re-injects its prompt as a user message
+  and RUNS the agent, so `authorizeTelegramCallback` is the authorization gate on
+  that action. Under `dmPolicy: "pairing"` it ORs three approval arms —
+  `isApproved(chatId) || isApproved(fromId) || inAllow` — over DISTINCT principals:
+  in a GROUP callback `fromId` is the user who tapped while `chatId` is
+  `cq.message.chat.id` (the group). The `isApproved(fromId)` arm is what lets an
+  approved user act in a not-yet-paired group.
+- The blind spot (RULE(c) axis — chatId vs fromId): the sibling `isApproved(chatId)`
+  arm was isolated by a test (fromId 777 unpaired, chat 42 paired), but the
+  `isApproved(fromId)` arm was not — the one test labeled "isApproved-by-from arm"
+  used chatId===fromId===500, so the chatId arm masks it. No test drove the
+  isolating scenario: an approved SENDER in an un-paired GROUP chat.
+- Proof (mutation): dropping the arm (removing `&& !isApproved("telegram", fromId)`
+  from the deny predicate) left the FULL suite GREEN 3651/3651/0 — a silent removal
+  of user-level pairing authorization, downgrading "an approved user may act in any
+  chat" to "only approved chats may act", would ship unnoticed. Under the mutation
+  exactly the one new test reddens (14→1 fail on that file); on the restored
+  byte-identical code it passes.
+- Fix (test only), RULE(c): `test/telegram-callback-auth.test.mjs` drives an
+  approved user (fromId 500) tapping a `sug` button in a DISTINCT un-paired group
+  chat (chatId 42, not approved, empty allowFrom) and asserts ALLOW via
+  `sug_policy` — carried by the fromId arm alone, the mirror of the existing
+  chatId-arm test.
+- Suite: 3652/3652, 0 fail (was 3651; +1).
+
 ## 3.227.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #45 — a byte-identical coverage pin, NOT a behavior

@@ -137,6 +137,31 @@ describe("telegram callback auth", () => {
     assert.equal(r.via, "sug_policy");
   });
 
+  // RULE(c) axis: chatId vs fromId are DISTINCT principals in a group callback —
+  // fromId is the user who tapped, chatId is `cq.message.chat.id` (the GROUP).
+  // The pairing gate ORs three approval arms; the sibling test above isolates the
+  // isApproved(chatId) arm (fromId 777 unpaired, chat 42 paired). The mirror — an
+  // approved USER acting in an un-paired GROUP — must be carried by the
+  // isApproved(fromId) arm ALONE. The earlier "isApproved-by-from arm" test uses
+  // chatId===fromId===500, so the chatId arm masks it: dropping the fromId arm
+  // (`&& !isApproved("telegram", fromId)`) from the deny predicate left the FULL
+  // suite green (3651/0) — a silent removal of user-level pairing authorization,
+  // downgrading "an approved user may act in any chat" to "only approved chats may
+  // act", would ship unnoticed. This isolates the user-principal arm.
+  it("sug pairing: an approved SENDER in an un-paired group chat is ALLOWED (isApproved-by-from arm, isolated)", () => {
+    const r = authorizeTelegramCallback({
+      fromId: "500", // the paired USER who tapped
+      chatId: "42", // an un-paired GROUP chat — a DISTINCT id, not approved
+      data: { kind: "sug" },
+      ownerChatId: null,
+      dmPolicy: "pairing",
+      allowFrom: [], // inAllow arm cannot carry it either
+      isApproved: (ch, id) => ch === "telegram" && id === "500", // ONLY the user is paired
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.via, "sug_policy");
+  });
+
   it("sug pairing: an allowlisted sender is ALLOWED even when unpaired (inAllow arm)", () => {
     const r = authorizeTelegramCallback({
       fromId: "88",
