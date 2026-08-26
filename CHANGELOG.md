@@ -1,3 +1,26 @@
+## 3.243.0 (2026-08-26)
+
+- SECURITY (hardening + coverage, RULE(m) — mutation sweep #59): the xAI *OAuth*
+  token vault (`<configDir>/auth.json`) — written by every device-code, PKCE-
+  loopback, refresh, and Grok-CLI-import flow via `writeTokens`
+  (src/auth/xai-oauth.mjs) — is stored in PLAINTEXT (no encryption path, like its
+  API-key sibling src/auth/xai.mjs), so its owner-only file mode is the *sole*
+  barrier between a local non-root user and a live provider bearer + refresh
+  credential. Unlike that sibling, `writeTokens` set `mode: 0o600` only at
+  *create* time and never re-`chmod`'d — so a refresh rewrite over a pre-existing
+  or tampered world-readable `auth.json` left it readable, and the mode was
+  asserted by no test (flipping the create-time mode to `0o644` left the whole
+  suite green, 3715/0 — a blind spot). Per RULE(m) a per-file PERMISSION MODE is
+  its own enforcement line, and the `chmod` (not the umask-masked create-time
+  `writeFile` mode, a no-op on an existing file) is what guarantees the mode on
+  every rewrite. This release brings `writeTokens` to exact `saveCredentials`
+  parity — `fs.chmod(tokenPath, 0o600)` after the write — and adds
+  `test/xai-oauth-file-mode.test.mjs`, which pins `0o600` on the initial write and
+  on a rewrite after the file was left group/world-readable (which only the chmod
+  can repair), and asserts the plaintext-at-rest precondition that makes the mode
+  load-bearing. Mutation-verified both directions on the authoritative chmod
+  (correct code GREEN 2/2; `0o644` mutant RED 2/2). Suite 3715 → 3717.
+
 ## 3.242.0 (2026-08-26)
 
 - SECURITY (coverage pin, RULE(m) — mutation sweep #58): the live xAI credential

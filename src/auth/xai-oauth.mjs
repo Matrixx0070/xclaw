@@ -58,6 +58,11 @@ async function writeTokens(tokenPath, data) {
   await fs.writeFile(tokenPath, JSON.stringify(data, null, 2) + "\n", {
     mode: 0o600,
   });
+  try {
+    await fs.chmod(tokenPath, 0o600);
+  } catch {
+    /* windows */
+  }
 }
 
 /**
