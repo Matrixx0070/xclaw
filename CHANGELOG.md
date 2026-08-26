@@ -1,3 +1,36 @@
+## 3.213.0 (2026-08-26)
+
+- SECURITY FIX (sweep #31 — a **fail-OPEN** in the Telegram group topic allowlist,
+  `channels/telegram/group-policy.mjs:96-102`; a real behavior change, NOT a
+  byte-identical coverage pin). A forum topic can restrict WHO may command the bot
+  via `topics.<id>.allowFrom` (a per-user allowlist). The gate skipped its own deny
+  whenever the sender was unidentifiable: `if (fromId && allowed.length &&
+  !allowed.includes(fromId))`. A post with no `msg.from` — an anonymous group admin,
+  or a `sender_chat` / linked-channel auto-forward — has no id, so `fromId` was
+  null, the deny was skipped, and the post was ADMITTED to a topic locked to
+  specific user ids.
+- Why it runs the agent: for a group under the DEFAULT `dmPolicy:"pairing"`,
+  `gateGroupMessage` is the ONLY access gate — the pairing / static-allowlist checks
+  in `channels/telegram/index.mjs:617-652` are guarded on `peerKind === "dm"` and do
+  not apply to groups. `index.mjs:601` requires only content (which an anonymous post
+  has), so such a post reaches the gate, clears it, and runs the agent
+  (`index.mjs:655+`). Reachability is proven by the new test failing against the
+  pre-fix code (it returned `ok:true`).
+- Fix (fail CLOSED): `if (allowed.length && (!fromId || !allowed.includes(fromId)))`.
+  Strictly more restrictive — it can only newly-DENY, and only for a topic that
+  actually restricts senders (non-empty `allowFrom`). Preserved: an empty `allowFrom`
+  still does not restrict; a listed sender is still allowed; an unlisted sender is
+  still denied. New: a senderless post to a restricted topic is now denied
+  (`topic_user_not_allowed`).
+- Close: `test/telegram-p2.test.mjs` (+2). A SENDERLESS `topicMsg` (no `from`) to the
+  `allowFrom:["1"]` topic 7 must be DENIED; a senderless post to an UNRESTRICTED topic
+  (empty `allowFrom`) must still be ALLOWED (over-restriction guard). Mutation-proven
+  both directions: the pre-fix production line is itself the mutation — it reddens the
+  senderless-deny test alone (`# fail 1`, 3594/1) while the rest of the suite stays
+  green; the fix flips only that test (3595/0). This is distinct from sweep #29
+  (3.211.0), which pinned the sender-IN / sender-NOT-in / empty-list branches but not
+  the senderless path.
+
 ## 3.212.0 (2026-08-25)
 
 - TEST (sweep #30 — the **composite pairing GATE wiring**, `!staticOk &&

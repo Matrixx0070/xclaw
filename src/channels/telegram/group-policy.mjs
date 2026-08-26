@@ -96,7 +96,12 @@ export function gateGroupMessage({ msg, conf, botInfo }) {
   if (topicRule?.allowFrom) {
     const fromId = msg.from?.id != null ? String(msg.from.id) : null;
     const allowed = normalizeIdList(topicRule.allowFrom) || [];
-    if (fromId && allowed.length && !allowed.includes(fromId)) {
+    // Fail CLOSED: a restricted topic (non-empty allowFrom) admits ONLY listed
+    // senders. A senderless post — an anonymous group admin, or a sender_chat /
+    // linked-channel auto-forward with no msg.from — is unidentifiable and must
+    // be denied, not admitted. The old `fromId &&` guard skipped the deny when
+    // fromId was absent, letting such a post command a locked topic (fail-open).
+    if (allowed.length && (!fromId || !allowed.includes(fromId))) {
       return { ok: false, reason: "topic_user_not_allowed" };
     }
   }

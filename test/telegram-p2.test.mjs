@@ -120,6 +120,40 @@ describe("telegram group policy P2", () => {
     assert.equal(r.ok, true);
   });
 
+  // --- sweep #31 (3.213.0): the SENDERLESS bypass of the topic allowlist.
+  // A post with NO msg.from — an anonymous group admin, or a sender_chat /
+  // linked-channel auto-forward — still reaches gateGroupMessage on the live path
+  // (index.mjs:601 only requires content, which such posts have). For a group under
+  // the DEFAULT dmPolicy:"pairing", gateGroupMessage is the ONLY access gate: the
+  // pairing / allowlist checks in index.mjs:617-652 are guarded on peerKind "dm",
+  // so a group message that clears this gate RUNS the agent (index.mjs:655+). The
+  // old guard `if (fromId && allowed.length && !allowed.includes(fromId))`
+  // (group-policy.mjs:99) SKIPPED the deny whenever fromId was absent -> an
+  // unidentifiable sender bypassed a topic locked to specific user ids: fail-OPEN.
+  // Reachability is proven by the first test failing against the pre-fix code
+  // (it returned ok:true). The fail-closed arm is `!fromId || !allowed.includes`;
+  // dropping the `!fromId ||` re-opens the bypass and leaves the suite green.
+  const anonTopicMsg = () => ({
+    chat: { id: -100, type: "supergroup" },
+    message_thread_id: 7,
+    text: "do stuff",
+    // no `from`: an anonymous admin / channel (sender_chat) post
+  });
+
+  it("topic allowFrom: a SENDERLESS post is DENIED (fail-closed, not an allowlist bypass)", () => {
+    const r = gateGroupMessage({ msg: anonTopicMsg(), conf: topicConf, botInfo: bot });
+    assert.equal(r.ok, false, "an unidentifiable sender must not command a restricted topic");
+    assert.equal(r.reason, "topic_user_not_allowed");
+  });
+
+  it("topic allowFrom: a SENDERLESS post to an UNRESTRICTED topic is still ALLOWED", () => {
+    // fail-closed applies ONLY to a topic that actually restricts senders; an empty
+    // allowFrom must not start denying anonymous posts (over-restriction guard).
+    const conf = { groups: { policy: "open", topics: { "7": { allowFrom: [] } } } };
+    const r = gateGroupMessage({ msg: anonTopicMsg(), conf, botInfo: bot });
+    assert.equal(r.ok, true);
+  });
+
   it("stripBotMention", () => {
     assert.equal(stripBotMention("hi @xxclaw_bot there", bot), "hi there");
   });
