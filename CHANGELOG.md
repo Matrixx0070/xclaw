@@ -1,3 +1,26 @@
+## 3.236.0 (2026-08-26)
+
+- SECURITY test-coverage (mutation sweep #53; shipping code
+  `src/gateway/stop-auth.mjs` is UNCHANGED — sha256
+  `73d23e9a80a3621ebdf7d23c1200afabf2baf7b93136063a735b21acdc3ff11c` before and
+  after). Pins the length-validation arm of the kill-switch HMAC second factor:
+  `hmacEqual()` rejects any `X-XClaw-Stop-Sig` that does not decode to exactly 32
+  bytes (`if (a.length !== 32 || b.length !== 32) return false;` —
+  `stop-auth.mjs:31`) before `crypto.timingSafeEqual`. This is the line that refuses
+  an empty / short / non-hex / over-long signature on a stopHmac-secret gateway, so a
+  caller holding the stop token but not the HMAC secret cannot forge a `POST /stop`
+  (also WS/SSE stop-control) by omitting or mangling the sig.
+- Blind spot: the stop suite only ever sent a valid-LENGTH signature to a secret-set
+  gateway — `stop-hmac.test.mjs`'s "rejects bad signature" uses `"00".repeat(32)`
+  (exactly 32 bytes), so the guard is never taken and `timingSafeEqual` does the
+  rejecting. Mutating `stop-auth.mjs:31` `return false` -> `return true` (accept a
+  malformed signature — fail OPEN) left the full suite green (3665/0).
+- Fix: `test/stop-hmac-malformed-sig.test.mjs` presents a valid token plus a
+  malformed signature (empty, one-byte, odd-length hex, non-hex, 64-byte) and
+  asserts each is rejected `STOP_HMAC_INVALID`, with a valid-signature positive
+  control. RED when the guard is weakened to accept a malformed sig, RED when
+  inverted to reject a valid one. +6 tests.
+
 ## 3.235.0 (2026-08-26)
 
 - SECURITY test-coverage (mutation sweep #52; shipping code
