@@ -55,6 +55,40 @@ describe("bounded trust window (approval-storm fix)", () => {
     t.mock.timers.reset();
   });
 
+  // The test above pins the accessor's expiry reset in ISOLATION. This one
+  // drives the WIRING: needsApproval must consult the window through
+  // activeTrustWindow() so a NATURAL (wall-clock) expiry actually lowers
+  // effectiveMaxTier at the real authorize gate. Every existing "reverts"
+  // test uses clearTrustWindow (explicit /trust off); none let a window lapse
+  // by time and then re-authorize, so a refactor reading the raw `trustWindow`
+  // var — keeping an expired ceiling live forever — would auto-approve risky
+  // commands with the whole suite still green. (sweep #37)
+  it("risky auto-approval STOPS at the authorize gate after a natural expiry", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"] });
+    const gate = gateNoMaxTier();
+    gate.setTrustWindow({ ttlMs: 60_000, by: "test" });
+
+    // positive control: inside the window the risky command auto-runs
+    const during = await gate.authorize(
+      "xclaw_bash",
+      { command: RISKY_CMD, cwd: "/tmp" },
+      { timeoutMs: 250 }
+    );
+    assert.equal(during.ok, true, "risky auto-runs inside the window");
+    assert.equal(during.mode, "auto");
+
+    // window lapses by wall clock — NO /trust off, NO clearTrustWindow
+    t.mock.timers.tick(61_000);
+
+    const after = await gate.authorize(
+      "xclaw_bash",
+      { command: RISKY_CMD, cwd: "/tmp" },
+      { timeoutMs: 250 }
+    );
+    assert.equal(after.ok, false, "risky must PEND once the window has naturally expired");
+    t.mock.timers.reset();
+  });
+
   it("/trust channel command sets, reports, and clears the window", async () => {
     const cfg = { security: { autoApprove: false, bindSystemRunPlan: false } };
     const gate = resetSharedApprovalGate(cfg);

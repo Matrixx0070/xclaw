@@ -1,3 +1,34 @@
+## 3.219.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #37 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement line is unchanged and its sha256 is identical
+  before and after). The `/trust <30m>` window (`src/security/approvals.mjs`)
+  raises the auto-approve ceiling to `risky` for a bounded time; `activeTrustWindow()`
+  enforces expiry (`if (Date.now() >= trustWindow.expiresAt) { trustWindow = null;
+  return null; }`) and `needsApproval` consumes it at line 276
+  (`const trust = activeTrustWindow()`) to compute `effectiveMaxTier`.
+- The blind spot: the expiry reset was unit-tested only in ISOLATION
+  (`activeTrustWindow() === null` after mock-timer tick), and every "reverts"
+  test lowered the ceiling via `clearTrustWindow` (explicit `/trust off`) — NO
+  test let a window lapse by wall-clock and then re-drove the real `authorize`
+  gate. So the WIRING was unverified: a refactor reading the raw `trustWindow`
+  closure var instead of the expiry-enforcing accessor would keep an EXPIRED
+  window's `risky` ceiling live forever, silently auto-approving risky commands
+  long after `/trust` lapsed — an authorize-time fail-open — with the whole
+  suite still green.
+- PROVEN a blind spot: mutating line 276 to `const trust = trustWindow` (bypass
+  the accessor) left the FULL suite GREEN (3630/0) — no test drove authorize
+  after a natural expiry. Restored byte-identical (sha256 unchanged), then the
+  new catching test reddens exactly under that mutation
+  (`not ok … risky must PEND once the window has naturally expired`) and passes
+  on the restored code. Both directions verified (cf. the #12–29 coverage pins).
+- Test: `test/trust-window.test.mjs` adds "risky auto-approval STOPS at the
+  authorize gate after a natural expiry" — sets a 60s window, confirms a risky
+  command AUTO-RUNS inside it (positive control, `mode:auto`), advances mocked
+  `Date` past `expiresAt` WITHOUT `/trust off`, then asserts the same command
+  PENDS at the real `authorize` gate. Drives the accessor→`needsApproval`→
+  `effectiveMaxTier` wiring end-to-end, not the accessor alone. Full suite 3631/0.
+
 ## 3.218.0 (2026-08-26)
 
 - SECURITY FIX (sweep #36 — a **fail-OPEN** in the email channel's sender
