@@ -1,3 +1,36 @@
+## 3.231.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #49 — a coverage pin, NOT a behavior change; the shipping
+  enforcement source `src/channels/telegram/callback-auth.mjs` is unchanged and its
+  sha256 is byte-identical before and after: `59ff0f2e…`). Enforcement family: the
+  Telegram inline-callback authorization allowlist OR (`authorizeTelegramCallback`,
+  `src/channels/telegram/callback-auth.mjs:46`) — `inAllow = allow.includes(fromId)
+  || allow.includes(chatId)`, a two-principal grant judging whether a `sug`/`pair`/
+  `apr` inline callback is authorized.
+- Why it matters: `inAllow` gates three sites — the sug/allowlist deny (`:49`), the
+  sug/pairing deny (`:53`), and the PRIVILEGED pair|apr allow (`:72`, which re-runs a
+  pending action's approve/deny). `fromId` is the USER who tapped; `chatId` is
+  `cq.message.chat.id` (the GROUP). The OR intentionally authorizes a callback when
+  EITHER the individual user OR the whole chat is allowlisted — the same two-principal
+  semantics the sibling `isApproved` OR (`:53`) carries for pairing.
+- Blind spot proven: the `isApproved` OR's two arms ARE pinned (by-chat, by-from
+  isolated tests), but coverage does NOT transfer to this sibling `inAllow` OR —
+  every `inAllow`-exercising test collapses `chatId === fromId` (`9/9`, `88/88`,
+  `3/3`) or uses `allowFrom:[]` (inAllow ≡ false), so NEITHER arm was isolated.
+  Dropping the chatId arm (`inAllow = allow.includes(fromId)`) left the FULL suite
+  green (3657/0); dropping the fromId arm (`inAllow = allow.includes(chatId)`) did
+  too. A silent narrowing of allowlist authorization from "the CHAT is allowlisted
+  OR the USER is allowlisted" down to a single principal would ship unnoticed — e.g.
+  a refactor dropping the chatId arm would revoke every group-allowlisted member's
+  ability to activate suggestions or approve pending actions.
+- RULE(b)/RULE(c) applied to a sibling allowlist predicate: coverage of one
+  two-principal OR's arms does not transfer to a DISTINCT OR on the same
+  (fromId, chatId) axis; each arm needs isolation via `chatId !== fromId` with only
+  one principal in `allowFrom`. Three tests isolate the chatId arm (at the sug deny
+  AND the privileged apr allow) and the fromId arm (at the sug deny). Each reddens
+  ONLY its targeted arm-drop mutation (mut-chatId → 2 fail, mut-fromId → 1 fail);
+  correct code → all green. +3 tests (3657 → 3660).
+
 ## 3.230.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #48 — a coverage pin, NOT a behavior change; the shipping

@@ -206,4 +206,68 @@ describe("telegram callback auth", () => {
       });
     }
   }
+
+  // RULE(b)/RULE(c) sibling-predicate: `inAllow` (callback-auth.mjs:46) is a
+  // SECOND two-principal OR — `allow.includes(fromId) || allow.includes(chatId)`
+  // — judging the SAME axis the isApproved OR above judges: fromId is the USER who
+  // tapped, chatId is `cq.message.chat.id` (the GROUP). It gates three sites: the
+  // sug/allowlist deny (:49), the sug/pairing deny (:53), and the PRIVILEGED
+  // pair|apr allow (:72, which re-runs a pending action's approve/deny). The
+  // isApproved OR's two arms are pinned above (by-chat, by-from) — but coverage
+  // does NOT transfer to this sibling OR: every inAllow-exercising test collapses
+  // chatId===fromId ("allowlist can apr" 9/9, "allowlisted sender" 88/88, "sug
+  // allowlist deny" 3/3) or uses allowFrom:[] (inAllow≡false), so NEITHER arm was
+  // isolated. Dropping the chatId arm (`inAllow = allow.includes(fromId)`) left the
+  // FULL suite green (3657/0), and dropping the fromId arm did too — a silent
+  // narrowing of allowlist authorization from "the CHAT is allowlisted OR the USER
+  // is allowlisted" down to a single principal would ship unnoticed. These isolate
+  // each arm at a deny site, plus the chatId arm at the privileged apr allow site.
+
+  it("inAllow chatId-arm: an allowlisted GROUP authorizes a non-allowlisted sender (sug/allowlist)", () => {
+    // the CHAT (42) is allowlisted; the tapping USER (999) is not — the
+    // allow.includes(chatId) arm ALONE must carry it past the :49 deny.
+    const r = authorizeTelegramCallback({
+      fromId: "999",
+      chatId: "42",
+      data: { kind: "sug" },
+      ownerChatId: null,
+      dmPolicy: "allowlist",
+      allowFrom: ["42"], // only the chat id
+      isApproved: () => false,
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.via, "sug_policy");
+  });
+
+  it("inAllow fromId-arm: an allowlisted USER is authorized in a non-allowlisted chat (sug/allowlist)", () => {
+    // mirror: the USER (500) is allowlisted, the CHAT (42) is not — the
+    // allow.includes(fromId) arm ALONE must carry it.
+    const r = authorizeTelegramCallback({
+      fromId: "500",
+      chatId: "42",
+      data: { kind: "sug" },
+      ownerChatId: null,
+      dmPolicy: "allowlist",
+      allowFrom: ["500"], // only the user id
+      isApproved: () => false,
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.via, "sug_policy");
+  });
+
+  it("inAllow chatId-arm carries the privileged apr allow (:72): allowlisted GROUP, non-allowlisted sender", () => {
+    // apr re-runs a pending action's approve/deny — a group member authorized here
+    // solely because the GROUP is allowlisted is the privileged sibling of line 73.
+    const r = authorizeTelegramCallback({
+      fromId: "999",
+      chatId: "42",
+      data: { kind: "apr" },
+      ownerChatId: null,
+      dmPolicy: "allowlist",
+      allowFrom: ["42"], // only the chat id
+      isApproved: () => false,
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.via, "allowlist");
+  });
 });
