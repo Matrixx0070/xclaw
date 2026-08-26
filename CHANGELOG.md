@@ -1,3 +1,31 @@
+## 3.238.0 (2026-08-26)
+
+- SECURITY fix (mutation sweep #55): the in-flight MCP OAuth pending map
+  (`src/gateway/routes/mcp.mjs`) enforced its 10-minute flow TTL only at
+  `/mcp/oauth/start` (`gcPending()` ran there alone). The two consume handlers —
+  `/mcp/oauth/callback` (GET) and `/mcp/oauth/complete` (POST) — checked only
+  `!flow`, never the flow age. `/mcp/oauth/callback` is auth-exempt
+  (`gateway/auth.mjs:70`) and its ONLY authentication is the one-time `state`
+  bounded by that TTL (per the handler's own comment). A flow started, abandoned
+  past 10 minutes, then completed with no intervening `/start` was therefore
+  redeemable for the entire gateway process lifetime — a captured `state`+`code`
+  pair (AS-side logs, a Referer header, a proxy log, or an interrupted redirect
+  that never reached the operator's browser) reached the PKCE token exchange and
+  stored a grant, well past the documented window. The TTL bound on an
+  auth-exempt endpoint's sole credential was documented but never enforced at
+  consume time.
+- Proof: a new test ages a real pending flow 11 minutes past the TTL and drives
+  both consume handlers with a VALID mocked token endpoint. Against the unfixed
+  code the stale flow was accepted (200) and reached the exchange at BOTH paths
+  (full suite otherwise green — a fail-open, not a covered regression).
+- Fix: call the existing `gcPending()` sweep at the top of both consume handlers,
+  so an aged flow is evicted before lookup and falls through to the existing
+  "expired" reject branch (callback → "Login link expired" 400; complete →
+  "unknown or expired state" 400) before any code exchange. A fresh flow is
+  unaffected. `test/mcp-oauth-flow-ttl.test.mjs` (+3 subtests) is
+  mutation-verified both directions and per-handler: removing either handler's
+  `gcPending()` reddens only that handler's subtest.
+
 ## 3.237.0 (2026-08-26)
 
 - SECURITY test-coverage (mutation sweep #54; shipping code

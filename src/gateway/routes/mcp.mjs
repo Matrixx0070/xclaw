@@ -79,6 +79,7 @@ export async function tryHandleMcpRoute({ p, method, req, res, url, cfg, json, r
   if (p === "/mcp/oauth/callback" && method === "GET") {
     // Browser redirect from the authorization server — authenticated by the
     // one-time `state` (random, 10-min TTL), not the operator token.
+    gcPending(); // enforce that TTL at consume time — /start alone leaves aged flows redeemable
     const state = url.searchParams.get("state") || "";
     const code = url.searchParams.get("code") || "";
     const flow = pendingOAuth.get(state);
@@ -109,6 +110,7 @@ export async function tryHandleMcpRoute({ p, method, req, res, url, cfg, json, r
   }
   if (p === "/mcp/oauth/complete" && method === "POST") {
     // Paste-code path for headless setups.
+    gcPending(); // enforce the 10-min TTL at consume time — /start alone leaves aged flows redeemable
     const body = await readBody(req).catch(() => ({}));
     const flow = pendingOAuth.get(body.state || "");
     if (!flow) {
