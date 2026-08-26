@@ -1,3 +1,34 @@
+## 3.221.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #39 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement line is unchanged and its sha256 is identical
+  before and after: `e4ac2933…`). New enforcement family this sweep: the ROUTE
+  wiring of the inbound PagerDuty webhook (`src/gateway/routes/alerts.mjs`).
+  `POST /webhooks/pagerduty` is deliberately OPEN at the gateway token gate
+  (`auth.mjs:94`) — the HMAC signature verifier IS the authenticator. The route
+  consumes the verifier at line 73:
+  `if (!ver.ok) { json(res, 401, {error:"invalid_signature"}); return true; }`,
+  guarding the privileged side-effect `handlePagerDutyWebhook` (webhook-history
+  append + alert mirror + `ops` WS broadcast).
+- The blind spot: `verifyPagerDutySignature` (the unit verifier) is exhaustively
+  covered by `test/pagerduty-webhook-signature.test.mjs`, but no test drove the
+  ROUTE — nothing POSTed a forged or missing signature through
+  `tryHandleAlertsRoute` to assert the reject-before-side-effect wiring. Mutating
+  line 73 to `if (false)` (forged webhooks always processed) left the FULL suite
+  GREEN (3632/0). A refactor weakening that call site would let an
+  unauthenticated attacker inject fake PagerDuty incidents — firing operator
+  alerts and polluting webhook history — with the suite still green. Same
+  #37-shape call-site wiring class: the verifier decision is sound; this pins the
+  route's consumption of it.
+- Fix (test only): `test/pagerduty-webhook-route-wiring.test.mjs` drives the real
+  route across three cases with a secret configured — forged signature → 401
+  `invalid_signature` AND webhook history unchanged; missing signature → 401
+  `missing_signature` AND history unchanged; valid signature → 200 `ok` AND
+  history appended (+1). Verified in both directions: reddens under the `if
+  (false)` mutation (forged + missing subtests) and under `if (true)` (accept
+  subtest), and passes on the restored byte-identical code.
+- Suite: 3635/3635, 0 fail (was 3632; +3).
+
 ## 3.220.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #38 — a byte-identical coverage pin, NOT a behavior
