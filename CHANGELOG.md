@@ -1,3 +1,22 @@
+## 3.241.0 (2026-08-26)
+
+- SECURITY (coverage pin, RULE(m) — mutation sweep #57): the gateway's EC P-256
+  *private* signing-key store (`<configDir>/key-rotation.json`) is written
+  `mode: 0o600` in `writeStore` (src/auth/key-rotation.mjs). When no key secret
+  is configured (`auth.keys.secret` / `XCLAW_KEY_SECRET` — the default) the
+  private JWK is stored in PLAINTEXT (`privateBlob.enc === false`), so that
+  owner-only file mode is the *sole* barrier between a local non-root user and a
+  key that forges any gateway JWT. Yet the mode was asserted by no test: flipping
+  the shipping line to `0o644` (world-readable) left the entire suite green
+  (3711/0) — a blind spot. Per RULE(m), a per-file PERMISSION MODE is its own
+  enforcement line; a test that only checks the file exists does not cover its
+  mode. Shipping code is UNCHANGED (`key-rotation.mjs` sha256 identical); this
+  release adds `test/key-store-file-mode.test.mjs`, which pins `0o600` on both
+  the initial `ensureKeyStore` write and across a `rotateKeys` rewrite, and
+  asserts the plaintext-by-default precondition that makes the mode load-bearing.
+  Mutation-verified both directions (correct code GREEN 2/2; `0o644` mutant RED
+  2/2). Suite 3711 → 3713.
+
 ## 3.240.0 (2026-08-26)
 
 - FEATURE: Tailscale exposure for the gateway. A loopback gateway can now be
