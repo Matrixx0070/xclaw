@@ -1,3 +1,25 @@
+## 3.242.0 (2026-08-26)
+
+- SECURITY (coverage pin, RULE(m) — mutation sweep #58): the live xAI credential
+  store (`<configDir>/credentials.json`) is written by `saveCredentials`
+  (src/auth/xai.mjs) with `mode: 0o600` and re-asserted by a following
+  `fs.chmod(fp, 0o600)`. Unlike the token vault / connected-token store, this
+  module has NO encryption path at all — the xAI API key and any OAuth
+  access/refresh tokens are persisted as plain `JSON.stringify(data)`, so the
+  credential always sits on disk in PLAINTEXT and that owner-only file mode is the
+  *sole* barrier between a local non-root user and a bearer credential for the
+  gateway's model provider. Yet the mode was asserted by no test: flipping the
+  authoritative `chmod` line to `0o644` (world-readable) left the entire suite
+  green (3713/0) — a blind spot. Per RULE(m), a per-file PERMISSION MODE is its
+  own enforcement line, and the `chmod` (not the create-time `writeFile` mode,
+  which is umask-masked and a no-op on an existing file) is what guarantees the
+  mode on every rewrite. Shipping code is UNCHANGED (`xai.mjs` sha256 identical);
+  this release adds `test/xai-credentials-file-mode.test.mjs`, which pins `0o600`
+  on the initial write and on a rewrite after the file was left group/world-
+  readable (which only the chmod can repair), and asserts the plaintext-at-rest
+  precondition that makes the mode load-bearing. Mutation-verified both directions
+  (correct code GREEN 2/2; `0o644` mutant RED 2/2). Suite 3713 → 3715.
+
 ## 3.241.0 (2026-08-26)
 
 - SECURITY (coverage pin, RULE(m) — mutation sweep #57): the gateway's EC P-256
