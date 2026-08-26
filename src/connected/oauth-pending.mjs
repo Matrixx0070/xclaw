@@ -34,6 +34,13 @@ export async function createPending(cfg, record) {
     all[id] = entry;
     await fs.mkdir(path.dirname(fp), { recursive: true });
     await fs.writeFile(fp, JSON.stringify(all, null, 2), { mode: 0o600 });
+    // writeFile's mode is create-only; re-tighten so a pre-existing looser-mode
+    // store cannot leave the PKCE verifier group/other-readable on rewrite.
+    try {
+      await fs.chmod(fp, 0o600);
+    } catch {
+      /* windows */
+    }
   } catch {
     /* mem only */
   }
@@ -49,7 +56,12 @@ export async function takePending(cfg, state) {
     if (!entry) entry = all[state];
     if (all[state]) {
       delete all[state];
-      await fs.writeFile(fp, JSON.stringify(all, null, 2));
+      await fs.writeFile(fp, JSON.stringify(all, null, 2), { mode: 0o600 });
+      try {
+        await fs.chmod(fp, 0o600);
+      } catch {
+        /* windows */
+      }
     }
   } catch {
     /* */

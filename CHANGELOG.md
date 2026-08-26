@@ -1,3 +1,23 @@
+## 3.245.0 (2026-08-26)
+
+- SECURITY (hardening + coverage, RULE(m) — mutation sweep #60): the pending-PKCE
+  store `<configDir>/oauth-pending.json` (src/connected/oauth-pending.mjs) holds
+  the OAuth `code_verifier` in cleartext — there is no encryption path, so its
+  owner-only file mode is the sole at-rest control on the PKCE secret. Both
+  writers set the mode create-only and never re-`chmod`'d: `createPending` passed
+  `{ mode: 0o600 }` (honoured only when the file is first created) and
+  `takePending` rewrote the file with no mode at all. Because the store persists
+  across concurrent in-flight logins, every write after the first is an in-place
+  rewrite of an existing inode — so a store that was ever created at a looser mode
+  (older build, restore, umask) stayed group/other-readable forever, leaving the
+  PKCE verifier world-readable. The mode was asserted by no test (the authenticator
+  tests pin accept-once / reject-forged / single-use / reject-expired, not the
+  mode — seeding the store at 0o644 then writing left the suite green: a blind
+  spot). Per the sweep #58/#59 pattern both writers now `chmod(fp, 0o600)` after
+  writing, so the 0o600 invariant holds on every rewrite regardless of the file's
+  prior mode; new `test/oauth-pending-file-mode.test.mjs` pins it (mutation-verified
+  both directions: create-rewrite and take-rewrite each go RED without their chmod).
+
 ## 3.244.0 (2026-08-26)
 
 - HOST RUNTIME: startup, installers, `daemon start`, and `init` now enforce a
