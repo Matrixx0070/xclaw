@@ -28,6 +28,7 @@ import {
   compileAllowlist,
   isSenderIdAllowed,
   isEmailSenderAllowed,
+  extractSenderAddress,
 } from "../src/channels/allow-from.mjs";
 import { createChannelPolicy } from "../src/channels/policy.mjs";
 
@@ -287,6 +288,45 @@ describe("channel sender authorization", () => {
     it("a blank/malformed sender against a configured list is denied", () => {
       assert.equal(isEmailSenderAllowed(["corp.com"], ""), false);
       assert.equal(isEmailSenderAllowed(["corp.com"], "not-an-email"), false);
+    });
+  });
+
+  // extractSenderAddress feeds isEmailSenderAllowed: the value the gate judges is
+  // the RFC 5322 mailbox inside the angle brackets, never the attacker-controlled
+  // display name that precedes them. Taking the first @-shaped token instead is a
+  // spoof: `alice@corp.com <mallory@evil.com>` would be judged as corp.com.
+  describe("extractSenderAddress — the bracketed mailbox, not the display name", () => {
+    it("takes the bracketed mailbox over a spoofed display-name address", () => {
+      assert.equal(
+        extractSenderAddress("alice@corp.com <mallory@evil.com>"),
+        "mallory@evil.com",
+        "the real sender is the bracketed mailbox; a forged display name must not win"
+      );
+    });
+    it("takes the bracketed mailbox over a QUOTED spoofed display name", () => {
+      assert.equal(
+        extractSenderAddress('"alice@corp.com" <mallory@evil.com>'),
+        "mallory@evil.com"
+      );
+    });
+    it("takes the bracketed mailbox under a normal display name", () => {
+      assert.equal(extractSenderAddress("Alice Example <alice@corp.com>"), "alice@corp.com");
+    });
+    it("ignores a bracketed token with no @ and picks the real mailbox", () => {
+      assert.equal(extractSenderAddress('"Team <all>" <team@corp.com>'), "team@corp.com");
+    });
+    it("falls back to a bare address when there are no angle brackets", () => {
+      assert.equal(extractSenderAddress("mallory@evil.com"), "mallory@evil.com");
+    });
+    it("handles a bare bracketed address and inner whitespace", () => {
+      assert.equal(extractSenderAddress("<alice@corp.com>"), "alice@corp.com");
+      assert.equal(extractSenderAddress("< alice@corp.com >"), "alice@corp.com");
+    });
+    it("lowercases and trims; empty/absent header yields ''", () => {
+      assert.equal(extractSenderAddress("  Alice <Alice@Corp.COM>  "), "alice@corp.com");
+      assert.equal(extractSenderAddress(""), "");
+      assert.equal(extractSenderAddress(null), "");
+      assert.equal(extractSenderAddress(undefined), "");
     });
   });
 });

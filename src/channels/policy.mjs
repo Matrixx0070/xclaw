@@ -100,6 +100,7 @@ export {
   compileAllowlist,
   isSenderIdAllowed,
   isEmailSenderAllowed,
+  extractSenderAddress,
   mergeDmAllowFromSources,
   resolveGroupAllowFromSources,
 } from "./allow-from.mjs";

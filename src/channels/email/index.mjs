@@ -16,7 +16,7 @@ import net from "node:net";
 import tls from "node:tls";
 import { replyWithAgent, truncate } from "../base.mjs";
 import { processInbound, fromEmailMessage } from "../runtime.mjs";
-import { workspaceForChat, isEmailSenderAllowed } from "../policy.mjs";
+import { workspaceForChat, isEmailSenderAllowed, extractSenderAddress } from "../policy.mjs";
 import { resolveBinding, touchSession } from "../../sessions/router.mjs";
 import { createRateLimiter } from "../rate-limit.mjs";
 
@@ -218,7 +218,7 @@ export function createEmailChannel(cfg) {
   let loopAlive = false;
 
   async function handleMail(mail) {
-    const fromAddr = (mail.from.match(/[\w.+-]+@[\w.-]+/) || [mail.from])[0].toLowerCase();
+    const fromAddr = extractSenderAddress(mail.from);
     if (!isEmailSenderAllowed(conf.allowFrom, fromAddr)) {
       console.log(`[email] skip sender ${fromAddr}`);
       return;
@@ -284,6 +284,10 @@ export function createEmailChannel(cfg) {
   return {
     name: "email",
     enabled,
+    // Seam: drive the real inbound handler in-process (mirrors Discord's
+    // handleInbound) so the sender gate wiring — extraction → allowlist deny —
+    // is testable without a live IMAP poll.
+    handleMail,
     async start() {
       if (!enabled) {
         console.log("[email] disabled (need enabled + imap + smtp config)");

@@ -105,6 +105,33 @@ export function isEmailSenderAllowed(allowFrom, fromAddr) {
   return false;
 }
 
+/**
+ * Extract the actual sender mailbox from a raw RFC 5322 `From:` header value —
+ * the address the allowlist gate must judge.
+ *
+ * The mailbox is the address inside angle brackets ("Display Name <addr@dom>");
+ * the display name before them is arbitrary, attacker-controlled text. A naive
+ * "first @-shaped token" scan picks the DISPLAY NAME when it is forged to look
+ * like an address — `alice@corp.com <mallory@evil.com>` or the quoted
+ * `"alice@corp.com" <mallory@evil.com>` — which lets an off-allowlist attacker be
+ * admitted under a spoofed allowlisted identity. So a bracketed `<…@…>` mailbox
+ * wins (the LAST such pair, since the display name precedes it); only a header
+ * with no bracketed address falls back to the bare-token scan. Returned trimmed
+ * and lowercased; "" when the header carries no address at all.
+ */
+export function extractSenderAddress(fromHeader) {
+  const raw = String(fromHeader || "");
+  const bracketRe = /<[^<>]*?([\w.+-]+@[\w.-]+)[^<>]*>/g;
+  let mailbox = "";
+  let m;
+  while ((m = bracketRe.exec(raw)) !== null) mailbox = m[1]; // last bracketed mailbox wins
+  if (!mailbox) {
+    const bare = raw.match(/[\w.+-]+@[\w.-]+/);
+    mailbox = bare ? bare[0] : "";
+  }
+  return mailbox.trim().toLowerCase();
+}
+
 export function formatAllowFromLowercase(params = {}) {
   return normalizeStringEntries(params.allowFrom || [])
     .map((entry) =>

@@ -1,3 +1,40 @@
+## 3.218.0 (2026-08-26)
+
+- SECURITY FIX (sweep #36 — a **fail-OPEN** in the email channel's sender
+  authorization; a real behavior change, NOT a byte-identical coverage pin). The
+  gate DECISION (`isEmailSenderAllowed`) is domain-boundary hardened and unit-
+  tested, but the ADDRESS it judges was mis-extracted from the raw RFC 5322
+  `From:` header. `handleMail` (`src/channels/email/index.mjs`) took the FIRST
+  @-shaped token anywhere in the header
+  (`(mail.from.match(/[\w.+-]+@[\w.-]+/) || [mail.from])[0]`), but a header's
+  real mailbox lives inside angle brackets — `Display Name <addr@dom>` — and the
+  display name that precedes them is arbitrary, attacker-controlled text.
+- The leak: `From: alice@corp.com <mallory@evil.com>` (and the quoted
+  `"alice@corp.com" <mallory@evil.com>` variant) resolved to the FORGED display
+  name `alice@corp.com` and was ADMITTED under `allowFrom: ["corp.com"]` even
+  though the real sender is `mallory@evil.com` — the allowlist bypassed by a
+  header the attacker fully controls, then handed the spoofed sender straight to
+  the model. Symmetrically, when the real bracketed sender WAS allowlisted, the
+  same bug judged the wrong (display-name) address and wrongly DENIED it.
+- Fail-open PROVEN live: exposing a `handleMail` seam over the unchanged naive
+  extraction reddened all three wiring cases (spoof admitted, quoted spoof
+  admitted, legitimate bracketed sender denied) — the shipping fix line IS the
+  mutation, so there is no byte-identical restore (cf. sweeps #31, #34).
+- Fix: a new pure `extractSenderAddress(fromHeader)` (`src/channels/allow-from.mjs`,
+  re-exported through `policy.mjs`) — the LAST bracketed `<…@…>` mailbox wins; a
+  bare-token scan runs only as a fallback when no bracketed address exists;
+  returns trimmed + lowercased, `""` when the header carries no address. Wired at
+  `email/index.mjs:221` (`const fromAddr = extractSenderAddress(mail.from)`).
+- Tests: `test/email-sender-gate-wiring.test.mjs` drives the real inbound path
+  through the seam (hermetic — persistence off, a `max:0` rate limiter halts an
+  admitted sender right after the gate, before any model call; admit/deny is read
+  from the `[email] skip sender …` log) and pins both directions of the spoof
+  plus the wrongly-denied legitimate sender. Seven `extractSenderAddress` unit
+  tests in `channel-allow-policy.test.mjs` pin the extraction itself (bracketed
+  over spoof, quoted spoof, plain display name, bracketed-token-without-@ ignored,
+  bare fallback, inner whitespace, lowercase/trim + empty/null/undefined → `""`).
+  Full suite 3630/0.
+
 ## 3.217.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #35 — a byte-identical coverage pin, NOT a behavior
