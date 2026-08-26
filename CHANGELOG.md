@@ -1,3 +1,31 @@
+## 3.239.0 (2026-08-26)
+
+- SECURITY coverage pin (mutation sweep #56): the OS sandbox (bubblewrap) mounts
+  the host system directories (`/usr`, `/etc`, `/bin`, `/sbin`, `/lib*`) into the
+  sandbox namespace READ-ONLY so a sandboxed agent command cannot tamper with
+  system binaries or config. `roBindDirsArgv()` in `src/security/os-sandbox.mjs`
+  is the single source of those mounts (spliced into the assembled bwrap argv at
+  the "RO system paths" step, `:256`, and reused by both usability probes so the
+  probe filesystem view matches the real sandbox). The read-only FLAG on those
+  mounts was asserted by NO test: flipping `--ro-bind` → `--bind` on `:94` makes
+  every system directory WRITABLE inside the production sandbox for any operator
+  who enables it, yet the FULL suite stayed green (3675/0) under exactly that
+  mutation — the read-only containment of the sandbox system mounts was entirely
+  unpinned.
+- Proof: `roBindDirsArgv:94 --ro-bind → --bind` (system dirs writable in the
+  production sandbox) left the full suite GREEN 3675/0 (blind spot proven);
+  restored byte-identical (sha256 unchanged); a real out-of-process bwrap run
+  with the correct argv confirmed the enforcement is genuine end-to-end
+  (`touch /usr/...` inside the sandbox → "Read-only file system", host `/usr`
+  untouched). Shipping code is UNCHANGED — this is a coverage pin, not a fix.
+- Pin: `test/os-sandbox-ro-mounts.test.mjs` (+2) asserts every triple emitted by
+  `roBindDirsArgv` is `--ro-bind` (and never writable `--bind`) with matching
+  src/dst, and that the assembled production argv keeps `/usr` read-only while
+  binding the workspace writable. Mutation-verified both directions: correct
+  code 2/2 GREEN, the `--bind` mutant 2/2 RED. NEW RULE reinforced: a per-path
+  mount MODE flag (`--ro-bind` vs `--bind`) is its own enforcement line — tests
+  that assert a path is *present* in the argv do not assert it is *read-only*.
+
 ## 3.238.0 (2026-08-26)
 
 - SECURITY fix (mutation sweep #55): the in-flight MCP OAuth pending map
