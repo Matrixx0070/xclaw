@@ -1,3 +1,32 @@
+## 3.226.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #44 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement source is unchanged and its sha256 is
+  identical before and after: `5a5dd077…`). Enforcement family: the revoked-key
+  filter in `exportJwks` (`src/auth/jwks.mjs:102-110`), which excludes a revoked
+  (compromise-recovered) kid from the JWKS document that XClaw publishes for
+  verifiers.
+- The blind spot: this is a real auth boundary — a verifier that fetches the
+  JWKS keeps trusting whatever kids it lists, so a revoked/compromised key MUST
+  be dropped from the export or the compromise is not contained. `isRevoked` had
+  ZERO test references by name, and although `exportJwks` is tested, every case
+  used only NON-revoked keys ("dual window exports two keys" asserts a count of 2,
+  but neither key is revoked), so the `if (await isRevoked(...)) continue;` skip
+  never fired anywhere in the suite. No jwks test file contained the string
+  "revok" at all.
+- Proof (mutation): neutralizing the skip so a revoked kid stays published
+  (`if (false && await isRevoked(...))`) left the FULL suite GREEN 3646/3646/0 —
+  the revocation filter was entirely unpinned; a silent removal would ship a
+  compromised key in the JWKS unnoticed.
+- Fix (test only): `test/jwks.test.mjs` revokes one kid of a dual-window pair via
+  `revokeKids`, then asserts the revoked kid is ABSENT from the re-exported JWKS
+  (count drops 2→1, the non-revoked kid still present), and pins the
+  `filterRevoked:false` opt-out (a revoked kid stays published, count 2). Verified
+  BOTH directions: passes on the restored byte-identical code and the
+  revoked-kid-excluded assertion reddens (`# pass 9 # fail 1`) under the line-104
+  fail-open mutation.
+- Suite: 3648/3648, 0 fail (was 3646; +2).
+
 ## 3.225.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #43 — a byte-identical coverage pin, NOT a behavior
