@@ -1,3 +1,31 @@
+## 3.222.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #40 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement line is unchanged and its sha256 is identical
+  before and after: `93d4f2b0…`). Enforcement family: the filename guard on
+  `POST /skills/proposals/decide` (`src/gateway/routes/eval-queue.mjs:208`),
+  which confines a proposal `file` to the proposals dir before handing it to
+  `installProposal`/`rejectProposal`:
+  `if (!file || /[/\\]/.test(file) || file.includes("..")) { 400 }`.
+- The blind spot: `installProposal` (`src/skills/propose.mjs:133`) honors
+  `path.isAbsolute(proposalFile)` and reads the path VERBATIM, so an absolute
+  `file` escapes the proposals dir entirely — an arbitrary-file read + install-
+  as-skill primitive. The route's SOLE defense against that is the `/[/\\]/`
+  separator arm; the `..` arm does NOT catch a `..`-free absolute path like
+  `/etc/evil.md`. The pre-existing traversal test only fed RELATIVE pathy names
+  (`a/b.md`, `a\b.md`), which 400 DOWNSTREAM (ENOENT inside installProposal after
+  the relative join), never at the guard. So deleting the separator arm left the
+  FULL suite GREEN (3635/0) — a refactor weakening line 208 would open the
+  absolute-path escape with the suite still green.
+- Fix (test only): `test/skills-proposals-decide.test.mjs` now drives a real
+  ABSOLUTE path to a file OUTSIDE the proposals dir carrying valid front matter,
+  and asserts rejection AT THE GUARD — status 400 with the guard's own error
+  (`/proposal filename/`, distinguishing it from a downstream `{ok:false}` catch)
+  and no skill written under skillsDir. Verified both directions: reddens under
+  the slash-arm-removed mutation (the absolute path passes the guard and installs
+  → 200) and passes on the restored byte-identical code.
+- Suite: 3636/3636, 0 fail (was 3635; +1).
+
 ## 3.221.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #39 — a byte-identical coverage pin, NOT a behavior
