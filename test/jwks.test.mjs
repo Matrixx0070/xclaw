@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { ensureKeyStore, rotateKeys } from "../src/auth/key-rotation.mjs";
+import {
+  ensureKeyStore,
+  rotateKeys,
+  keyRotationStatus,
+} from "../src/auth/key-rotation.mjs";
 import {
   exportJwks,
   getJwksCached,
@@ -169,6 +173,38 @@ describe("JWKS revoked-key filter (exportJwks)", () => {
       afterKids.includes(keptKid),
       "the non-revoked kid must still be published"
     );
+    assert.equal(after.jwks.keys.length, 1);
+    assert.equal(after.keyCount, 1);
+  });
+
+  // RULE(k) sibling: exportJwks is the OUTBOUND (publish) consumer of isRevoked,
+  // distinct from verifyWithRecovery's inbound path. Its filter calls
+  // isRevoked(cfg, { kid, generation }) — so revoking by GENERATION alone (no kid)
+  // must ALSO drop the key from the JWKS. The kid-only test above cannot catch a
+  // regression in the generation arm; neutralizing that arm left the suite green.
+  it("SECURITY: a revoked GENERATION (no kid) is EXCLUDED from the published JWKS", async () => {
+    const cfg = await tmpCfg();
+    await ensureKeyStore(cfg);
+    await rotateKeys(cfg); // dual window: current + previous
+    const st = await keyRotationStatus(cfg);
+    const prevGen = st.dualWindow?.previousGeneration;
+    const prevKid = st.dualWindow?.previousKid;
+    assert.ok(prevGen != null, "dual window must expose a previous generation");
+    assert.ok(prevKid, "dual window must expose a previous kid");
+
+    const before = await exportJwks(cfg);
+    assert.equal(before.jwks.keys.length, 2, "both keys published before revocation");
+
+    // Revoke by GENERATION only — do NOT name the kid.
+    await revokeKids(cfg, { generations: [prevGen], reason: "compromise" });
+
+    const after = await exportJwks(cfg);
+    const afterKids = after.jwks.keys.map((k) => k.kid);
+    assert.ok(
+      !afterKids.includes(prevKid),
+      "a key whose generation was revoked must NOT remain in the published JWKS (fail-open if it does)"
+    );
+    assert.ok(afterKids.includes(st.kid), "the current kid must still be published");
     assert.equal(after.jwks.keys.length, 1);
     assert.equal(after.keyCount, 1);
   });

@@ -1,3 +1,37 @@
+## 3.227.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #45 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement source is unchanged and its sha256 is
+  identical before and after: `c008124a…`). Enforcement family: the revoked-
+  GENERATION arm of `isRevoked` (`src/auth/key-compromise-recovery.mjs:137-142`),
+  the branch that denies a signing key whose entire GENERATION was deny-listed —
+  distinct from the revoked-KID arm on the line above (#44 pinned the kid path).
+- The blind spot: an operator can revoke a whole key generation without naming
+  individual kids — `revokeKids({ generations: [g] })` — e.g. when a generation's
+  private material is suspect but the live kid must keep signing. `isRevoked` is
+  wired into TWO enforcement consumers: the inbound `verifyWithRecovery` path
+  (rejects a still-valid signature whose generation is revoked) and the outbound
+  `exportJwks` publish path (drops such a key from the JWKS). Every existing
+  revocation test revoked by KID only; the one recovery test that reaches
+  KEY_REVOKED does so via the SEPARATE `revokedPublicKeys` crypto loop after the
+  dual window is closed (`verifyWithRotatedKeys` fails first), never through the
+  generation arm. So the generation branch fired nowhere in the suite.
+- Proof (mutation): neutralizing the arm (`if (false && ...)`) left the FULL
+  suite GREEN 3648/3648/0 — a signature from a still-active key whose generation
+  was revoked would be silently ACCEPTED, and such a key would remain in the
+  published JWKS. Under the mutation exactly the two new SECURITY tests redden
+  (verify path + publish path), 14→2 fail on the two affected files; on the
+  restored byte-identical code both pass.
+- Fix (test only), RULE(k) — pin EACH wired consumer:
+  `test/key-compromise-recovery.test.mjs` signs with the current key, revokes its
+  GENERATION (not the kid) with no rotation/window-close so the key stays active,
+  and asserts `verifyWithRecovery` returns `KEY_REVOKED` for the matching
+  generation+kid (plus a scoped-negative: an unrelated revoked generation does not
+  reject a good signature). `test/jwks.test.mjs` rotates to a dual window, revokes
+  the previous GENERATION only, and asserts the previous kid is ABSENT from the
+  re-exported JWKS (count 2→1, current kid still present).
+- Suite: 3651/3651, 0 fail (was 3648; +3).
+
 ## 3.226.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #44 — a byte-identical coverage pin, NOT a behavior
