@@ -1,3 +1,29 @@
+## 3.232.0 (2026-08-26)
+
+- TEST-DETERMINISM (fixes a CI-flaky test; shipping code
+  `src/security/decisions.mjs` is UNCHANGED). The unit test `wide pins expire and
+  match by exe+argv0` (`test/security-decisions.test.mjs`) failed the `ci` gate on
+  the sweep-#49 tip (run 32956726501, `# fail 1` of 3654): `not ok 3`,
+  `AssertionError: wide pin matches different fingerprint with same exe`,
+  `expected: true, actual: undefined` at `:54`.
+- Root cause: the test created ONE wide pin with `ttlMs: 50`, then immediately
+  asserted a live match. The exe/argv0/tool/tier all match, so `matchDecision`
+  returning `undefined` is reachable by EXACTLY one path — `pruneExpired`
+  (`decisions.mjs:44`) dropped the pin as already-expired because the async fs
+  round-trip (`mkdir`+`writeFile`+`rename`+read) landed the "still live" read
+  >50ms after the write. Under the full parallel suite's event-loop contention
+  in CI that window routinely exceeds 50ms; in isolation it never does (30/30
+  local runs under 12 spinners: 0 fails), which is why it surfaced only in CI.
+- Fix (test-only): split the two concerns so neither assertion can race the
+  round-trip. The LIVE-match uses a 60s TTL (cannot lapse mid-round-trip); the
+  EXPIRY check uses a separate 1ms-TTL pin on a DISTINCT exe (`/usr/bin/gitx`) —
+  expiry is monotonic (more contention only makes it MORE expired), and the
+  distinct exe prevents the still-live pin from masking the expected null.
+- Proof: mechanism reproduced deterministically against the real API — `ttlMs=50`
+  + a 60ms stall → `NULL(pruned-expired)` (the CI `actual: undefined`); `ttlMs=60000`
+  + the same stall → `MATCH`. Test count unchanged (one `it` block retained). Full
+  suite green.
+
 ## 3.231.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #49 — a coverage pin, NOT a behavior change; the shipping

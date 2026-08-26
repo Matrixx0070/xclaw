@@ -44,18 +44,33 @@ describe("durable decisions (A2)", () => {
   });
 
   it("wide pins expire and match by exe+argv0", async () => {
+    // Two independent concerns, each pinned with a TTL chosen so its assertion
+    // cannot race the async fs round-trip (mkdir+write+rename+read). A single
+    // 50ms TTL shared by both flaked in CI: under the full parallel suite's
+    // event-loop contention the "still live" read landed >50ms after the write,
+    // pruneExpired() dropped the pin, and the alive assert saw undefined
+    // (this file:54, run 32956726501). See the flake-repro-under-cpu-load rule.
+
+    // (1) wide match while LIVE — a 60s TTL cannot lapse during the round-trip.
     const plan = { fingerprint: "fp_w", exe: "/usr/bin/git", argv: ["git"] };
-    await addDecision(cfg, { tool: "xclaw_bash", plan, tier: "risky" }, { wide: true, ttlMs: 50 });
+    await addDecision(cfg, { tool: "xclaw_bash", plan, tier: "risky" }, { wide: true, ttlMs: 60_000 });
     const hit = await matchDecision(cfg, {
       tool: "xclaw_bash",
       plan: { fingerprint: "fp_DIFFERENT", exe: "/usr/bin/git", argv: ["git"] },
       tier: "risky",
     });
     assert.ok(hit, "wide pin matches different fingerprint with same exe");
-    await new Promise((r) => setTimeout(r, 80));
+
+    // (2) wide pin EXPIRES — expiry is monotonic, so a 1ms TTL is robustly gone
+    // after any real delay (more contention only makes it MORE expired), unlike
+    // a live-window assertion. A DISTINCT exe (/usr/bin/gitx) is required so the
+    // still-live pin above cannot mask the expected null.
+    const planX = { fingerprint: "fp_wx", exe: "/usr/bin/gitx", argv: ["gitx"] };
+    await addDecision(cfg, { tool: "xclaw_bash", plan: planX, tier: "risky" }, { wide: true, ttlMs: 1 });
+    await new Promise((r) => setTimeout(r, 30));
     const expired = await matchDecision(cfg, {
       tool: "xclaw_bash",
-      plan: { fingerprint: "fp_DIFFERENT", exe: "/usr/bin/git", argv: ["git"] },
+      plan: { fingerprint: "fp_DIFFERENT2", exe: "/usr/bin/gitx", argv: ["gitx"] },
       tier: "risky",
     });
     assert.equal(expired, null, "expired wide pin must not match");
