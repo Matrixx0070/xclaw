@@ -24,7 +24,11 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { compileAllowlist, isSenderIdAllowed } from "../src/channels/allow-from.mjs";
+import {
+  compileAllowlist,
+  isSenderIdAllowed,
+  isEmailSenderAllowed,
+} from "../src/channels/allow-from.mjs";
 import { createChannelPolicy } from "../src/channels/policy.mjs";
 
 describe("channel sender authorization", () => {
@@ -168,6 +172,64 @@ describe("channel sender authorization", () => {
     it("an unconfigured Discord allowlist admits (open default, matching Telegram)", () => {
       const p3 = createChannelPolicy({ channels: { discord: {} } });
       assert.equal(p3.allowedDiscordChannel("anything"), true);
+    });
+  });
+
+  // Email is the ONE channel whose sender gate did NOT route through the shared
+  // matcher. handleMail (email/index.mjs) rolled its own `allowFrom.some(a =>
+  // fromAddr.includes(a))` — a SUBSTRING test, the classic domain-suffix bypass.
+  // Sweep #33 (3.215.0): a bare-domain allowlist `["corp.com"]` admitted
+  // `attacker@corp.com.evil.com` (suffix), `attacker@evil-corp.com` (no dot
+  // boundary), and even `corp.company@x.com` (substring in the LOCAL part) — any
+  // of which then drove the agent over email. Reproduced by mutating the fixed
+  // matcher back to the shipped `some(a => addr.includes(a))`: the three bypass
+  // cases below go RED alone while the legit cases stay green (a real fail-OPEN,
+  // proven both directions). isEmailSenderAllowed does address-OR-domain matching,
+  // never substring. Email is disabled on this deployment, so this is a latent
+  // fail-open in shipped/wired code, not a live leak — it bites any user who
+  // enables email with a domain allowFrom.
+  describe("isEmailSenderAllowed — address/domain, never substring", () => {
+    it("allows a legit address under a bare-domain entry", () => {
+      assert.equal(isEmailSenderAllowed(["corp.com"], "alice@corp.com"), true);
+    });
+    it("allows a subdomain of a bare-domain entry", () => {
+      assert.equal(isEmailSenderAllowed(["corp.com"], "bob@mail.corp.com"), true);
+    });
+    it("DENIES a suffix-bypass address (corp.com.evil.com)", () => {
+      // The proven mutation: `addr.includes("corp.com")` is TRUE here → admitted.
+      assert.equal(
+        isEmailSenderAllowed(["corp.com"], "attacker@corp.com.evil.com"),
+        false,
+        "a suffix that appends the allowed domain must be denied — substring match is a full email-auth bypass"
+      );
+    });
+    it("DENIES a look-alike domain with no dot boundary (evil-corp.com)", () => {
+      assert.equal(isEmailSenderAllowed(["corp.com"], "attacker@evil-corp.com"), false);
+    });
+    it("DENIES the allowed domain appearing only in the local part", () => {
+      assert.equal(isEmailSenderAllowed(["corp.com"], "corp.company@x.com"), false);
+    });
+    it("full-address entries match exactly, not by domain", () => {
+      assert.equal(isEmailSenderAllowed(["alice@corp.com"], "alice@corp.com"), true);
+      assert.equal(
+        isEmailSenderAllowed(["alice@corp.com"], "eve@corp.com"),
+        false,
+        "a full-address entry must not admit a different mailbox at the same domain"
+      );
+    });
+    it("empty/absent allowlist is open (preserves prior no-allowFrom behavior)", () => {
+      assert.equal(isEmailSenderAllowed([], "anyone@x.com"), true);
+      assert.equal(isEmailSenderAllowed(undefined, "anyone@x.com"), true);
+    });
+    it("wildcard '*' admits any sender", () => {
+      assert.equal(isEmailSenderAllowed(["*"], "anyone@x.com"), true);
+    });
+    it("matches case-insensitively", () => {
+      assert.equal(isEmailSenderAllowed(["Corp.com"], "Alice@CORP.com"), true);
+    });
+    it("a blank/malformed sender against a configured list is denied", () => {
+      assert.equal(isEmailSenderAllowed(["corp.com"], ""), false);
+      assert.equal(isEmailSenderAllowed(["corp.com"], "not-an-email"), false);
     });
   });
 });

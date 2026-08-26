@@ -80,6 +80,7 @@ export function createChannelPolicy(cfg = {}) {
 export {
   compileAllowlist,
   isSenderIdAllowed,
+  isEmailSenderAllowed,
   mergeDmAllowFromSources,
   resolveGroupAllowFromSources,
 } from "./allow-from.mjs";

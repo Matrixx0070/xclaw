@@ -76,6 +76,35 @@ export function isSenderIdAllowed(allow, senderId, allowWhenEmpty = true) {
   return allow.entries.includes(id);
 }
 
+/**
+ * Email sender allowlist check — WHO may command the bot over email.
+ *
+ * Entries may be a full address ("alice@corp.com") or a bare domain
+ * ("corp.com"); a bare-domain entry matches that domain OR any subdomain of it,
+ * tested against the address's DOMAIN part only — NEVER as a substring. So
+ * "corp.com" must NOT admit "x@corp.com.evil.com" (suffix), "x@evil-corp.com"
+ * (no dot boundary), or "corp.company@x.com" (substring in local part). Empty or
+ * absent list is open (preserves the prior "no allowFrom = accept all"
+ * behavior); "*" allows all. Full-address entries match exactly.
+ */
+export function isEmailSenderAllowed(allowFrom, fromAddr) {
+  const entries = normalizeStringEntries(allowFrom || []).map((e) => e.toLowerCase());
+  if (entries.length === 0) return true;
+  if (entries.includes("*")) return true;
+  const addr = String(fromAddr || "").trim().toLowerCase();
+  if (!addr) return false;
+  const at = addr.lastIndexOf("@");
+  const domain = at >= 0 ? addr.slice(at + 1) : "";
+  for (const e of entries) {
+    if (e.includes("@")) {
+      if (addr === e) return true; // full-address entry: exact match
+    } else if (domain && (domain === e || domain.endsWith("." + e))) {
+      return true; // bare-domain entry: exact domain or a subdomain of it
+    }
+  }
+  return false;
+}
+
 export function formatAllowFromLowercase(params = {}) {
   return normalizeStringEntries(params.allowFrom || [])
     .map((entry) =>

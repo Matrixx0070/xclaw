@@ -16,7 +16,7 @@ import net from "node:net";
 import tls from "node:tls";
 import { replyWithAgent, truncate } from "../base.mjs";
 import { processInbound, fromEmailMessage } from "../runtime.mjs";
-import { workspaceForChat } from "../policy.mjs";
+import { workspaceForChat, isEmailSenderAllowed } from "../policy.mjs";
 import { resolveBinding, touchSession } from "../../sessions/router.mjs";
 import { createRateLimiter } from "../rate-limit.mjs";
 
@@ -219,7 +219,7 @@ export function createEmailChannel(cfg) {
 
   async function handleMail(mail) {
     const fromAddr = (mail.from.match(/[\w.+-]+@[\w.-]+/) || [mail.from])[0].toLowerCase();
-    if (conf.allowFrom && !conf.allowFrom.some((a) => fromAddr.includes(a))) {
+    if (!isEmailSenderAllowed(conf.allowFrom, fromAddr)) {
       console.log(`[email] skip sender ${fromAddr}`);
       return;
     }

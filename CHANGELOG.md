@@ -1,3 +1,36 @@
+## 3.215.0 (2026-08-26)
+
+- SECURITY FIX (sweep #33 — a **fail-OPEN** in the email channel's sender
+  authorization, `src/channels/email/index.mjs`; a real behavior change, NOT a
+  byte-identical coverage pin). Every OTHER channel routes its sender gate through
+  the shared exact-match matcher (`isSenderIdAllowed`, `src/channels/policy.mjs`);
+  email alone rolled its own `conf.allowFrom.some((a) => fromAddr.includes(a))` — a
+  SUBSTRING test. A bare-domain allowlist `allowFrom: ["corp.com"]` therefore
+  admitted `attacker@corp.com.evil.com` (the allowed domain as a suffix),
+  `attacker@evil-corp.com` (no dot boundary), and even `corp.company@x.com` (the
+  domain appearing only in the LOCAL part) — any of which then drove the agent over
+  email, replying to and acting for an unauthorized sender.
+- Honest reachability: email is DISABLED on this deployment
+  (`channels.email.enabled = false`), so this is a LATENT fail-open in shipped,
+  wired channel code — not a live leak. It bites any user who enables the email
+  channel with a domain-style allowFrom, which is the documented and natural way to
+  scope it ("only my company's senders").
+- Fix (fail CLOSED): new pure `isEmailSenderAllowed(allowFrom, fromAddr)` in
+  `src/channels/allow-from.mjs` (re-exported through `policy.mjs`), consumed by
+  `handleMail`. Entries may be a full address (exact match) or a bare domain
+  (matches that domain OR a subdomain, on the address's DOMAIN part only — never a
+  substring); `*` allows all; an empty/absent list stays open (preserves prior
+  behavior). This removes the last ad-hoc channel sender gate and consolidates email
+  onto the same allow-from module as Telegram and Discord.
+- Close: `test/channel-allow-policy.test.mjs` (+10 cases, the sweep-#21 home for the
+  shared gate). The three suffix/look-alike/local-part addresses must be denied and
+  the legit address + subdomain admitted. Mutation-proven both directions: reverting
+  the matcher to the shipped `some(a => addr.includes(a))` reddens exactly those
+  bypass cases (fail-OPEN) while the legit cases stay green; the fix flips them
+  closed. Distinct from sweeps #21/#23 (Telegram/Discord sender gates, already on
+  the shared matcher) and #31 (Telegram group topic allowlist) — this is the email
+  sender gate, the one channel gate that never used the shared module.
+
 ## 3.214.0 (2026-08-26)
 
 - SECURITY FIX (sweep #32 — a **fail-OPEN** in the credential/secret escalation of
