@@ -1,3 +1,17 @@
+## 3.247.0 (2026-08-26)
+
+- DURABLE SQL control plane (spec §11.4 pairing-only + §11.11 + §11.16): new
+  `src/state/control-plane.mjs` opens `~/.xclaw/state/control.sqlite` through
+  the query kit, stamps `schema_meta` at v1, refuses a newer version ("upgrade
+  the gateway binary") and refuses a v1 file missing a stable table (does not
+  CREATE it as if new). `absorbPairingJson` copies `pairing.json`
+  pending→`pair_pending` and approved→`pair_done` then renames the source to
+  `.bak` — same shape as cron JSON absorb, and is NOT run from open, so live
+  telegram/discord keep reading `createPairingStore`. Gateway caches one handle
+  (`getControlPlane` after `startCron`, `stopControlPlane` next to `stopCron`).
+  Tests: `test/control-plane.test.mjs` (mutation-verified refuse-newer and
+  absorb-rename both directions).
+
 ## 3.246.0 (2026-08-26)
 
 - DURABLE SQL doorway (spec §11.2 + §11.3): `loadBuiltinSql()` now arms a

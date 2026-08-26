@@ -103,6 +103,7 @@ import { createChannelPolicy } from "../channels/policy.mjs";
 import { createMcpClient } from "../mcp/client.mjs";
 import { createMcpServer } from "../mcp/server.mjs";
 import { createPairingStore } from "../pairing/pairing-store.mjs";
+import { getControlPlane, stopControlPlane } from "../state/control-plane.mjs";
 import { createGatewayAuth, stripApiVersion } from "./auth.mjs";
 import { matchUiRoute, isWebchatEnabled } from "./ui-routes.mjs";
 import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
@@ -1091,6 +1092,12 @@ export async function startGateway({ root } = {}) {
     }
   }
   startCron();
+  try {
+    getControlPlane(cfg);
+    console.log("[xclaw] control plane open");
+  } catch (err) {
+    console.warn("[xclaw] control plane:", err.message);
+  }
   if (cfg.doctor?.cron?.enabled !== false) {
     const everyMs = cfg.doctor?.cron?.everyMs ?? 3_600_000;
     const docJob = ensureDoctorCronJob({
@@ -1668,6 +1675,7 @@ export async function startGateway({ root } = {}) {
     } catch {}
     // Close the durable cron ledger cleanly (TRUNCATE checkpoint on orderly exit).
     try { stopCron(); } catch { /* already closed */ }
+    try { stopControlPlane(); } catch { /* already closed */ }
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));
