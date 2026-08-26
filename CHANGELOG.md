@@ -1,6 +1,6 @@
 ## 3.216.0 (2026-08-26)
 
-- SECURITY FIX (sweep #35 — a **fail-OPEN** in the Slack channel's sender
+- SECURITY FIX (sweep #34 — a **fail-OPEN** in the Slack channel's sender
   authorization; a real behavior change, NOT a byte-identical coverage pin).
   Slack was the sole channel of four that ran the agent for ANY inbound sender.
   Every other channel authorizes WHO may command the bot before invoking it —

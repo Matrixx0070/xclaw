@@ -180,7 +180,7 @@ describe("channel sender authorization", () => {
   // Discord via this policy, email via isEmailSenderAllowed), but Slack ran the
   // agent for any inbound sender. Poll mode restricts WHERE (channelIds) yet not
   // WHO, and socket-mode app_mentions arrive from ANY channel the bot is in.
-  // Sweep #35 (3.216.0): added gateSlack (SENDER = msg.user) + wired it into
+  // Sweep #34 (3.216.0): added gateSlack (SENDER = msg.user) + wired it into
   // handleMessage under dmPolicy:"allowlist". These pin the pure gate; the
   // wiring is driven in test/slack-sender-gate.test.mjs (both-layers discipline).
   describe("gateSlack — the wiring (allowlist)", () => {

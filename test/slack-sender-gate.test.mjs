@@ -14,7 +14,7 @@
  * in a monitored channel, or anyone who @-mentions the bot, drove the agent.
  * That is a real fail-OPEN, not a mere coverage hole.
  *
- * Sweep #35 (3.216.0): added `policy.gateSlack` (SENDER = msg.user) and wired it
+ * Sweep #34 (3.216.0): added `policy.gateSlack` (SENDER = msg.user) and wired it
  * into handleMessage under dmPolicy:"allowlist" (default "open" unchanged, so no
  * existing deployment regresses). The pure gate is pinned in
  * test/channel-allow-policy.test.mjs; THIS file drives the real inbound path
