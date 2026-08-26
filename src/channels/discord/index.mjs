@@ -495,6 +495,10 @@ async function handleInteraction(interaction) {
 
   return {
     name: "discord",
+    // Test seam: the real WS dispatch calls handleMessage(pkt.d) (see connect()).
+    // Exposing it lets the pairing-gate wiring test drive the live inbound path
+    // directly (Discord has no webhook seam like Telegram's handleWebhookRequest).
+    handleInbound: handleMessage,
     get enabled() {
       return enabled;
     },

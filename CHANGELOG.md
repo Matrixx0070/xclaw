@@ -1,3 +1,36 @@
+## 3.217.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #35 — a byte-identical coverage pin, NOT a behavior
+  change). Closes the Discord half of the composite pairing gate
+  `!staticOk && !approved` at its live call site (`src/channels/discord/index.mjs`).
+  In `dmPolicy: "pairing"` a DM is admitted iff a STATIC allowlist match OR an
+  APPROVED pairing; the deny arm files a pairing request and returns before the
+  agent runs.
+- Both arms were pinned only in ISOLATION — the static allowlist matcher
+  (`isSenderIdAllowed` sweep #21 / `gateDiscord` #23) and the pure `isApproved`
+  store (#24) — never the handler's COMBINATION. Telegram's twin was closed by
+  `pairing-gate-wiring.test.mjs` (sweep #30) through its webhook seam; that file
+  recorded Discord as the next candidate because its handler had no webhook-style
+  seam. No test drove the Discord handler, so nothing proved `approved` is even
+  consulted at that call site.
+- Blind spot PROVEN by mutation: dropping the approval arm (`if (!staticOk)`) —
+  which turns an approved-but-not-statically-allowed user AWAY and re-files a
+  pairing request — left the FULL suite green at 3617/0. Symmetrically, dropping
+  the static arm (`if (!approved)`) also shipped clean. The pure-store test (#24)
+  cannot catch either.
+- Fix: a `handleInbound` seam on the Discord channel (the real WS dispatch calls
+  `handleMessage(pkt.d)`; Discord has no webhook seam like Telegram's
+  `handleWebhookRequest`) plus `test/discord-pairing-gate-wiring.test.mjs`, which
+  drives the live inbound path with a stubbed `fetch` and observes admission via
+  the deterministic `/status` reply ("XClaw Discord up …", sent before the agent).
+  Three cases pin both admit arms and the deny direction: static-allowlist match
+  → ADMITTED (no pairing request); pairing approval (non-matching allowlist) →
+  ADMITTED (proves `approved` is consulted — mutation A reddens it); neither →
+  DENIED (pairing reply + a pending request recorded).
+- Source is unchanged except the additive test seam (no gate logic touched);
+  mutation-verified both directions (A → approved-admit RED, B → static-admit
+  RED), restored byte-identical (sha256), full suite 3620/0.
+
 ## 3.216.0 (2026-08-26)
 
 - SECURITY FIX (sweep #34 — a **fail-OPEN** in the Slack channel's sender
