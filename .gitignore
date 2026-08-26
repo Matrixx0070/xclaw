@@ -47,3 +47,8 @@ MISSION_2_SUMMARY.md
 /test-proxy-*.mjs
 __pycache__/
 *.pyc
+
+# durable SQL journal sidecars (data lives under ~/.xclaw, never the repo)
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite.bak

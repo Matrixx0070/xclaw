@@ -1,7 +1,7 @@
 # XClaw gateway image (lab/full toolchain)
 # Prefer deploy/Dockerfile for production-slim; this image includes
 # office/OCR helpers for computer tools.
-FROM node:22-bookworm-slim
+FROM node:24.15-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg imagemagick libreoffice-writer libreoffice-calc libreoffice-impress \

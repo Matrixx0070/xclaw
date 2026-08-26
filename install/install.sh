@@ -44,15 +44,18 @@ done
 echo "[xclaw] install root=$ROOT"
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "[xclaw] Node.js >= 22 required. Install from https://nodejs.org" >&2
+  echo "[xclaw] Node required: >=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0" >&2
+  echo "[xclaw] 23.x is blocked. https://nodejs.org" >&2
   exit 1
 fi
-MAJOR="$(node -p "process.versions.node.split('.')[0]")"
-if [[ "$MAJOR" -lt 22 ]]; then
-  echo "[xclaw] Node $MAJOR detected — need >= 22" >&2
+if ! node --input-type=module -e '
+  import { describeHost, hostCompatBanner } from "./src/runtime/host-compat.mjs";
+  const h = describeHost();
+  if (!h.allowed) { console.error(hostCompatBanner(h)); process.exit(1); }
+  console.log("[xclaw] node=v" + h.raw + " band=" + h.band);
+'; then
   exit 1
 fi
-echo "[xclaw] node=$(node -v)"
 
 if [[ ! -f package.json ]]; then
   echo "[xclaw] package.json missing — run from an xclaw checkout" >&2

@@ -47,7 +47,7 @@ node bin/xclaw.mjs gateway
 | `agent "…"` | Tool runs (lab auto-approves) or clear error |
 | Computer | **Single native engine** (auditable modules + bwrap OS sandbox on `:4243`) with real-browser CUA included — managed headless Chrome, jsCode/screenshots/console/network via CDP (ADR 0005) |
 
-**Requirements:** Node.js **≥ 22**, network for model APIs.
+**Requirements:** Node.js **22.22.3+ (22.x), 24.15+ (24.x), or 25.9+** — the bundled `node:sqlite` must be WAL-safe (SQLite ≥ 3.51.3, or ≥ 3.50.7 on 3.50.x). Network for model APIs.
 
 Config file: `~/.xclaw/xclaw.json` (created on first run).
 
@@ -147,7 +147,7 @@ docker compose up --build
 | `agent "…"` | Tool runs (lab auto-approves) or clear error |
 | Computer | Thin native server on `:4243` (auto-start) |
 
-**Requirements:** Node.js **≥ 22**, network for model APIs.
+**Requirements:** Node.js **22.22.3+ (22.x), 24.15+ (24.x), or 25.9+** — the bundled `node:sqlite` must be WAL-safe (SQLite ≥ 3.51.3, or ≥ 3.50.7 on 3.50.x). Network for model APIs.
 
 Config file: `~/.xclaw/xclaw.json` (created on first run).
 

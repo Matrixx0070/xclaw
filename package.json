@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.243.0",
+  "version": "3.244.0",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
@@ -91,7 +91,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"
   },
   "license": "MIT",
   "keywords": [

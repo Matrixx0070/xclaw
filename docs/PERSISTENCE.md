@@ -35,7 +35,7 @@ sudo journalctl -u xclaw -f
 ```yaml
 services:
   xclaw:
-    image: node:22-bookworm
+    image: node:24.15-bookworm
     working_dir: /app
     volumes:
       - ./:/app

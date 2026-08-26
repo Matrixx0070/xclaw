@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **Node.js ≥ 22** (22 LTS or 24+)
+- **Node.js 22.22.3+ (22.x), 24.15+ (24.x), or 25.9+** — the bundled `node:sqlite` must clear the WAL-reset window (SQLite ≥ 3.51.3, or ≥ 3.50.7 on 3.50.x, or ≥ 3.44.6 on 3.44.x). 23.x (short-lived Current) and older 22/24 patch levels are refused.
 - API key for live agent runs:
   - `XAI_API_KEY` and/or provider keys in `~/.xclaw/xclaw.json`
 - Optional: Git for swarm worktree flows
@@ -165,7 +165,7 @@ See **OPS.md** and **docs/MITM_SCRIPTING.md**.
 
 | Symptom | Try |
 |---------|-----|
-| Node too old | Install Node 22+ from nodejs.org |
+| Node too old / refused | Install Node 22.22.3+, 24.15+, or 25.9+ from nodejs.org |
 | No API key | `export XAI_API_KEY=...` then re-run install |
 | Prove script fails | `XCLAW_E2E_PORT=18791 npm run prove:install` |
 | Computer not healthy | `node bin/xclaw.mjs computer` / check port **4243** |

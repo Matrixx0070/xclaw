@@ -114,7 +114,7 @@ import { gracefulShutdown } from "./shutdown.mjs";
 import { softReloadConfig } from "../config/reload.mjs";
 import { resetSharedAlerter } from "../alerting/alerts.mjs";
 import { createApprovalGate, getSharedApprovalGate, resetSharedApprovalGate } from "../security/approvals.mjs";
-import { scheduleJob, cancelJob, listJobs, addJob, run as runCronJob, status as cronStatus, start as startCron, getJob } from "../cron/scheduler.mjs";
+import { scheduleJob, cancelJob, listJobs, addJob, run as runCronJob, status as cronStatus, start as startCron, stop as stopCron, getJob } from "../cron/scheduler.mjs";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1666,6 +1666,8 @@ export async function startGateway({ root } = {}) {
       try { stopComputerWatchdog(); } catch {}
     await stopComputer();
     } catch {}
+    // Close the durable cron ledger cleanly (TRUNCATE checkpoint on orderly exit).
+    try { stopCron(); } catch { /* already closed */ }
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));

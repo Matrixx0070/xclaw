@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24.15"
       - name: Long-horizon fixtures (no API key)
         run: node --test test/long-horizon-fixtures.test.mjs test/skill-install-gate.test.mjs test/host-workspace.test.mjs
       - name: Self-test smoke

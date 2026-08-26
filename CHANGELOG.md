@@ -1,3 +1,20 @@
+## 3.244.0 (2026-08-26)
+
+- HOST RUNTIME: startup, installers, `daemon start`, and `init` now enforce a
+  two-gate host policy. Gate A allows only Node `>=22.22.3 <23 || >=24.15.0 <25
+  || >=25.9.0` (23.x, a short-lived Current line, is refused); Gate B requires
+  the loaded `node:sqlite` library to clear the WAL-reset window (SQLite ≥ 3.51.3,
+  or ≥ 3.50.7 on 3.50.x, or ≥ 3.44.6 on 3.44.x), so a distro Node linked against
+  an old system libsqlite3 is refused with an explicit banner instead of silently
+  corrupting a WAL database.
+- DURABLE CRON: the cron store moves from `~/.xclaw/cron-jobs.json` to
+  `~/.xclaw/cron/jobs.sqlite` (durable `node:sqlite`, WAL journal keeper +
+  atomic writes behind a single doorway). A legacy `cron-jobs.json` is imported
+  once on first start and renamed `.bak`; handler-backed jobs stay memory-only.
+- DOCTOR: `xclaw doctor` now reports the host band, the probed Node + SQLite
+  versions, `node:sqlite` load + FTS5 availability, and the cron ledger's
+  `integrity_check` with a persisted-job count.
+
 ## 3.243.0 (2026-08-26)
 
 - SECURITY (hardening + coverage, RULE(m) — mutation sweep #59): the xAI *OAuth*

@@ -2,6 +2,14 @@
 /**
  * XClaw CLI — Phase 4
  */
+import { describeHost, hostCompatBanner } from "../src/runtime/host-compat.mjs";
+
+const host = describeHost();
+if (!host.allowed) {
+  process.stderr.write(hostCompatBanner(host) + "\n");
+  process.exit(1);
+}
+
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -9,6 +17,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const args = process.argv.slice(2);
 const cmd = args[0] || "help";
+
+// Long-running CLI cron entrypoints (doctor-schedule, live-e2e-schedule,
+// eval-schedule) arm the durable ledger. Close it cleanly on teardown so the
+// WAL keeper can TRUNCATE-checkpoint. Idempotent — safe to call per branch.
+let cronShutdownInstalled = false;
+function installCronShutdown(stopCron) {
+  if (cronShutdownInstalled) return;
+  cronShutdownInstalled = true;
+  const close = () => { try { stopCron(); } catch { /* already closed */ } };
+  process.once("SIGTERM", () => { close(); process.exit(0); });
+  process.once("SIGINT", () => { close(); process.exit(0); });
+  process.on("beforeExit", close);
+}
 
 async function main() {
   switch (cmd) {
@@ -172,10 +193,11 @@ async function main() {
       const { createChannelManager } = await import("../src/channels/manager.mjs");
       const { isComputerRunning } = await import("../src/computer/manager.mjs");
       const { ensureDoctorCronJob } = await import("../src/cron/doctor-job.mjs");
-      const { start: startCron, listJobs } = await import("../src/cron/scheduler.mjs");
+      const { start: startCron, stop: stopCron, listJobs } = await import("../src/cron/scheduler.mjs");
       const cfg = await loadConfig();
       const everyMs = Number(args[1]) || cfg.doctor?.cron?.everyMs || 3600000;
       startCron();
+      installCronShutdown(stopCron);
       const job = ensureDoctorCronJob({
         cfg,
         channelManager: createChannelManager(cfg),
@@ -202,13 +224,14 @@ async function main() {
     case "live-e2e-schedule": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const { ensureLiveE2eCronJob } = await import("../src/cron/live-e2e-job.mjs");
-      const { start: startCron, listJobs } = await import("../src/cron/scheduler.mjs");
+      const { start: startCron, stop: stopCron, listJobs } = await import("../src/cron/scheduler.mjs");
       const path = await import("node:path");
       const { fileURLToPath } = await import("node:url");
       const root = process.env.XCLAW_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
       const cfg = await loadConfig({ strict: false });
       const everyMs = Number(args[1]) || cfg.liveE2e?.cron?.everyMs || 86_400_000;
       startCron();
+      installCronShutdown(stopCron);
       const job = ensureLiveE2eCronJob({
         cfg,
         root,
@@ -1315,6 +1338,12 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         if (canInstallSkills({ profile: "prod" }).ok !== false) throw new Error("prod should block");
         if (canInstallSkills({ profile: "prod" }, { ownerApproved: true }).ok !== true) throw new Error("owner");
       });
+      await check("host-compat", async () => {
+        const { hostPasses } = await import("../src/runtime/host-probe.mjs");
+        if (!hostPasses("24.15.0")) throw new Error("24.15.0 should pass");
+        if (hostPasses("23.11.0")) throw new Error("23.x should be refused");
+        if (hostPasses("24.14.1")) throw new Error("24.14.1 below floor should be refused");
+      });
       const failed = tests.filter((x) => !x.ok);
       console.log(JSON.stringify({ ok: failed.length === 0, tests }, null, 2));
       process.exit(failed.length ? 1 : 0);
@@ -1503,6 +1532,13 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       const pidPath = process.env.XCLAW_PID_PATH || `${home}/.xclaw/gateway.pid`;
       const logPath = process.env.XCLAW_LOG_PATH || `${home}/.xclaw/gateway.log`;
       if (sub === "start") {
+        // Gate B: refuse to daemonize a long-lived gateway on a WAL-unsafe host.
+        const { inspectNodeBinary, formatHostRefusal } = await import("../src/runtime/host-probe.mjs");
+        const probed = await inspectNodeBinary(process.execPath);
+        if (!probed.ok) {
+          console.error(formatHostRefusal(probed));
+          process.exit(1);
+        }
         const r = startDaemon({
           cmd: process.execPath,
           args: [path.join(root, "bin/xclaw.mjs"), "gateway"],
@@ -2227,9 +2263,10 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     case "eval-schedule": {
       const { loadConfig } = await import("../src/config/load.mjs");
       const { ensureEvalCronJob, evalCronStatus, runScheduledEval } = await import("../src/cron/eval-job.mjs");
-      const { start: startCron } = await import("../src/cron/scheduler.mjs");
+      const { start: startCron, stop: stopCron } = await import("../src/cron/scheduler.mjs");
       const cfg = await loadConfig();
       startCron();
+      installCronShutdown(stopCron);
       const sub = args[1] || "status";
       if (sub === "status") {
         console.log(JSON.stringify(evalCronStatus(), null, 2));

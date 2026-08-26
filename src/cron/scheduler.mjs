@@ -2,16 +2,21 @@
  * XClaw cron scheduler — OpenClaw job/delivery/session-target semantics (subset).
  *
  * Durable: serializable job definitions (payload jobs without an in-process
- * handler) persist to ~/.xclaw/cron-jobs.json and are restored + re-armed by
- * start(cfg) after a gateway restart. Handler-backed jobs (doctor/eval/
- * heartbeat/automations) are process-owned and re-registered by their owners
- * at boot, so they are deliberately NOT persisted here.
+ * handler) persist to the SQLite ledger ~/.xclaw/cron/jobs.sqlite and are
+ * restored + re-armed by start(cfg) after a gateway restart. The legacy
+ * ~/.xclaw/cron-jobs.json store is imported once on first start, then renamed
+ * to .bak. Handler-backed jobs (doctor/eval/heartbeat/automations) are
+ * process-owned and re-registered by their owners at boot, so they are
+ * deliberately NOT persisted here.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { computeNextRun } from "./schedule.mjs";
+import {
+  openCronLedger,
+  absorbLegacyCronJson,
+  legacyCronJsonFile,
+  cronLedgerFile,
+} from "./durable-jobs.mjs";
 import {
   resolveCronCreationDelivery,
   resolveJobDeliverySessionKey,
@@ -27,13 +32,15 @@ const jobs = new Map();
 const hooks = new Map();
 let timer = null;
 let running = false;
+let ledger = null;
 
 export function cronJobsPath(cfg) {
-  return (
-    cfg?.paths?.cronJobsFile ||
-    process.env.XCLAW_CRON_JOBS_FILE ||
-    path.join(os.homedir(), ".xclaw", "cron-jobs.json")
-  );
+  // Kept for callers/tests that still ask for the old JSON path.
+  return legacyCronJsonFile(cfg);
+}
+
+export function cronStorePath(cfg) {
+  return cronLedgerFile(cfg);
 }
 
 /** Jobs with an in-process handler are owned by whoever registered them. */
@@ -47,18 +54,12 @@ function serializeJob(job) {
 }
 
 function persistJobs(cfg) {
-  const fp = cronJobsPath(cfg);
+  if (!ledger) return;
   try {
     const records = [...jobs.values()].filter(isPersistable).map(serializeJob);
-    fs.mkdirSync(path.dirname(fp), { recursive: true });
-    const tmp = fp + ".tmp";
-    fs.writeFileSync(
-      tmp,
-      JSON.stringify({ version: 1, jobs: records, updatedAt: new Date().toISOString() }, null, 2) + "\n"
-    );
-    fs.renameSync(tmp, fp);
+    ledger.replace(records);
   } catch (err) {
-    console.warn(`[xclaw:cron] persist failed (${fp}):`, err.message);
+    console.warn("[xclaw:cron] ledger write failed:", err.message);
   }
 }
 
@@ -66,16 +67,15 @@ function persistJobs(cfg) {
  * Reload persisted job definitions and re-arm them. Idempotent — jobs whose
  * id is already registered are skipped. Corrupt/missing store → no-op.
  */
-export function restorePersistedJobs(cfg) {
-  const fp = cronJobsPath(cfg);
-  let records = [];
-  try {
-    if (!fs.existsSync(fp)) return { ok: true, restored: 0 };
-    const raw = JSON.parse(fs.readFileSync(fp, "utf8"));
-    records = Array.isArray(raw?.jobs) ? raw.jobs : [];
-  } catch (err) {
-    console.warn(`[xclaw:cron] restore failed (${fp}):`, err.message);
-    return { ok: false, restored: 0, error: err.message };
+export function restorePersistedJobs(cfg, recordsFromLedger) {
+  let records = recordsFromLedger;
+  if (!records) {
+    try {
+      records = ledger ? ledger.list() : [];
+    } catch (err) {
+      console.warn("[xclaw:cron] ledger read failed:", err.message);
+      return { ok: false, restored: 0, error: err.message };
+    }
   }
   let restored = 0;
   const now = Date.now();
@@ -334,13 +334,31 @@ export function status() {
 }
 
 export function start(cfg) {
-  const restored = restorePersistedJobs(cfg);
+  if (!ledger) {
+    ledger = openCronLedger(cfg);
+    if (ledger.list().length === 0) {
+      absorbLegacyCronJson(ledger, legacyCronJsonFile(cfg));
+    }
+  }
+  const restored = restorePersistedJobs(cfg, ledger.list());
   armTimer();
-  return { ok: true, restored: restored.restored };
+  return { ok: true, restored: restored.restored, ledger: ledger.file };
 }
 
 export function stop() {
   if (timer) clearTimeout(timer);
   timer = null;
+  // Drop persisted payload jobs from memory so the next start() re-hydrates
+  // them from the ledger. Handler-backed jobs are owned by whoever registered
+  // them (doctor/eval/heartbeat/automations) and must stay put.
+  for (const [id, job] of jobs) {
+    if (isPersistable(job)) jobs.delete(id);
+  }
+  try {
+    ledger?.close();
+  } catch {
+    /* already closed */
+  }
+  ledger = null;
   return { ok: true };
 }

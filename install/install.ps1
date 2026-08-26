@@ -6,17 +6,19 @@ Set-Location $Root
 
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) {
-  Write-Host "Node.js >= 22 required. Install from https://nodejs.org"
+  Write-Host "Node required: >=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"
+  Write-Host "23.x is blocked. Install from https://nodejs.org"
   exit 1
 }
-$major = [int]((node -p "process.versions.node.split('.')[0]"))
-if ($major -lt 22) {
-  Write-Host "Node $major detected — need >= 22"
-  exit 1
-}
+& node --input-type=module -e @"
+import { describeHost, hostCompatBanner } from './src/runtime/host-compat.mjs';
+const h = describeHost();
+if (!h.allowed) { console.error(hostCompatBanner(h)); process.exit(1); }
+console.log('[xclaw] node=v' + h.raw + ' band=' + h.band);
+"@
+if ($LASTEXITCODE -ne 0) { exit 1 }
 
 Write-Host "[xclaw] root=$Root"
-Write-Host "[xclaw] node=$(node -v)"
 
 if (-not (Test-Path .env) -and (Test-Path .env.example)) {
   Copy-Item .env.example .env

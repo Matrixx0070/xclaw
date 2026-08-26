@@ -20,6 +20,10 @@ import { planClick } from "../browser/motor.mjs";
 import { findChromeBinary } from "../browser/dedicated.mjs";
 import { buildChromeArgs, chromeArgsInvariants } from "../computer/chrome-args.mjs";
 import fsSync from "node:fs";
+import { describeHost, HOST_ENGINE_RANGE } from "../runtime/host-compat.mjs";
+import { inspectNodeBinary, formatHostRefusal } from "../runtime/host-probe.mjs";
+import { loadBuiltinSql, lexicalIndexAvailable, openLocalSql } from "../persist/engine-load.mjs";
+import { cronLedgerFile } from "../cron/durable-jobs.mjs";
 
 
 function httpGet(url, timeoutMs = 3000) {
@@ -335,10 +339,56 @@ export async function runDoctor(opts = {}) {
     push("owner.safety", "warn", e.message || String(e));
   }
 
-    // Node version
-  const major = Number(process.versions.node.split(".")[0]);
-  if (major >= 22) push("node", "ok", `Node ${process.version}`);
-  else push("node", "error", `Node ${process.version} — require >= 22`);
+    // Host runtime line (Gate A: Node allowlist)
+  const hostLine = describeHost();
+  if (hostLine.allowed) {
+    push("node", "ok", `Node ${process.version} — band ${hostLine.band}`, HOST_ENGINE_RANGE);
+  } else {
+    push("node", "error", `Node ${process.version} unsupported`, hostLine.detail || HOST_ENGINE_RANGE);
+  }
+
+  // Node binary probe (the real execPath, not just process.versions)
+  try {
+    const probed = await inspectNodeBinary(process.execPath);
+    if (probed.ok) push("node.probe", "ok", `execPath Node ${probed.nodeVersion}, SQLite ${probed.sqliteVersion}`);
+    else push("node.probe", "error", formatHostRefusal(probed));
+  } catch (e) {
+    push("node.probe", "warn", e?.message || String(e));
+  }
+
+  // Builtin SQL engine (Gate B: WAL-reset-safe SQLite + FTS5)
+  try {
+    loadBuiltinSql();
+    const lex = lexicalIndexAvailable();
+    if (lex.ready) push("sql.engine", "ok", "builtin SQLite loaded, FTS5 available");
+    else push("sql.engine", "warn", `builtin SQLite loaded, FTS5 unavailable — ${lex.reason || "no fts5"}`);
+  } catch (e) {
+    push("sql.engine", "error", e?.message || String(e), e?.code);
+  }
+
+  // Durable cron ledger integrity
+  try {
+    const ledgerFile = cronLedgerFile(cfg);
+    if (fsSync.existsSync(ledgerFile)) {
+      const db = openLocalSql(ledgerFile);
+      try {
+        const integ = db.prepare("PRAGMA integrity_check").get();
+        const ok = String(integ?.integrity_check || "").toLowerCase() === "ok";
+        let count = null;
+        try {
+          count = db.prepare("SELECT COUNT(*) AS n FROM payload_jobs").get()?.n;
+        } catch { /* table may not exist yet */ }
+        if (ok) push("cron.ledger", "ok", `${ledgerFile} integrity ok${count != null ? `, ${count} payload job(s)` : ""}`);
+        else push("cron.ledger", "error", `${ledgerFile} integrity_check: ${integ?.integrity_check}`);
+      } finally {
+        try { db.close(); } catch { /* */ }
+      }
+    } else {
+      push("cron.ledger", "info", `${ledgerFile} not created yet (no persisted jobs)`);
+    }
+  } catch (e) {
+    push("cron.ledger", "warn", e?.message || String(e));
+  }
 
   // API key presence (not validity)
   const key =
@@ -1816,7 +1866,7 @@ function finish(checks, opts, extras = {}) {
         console.log(`── ${g} ──`);
         for (const c of list) {
           const tag =
-            c.status === "ok" ? "OK  " : c.status === "warn" ? "WARN" : "ERR ";
+            c.status === "ok" ? "OK  " : c.status === "warn" ? "WARN" : c.status === "info" ? "INFO" : "ERR ";
           console.log(`  [${tag}] ${c.id}: ${c.message}`);
         }
         console.log("");

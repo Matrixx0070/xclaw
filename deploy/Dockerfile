@@ -1,5 +1,5 @@
 # XClaw 1.0 — production-slim image
-FROM node:22-bookworm-slim
+FROM node:24.15-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl \
