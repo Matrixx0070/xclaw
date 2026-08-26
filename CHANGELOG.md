@@ -1,3 +1,35 @@
+## 3.234.0 (2026-08-26)
+
+- SECURITY test-coverage (mutation sweep #51; shipping code
+  `src/planes/search.mjs` is UNCHANGED — sha256
+  `f95a132b4c7649ddcb6e040c2ad05b1e2f47806b29b9db86e5d3b9827d3640b1` before and
+  after). Pins the subdomain-boundary guard of `isSearchHostAllowed`
+  (`src/planes/search.mjs:27`), the RULE(a) matcher
+  `host === h || host.endsWith("." + h)` behind the search plane's egress
+  allowlist (`SEARCH_ALLOW_HOSTS`: brave + duckduckgo).
+- Blind spot: `isSearchHostAllowed` is the sole gate in `allowedFetch`
+  (`src/planes/search.mjs:39`), which every search-plane HTTP fetch
+  (`braveSearch` / `ddgSearch`, reached by the `web_search` tool via
+  `runWebSearch`) must pass. The only host-reject test used DISJOINT hosts
+  (`evil.example`, `google.com`) and the accept test an exact match — neither
+  exercises the dot boundary. Dropping `"." +` (so `.endsWith(h)`) left the FULL
+  suite GREEN (`# tests 3662 / # fail 0`): a lookalike sharing an allowlisted
+  host as a bare trailing substring (`evilduckduckgo.com` vs `duckduckgo.com`,
+  `evilapi.search.brave.com` vs `api.search.brave.com`) would then pass the
+  egress allowlist, letting the `web_search` tool fetch from an
+  attacker-registered host — search-query exfiltration plus attacker-controlled
+  results injected into agent reasoning (SSRF).
+- Catch: +2 tests in `test/search-plane.test.mjs` — two lookalikes
+  (`evilduckduckgo.com`, `evilapi.search.brave.com`) must be REFUSED, plus a
+  real-subdomain (`foo.duckduckgo.com`) ADMIT (green both ways). Mutation-verified
+  both directions: correct code → 7/7 green; mutated (`.endsWith(h)`) → the
+  lookalike-reject test RED (`not ok 4`). Full suite
+  `# tests 3664 / # fail 0 / NODE_EXIT=0`.
+- RULE(a) reaffirmed: coverage does NOT transfer across distinct call sites of an
+  identical suffix-boundary matcher shape — this is the 6th such site pinned
+  (after shell-egress, route-filename, exec-allowlist glob, secure-inject, and
+  git remote-host), on a new axis: search-plane egress.
+
 ## 3.233.0 (2026-08-26)
 
 - SECURITY test-coverage (mutation sweep #50; shipping code
