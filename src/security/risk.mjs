@@ -397,7 +397,14 @@ export function assessRisk({ tool, args = {}, workingDir, cfg = {}, context = {}
     }
   }
   if (
-    (impact === "write" || impact === "exec") &&
+    // Reads count too: exfiltrating a secret is a READ, and a read-family tool
+    // (file_read/read_file) reaching an in-workspace .env / credentials.json is
+    // NOT blocked by the sandbox (it guards workspace ESCAPE, not credential
+    // sensitivity). Gating only write/exec left the most direct exfil path —
+    // `file_read` of a secret — tiered "safe" and auto-approved. Egress is
+    // deliberately excluded: browser/navigate target|to|source args legitimately
+    // carry "token"/"oauth" substrings and would false-positive.
+    (impact === "write" || impact === "exec" || impact === "read") &&
     [...paths, cmd].some((s) => CREDENTIAL_PATH_RE.test(String(s)))
   ) {
     reversibility = "irreversible";

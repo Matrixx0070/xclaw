@@ -19,6 +19,14 @@ describe("risk assessment (A2)", () => {
   const cases = () => [
     // [tool, args, expectedTier, why]
     ["xclaw_file_read", { path: "src/app.mjs" }, "safe", "read in workspace"],
+    // A read-family tool exfiltrates a secret just as effectively as `cat` in a
+    // shell — and the sandbox only blocks workspace ESCAPE, so an in-workspace
+    // .env / credentials.json is fully reachable. The credential-path escalation
+    // must fire on reads, not only write/exec, or a `file_read` of a secret is
+    // tiered "safe" and auto-approved (the exfil path with no gate).
+    ["xclaw_file_read", { path: "~/.ssh/id_rsa" }, "critical", "credential read via read-family tool"],
+    ["file_read", { path: ".env" }, "critical", "in-workspace credential read (.env)"],
+    ["read_file", { path: "config/credentials.json" }, "critical", "in-workspace credential json read"],
     ["xclaw_file_write", { path: "src/app.mjs", content: "x" }, "low", "write in workspace"],
     ["xclaw_file_write", { path: "/etc/hosts", content: "x" }, "critical", "write outside workspace"],
     ["xclaw_bash", { command: "npm test", cwd: ws }, "risky", "workspace exec"],

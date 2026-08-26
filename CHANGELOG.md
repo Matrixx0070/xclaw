@@ -1,3 +1,39 @@
+## 3.214.0 (2026-08-26)
+
+- SECURITY FIX (sweep #32 — a **fail-OPEN** in the credential/secret escalation of
+  the risk classifier, `src/security/risk.mjs:399`; a real behavior change, NOT a
+  byte-identical coverage pin). The classifier escalates any action that touches
+  credential material (`.ssh/`, `credentials`, `.env`, `*.pem`, `id_rsa`, `oauth`,
+  `token`) to `irreversible` → `critical`, so it pends. The guard was gated on
+  `impact === "write" || impact === "exec"` — it skipped `read`. A read-family tool
+  (`file_read` / `read_file` / `xclaw_file_read`) reading the SAME secret was tiered
+  `read` → `safe` and, under the live `autoApproveMaxTier` (`low`), auto-approved and
+  exfiltrated to the channel with no pending. `cat ~/.ssh/id_rsa` via bash pended
+  `critical`; `file_read({path:"~/.ssh/id_rsa"})` returned `safe`.
+- Why it is reachable (not merely a table gap): the sandbox (`guardToolPaths`, wired
+  at `agent/loop.mjs:1429`, enabled on prod) blocks workspace ESCAPE, NOT credential
+  SENSITIVITY within the workspace. An in-workspace `.env` / `credentials.json` /
+  `*.pem` is sandbox-allowed, so the classifier tier is the ONLY gate — and it read
+  `safe`. The xclaw repo's own untracked proxy-credential files sit at the workspace
+  root, directly in range of an in-workspace `file_read`.
+- Fix (fail CLOSED): add `|| impact === "read"` to the guard. Strictly more
+  restrictive — it can only newly-escalate a read whose path/arg matches the
+  credential regex. Egress is deliberately excluded: browser/navigate `target|to|
+  source` args legitimately carry `token`/`oauth` substrings and would false-positive;
+  read-family path args are genuine file paths, so the false-positive surface is
+  small and over-escalation is fail-closed (it pends). Exec/write behavior is
+  byte-unchanged.
+- Close: `test/security-risk.test.mjs` (+3 golden-table cases). `file_read` of
+  `~/.ssh/id_rsa`, an in-workspace `.env`, and `config/credentials.json` must all be
+  `critical` with reason "touches credential/secret material"; the pre-existing benign
+  `file_read({path:"src/app.mjs"})` → `safe` remains the negative baseline (no
+  false-positive on a non-credential read). Mutation-proven both directions: the
+  pre-fix production line is itself the mutation — it reddens the credential-read case
+  alone (`# fail 1`, 3595 tests) while the rest of the suite stays green; the fix
+  flips only those cases green (`# fail 0`, 3595/3595). Distinct from sweep #31
+  (Telegram topic allowlist): that was a channel access gate; this is the tool-risk
+  classifier, the authorization tier that decides auto-approve vs pend.
+
 ## 3.213.0 (2026-08-26)
 
 - SECURITY FIX (sweep #31 — a **fail-OPEN** in the Telegram group topic allowlist,
