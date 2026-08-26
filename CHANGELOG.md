@@ -1,3 +1,28 @@
+## 3.237.0 (2026-08-26)
+
+- SECURITY test-coverage (mutation sweep #54; shipping code
+  `src/gateway/routes/providers.mjs` is UNCHANGED — sha256
+  `87b6131604026a33ea8b9d90ef9605ade02c23a9d1f25dce84e229a287a5ab62` before and
+  after). Pins the expiry arm of the provider web-OAuth complete handler's
+  single consume-time guard: `if (!pending || Date.now() - pending.at >
+  OAUTH_TTL_MS)` (`providers.mjs:295`) rejects a pasted auth code whose pending
+  PKCE flow has aged past the 10-minute TTL. `sweepOauthPending()` runs only on
+  `/oauth/start` (:261), so a user who starts a flow, waits past the TTL, then
+  pastes the code with no intervening start is gated ONLY here — this is the sole
+  live TTL enforcement on a stale PKCE verifier + state at the point it is
+  redeemed.
+- Blind spot (RULE(b) composite gate): every existing test hit the OTHER arm of
+  this `||` — an unknown/consumed state (`!pending` short-circuits true) or a
+  fresh pending (age ~0), so none ever drove the expiry arm true. Mutating the
+  expiry arm to always-false (accept a stale flow — fail OPEN) left the full
+  suite green (3671/0).
+- Fix: `test/providers-oauth-web.test.mjs` starts a flow with a frozen clock,
+  advances Date.now 11 minutes past the TTL, then completes with a VALID token
+  endpoint mocked — asserting the flow is rejected 400 `not found or expired`
+  and the token exchange is never reached (`fetchCalled === false`). RED when the
+  expiry arm is dropped (the stale flow reaches the exchange and succeeds 200).
+  +1 test.
+
 ## 3.236.0 (2026-08-26)
 
 - SECURITY test-coverage (mutation sweep #53; shipping code

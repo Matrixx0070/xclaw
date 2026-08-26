@@ -140,4 +140,64 @@ describe("providers web OAuth", () => {
     );
     assert.equal(again.status, 400);
   });
+
+  it("REJECTS an expired pending flow — a stale state never reaches the exchange", async () => {
+    // The complete handler's expiry arm (Date.now() - pending.at > OAUTH_TTL_MS,
+    // providers.mjs:295) is the SOLE consume-time guard on a stale PKCE verifier +
+    // state: sweepOauthPending() runs only on /oauth/start (:261), so a user who
+    // starts a flow, waits past the 10-min TTL, then pastes the code with no
+    // intervening start is gated ONLY here. The prior tests hit this line's other
+    // arm (!pending, via an unknown state or a consumed one) or a fresh pending
+    // (age ~0), so none ever drove the expiry arm true. Mutating it to always-false
+    // left the whole suite green (blind spot, mutation-sweep #54).
+    const realNow = Date.now;
+    const T0 = realNow.call(Date);
+    let started;
+    try {
+      Date.now = () => T0; // freeze so pending.at === T0
+      started = await call(
+        "/providers/manage/oauth/start",
+        { provider: "anthropic", name: "expiretest" },
+        cfg
+      );
+    } finally {
+      Date.now = realNow;
+    }
+    assert.equal(started.out.ok, true);
+    const state = started.out.state;
+
+    // Advance past the TTL, then complete. A VALID token endpoint is mocked, so if
+    // the expiry arm were dropped the stale flow would succeed (200) and reach the
+    // exchange; the test asserts it is rejected (400) before fetch is ever called.
+    let fetchCalled = false;
+    const savedFetch = global.fetch;
+    global.fetch = async () => {
+      fetchCalled = true;
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            access_token: "sk-ant-oat01-STALE",
+            refresh_token: "r-STALE",
+            expires_in: 3600,
+          }),
+      };
+    };
+    let done;
+    try {
+      Date.now = () => T0 + 11 * 60_000; // 11 min > 10 min TTL
+      done = await call(
+        "/providers/manage/oauth/complete",
+        { state, code: "AUTHCODE" },
+        cfg
+      );
+    } finally {
+      Date.now = realNow;
+      global.fetch = savedFetch;
+    }
+    assert.equal(done.status, 400, "an expired pending flow must be rejected");
+    assert.match(done.out.error, /not found or expired/);
+    assert.equal(fetchCalled, false, "a stale flow must never reach the token exchange");
+  });
 });
