@@ -1,3 +1,16 @@
+## 3.248.0 (2026-08-26)
+
+- DURABLE SQL doctor --fix (spec §11.6 + §11.10): leftover `cron-jobs.json`
+  is folded through `normalizeLegacyJob` (`jobId`→`id`, `cron`/`schedule.cron`
+  → `{kind:"cron"}`, `intervalMs`→`schedule.everyMs`, `threadId`→`delivery`)
+  then absorbed into `jobs.sqlite`; leftover `pairing.json` is absorbed into
+  `control.sqlite` via the existing `absorbPairingJson`. Both rename the
+  source to `.bak` only if moved > 0. Default `xclaw doctor` (and the
+  scheduled cron doctor) stay read-only — `--fix` is the only opt-in path.
+  Does not rewrite `xclaw.json`. Tests: `test/normalize-legacy-job.test.mjs`,
+  `test/doctor-fix.test.mjs` (mutation-verified absorb-normalize and the
+  `--fix` gate both directions).
+
 ## 3.247.0 (2026-08-26)
 
 - DURABLE SQL control plane (spec §11.4 pairing-only + §11.11 + §11.16): new

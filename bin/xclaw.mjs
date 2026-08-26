@@ -2937,7 +2937,7 @@ Commands:
   run <message>        Stream via gateway (--ndjson, --resume)
   status [--json]      Gateway + computer + active sessions
   tui [-c|--continue]  Interactive terminal chat (streaming, inline approvals)
-  doctor [--json]      Health checks (exit 0=ok, 1=warnings, 2=errors)
+  doctor [--json] [--fix]  Health checks (exit 0=ok, 1=warnings, 2=errors); --fix absorbs leftover JSON into SQL
   self-test            Fast unit smoke (autonomy, sandbox, fabric, …)
   stop-all             Abort agent sessions + stop computer
   stop --sign          Mint X-XClaw-Stop-Sig (JSON; add --print-curl)

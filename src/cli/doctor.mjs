@@ -55,6 +55,7 @@ function httpGet(url, timeoutMs = 3000) {
 /**
  * @param {object} [opts]
  * @param {boolean} [opts.json]
+ * @param {boolean} [opts.fix]  Spec §11.6/§11.10 — opt-in JSON absorb. Default doctor is read-only.
  */
 export async function runDoctor(opts = {}) {
   const checks = [];
@@ -84,6 +85,16 @@ export async function runDoctor(opts = {}) {
     }
   }
   for (const w of v.warnings) push("config.warn", "warn", w);
+
+  // Spec §11.6 / §11.10 — opt-in only. Scheduled doctor never sets opts.fix.
+  if (opts.fix) {
+    try {
+      const { runDoctorFix } = await import("./doctor-fix.mjs");
+      await runDoctorFix(push, cfg);
+    } catch (e) {
+      push("fix", "warn", e.message || String(e));
+    }
+  }
 
   // Profile pack vs effective security (mismatch detector) — F
   try {
@@ -1826,6 +1837,7 @@ function doctorGroup(id) {
     s.startsWith("ssh")
   )
     return "Runtime";
+  if (s.startsWith("fix.")) return "Runtime";
   return "Other";
 }
 
@@ -1884,7 +1896,11 @@ function finish(checks, opts, extras = {}) {
 
 export async function doctorMain(args = []) {
   const json = args.includes("--json");
-  const report = await runDoctor({ json, pruneCheckpoints: args.includes("--prune-checkpoints") });
+  const report = await runDoctor({
+    json,
+    pruneCheckpoints: args.includes("--prune-checkpoints"),
+    fix: args.includes("--fix"),
+  });
   process.exitCode = report.exitCode;
   return report;
 }

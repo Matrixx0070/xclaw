@@ -93,6 +93,33 @@ export function openCronLedger(cfg) {
   };
 }
 
+/**
+ * Spec §11.6 — fold old cron JSON field names into the current job shape
+ * before insert. Returns null when the row still has no id after mapping.
+ */
+export function normalizeLegacyJob(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const job = { ...raw };
+  if (!job.id && job.jobId) job.id = job.jobId;
+  if (!job.schedule && typeof job.cron === "string") {
+    job.schedule = { kind: "cron", expr: job.cron };
+  }
+  if (job.schedule && typeof job.schedule.cron === "string") {
+    job.schedule = { kind: "cron", expr: job.schedule.cron, tz: job.schedule.tz };
+  }
+  if (!job.schedule && job.intervalMs) {
+    job.schedule = { kind: "every", everyMs: job.intervalMs };
+  }
+  if (job.threadId && !job.delivery) {
+    job.delivery = { threadId: job.threadId };
+  }
+  delete job.jobId;
+  delete job.cron;
+  delete job.intervalMs;
+  delete job.threadId;
+  return job.id ? job : null;
+}
+
 export function absorbLegacyCronJson(ledger, jsonPath) {
   if (!jsonPath || !fs.existsSync(jsonPath)) return { moved: 0 };
   let parsed;
@@ -103,8 +130,9 @@ export function absorbLegacyCronJson(ledger, jsonPath) {
   }
   const rows = Array.isArray(parsed?.jobs) ? parsed.jobs : Array.isArray(parsed) ? parsed : [];
   let moved = 0;
-  for (const job of rows) {
-    if (!job?.id) continue;
+  for (const raw of rows) {
+    const job = normalizeLegacyJob(raw);
+    if (!job) continue;
     ledger.put(job);
     moved += 1;
   }
