@@ -175,6 +175,63 @@ describe("channel sender authorization", () => {
     });
   });
 
+  // Slack was the ONE channel of four with NO sender gate at all — every other
+  // channel authorizes WHO may command the agent before running it (Telegram/
+  // Discord via this policy, email via isEmailSenderAllowed), but Slack ran the
+  // agent for any inbound sender. Poll mode restricts WHERE (channelIds) yet not
+  // WHO, and socket-mode app_mentions arrive from ANY channel the bot is in.
+  // Sweep #35 (3.216.0): added gateSlack (SENDER = msg.user) + wired it into
+  // handleMessage under dmPolicy:"allowlist". These pin the pure gate; the
+  // wiring is driven in test/slack-sender-gate.test.mjs (both-layers discipline).
+  describe("gateSlack — the wiring (allowlist)", () => {
+    const policy = createChannelPolicy({
+      channels: { slack: { allowFrom: ["U123"] } },
+    });
+
+    it("allows a message from a listed user", () => {
+      assert.equal(policy.gateSlack({ user: "U123" }).ok, true);
+    });
+
+    it("DENIES a message from an unlisted user (sender_not_allowed)", () => {
+      // The proven mutation: gateSlack's isSenderIdAllowed(...) -> `true` (or a
+      // dropped allowFrom key compiling an empty admit-all list) admits anyone.
+      const g = policy.gateSlack({ user: "U999" });
+      assert.equal(
+        g.ok,
+        false,
+        "an unlisted user must be denied — accept-anything is a full Slack sender-auth bypass"
+      );
+      assert.equal(g.reason, "sender_not_allowed");
+    });
+
+    it("DENIES a superstring of an allowed user id (U1234 vs U123)", () => {
+      assert.equal(policy.gateSlack({ user: "U1234" }).ok, false);
+    });
+
+    it("reads the sender from the userId alias too", () => {
+      assert.equal(policy.gateSlack({ userId: "U123" }).ok, true);
+      assert.equal(policy.gateSlack({ userId: "U999" }).ok, false);
+    });
+
+    it("rejects a message with no sender (no_sender)", () => {
+      assert.equal(policy.gateSlack({}).reason, "no_sender");
+      assert.equal(policy.gateSlack({ user: "" }).reason, "no_sender");
+    });
+
+    it("honors the allowedUserIds alias key when allowFrom is absent", () => {
+      const p2 = createChannelPolicy({
+        channels: { slack: { allowedUserIds: ["Uabc"] } },
+      });
+      assert.equal(p2.gateSlack({ user: "Uabc" }).ok, true);
+      assert.equal(p2.gateSlack({ user: "Uxyz" }).ok, false);
+    });
+
+    it("an unconfigured Slack allowlist admits (open default, matching Telegram/Discord)", () => {
+      const p3 = createChannelPolicy({ channels: { slack: {} } });
+      assert.equal(p3.gateSlack({ user: "anyone" }).ok, true);
+    });
+  });
+
   // Email is the ONE channel whose sender gate did NOT route through the shared
   // matcher. handleMail (email/index.mjs) rolled its own `allowFrom.some(a =>
   // fromAddr.includes(a))` — a SUBSTRING test, the classic domain-suffix bypass.

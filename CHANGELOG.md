@@ -1,3 +1,41 @@
+## 3.216.0 (2026-08-26)
+
+- SECURITY FIX (sweep #35 — a **fail-OPEN** in the Slack channel's sender
+  authorization; a real behavior change, NOT a byte-identical coverage pin).
+  Slack was the sole channel of four that ran the agent for ANY inbound sender.
+  Every other channel authorizes WHO may command the bot before invoking it —
+  Telegram (`policy.gateTelegram`), Discord (`policy.allowedDiscordChannel`),
+  email (`isEmailSenderAllowed`, sweep #33) — but `slack/index.mjs` `handleMessage`
+  went straight from the bot-skip checks into `processInbound` → the agent. Poll
+  mode restricts WHERE (`channelIds`) but not WHO, and socket-mode `app_mention`s
+  arrive from ANY channel the bot is in, so an unauthorized user in a monitored
+  channel — or anyone who @-mentions the bot in socket mode — drove the agent.
+- Worse than a missing gate: an operator who scoped Slack the way every other
+  channel is scoped (`dmPolicy: "allowlist"` + `allowFrom: [...]`) got NO
+  enforcement — both keys were silently ignored, so a config that reads as "only
+  these senders" admitted everyone.
+- Honest reachability: Slack is DISABLED on this deployment
+  (`channels.slack.enabled = false`), so this is a LATENT fail-open in shipped,
+  wired channel code — not a live leak. It bites any user who enables the Slack
+  channel and expects `dmPolicy`/`allowFrom` to restrict senders.
+- Fix (fail CLOSED, no regression): new pure `gateSlack(msg)` in
+  `src/channels/policy.mjs` (SENDER = `msg.user`/`msg.userId`), routed through the
+  shared exact-match matcher `isSenderIdAllowed` (never substring; superstring/
+  prefix negatives pinned). Wired into `handleMessage` under
+  `dmPolicy === "allowlist"` only — the default `"open"` (and the
+  unimplemented-for-Slack `"pairing"`, which has no Slack pairing store) pass
+  through unchanged, so no existing deployment regresses. `allowFrom` /
+  `allowedUserIds` = allowed Slack user IDs; empty allowlist stays open, matching
+  Telegram/Discord.
+- Proof (fail-open protocol, both directions): `test/slack-sender-gate.test.mjs`
+  drives the real inbound path (new `handleInbound` seam = `handleMessage`) with an
+  injected mock agent and a stubbed `globalThis.fetch`. Un-wiring the gate turns
+  the two DENY tests RED (an unlisted sender AND a senderless message both reach
+  the agent, `calls.length === 1`) while the admit/open tests stay green; wiring it
+  flips them to `calls.length === 0`. The pure gate is pinned in
+  `test/channel-allow-policy.test.mjs` (mutating `gateSlack` to accept-anyone
+  reddens exactly the deny-oriented subtests). Full suite 3617/0.
+
 ## 3.215.0 (2026-08-26)
 
 - SECURITY FIX (sweep #33 — a **fail-OPEN** in the email channel's sender

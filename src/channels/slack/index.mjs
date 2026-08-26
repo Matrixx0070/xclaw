@@ -11,7 +11,10 @@
  *   channelIds: string[]  // public channel IDs to poll (required for poll mode)
  *   pollIntervalMs?: number  // default 4000
  *   workingDir?: string
- *   dmPolicy?: open | pairing | allowlist
+ *   dmPolicy?: open | allowlist   // default "open" (unchanged legacy behavior).
+ *              "allowlist" gates the SENDER against allowFrom (Slack user IDs).
+ *              "pairing" is NOT implemented for Slack (no pairing store) → open.
+ *   allowFrom?: string[]  // allowed Slack user IDs when dmPolicy:"allowlist"
  */
 import { replyWithAgent, truncate } from "../base.mjs";
 import { processInbound, fromSlackMessage } from "../runtime.mjs";
@@ -33,7 +36,7 @@ import {
 
 const API = "https://slack.com/api";
 
-export function createSlackChannel(cfg) {
+export function createSlackChannel(cfg, deps = {}) {
   const conf = cfg.channels?.slack || {};
   const token =
     conf.botToken ||
@@ -65,6 +68,10 @@ export function createSlackChannel(cfg) {
   const heartbeatCheckMs = Math.max(5_000, Math.min(30_000, Math.floor((heartbeatMs || 90_000) / 3)));
   const workingDir = conf.workingDir;
   const policy = createChannelPolicy(cfg);
+  // Only "allowlist" is enforced for Slack. "open"/default and the
+  // unimplemented-for-Slack "pairing" pass through — preserving pre-gate
+  // behavior so no existing deployment regresses.
+  const dmPolicy = String(conf.dmPolicy || "open").toLowerCase();
   const rateLimiter = createRateLimiter(conf.rateLimit || cfg.channels?.rateLimit || {});
 
   let stopped = false;
@@ -121,6 +128,15 @@ export function createSlackChannel(cfg) {
   async function handleMessage(msg, channelId) {
     if (!msg || msg.subtype === "bot_message" || msg.bot_id) return;
     if (botUserId && msg.user === botUserId) return;
+    // Sender authorization — the sole gate for Slack. Without it any sender in
+    // a monitored channel (poll) or any @mention (socket) commands the agent.
+    if (dmPolicy === "allowlist") {
+      const gate = policy.gateSlack(msg);
+      if (!gate.ok) {
+        console.log(`[slack] deny sender ${msg?.user || "?"}: ${gate.reason}`);
+        return;
+      }
+    }
     let textRaw = String(msg.text || "").trim();
     // Strip bot @mention tokens (app_mention / message)
     if (botUserId && textRaw) {
@@ -162,6 +178,7 @@ export function createSlackChannel(cfg) {
         cfg,
         workingDir: workspace,
         rateLimiter,
+        replyWithAgent: deps.replyWithAgent,
         onEvent: (e) => {
           if (e.type === "tool" && e.phase === "start") {
             console.log(`[slack]   → ${e.name}`);
@@ -402,6 +419,9 @@ export function createSlackChannel(cfg) {
   return {
     name: "slack",
     enabled,
+    // Test/integration seam: drive the real inbound path (sender gate +
+    // processInbound) without a live Slack socket. Production never calls this.
+    handleInbound: handleMessage,
     async start() {
       if (!enabled) {
         console.log("[slack] disabled (need enabled + botToken + (channelIds or appToken))");

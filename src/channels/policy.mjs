@@ -1,5 +1,5 @@
 /**
- * Channel policy — OpenClaw allow-from adapted + XClaw telegram/discord gates.
+ * Channel policy — OpenClaw allow-from adapted + XClaw telegram/discord/slack gates.
  */
 import {
   compileAllowlist,
@@ -12,6 +12,7 @@ import {
 export function createChannelPolicy(cfg = {}) {
   const telegram = cfg.channels?.telegram || {};
   const discord = cfg.channels?.discord || {};
+  const slack = cfg.channels?.slack || {};
 
   const tgAllow = compileAllowlist(
     mergeDmAllowFromSources({
@@ -31,6 +32,13 @@ export function createChannelPolicy(cfg = {}) {
 
   const dcAllow = compileAllowlist(
     discord.allowedChannelIds || discord.allowFrom || []
+  );
+
+  // Slack gates on the SENDER (msg.user) — the only unenforced axis: poll mode
+  // already restricts WHERE (channelIds) but not WHO, and socket-mode
+  // app_mentions arrive from any channel the bot is in. Allowlist = Slack user IDs.
+  const slackAllow = compileAllowlist(
+    slack.allowFrom || slack.allowedUserIds || []
   );
 
   function allowedChatId(id) {
@@ -65,15 +73,26 @@ export function createChannelPolicy(cfg = {}) {
     return { ok: true, channelId };
   }
 
+  function gateSlack(msg) {
+    const userId = msg?.user ?? msg?.userId ?? null;
+    if (userId == null || userId === "") return { ok: false, reason: "no_sender" };
+    if (!isSenderIdAllowed(slackAllow, String(userId), true)) {
+      return { ok: false, reason: "sender_not_allowed", userId };
+    }
+    return { ok: true, userId };
+  }
+
   return {
     allowedChatId,
     allowedDiscordChannel,
     gateTelegram,
     gateDiscord,
+    gateSlack,
     compileAllowlist,
     formatAllowFromLowercase,
     tgAllow,
     dcAllow,
+    slackAllow,
   };
 }
 
