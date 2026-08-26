@@ -1,3 +1,35 @@
+## 3.225.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #43 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement source is unchanged and its sha256 is
+  identical before and after: `cdf6fc85…`). Enforcement family: the glob
+  slash-boundary in `compileGlobRegex`
+  (`src/security/exec-allowlist-pattern.mjs:74`), which decides whether a command
+  is covered by the exec allowlist (auto-approve) or must pend. A single `*`
+  compiles to `[^/]*` (matches within ONE path segment, does NOT cross `/`);
+  `**` compiles to `.*` (crosses `/`, any depth).
+- The blind spot: this is a real auth boundary — a directory-scoped allowlist
+  pattern like `~/scripts/*` is meant to auto-approve only what sits DIRECTLY in
+  that dir, NOT an arbitrarily nested `~/scripts/sub/evil`. The design comment on
+  `commandMatchesExecAllowlist` explicitly leans on `ls*` compiling to `ls[^/]*`.
+  Yet `matchesExecAllowlistPattern` had ZERO test references, and every test in
+  `exec-allowlist.test.mjs` used bare-prefix patterns (`ls*`, `cat*`) whose
+  targets contain no `/`; the compound-rejection cases (`ls | curl` → false) fail
+  via SEGMENTATION, not via the slash-boundary. So the boundary itself was
+  unpinned.
+- Proof (mutation): changing `[^/]*` to `.*` (single `*` now crosses `/`,
+  auto-approving nested paths under a top-level allowlist pattern) left the FULL
+  suite GREEN 3643/3643/0 — the fail-open was entirely unpinned.
+- Fix (test only): `test/exec-allowlist.test.mjs` pins the boundary at the raw
+  matcher seam (single `*` matches `/srv/allowed/tool` but NOT
+  `/srv/allowed/sub/evil`; `**` matches the nested path) AND through the wired
+  caller (`commandMatchesExecAllowlist` with a cwd: a dir-scoped `/srv/allowed/*`
+  pattern covers a top-level command but NOT a nested `sub/evil`, while
+  `/srv/allowed/**` covers it). Verified BOTH directions: passes on the restored
+  byte-identical code and the two nested-must-not-match assertions redden
+  (`# pass 9 # fail 2`) under the line-74 fail-open mutation.
+- Suite: 3646/3646, 0 fail (was 3643; +3).
+
 ## 3.224.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #42 — a byte-identical coverage pin, NOT a behavior
