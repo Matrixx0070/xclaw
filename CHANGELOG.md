@@ -1,3 +1,32 @@
+## 3.224.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #42 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement line is unchanged and its sha256 is identical
+  before and after: `59ff0f2e…`). Enforcement family: the Telegram inline-callback
+  authorization gate for admin/approval buttons (`pair` / `apr`) in
+  `authorizeTelegramCallback` (`src/channels/telegram/callback-auth.mjs:73`). An
+  `apr` tap re-runs a pending risky action's approve/deny; a `pair` tap completes
+  device pairing — so this is a sender-authorization gate on privileged actions,
+  not cosmetic.
+- The blind spot: in a deployment with NO `ownerChatId` set and a non-`open`
+  dmPolicy (the DEFAULT `pairing`, or `allowlist`), the ONLY authorized path for a
+  `pair`/`apr` callback is allowlist membership (line 72). A non-allowlisted
+  tapper — e.g. another member of a group chat who can see the inline
+  Approve/Deny keyboard — must be DENIED at line 73. That ACCEPT sibling (line 72)
+  was pinned ("allowlist can apr without owner"), but the DENY arm had ZERO test:
+  every other `pair`/`apr` case either sets an owner (→ owner-mismatch deny, line
+  62), is allowlisted (→ allow, line 72), or uses the `open` policy (→ its own
+  deny, line 66), so none reached line 73.
+- Proof (mutation): flipping line 73 to `{ ok: true, via: "MUT" }` (a fail-open
+  that would let any group member approve/deny another user's pending action)
+  left the FULL suite GREEN 3639/3639/0 — the fail-open was entirely unpinned.
+- Fix (test only): `test/telegram-callback-auth.test.mjs` adds a 2×2 matrix
+  (`apr`/`pair` × `pairing`/`allowlist`) asserting a no-owner, non-allowlisted
+  sender is denied with code `CALLBACK_DENY`. Verified BOTH directions: the 4 new
+  subtests pass on the restored byte-identical code and all 4 redden (`# pass 10
+  # fail 4`) under the line-73 fail-open mutation.
+- Suite: 3643/3643, 0 fail (was 3639; +4).
+
 ## 3.223.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #41 — a byte-identical coverage pin, NOT a behavior

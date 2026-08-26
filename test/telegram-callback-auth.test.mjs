@@ -150,4 +150,35 @@ describe("telegram callback auth", () => {
     assert.equal(r.ok, true);
     assert.equal(r.via, "sug_policy");
   });
+
+  // --- pair/apr + NO owner, non-open policy: the DENY sibling of the allowlist
+  // ACCEPT arm above. For an admin/approval callback (`apr` re-runs the pending
+  // action's approve/deny; `pair` completes pairing) in a deployment with NO
+  // ownerChatId and the DEFAULT pairing policy (or the allowlist policy), the
+  // ONLY authorized path is allowlist membership (callback-auth.mjs:72). A
+  // non-allowlisted tapper — e.g. another member of a group chat who can see the
+  // inline Approve/Deny keyboard — must be DENIED at line 73. That ACCEPT arm is
+  // pinned above ("allowlist can apr without owner"); this DENY arm had NO test:
+  // every other pair/apr case sets an owner (→ owner-mismatch deny, line 62), is
+  // allowlisted (→ allow, line 72), or uses the open policy (→ its own deny,
+  // line 66). Flipping line 73 to `{ ok: true }` left the FULL suite green
+  // (3639/0) — a silent fail-open on the approval-callback gate would ship
+  // unnoticed. These pin the DENY on both admin kinds and both non-open policies.
+  for (const kind of ["apr", "pair"]) {
+    for (const policy of ["pairing", "allowlist"]) {
+      it(`${kind}/${policy}: no owner + non-allowlisted sender is DENIED (line 73)`, () => {
+        const r = authorizeTelegramCallback({
+          fromId: "600",
+          chatId: "600",
+          data: { kind },
+          ownerChatId: null,
+          dmPolicy: policy,
+          allowFrom: [], // NOT allowlisted
+          isApproved: () => false,
+        });
+        assert.equal(r.ok, false, `${kind}/${policy} no-owner non-allowlisted must deny`);
+        assert.equal(r.code, "CALLBACK_DENY");
+      });
+    }
+  }
 });
