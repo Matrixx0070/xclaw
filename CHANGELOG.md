@@ -1,3 +1,34 @@
+## 3.229.0 (2026-08-26)
+
+- TEST-COVERAGE (sweep #47 — a coverage pin, NOT a behavior change; the shipping
+  enforcement source `src/security/sandbox.mjs` is unchanged and its sha256 is
+  byte-identical before and after: `2dbf88f4…`). Enforcement family: the
+  workspace-sandbox allowPaths root matcher (`resolveSandboxPath`,
+  `src/security/sandbox.mjs:37-39`) — `norm === root || norm.startsWith(root + path.sep)`,
+  the boundary that decides whether an absolute path outside the workspace is
+  admitted because it falls under an operator-allowlisted root.
+- Why it matters: `allowPaths` is how an operator whitelists absolute roots
+  outside the workspace (e.g. `/tmp`, a shared data dir); every file/exec tool
+  path flows through `guardToolPaths → resolveSandboxPath`, so this matcher is the
+  containment boundary for allowlisted roots. The trailing `+ path.sep` is the
+  sibling-prefix guard: a directory whose NAME merely shares an allow-root's
+  string prefix (allow `/tmp/safe`, path `/tmp/safe-evil`) is NOT inside the
+  allowed root and must be refused as an escape.
+- The blind spot (RULE(a) path-prefix analogue): the existing `sandbox-tmp-allow`
+  test admits a REAL subpath (`/tmp` + sep + name) and denies with empty
+  allowPaths, but no test drove a shared-prefix SIBLING of a non-empty allow-root.
+  Dropping `+ path.sep` (`startsWith(root + path.sep)` → `startsWith(root)`) left
+  the FULL suite green (3652/0) — a silent widening of containment so that any
+  directory sharing an allowlisted root's name prefix is admitted: a `/data/safe`
+  allowlist would leak writes into `/data/safe-secrets`.
+- Fix (test only): `test/sandbox-tmp-allow.test.mjs` now pins the sibling REJECT
+  (allow `/tmp/safe`, path `/tmp/safe-evil/leak.txt` → throws "escapes
+  workspace") — mutation-verified RED under the dropped-separator mutation — plus
+  a real-subpath ADMIT (`/tmp/safe/ok.txt`) that is green in both directions, the
+  path-prefix mirror of RULE(a)'s hostname suffix-boundary discipline (a matched
+  reject + a matched admit isolating the separator).
+- Suite: 3654/3654, 0 fail (+2). Shipping code byte-identical (sha `2dbf88f4…`).
+
 ## 3.228.0 (2026-08-26)
 
 - TEST-COVERAGE (sweep #46 — a byte-identical coverage pin, NOT a behavior
