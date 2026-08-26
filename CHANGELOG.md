@@ -1,3 +1,31 @@
+## 3.233.0 (2026-08-26)
+
+- SECURITY test-coverage (mutation sweep #50; shipping code
+  `src/git/remote-url.mjs` is UNCHANGED — sha256
+  `f743f22192014f5eab21dc108fb53ec28e2059b63e93a8f06fde9a98f1bf2104` before and
+  after). Pins the subdomain-boundary guard of `hostAllowed`
+  (`src/git/remote-url.mjs:268`), the RULE(a) matcher
+  `h === x || h.endsWith("." + x)` behind git remote-host allowlisting.
+- Blind spot: `hostAllowed` gates `validateGitRemoteUrl` / `validateGitRemotes`,
+  reached in enforcement via `xclaw doctor` (`src/cli/doctor.mjs:509`,
+  `allowedHosts: cfg.git?.allowedRemoteHosts`) and the worktree remote check
+  (`src/agents/worktree.mjs:61`). The only host-reject test used a DISJOINT host
+  (`evil.example`) and the admit test a real subdomain — neither exercises the
+  dot boundary. Dropping `"." +` (so `.endsWith(x)`) left the FULL suite GREEN
+  (`# tests 3660 / # fail 0`): a lookalike sharing the allowlisted host as a bare
+  trailing substring (`evilgithub.com` vs `github.com`) would then pass the
+  operator's allowlist, letting a repo remote — and the credentials/pushes bound
+  to it — reach an attacker-registered host that `doctor` reports as compliant.
+- Catch: +2 tests in `test/git-remote-url.test.mjs` — a lookalike
+  (`evilgithub.com`, allowlist `["github.com"]`) must be REFUSED
+  (`REMOTE_URL_HOST_NOT_ALLOWED`), plus a real-subdomain (`api.github.com`) ADMIT
+  (green both ways). Mutation-verified both directions: correct code → 14/14
+  green; mutated (`.endsWith(x)`) → the lookalike-reject test RED (`not ok 11`).
+  Full suite `# tests 3662 / # fail 0 / NODE_EXIT=0`.
+- RULE(a) reaffirmed: coverage does NOT transfer across distinct call sites of an
+  identical suffix-boundary matcher shape — this is the 5th such site pinned
+  (after shell-egress, route-filename, exec-allowlist glob, and secure-inject).
+
 ## 3.232.0 (2026-08-26)
 
 - TEST-DETERMINISM (fixes a CI-flaky test; shipping code

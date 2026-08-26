@@ -72,6 +72,30 @@ describe("validateGitRemoteUrl", () => {
     });
     assert.equal(v.ok, true);
   });
+
+  // RULE(a) subdomain-boundary: a lookalike host that merely SHARES the
+  // allowlisted host as a trailing SUBSTRING ("evilgithub.com" vs "github.com")
+  // is NOT a subdomain of it and must be REFUSED. `hostAllowed` enforces the dot
+  // boundary via `.endsWith("." + x)`; a bare `.endsWith(x)` would admit the
+  // lookalike, letting `xclaw doctor`'s `git.allowedRemoteHosts` allowlist pass a
+  // repo remote pointed at an attacker-registered host (credentials/pushes leak).
+  // The prior host-reject test uses a DISJOINT host ("evil.example"), which is
+  // rejected either way — so it never pins the dot boundary. These pin the sibling
+  // REJECT (mutated -> RED) with a real-subdomain ADMIT (green both ways).
+  it("refuses a lookalike host sharing only the allowlisted suffix (no dot boundary)", () => {
+    const v = validateGitRemoteUrl("https://evilgithub.com/org/repo.git", {
+      allowedHosts: ["github.com"],
+    });
+    assert.equal(v.ok, false);
+    assert.equal(v.code, "REMOTE_URL_HOST_NOT_ALLOWED");
+  });
+
+  it("admits a real subdomain of the allowlisted host", () => {
+    const v = validateGitRemoteUrl("https://api.github.com/org/repo.git", {
+      allowedHosts: ["github.com"],
+    });
+    assert.equal(v.ok, true);
+  });
 });
 
 describe("validateGitRemotes + parse", () => {
