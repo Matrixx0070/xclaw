@@ -1,3 +1,17 @@
+## 3.260.0 (2026-08-27)
+
+- CONVERSATION GLYPHS pure modules (spec §16.2 + §16.4):
+  `src/channels/conversation-glyph.mjs` (`normalizeGlyph`,
+  `planGlyphAction` per-channel add/remove/clear rules, `resolveAckGlyph`
+  configured → identity → `eyes` fallback, `applyConversationGlyph`
+  fail-closed on a bad plan or a missing `react` adapter) and
+  `src/cli/decorate-line.mjs` (`emojiTtyOk` UTF-8-TTY gate,
+  `decorateLine`, `stripLineGlyphs`). NOT wired to the live message tool
+  (spec §16.3 is a separate slice — a test pins the absence). Inbound
+  Telegram emoji handling and TTS glyph stripping unchanged. Tests:
+  `test/conversation-glyph.test.mjs` + `test/decorate-line.test.mjs`
+  (mutation-verified whatsapp-replace and locale-refuse both directions).
+
 ## 3.259.0 (2026-08-27)
 
 - DURABLE SQL agent schema version marker (spec §12.10):
