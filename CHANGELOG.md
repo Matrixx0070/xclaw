@@ -1,3 +1,19 @@
+## 3.267.0 (2026-08-27)
+
+- DURABLE SQL starter schema (spec §12.7, final NeoServer leftover):
+  shipped `src/state/control-schema.sql` (house shape — TEXT ISO, no
+  STRICT; the spec's STRICT/INTEGER schema_meta would break existing
+  writers on a fresh file) and `openControlPlane` now runs it on every
+  open — after the base ladder (whose fresh/legacy detection relies on
+  table absence, so the starter cannot run first) and before any §12.8
+  group DDL. Adds `migration_runs` (same shape §12.9's helpers ensure)
+  and `schema_meta.role` additively via `addColumnIfMissing` (§11.14).
+  `schema_meta.version` never bumps here — that waits for a group
+  migration recorded in migration_runs. `assertControlShape` is
+  required-only, so the extra table never trips later opens. Tests:
+  `test/control-plane.test.mjs` (mutation-verified starter-exec and
+  role-add both directions).
+
 ## 3.266.0 (2026-08-27)
 
 - GATEWAY HARNESS adoption behind a default-OFF flag (spec §13.3):

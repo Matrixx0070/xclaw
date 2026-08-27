@@ -633,4 +633,71 @@ describe("control plane", () => {
     );
     assert.match(body, /\.\.\.\(prev \? JSON\.parse\(prev\.payload\) : \{\}\), \.\.\.extra/);
   });
+
+  it("starter schema (spec §12.7): every open adds migration_runs and schema_meta.role", () => {
+    const { dir, cfg } = tmpCfg();
+    const kit = openControlPlane(cfg);
+    try {
+      const tables = kit
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .all()
+        .map((r) => r.name);
+      assert.ok(tables.includes("migration_runs"), "migration_runs created");
+      const cols = kit.prepare("PRAGMA table_info(schema_meta)").all().map((r) => r.name);
+      assert.deepEqual(cols, ["key", "version", "touched_at", "role"]);
+      assert.equal(readSchemaVersion(kit.db), CONTROL_SCHEMA_VERSION);
+      assert.equal(
+        kit.prepare("SELECT role FROM schema_meta WHERE key = 'control'").get().role,
+        null,
+      );
+      assert.equal(kit.prepare("SELECT COUNT(*) AS n FROM migration_runs").get().n, 0);
+    } finally {
+      kit.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("starter schema is idempotent and additive on an existing v2 file; version never bumps", () => {
+    const { dir, cfg } = tmpCfg();
+    const first = openControlPlane(cfg);
+    first
+      .prepare("INSERT INTO devices(id, role, token_hash, scopes, payload, touched_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("d1", "operator", "h", "[]", "{}", new Date().toISOString());
+    first.close();
+    const second = openControlPlane(cfg);
+    try {
+      assert.equal(readSchemaVersion(second.db), CONTROL_SCHEMA_VERSION);
+      assert.equal(second.prepare("SELECT COUNT(*) AS n FROM devices").get().n, 1);
+      const cols = second.prepare("PRAGMA table_info(schema_meta)").all().map((r) => r.name);
+      assert.equal(cols.includes("role"), true);
+    } finally {
+      second.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("starter file ships house shape and runs after the ladder, before foldSidecars", () => {
+    const sql = fs.readFileSync(
+      new URL("../src/state/control-schema.sql", import.meta.url),
+      "utf8",
+    );
+    const body = sql
+      .split("\n")
+      .filter((l) => !l.trimStart().startsWith("--"))
+      .join("\n");
+    assert.match(body, /CREATE TABLE IF NOT EXISTS schema_meta/);
+    assert.match(body, /CREATE TABLE IF NOT EXISTS migration_runs/);
+    assert.doesNotMatch(body, /STRICT/);
+    assert.doesNotMatch(body, /role/, "role arrives via addColumnIfMissing, not the file");
+    const src = fs.readFileSync(
+      new URL("../src/state/control-plane.mjs", import.meta.url),
+      "utf8",
+    );
+    const open = src.slice(src.indexOf("export function openControlPlane"));
+    const starterIdx = open.indexOf("runStarterSchema(kit);");
+    const foldIdx = open.indexOf("foldSidecars(kit.db);");
+    const ladderIdx = open.indexOf("kit.exec(V2_DDL);");
+    assert.ok(ladderIdx > -1 && starterIdx > ladderIdx && foldIdx > starterIdx, "ladder → starter → fold");
+    assert.match(src, /addColumnIfMissing\(kit\.db, "schema_meta", "role", "TEXT"\)/);
+  });
 });

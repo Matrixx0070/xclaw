@@ -23,6 +23,7 @@ import { openKit } from "../persist/query-kit.mjs";
 import { tryTakeExclusiveLock } from "../persist/engine-load.mjs";
 import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
 import { quarantineSqlFile } from "../persist/sql-quarantine.mjs";
+import { addColumnIfMissing } from "../persist/add-column.mjs";
 
 export const CONTROL_SCHEMA_VERSION = 2;
 
@@ -373,6 +374,27 @@ function quarantineCorrupt(file, err) {
   }
 }
 
+/**
+ * Starter schema (spec §12.7): the shipped control-schema.sql runs on
+ * every open, after the base ladder (whose fresh/legacy detection relies
+ * on table absence) and before any §12.8 group DDL. CREATE IF NOT EXISTS
+ * only; schema_meta.role arrives additively (§11.14). Never bumps
+ * schema_meta.version — that waits for a successful group migration
+ * recorded in migration_runs (§12.9).
+ */
+let starterSql = null;
+
+function runStarterSchema(kit) {
+  if (starterSql == null) {
+    starterSql = fs.readFileSync(
+      new URL("./control-schema.sql", import.meta.url),
+      "utf8",
+    );
+  }
+  kit.exec(starterSql);
+  addColumnIfMissing(kit.db, "schema_meta", "role", "TEXT");
+}
+
 export function openControlPlane(cfg) {
   const file = controlPlaneFile(cfg);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -408,6 +430,7 @@ export function openControlPlane(cfg) {
       kit.exec(V2_DDL);
       kit.atomic(() => stampSchema(kit, { writeVersion: true }));
     }
+    runStarterSchema(kit);
     foldSidecars(kit.db);
     return kit;
   } catch (err) {
