@@ -1125,7 +1125,11 @@ export async function startGateway({ root, harness = false } = {}) {
       console.error("[xclaw] refresh scheduler:", e.message);
     }
   }
-  startCron();
+  // cfg MUST reach the scheduler: re-hydrated payload jobs run with
+  // job._cfg — a bare startCron() left it null, so agent cron jobs ran
+  // with EMPTY config (fallback $15 cost cap paused the live governor at
+  // $15.01 on 2026-08-27; wrong model/limits for every payload job).
+  startCron(cfg);
   try {
     getControlPlane(cfg);
     console.log("[xclaw] control plane open");

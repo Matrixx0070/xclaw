@@ -1,3 +1,19 @@
+## 3.270.0 (2026-08-27)
+
+- FIX (live incident 2026-08-27): the gateway called `startCron()` with
+  NO config, so every re-hydrated cron payload job ran with `_cfg: null`
+  → empty config: the cost governor enforced its no-config fallback
+  ($15 hard cap) instead of the operator's $60 and PAUSED the live
+  gateway's shared ledger at $15.01 (agent jobs refused; doctor showed
+  the inconsistent "spent=$15.0148 limit=$60" while the job's own error
+  said limit=$15); payload jobs also used default model/limits. Now
+  `startCron(cfg)`. Found live: a leftover `job-alpha` cron ("ping"
+  agent turn every 60s, ~$0.026/run, ~$15 today) surfaced the mismatch —
+  the job was deleted (definition preserved in the ops notes) and the
+  governor unpaused after verification. The $15 no-config fallback
+  itself is kept as a safe default (test-pinned). Regression tests:
+  `test/cron-job-cfg.test.mjs`.
+
 ## 3.269.0 (2026-08-27)
 
 - SCHEMA RETIREMENT LIST (spec §12.2): shipped
