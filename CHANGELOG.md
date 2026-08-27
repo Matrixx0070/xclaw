@@ -1,3 +1,19 @@
+## 3.275.0 (2026-08-27)
+
+- COVERAGE PIN (mutation sweep #65, RULE(n)): the Telegram update dedup
+  gate (`seenUpdateIds`) was pinned by NO test — fail-opening it left
+  the FULL suite green (3864/0), meaning webhook retries and poll
+  redeliveries would double-process every message (double agent runs,
+  duplicate replies, double cost). Shipping code byte-identical (pure
+  pin). `test/telegram-update-dedup.test.mjs` drives the exposed
+  `handleUpdate` against a local Bot API mock (the documented
+  `XCLAW_TELEGRAM_API_BASE` seam): a replayed update_id sends exactly
+  once while a fresh id still sends; the gate registers before message
+  parsing; and SEEN_MAX eviction drops the OLDEST half — a
+  just-pre-trigger id stays deduped while an oldest-half id is forgotten
+  by design. Mutation-verified three ways (gate fail-open, eviction
+  direction flipped, eviction disabled — each RED).
+
 ## 3.274.0 (2026-08-27)
 
 - COVERAGE PIN via pure extraction (mutation sweep #64, RULE(n)):
