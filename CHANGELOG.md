@@ -1,3 +1,20 @@
+## 3.272.0 (2026-08-27)
+
+- SECURITY HARDENING (mutation sweep #61, RULE(m) file-mode): the
+  systemd secrets env file writer `writeEnvFile` (`~/.xclaw/env`,
+  documented "mode 600", unconditionally plaintext because systemd reads
+  K=V — the owner-only mode is the sole at-rest control) set its mode
+  create-only and never re-tightened on rewrite: a write over a
+  pre-existing or tampered world-readable env file left the operator's
+  secrets world-readable (writeFile's `mode` is umask-masked and a no-op
+  on an existing inode). Proven blind spot: `0o600 → 0o644` left the
+  FULL suite green (3856/0). Fixed with the #58/#59/#60 chmod-after-
+  write idiom; `test/daemon-env-file-mode.test.mjs` pins plaintext
+  precondition + fresh-write mode + rewrite-repair (mutation-verified
+  both directions). Census also cleared: providers/discovery.mjs and
+  seats/manager.mjs hold no secrets; webauthn/cookie-rotation
+  tmp-rename writers are structurally sound (fresh inode per write).
+
 ## 3.271.0 (2026-08-27)
 
 - MEMORY VECTOR extension loader (spec §12.4 — the FINAL NeoServer spec

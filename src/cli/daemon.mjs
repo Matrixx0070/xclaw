@@ -152,6 +152,13 @@ export function systemdUnit(opts = {}) {
 
 /**
  * Write secrets to ~/.xclaw/env (mode 600) for EnvironmentFile=
+ *
+ * The file is unconditionally plaintext (systemd reads K=V), so the
+ * owner-only mode is the sole at-rest control. writeFile's `mode` is
+ * umask-masked and a no-op on an existing file — the chmod after the
+ * write is the authoritative on-disk-mode line (sweep #58/#59/#60
+ * idiom): a rewrite over a pre-existing or tampered world-readable env
+ * file re-tightens it every time.
  */
 export function writeEnvFile(envPath, vars = {}) {
   fs.mkdirSync(path.dirname(envPath), { recursive: true });
@@ -159,5 +166,10 @@ export function writeEnvFile(envPath, vars = {}) {
     .filter(([, v]) => v != null && v !== "")
     .map(([k, v]) => `${k}=${String(v).replace(/\n/g, "")}`);
   fs.writeFileSync(envPath, lines.join("\n") + "\n", { mode: 0o600 });
+  try {
+    fs.chmodSync(envPath, 0o600);
+  } catch {
+    /* windows */
+  }
   return envPath;
 }
