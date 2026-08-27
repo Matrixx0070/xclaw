@@ -6,7 +6,10 @@
  * a 15-minute window back off 0 / 30s / 5m and refuse outright at 10
  * failures (XCLAW_CRASH_LOOP) — matching a supervised service that keeps
  * failing on boot. After a successful start(), call clear() so
- * intentional SIGUSR1 restarts do not count as crashes.
+ * intentional SIGUSR1 restarts do not count as crashes — clear() also
+ * disarms this boot's exit hook (the spec sketch kept recording after
+ * clear, so even a graceful stop after a successful start wrote a
+ * "crash"; fixed for §13.3 adoption).
  *
  * NOT adopted by the live gateway in this binary — companions to the
  * (also unadopted) §13.2 run-loop harness.
@@ -34,7 +37,9 @@ export function applyCrashLoopGuard(stateDir) {
     throw err;
   }
   const delayMs = n >= 7 ? 300_000 : n >= 4 ? 30_000 : 0;
+  let cleared = false;
   process.once("exit", () => {
+    if (cleared) return;
     try {
       const next = history.concat(Date.now()).filter((t) => Date.now() - t < WINDOW_MS);
       fs.mkdirSync(stateDir, { recursive: true });
@@ -46,6 +51,7 @@ export function applyCrashLoopGuard(stateDir) {
   return {
     delayMs,
     clear() {
+      cleared = true;
       try {
         fs.unlinkSync(file);
       } catch {

@@ -94,6 +94,11 @@ describe("gateway run-loop (spec §13.2)", () => {
       process.kill(process.pid, "SIGUSR1");
       await until(() => events.filter((e) => e === "start").length === 2);
       assert.deepEqual(events, ["start", "stop:gateway restarting", "start"]);
+      assert.equal(
+        fs.readFileSync(lockFile, "utf8"),
+        String(process.pid),
+        "single-instance lock must survive an in-process restart",
+      );
 
       process.kill(process.pid, "SIGTERM");
       await until(() => events.includes("stop:gateway stopping"));
@@ -156,9 +161,9 @@ describe("gateway run-loop (spec §13.2)", () => {
     assert.equal(typeof drainProcessStores, "function");
   });
 
-  it("NOT adopted by the live gateway in this binary", () => {
+  it("adopted by the gateway ONLY behind gateway.runLoop === true (default OFF)", () => {
     const gw = fs.readFileSync(new URL("../src/gateway/index.mjs", import.meta.url), "utf8");
-    assert.equal(gw.includes("run-loop.mjs"), false);
-    assert.equal(gw.includes("runGatewayLoop"), false);
+    assert.match(gw, /if \(!harness && cfg\.gateway\?\.runLoop === true\) \{\s*\n\s*return startGatewaySupervised\(\{ root, cfg \}\);/);
+    assert.match(gw, /import\("\.\/run-loop\.mjs"\)/);
   });
 });

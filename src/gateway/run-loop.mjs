@@ -145,17 +145,20 @@ export async function runGatewayLoop({
       } catch {
         /* best-effort */
       }
-      try {
-        await lock.release();
-      } catch {
-        /* best-effort */
-      }
       clearTimeout(hang);
       if (isRestart) {
+        // Keep the single-instance lock across an in-process restart — the
+        // spec sketch released it here, leaving the restarted gateway
+        // unlocked (live-proven: lock file vanished after SIGUSR1).
         shuttingDown = false;
         server = null;
         restartResolver?.();
         return;
+      }
+      try {
+        await lock.release();
+      } catch {
+        /* best-effort */
       }
       hardExit(0);
     })();

@@ -81,10 +81,14 @@ describe("port readiness (spec §13.5)", () => {
     assert.ok(Date.now() - started >= 600, "must poll until the deadline");
   });
 
-  it("guard and waitForPort are NOT adopted by the live gateway in this binary", () => {
+  it("guard adopted only inside the flag-gated supervised path; waitForPort stays unwired", () => {
     const gw = fs.readFileSync(new URL("../src/gateway/index.mjs", import.meta.url), "utf8");
-    assert.equal(gw.includes("crash-guard.mjs"), false);
-    assert.equal(gw.includes("applyCrashLoopGuard"), false);
+    const supervised = gw.slice(
+      gw.indexOf("async function startGatewaySupervised"),
+      gw.indexOf("export async function startGateway"),
+    );
+    assert.match(supervised, /applyCrashLoopGuard\(stateRoot\)/);
+    assert.match(supervised, /guard\.clear\(\)/);
     assert.equal(gw.includes("waitForPort"), false);
   });
 });

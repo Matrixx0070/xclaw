@@ -977,8 +977,41 @@ async function streamWebChatMessage(req, res, { message, sessionId, cfg, mode, v
   }
 }
 
-export async function startGateway({ root } = {}) {
+/**
+ * §13.3 harness adoption, default OFF: only `gateway.runLoop: true` in
+ * config hands lifecycle + signals to the §13.2 run-loop (single-instance
+ * lock, SIGUSR1 same-pid restart, crash-loop backoff). With the flag
+ * absent — every existing deploy — startGateway behaves exactly as before.
+ */
+async function startGatewaySupervised({ root, cfg }) {
+  const os = await import("node:os");
+  const { runGatewayLoop } = await import("./run-loop.mjs");
+  const { applyCrashLoopGuard } = await import("./crash-guard.mjs");
+  const stateRoot = path.join(os.homedir(), ".xclaw");
+  const guard = applyCrashLoopGuard(stateRoot);
+  if (guard.delayMs) {
+    console.log(`[xclaw] crash-loop backoff: waiting ${guard.delayMs}ms before start`);
+    await new Promise((r) => setTimeout(r, guard.delayMs));
+  }
+  console.log(`[xclaw] supervised run-loop enabled (gateway.runLoop)`);
+  return runGatewayLoop({
+    start: async () => {
+      const handle = await startGateway({ root, harness: true });
+      guard.clear();
+      return handle;
+    },
+    stop: ({ reason, server }) => server?.stop?.(reason),
+    stateDir: stateRoot,
+    port: cfg.gateway?.port,
+    drainMs: cfg.shutdown?.drainMs ?? 15_000,
+  });
+}
+
+export async function startGateway({ root, harness = false } = {}) {
   const cfg = await loadConfig();
+  if (!harness && cfg.gateway?.runLoop === true) {
+    return startGatewaySupervised({ root, cfg });
+  }
 
   // Bind safety, before anything is constructed or any socket is opened. A
   // non-loopback host with no token publishes /agent, /config, /sessions and
@@ -1645,7 +1678,7 @@ export async function startGateway({ root } = {}) {
   }
 
   let shuttingDown = false;
-  const shutdown = async (signal = "signal") => {
+  const shutdown = async (signal = "signal", { exit = true } = {}) => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[xclaw] Shutting down (${signal})…`);
@@ -1678,17 +1711,29 @@ export async function startGateway({ root } = {}) {
     try { stopCron(); } catch { /* already closed */ }
     try { stopControlPlane(); } catch { /* already closed */ }
     try { stopAgentStores(); } catch { /* already closed */ }
-    process.exit(0);
+    if (exit) process.exit(0);
   };
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGHUP", () => {
+  // SIGHUP stays config reload only in both modes (§13.1) — never closes SQL.
+  const onSighup = () => {
     void softReloadConfig(cfg)
       .then((r) => {
         console.log(`[xclaw] config reloaded (SIGHUP) changed=${r.changed.join(",") || "none"} profile=${r.profile}`);
       })
       .catch((err) => console.warn("[xclaw] config reload failed:", err.message));
-  });
+  };
+  process.on("SIGHUP", onSighup);
+  if (harness) {
+    // §13.3: the run-loop owns SIGINT/SIGTERM/SIGUSR1 and process exit; this
+    // boot only hands back a stop that drains without exiting the process.
+    return {
+      stop: async (reason) => {
+        process.removeListener("SIGHUP", onSighup);
+        await shutdown(reason || "harness stop", { exit: false });
+      },
+    };
+  }
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
   await new Promise(() => {});
 }

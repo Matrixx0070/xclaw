@@ -1,3 +1,24 @@
+## 3.266.0 (2026-08-27)
+
+- GATEWAY HARNESS adoption behind a default-OFF flag (spec §13.3):
+  `gateway.runLoop: true` hands lifecycle to the §13.2 run-loop —
+  crash-loop backoff before boot (§13.4), single-instance lock, SIGUSR1
+  same-pid in-process restart, SIGINT/SIGTERM owned by the harness,
+  SIGHUP stays config-reload-only in both modes. With the flag absent
+  (every existing deploy) startGateway behaves exactly as before —
+  strict `=== true` check pinned by test. Harness boots return a stop
+  handle; `shutdown` is exit-gated so a harness stop drains without
+  killing the process. Two defects fixed en route, both live-proven on
+  an isolated HOME/port: the crash guard's `clear()` now disarms the
+  exit hook (a graceful stop no longer records a "crash"), and the
+  run-loop keeps the single-instance lock across a restart (the spec
+  sketch released it, leaving the restarted gateway unlocked — the lock
+  file vanished after SIGUSR1). Supervised lifecycle proven end-to-end:
+  boot → lock=pid → SIGUSR1 same-pid restart with lock intact → SIGTERM
+  clean exit, lock released, no crash-history file. waitForPort stays
+  unwired. Tests: `test/run-loop-adoption.test.mjs` + updated pins
+  (mutation-verified lock-keep, clear-disarm, and flag gate).
+
 ## 3.265.0 (2026-08-27)
 
 - CONVERSATION GLYPH react tool LIVE (spec §16.3): new `react` agent
