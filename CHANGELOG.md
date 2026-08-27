@@ -1,3 +1,19 @@
+## 3.279.0 (2026-08-27)
+
+- COVERAGE PIN (mutation sweep #69, RULE(n)xRULE(k)): the client-side
+  bash timeout CEILING in `sanitizeToolArgs` (120s clamp on every bash
+  dispatch through the tool router) was never exercised alone — every
+  existing test case lands exactly AT 120 after the ms-to-s divide, so
+  removing the ceiling left the FULL suite green (3875/0): a
+  model-passed `timeout: 300` (or 300000ms) would run unclamped at this
+  seam. The server-side sibling (`normalizeBashTimeoutSeconds`) is
+  ceiling-covered — coverage does not transfer between the two consumers
+  (defense in depth now pinned independently). Extended
+  `test/bash-timeout-normalize.test.mjs`: ceiling-alone cases (300 to
+  120, 300000 to 120, `_bash`-suffix names) and the negative/NaN 30s
+  reset. Mutation-verified both directions. Shipping code
+  byte-identical.
+
 ## 3.278.0 (2026-08-27)
 
 - COVERAGE PIN (mutation sweep #68, RULE(n), closing the #63 carry):
