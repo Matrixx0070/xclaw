@@ -74,7 +74,7 @@ import {
 } from "./errors.mjs";
 import { runTelegramPollLoop } from "./poll-loop.mjs";
 import { enrichStickerMeta } from "./sticker-meta.mjs";
-import { chunkText, prepareReplyChunks } from "./chunk-text.mjs";
+import { chunkText, prepareReplyChunks, resolveChunkLimits } from "./chunk-text.mjs";
 
 // Overridable for tests and self-hosted Bot API servers; read at call time so
 // a test can point an already-imported module at a local mock.
@@ -188,8 +188,7 @@ export function createTelegramChannel(cfg) {
     }
   }
 
-  const chunkMax = Math.min(4096, Number(conf.chunkMax || conf.maxChunkChars) || 4000);
-  const maxReplyChars = Math.max(chunkMax, Number(conf.maxReplyChars) || 12_000);
+  const { chunkMax, maxReplyChars } = resolveChunkLimits(conf);
 
   async function sendMessage(chatId, text, replyTo, extra = {}) {
     const chunks = prepareReplyChunks(text, {

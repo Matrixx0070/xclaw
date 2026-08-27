@@ -1,3 +1,19 @@
+## 3.274.0 (2026-08-27)
+
+- COVERAGE PIN via pure extraction (mutation sweep #64, RULE(n)):
+  Telegram's 4096 hard ceiling on operator `chunkMax` config was pinned
+  by NO test — dropping the `Math.min(4096, …)` clamp left the FULL
+  suite green (3860/0), meaning a config `chunkMax: 8000` would send
+  over-limit bodies and Telegram would 400 every long reply live. The
+  limit computation now lives in pure `resolveChunkLimits(conf)`
+  (chunk-text.mjs) — ceiling clamp, `maxChunkChars` alias, 4000/12000
+  defaults, and the maxReplyChars-never-below-chunkMax floor — and the
+  channel factory is wired onto it (a wire pin rejects any inline
+  duplicate of the clamp). Behavior identical; the chunker itself was
+  already thoroughly covered. Tests:
+  `test/telegram-chunk-limits.test.mjs` (mutation-verified ceiling and
+  floor both directions).
+
 ## 3.273.0 (2026-08-27)
 
 - COVERAGE PIN (mutation sweep #63, new RULE(n) quantitative caps): the

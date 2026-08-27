@@ -225,6 +225,20 @@ export function splitHeadAndOverflow(text, maxLen = 4000) {
   return { head: chunks[0], overflow: chunks.slice(1) };
 }
 
+
+/**
+ * Operator chunk limits with the Telegram hard ceiling enforced (sweep
+ * #64). Telegram rejects sendMessage text over 4096 UTF-16 units, so a
+ * configured chunkMax above it MUST clamp — otherwise every long reply
+ * errors live. maxReplyChars never floors below chunkMax (a total cap
+ * smaller than one chunk would truncate mid-chunk).
+ */
+export function resolveChunkLimits(conf = {}) {
+  const chunkMax = Math.min(4096, Number(conf.chunkMax || conf.maxChunkChars) || 4000);
+  const maxReplyChars = Math.max(chunkMax, Number(conf.maxReplyChars) || 12_000);
+  return { chunkMax, maxReplyChars };
+}
+
 export default {
   isHighSurrogate,
   isLowSurrogate,
@@ -235,4 +249,5 @@ export default {
   chunkText,
   prepareReplyChunks,
   splitHeadAndOverflow,
+  resolveChunkLimits,
 };
