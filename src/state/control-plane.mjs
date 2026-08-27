@@ -10,9 +10,10 @@
  * createPairingStore. First-open of a missing file takes the same exclusive
  * coordinator as cron import (spec §11.24) then drops it before the kit
  * open — BEGIN EXCLUSIVE on the coordinator handle blocks a second
- * DatabaseSync. After the file exists, later opens skip the lock. Do not
- * fold cron payload jobs into this file. Do not absorb seats/approvals/
- * plugin JSON in this binary.
+ * DatabaseSync. After the file exists, later opens skip the lock. Delivery
+ * queue helpers (spec §11.22) sit on an open kit and are not wired to live
+ * outbound. Do not fold cron payload jobs into this file. Do not absorb
+ * seats/approvals/plugin JSON in this binary.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -295,6 +296,46 @@ export function absorbPairingJson(kit, jsonPath) {
     }
   }
   return { moved };
+}
+
+/**
+ * Delivery queue helpers (spec §11.22).
+ *
+ * Sit on an open kit. Do not replace the live WS/telegram outbound path
+ * in this binary. takeDelivery SELECT+UPDATE is one atomic unit so two
+ * callers cannot claim the same pending row.
+ */
+export function enqueueDelivery(kit, { id, queue, sessionId, payload }) {
+  const now = new Date().toISOString();
+  kit.atomic(() => {
+    kit
+      .prepare(
+        `INSERT INTO delivery_queue(id, queue, status, session_id, payload, created_at, updated_at)
+         VALUES (?, ?, 'pending', ?, ?, ?, ?)`,
+      )
+      .run(id, queue, sessionId || null, JSON.stringify(payload || {}), now, now);
+  });
+}
+
+export function takeDelivery(kit, queue) {
+  return kit.atomic(() => {
+    const row = kit
+      .prepare(
+        `SELECT * FROM delivery_queue WHERE queue = ? AND status = 'pending' ORDER BY created_at LIMIT 1`,
+      )
+      .get(queue);
+    if (!row) return null;
+    kit
+      .prepare("UPDATE delivery_queue SET status = 'inflight', updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), row.id);
+    return row;
+  });
+}
+
+export function finishDelivery(kit, id, status = "done") {
+  kit
+    .prepare("UPDATE delivery_queue SET status = ?, updated_at = ? WHERE id = ?")
+    .run(status, new Date().toISOString(), id);
 }
 
 function quarantineCorrupt(file, err) {

@@ -1,10 +1,12 @@
 /**
- * Control plane (spec §11.4 + §11.11 + §11.16 + §11.7 + §11.24).
+ * Control plane (spec §11.4 + §11.11 + §11.16 + §11.7 + §11.24 + §11.22).
  * Pins: fresh open at v2, absorb pairing.json, refuse newer schema,
  * refuse incomplete shape (do not CREATE the missing table), v1→v2
  * migrate (CREATE IF NOT EXISTS only, never DROP), cache/stop,
- * first-open exclusive lock (drop before kit open; skip when file exists).
- * openControlPlane must not rename pairing.json — live channels still use it.
+ * first-open exclusive lock (drop before kit open; skip when file exists),
+ * delivery queue helpers (enqueue pending, take oldest+inflight in one
+ * atomic, finish status). openControlPlane must not rename pairing.json
+ * — live channels still use it.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -16,12 +18,15 @@ import {
   absorbPairingJson,
   assertControlShape,
   controlPlaneFile,
+  enqueueDelivery,
+  finishDelivery,
   getControlPlane,
   openControlPlane,
   openControlPlaneExclusive,
   pairingJsonFile,
   readSchemaVersion,
   stopControlPlane,
+  takeDelivery,
 } from "../src/state/control-plane.mjs";
 
 function tmpCfg() {
@@ -470,5 +475,91 @@ describe("control plane", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("enqueueDelivery inserts pending; takeDelivery claims the oldest as inflight", () => {
+    const { dir, cfg } = tmpCfg();
+    const kit = openControlPlane(cfg);
+    try {
+      enqueueDelivery(kit, {
+        id: "d1",
+        queue: "out",
+        sessionId: "s1",
+        payload: { text: "first" },
+      });
+      enqueueDelivery(kit, {
+        id: "d2",
+        queue: "out",
+        payload: { text: "second" },
+      });
+      enqueueDelivery(kit, {
+        id: "other",
+        queue: "other",
+        payload: { text: "skip" },
+      });
+      const first = takeDelivery(kit, "out");
+      assert.equal(first.id, "d1");
+      assert.equal(first.status, "pending");
+      assert.equal(first.session_id, "s1");
+      assert.equal(JSON.parse(first.payload).text, "first");
+      const claimed = kit.prepare("SELECT status FROM delivery_queue WHERE id = ?").get("d1");
+      assert.equal(claimed.status, "inflight");
+      const second = takeDelivery(kit, "out");
+      assert.equal(second.id, "d2");
+      const empty = takeDelivery(kit, "out");
+      assert.equal(empty, null);
+      const other = takeDelivery(kit, "other");
+      assert.equal(other.id, "other");
+    } finally {
+      kit.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("finishDelivery sets status and updated_at; default status is done", () => {
+    const { dir, cfg } = tmpCfg();
+    const kit = openControlPlane(cfg);
+    try {
+      enqueueDelivery(kit, { id: "d1", queue: "out", payload: {} });
+      const taken = takeDelivery(kit, "out");
+      assert.equal(taken.id, "d1");
+      const before = kit.prepare("SELECT updated_at FROM delivery_queue WHERE id = ?").get("d1");
+      finishDelivery(kit, "d1");
+      const done = kit.prepare("SELECT status, updated_at FROM delivery_queue WHERE id = ?").get("d1");
+      assert.equal(done.status, "done");
+      assert.ok(done.updated_at >= before.updated_at);
+      enqueueDelivery(kit, { id: "d2", queue: "out", payload: {} });
+      takeDelivery(kit, "out");
+      finishDelivery(kit, "d2", "failed");
+      const failed = kit.prepare("SELECT status FROM delivery_queue WHERE id = ?").get("d2");
+      assert.equal(failed.status, "failed");
+    } finally {
+      kit.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("takeDelivery SELECT+UPDATE is one atomic unit", () => {
+    const src = fs.readFileSync(
+      new URL("../src/state/control-plane.mjs", import.meta.url),
+      "utf8",
+    );
+    const fn = src.slice(src.indexOf("export function takeDelivery"));
+    const body = fn.slice(0, fn.indexOf("\nexport function finishDelivery"));
+    assert.match(body, /return kit\.atomic\(\(\) => \{/);
+    assert.ok(
+      body.indexOf("kit.atomic") < body.indexOf("SELECT * FROM delivery_queue"),
+      "SELECT must run inside kit.atomic",
+    );
+    assert.ok(
+      body.indexOf("SELECT * FROM delivery_queue") <
+        body.indexOf("status = 'inflight'"),
+      "UPDATE inflight must follow the SELECT in the same atomic",
+    );
+    const close = body.lastIndexOf("});");
+    assert.ok(
+      body.indexOf("status = 'inflight'") < close,
+      "inflight UPDATE must close inside kit.atomic",
+    );
   });
 });

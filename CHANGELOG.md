@@ -1,3 +1,14 @@
+## 3.256.0 (2026-08-27)
+
+- DURABLE SQL delivery queue helpers (spec §11.22): `enqueueDelivery`,
+  `takeDelivery`, and `finishDelivery` in `src/state/control-plane.mjs` sit
+  on an open kit. Enqueue inserts `pending`; take SELECT+UPDATE is one
+  `kit.atomic` so two callers cannot claim the same row; finish defaults
+  to `done`. Not wired to live WS/telegram outbound. Does not bump
+  `CONTROL_SCHEMA_VERSION` and does not absorb pairing.json. Tests:
+  `test/control-plane.test.mjs` (mutation-verified atomic wrap and inflight
+  UPDATE both directions).
+
 ## 3.255.0 (2026-08-27)
 
 - DURABLE SQL first-open exclusive lock (spec §11.24):
