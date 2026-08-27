@@ -1,3 +1,16 @@
+## 3.261.0 (2026-08-27)
+
+- DURABLE SQL per-agent VFS / artifacts / boards tables (spec §12.6):
+  `agent_vfs_nodes` (BLOB bytes), `agent_artifacts`, `agent_boards`,
+  `agent_board_columns`, `agent_board_cards`, `agent_transcript_archive`,
+  `agent_heartbeat_outcomes` on the per-agent file (NOT the control
+  plane). Additive `CREATE IF NOT EXISTS` — an existing agent file gains
+  the tables on reopen with data preserved; `AGENT_SCHEMA_VERSION` stays
+  1. House DDL style (TEXT ISO timestamps, no STRICT — same documented
+  deviation as the schema marker). No live wiring; gateway start still
+  does not open a per-agent file. Tests: `test/agent-store.test.mjs`
+  (mutation-verified table-group and BLOB-column both directions).
+
 ## 3.260.0 (2026-08-27)
 
 - CONVERSATION GLYPHS pure modules (spec §16.2 + §16.4):

@@ -193,6 +193,58 @@ describe("agent store (spec §11.13)", () => {
     }
   });
 
+  it("open creates the §12.6 VFS/artifacts/boards tables on the agent file", () => {
+    const { dir, cfg } = tmpCfg();
+    const kit = openAgentStore("main", cfg);
+    try {
+      const names = tableNames(kit.db);
+      for (const t of [
+        "agent_vfs_nodes",
+        "agent_artifacts",
+        "agent_boards",
+        "agent_board_columns",
+        "agent_board_cards",
+        "agent_transcript_archive",
+        "agent_heartbeat_outcomes",
+      ]) {
+        assert.ok(names.includes(t), `missing ${t}`);
+      }
+      kit
+        .prepare(
+          "INSERT INTO agent_vfs_nodes(path, kind, payload, bytes, touched_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run("/notes/a.txt", "file", null, Buffer.from("blob-bytes"), new Date().toISOString());
+      const row = kit.prepare("SELECT kind, bytes FROM agent_vfs_nodes WHERE path = ?").get("/notes/a.txt");
+      assert.equal(row.kind, "file");
+      assert.equal(Buffer.from(row.bytes).toString(), "blob-bytes");
+    } finally {
+      kit.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("§12.6 tables are additive on an existing agent file; data survives reopen", () => {
+    const { dir, cfg } = tmpCfg();
+    const first = openAgentStore("main", cfg);
+    first
+      .prepare("INSERT INTO transcript_events(session_key, kind, payload, at) VALUES (?, ?, ?, ?)")
+      .run("s1", "user", "{}", new Date().toISOString());
+    first.exec("DROP TABLE agent_boards");
+    first.close();
+    const second = openAgentStore("main", cfg);
+    try {
+      assert.ok(tableNames(second.db).includes("agent_boards"));
+      assert.equal(second.prepare("SELECT COUNT(*) AS n FROM transcript_events").get().n, 1);
+      assert.equal(
+        second.prepare("SELECT version FROM schema_meta WHERE key = 'agent'").get().version,
+        AGENT_SCHEMA_VERSION,
+      );
+    } finally {
+      second.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("gateway stop walks agent stores next to stopControlPlane; start does not open", () => {
     const src = fs.readFileSync(
       new URL("../src/gateway/index.mjs", import.meta.url),
