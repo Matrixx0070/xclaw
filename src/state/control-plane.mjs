@@ -7,13 +7,18 @@
  * CREATE TABLE IF NOT EXISTS only (never DROP a populated table to "fix"
  * a mismatch). Absorb of pairing.json is explicit and is NOT run from open
  * — live telegram/discord still read ~/.xclaw/pairing.json through
- * createPairingStore. Do not fold cron payload jobs into this file. Do not
- * absorb seats/approvals/plugin JSON in this binary.
+ * createPairingStore. First-open of a missing file takes the same exclusive
+ * coordinator as cron import (spec §11.24) then drops it before the kit
+ * open — BEGIN EXCLUSIVE on the coordinator handle blocks a second
+ * DatabaseSync. After the file exists, later opens skip the lock. Do not
+ * fold cron payload jobs into this file. Do not absorb seats/approvals/
+ * plugin JSON in this binary.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openKit } from "../persist/query-kit.mjs";
+import { tryTakeExclusiveLock } from "../persist/engine-load.mjs";
 import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
 import { quarantineSqlFile } from "../persist/sql-quarantine.mjs";
 
@@ -349,6 +354,30 @@ export function openControlPlane(cfg) {
   }
 }
 
+/**
+ * First-open exclusive lock (spec §11.24).
+ *
+ * Same coordinator as cron import. Use when doctor --fix and gateway start
+ * might both create control.sqlite. After the file exists, later opens skip
+ * the exclusive lock and just use the process cache in 11.16.
+ *
+ * BEGIN EXCLUSIVE on the coordinator handle blocks a second DatabaseSync, so
+ * the lock is dropped before openControlPlane. The take still serializes
+ * empty-file creation; the kit then uses its own busy_timeout for DDL.
+ */
+export function openControlPlaneExclusive(cfg) {
+  const file = controlPlaneFile(cfg);
+  if (fs.existsSync(file)) return openControlPlane(cfg);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const lock = tryTakeExclusiveLock(file, { waitMs: 1000 });
+  try {
+    lock?.drop?.();
+  } catch {
+    /* coordinator released */
+  }
+  return openControlPlane(cfg);
+}
+
 let plane = null;
 let planeFailed = null;
 
@@ -356,7 +385,7 @@ export function getControlPlane(cfg) {
   if (planeFailed) throw planeFailed;
   if (!plane) {
     try {
-      plane = openControlPlane(cfg);
+      plane = openControlPlaneExclusive(cfg);
     } catch (err) {
       if (isSqlCorruptionError(err)) planeFailed = err;
       throw err;

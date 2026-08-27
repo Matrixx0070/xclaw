@@ -1,3 +1,16 @@
+## 3.255.0 (2026-08-27)
+
+- DURABLE SQL first-open exclusive lock (spec §11.24):
+  `openControlPlaneExclusive(cfg)` in `src/state/control-plane.mjs` takes the
+  same coordinator as cron import (`tryTakeExclusiveLock`) when
+  `control.sqlite` is missing, then drops it before the kit open — BEGIN
+  EXCLUSIVE on the coordinator handle would otherwise block a second
+  `DatabaseSync`. After the file exists, later opens skip the lock.
+  `getControlPlane` and `doctor --fix` use the exclusive first-open. Does
+  not bump `CONTROL_SCHEMA_VERSION` and does not absorb pairing.json.
+  Tests: `test/control-plane.test.mjs` (mutation-verified skip-if-exists and
+  drop-before-open both directions).
+
 ## 3.254.0 (2026-08-27)
 
 - DURABLE SQL sync query-builder dialect (spec §11.9): `createSyncDialect(file)`

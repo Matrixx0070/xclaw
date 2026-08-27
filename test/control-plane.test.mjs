@@ -1,8 +1,9 @@
 /**
- * Control plane (spec §11.4 + §11.11 + §11.16 + §11.7).
+ * Control plane (spec §11.4 + §11.11 + §11.16 + §11.7 + §11.24).
  * Pins: fresh open at v2, absorb pairing.json, refuse newer schema,
  * refuse incomplete shape (do not CREATE the missing table), v1→v2
- * migrate (CREATE IF NOT EXISTS only, never DROP), cache/stop.
+ * migrate (CREATE IF NOT EXISTS only, never DROP), cache/stop,
+ * first-open exclusive lock (drop before kit open; skip when file exists).
  * openControlPlane must not rename pairing.json — live channels still use it.
  */
 import assert from "node:assert/strict";
@@ -17,6 +18,7 @@ import {
   controlPlaneFile,
   getControlPlane,
   openControlPlane,
+  openControlPlaneExclusive,
   pairingJsonFile,
   readSchemaVersion,
   stopControlPlane,
@@ -389,6 +391,83 @@ describe("control plane", () => {
       stopControlPlane();
     } finally {
       stopControlPlane();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("openControlPlaneExclusive creates a missing file at v2", () => {
+    const { dir, cfg } = tmpCfg();
+    try {
+      const file = controlPlaneFile(cfg);
+      assert.equal(fs.existsSync(file), false);
+      const kit = openControlPlaneExclusive(cfg);
+      try {
+        const row = kit.prepare("SELECT version FROM schema_meta WHERE key = ?").get("control");
+        assert.equal(row.version, CONTROL_SCHEMA_VERSION);
+        assert.equal(fs.existsSync(file), true);
+      } finally {
+        kit.close();
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("openControlPlaneExclusive skips the exclusive lock when the file exists", () => {
+    const { dir, cfg } = tmpCfg();
+    try {
+      const first = openControlPlane(cfg);
+      first.close();
+      const src = fs.readFileSync(
+        new URL("../src/state/control-plane.mjs", import.meta.url),
+        "utf8",
+      );
+      const fn = src.slice(src.indexOf("export function openControlPlaneExclusive"));
+      const body = fn.slice(0, fn.indexOf("\nlet plane"));
+      assert.match(
+        body,
+        /if \(fs\.existsSync\(file\)\) return openControlPlane\(cfg\);/,
+      );
+      assert.ok(
+        body.indexOf("if (fs.existsSync(file)) return openControlPlane(cfg);") <
+          body.indexOf("tryTakeExclusiveLock"),
+        "existing file must skip tryTakeExclusiveLock",
+      );
+      const kit = openControlPlaneExclusive(cfg);
+      try {
+        const row = kit.prepare("SELECT version FROM schema_meta WHERE key = ?").get("control");
+        assert.equal(row.version, CONTROL_SCHEMA_VERSION);
+      } finally {
+        kit.close();
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("openControlPlaneExclusive drops the coordinator before the kit open", () => {
+    const { dir, cfg } = tmpCfg();
+    try {
+      const src = fs.readFileSync(
+        new URL("../src/state/control-plane.mjs", import.meta.url),
+        "utf8",
+      );
+      const fn = src.slice(src.indexOf("export function openControlPlaneExclusive"));
+      const body = fn.slice(0, fn.indexOf("\nlet plane"));
+      const firstOpen = body.slice(body.indexOf("tryTakeExclusiveLock"));
+      assert.equal(body.includes("tryTakeExclusiveLock"), true);
+      assert.equal(firstOpen.includes("lock?.drop?.()"), true);
+      assert.ok(
+        firstOpen.indexOf("lock?.drop?.()") < firstOpen.indexOf("return openControlPlane"),
+        "coordinator must drop before openControlPlane",
+      );
+      const kit = openControlPlaneExclusive(cfg);
+      try {
+        assert.equal(kit.db.isOpen, true);
+      } finally {
+        kit.close();
+      }
+    } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

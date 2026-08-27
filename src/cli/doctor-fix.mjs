@@ -13,7 +13,7 @@ import {
 } from "../cron/durable-jobs.mjs";
 import {
   absorbPairingJson,
-  openControlPlane,
+  openControlPlaneExclusive,
   pairingJsonFile,
 } from "../state/control-plane.mjs";
 
@@ -36,7 +36,7 @@ export async function runDoctorFix(push, cfg) {
   }
 
   try {
-    const plane = openControlPlane(cfg);
+    const plane = openControlPlaneExclusive(cfg);
     try {
       const n2 = absorbPairingJson(plane, pairingJsonFile(cfg));
       push("fix.pairing", n2.error ? "warn" : "ok", note(n2));
