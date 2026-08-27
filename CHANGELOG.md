@@ -1,3 +1,14 @@
+## 3.253.0 (2026-08-27)
+
+- DURABLE SQL additive columns (spec §11.14): `addColumnIfMissing(db, table,
+  column, decl)` in `src/persist/add-column.mjs` runs `PRAGMA table_info` then
+  `ALTER TABLE … ADD COLUMN` only when the name is absent. Never rebuilds a
+  populated table. This binary does not bump `CONTROL_SCHEMA_VERSION` (v2
+  already means the extra table group) and does not add `devices.last_seen` on
+  open. Callers stamp `schema_meta` in the same `runAtomic` as the add.
+  Tests: `test/add-column.test.mjs` (mutation-verified add-missing and
+  idempotent-skip both directions).
+
 ## 3.252.0 (2026-08-27)
 
 - DURABLE SQL extra control-plane tables (spec §11.7): `CONTROL_SCHEMA_VERSION`
