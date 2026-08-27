@@ -1,3 +1,11 @@
+## 3.264.1 (2026-08-27)
+
+- TEST FIX: `test/crash-guard.test.mjs` used a session-local scratch
+  path that does not exist on the CI runner, failing all three crash
+  guard tests on both Node matrices (3.264.0's `ci` workflow was red;
+  the other three workflows were green). Now uses `os.tmpdir()`. No
+  source changes.
+
 ## 3.264.0 (2026-08-27)
 
 - GATEWAY HARNESS companions (spec §13.4 + §13.5):

@@ -14,10 +14,8 @@ import os from "node:os";
 import path from "node:path";
 import { applyCrashLoopGuard, waitForPort } from "../src/gateway/crash-guard.mjs";
 
-const SCRATCH = "/tmp/claude-0/-root/c8e0aacd-173b-4396-a5ec-a07eb337dfe7/scratchpad";
-
 function seededDir(timestamps) {
-  const dir = fs.mkdtempSync(path.join(SCRATCH, "crash-guard-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-crash-guard-"));
   if (timestamps) {
     fs.writeFileSync(path.join(dir, "gateway-crash-history.json"), JSON.stringify(timestamps));
   }
