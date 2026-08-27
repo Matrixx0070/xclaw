@@ -15,7 +15,15 @@ import { openKit } from "../persist/query-kit.mjs";
 import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
 import { quarantineSqlFile } from "../persist/sql-quarantine.mjs";
 
+/** Agent schema version marker (spec §12.10). */
+export const AGENT_SCHEMA_VERSION = 1;
+
 const DDL = `
+CREATE TABLE IF NOT EXISTS schema_meta (
+  key TEXT PRIMARY KEY,
+  version INTEGER NOT NULL,
+  touched_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS transcript_events (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   session_key TEXT NOT NULL,
@@ -46,6 +54,27 @@ export function agentStoreFile(agentId, cfg) {
   return path.join(root, id, "agent.sqlite");
 }
 
+/**
+ * Spec §12.10: insert the marker once; a reopen only touches touched_at
+ * (version is never bumped in place). Refusing a NEWER stored version is
+ * extra vs the spec sketch — mirrors the control-plane fail-closed gate.
+ */
+function markAgentSchema(kit) {
+  kit.atomic(() => {
+    const row = kit.prepare("SELECT version FROM schema_meta WHERE key = 'agent'").get();
+    if (row && row.version > AGENT_SCHEMA_VERSION) {
+      throw new Error(
+        `agent store schema ${row.version} is newer than ${AGENT_SCHEMA_VERSION}; upgrade the gateway binary`,
+      );
+    }
+    kit
+      .prepare(
+        "INSERT INTO schema_meta(key, version, touched_at) VALUES ('agent', ?, ?) ON CONFLICT(key) DO UPDATE SET touched_at = excluded.touched_at",
+      )
+      .run(AGENT_SCHEMA_VERSION, new Date().toISOString());
+  });
+}
+
 function quarantineCorrupt(file, err) {
   if (!isSqlCorruptionError(err)) return;
   try {
@@ -68,6 +97,7 @@ export function openAgentStore(agentId, cfg) {
   }
   try {
     kit.exec(DDL);
+    markAgentSchema(kit);
     return kit;
   } catch (err) {
     try {

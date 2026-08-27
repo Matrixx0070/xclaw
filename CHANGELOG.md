@@ -1,3 +1,16 @@
+## 3.259.0 (2026-08-27)
+
+- DURABLE SQL agent schema version marker (spec §12.10):
+  `AGENT_SCHEMA_VERSION` (1) + `schema_meta` table in the per-agent file.
+  `openAgentStore` upserts the marker in one `kit.atomic` — a reopen only
+  touches `touched_at`, a stored version is never bumped in place, and a
+  NEWER stored version refuses the open fail-closed (mirrors the
+  control-plane gate; extra vs the spec's bare upsert). A version refuse
+  does not quarantine. `schema_meta` shape matches the control plane
+  (TEXT ISO `touched_at`, no STRICT — house style over the spec sketch).
+  Tests: `test/agent-store.test.mjs` (mutation-verified refuse-newer and
+  marker-write both directions).
+
 ## 3.258.0 (2026-08-27)
 
 - DURABLE SQL per-agent file (spec §11.13): `agentStoreFile` /

@@ -11,6 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  AGENT_SCHEMA_VERSION,
   agentStoreFile,
   getAgentStore,
   openAgentStore,
@@ -130,6 +131,66 @@ describe("agent store (spec §11.13)", () => {
     assert.match(stopFn, /for \(const kit of stores\.values\(\)\)/);
     assert.match(stopFn, /kit\.close\(\)/);
     assert.match(stopFn, /stores\.clear\(\)/);
+  });
+
+  it("open writes the schema_meta marker at AGENT_SCHEMA_VERSION (spec §12.10)", () => {
+    const { dir, cfg } = tmpCfg();
+    const kit = openAgentStore("main", cfg);
+    try {
+      assert.equal(AGENT_SCHEMA_VERSION, 1);
+      const row = kit
+        .prepare("SELECT version, touched_at FROM schema_meta WHERE key = 'agent'")
+        .get();
+      assert.equal(row.version, AGENT_SCHEMA_VERSION);
+      assert.ok(typeof row.touched_at === "string" && row.touched_at.length > 0);
+      const src = fs.readFileSync(
+        new URL("../src/state/agent-store.mjs", import.meta.url),
+        "utf8",
+      );
+      const markFn = src.slice(src.indexOf("function markAgentSchema"));
+      const markBody = markFn.slice(0, markFn.indexOf("\nfunction "));
+      assert.match(markBody, /kit\.atomic\(/);
+      assert.match(markBody, /ON CONFLICT\(key\) DO UPDATE SET touched_at = excluded\.touched_at/);
+    } finally {
+      kit.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reopen touches touched_at only; a stored version is never bumped in place", () => {
+    const { dir, cfg } = tmpCfg();
+    const first = openAgentStore("main", cfg);
+    first
+      .prepare("UPDATE schema_meta SET version = 0, touched_at = 'then' WHERE key = 'agent'")
+      .run();
+    first.close();
+    const second = openAgentStore("main", cfg);
+    try {
+      const row = second
+        .prepare("SELECT version, touched_at FROM schema_meta WHERE key = 'agent'")
+        .get();
+      assert.equal(row.version, 0);
+      assert.notEqual(row.touched_at, "then");
+    } finally {
+      second.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a NEWER stored agent schema; no quarantine copy for a version refuse", () => {
+    const { dir, cfg } = tmpCfg();
+    const first = openAgentStore("main", cfg);
+    first
+      .prepare("UPDATE schema_meta SET version = ? WHERE key = 'agent'")
+      .run(AGENT_SCHEMA_VERSION + 1);
+    first.close();
+    try {
+      assert.throws(() => openAgentStore("main", cfg), /newer than 1/);
+      const entries = fs.readdirSync(path.join(dir, "agents", "main"));
+      assert.equal(entries.some((n) => n.includes(".corrupt.")), false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("gateway stop walks agent stores next to stopControlPlane; start does not open", () => {
