@@ -1,3 +1,19 @@
+## 3.277.0 (2026-08-27)
+
+- COVERAGE PIN (mutation sweep #67, RULE(n)+RULE(k)): the per-job cost
+  cap predicate (`checkJobCostBudget`, default $1/job — the runaway-job
+  money brake behind the loop preflight) was pinned by NO test: the
+  loop-stages arm is tested with a STUBBED checker, so fail-opening the
+  real comparator left the FULL suite green (3870/0) — a runaway job
+  would never block on its own spend. Pinned directly: over-cap blocks
+  with scope job, exactly-at-cap admits (`>` boundary), the estimate
+  projects forward (spent + estimate blocks BEFORE spending), and the
+  config chain (cost.perJobUsd wins, agent.maxUsdPerJob fallback,
+  default $1); plus a wire pin that the loop hands the REAL predicate to
+  the stub-tested arm. Mutation-verified three ways (fail-open, boundary
+  over-strict, estimate dropped — each RED). Shipping code
+  byte-identical.
+
 ## 3.276.0 (2026-08-27)
 
 - COVERAGE PIN (mutation sweep #66, RULE(n)): the approval-prompt dedup
