@@ -12,6 +12,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openKit } from "../persist/query-kit.mjs";
+import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
+import { quarantineSqlFile } from "../persist/sql-quarantine.mjs";
 
 export const CONTROL_SCHEMA_VERSION = 1;
 
@@ -210,10 +212,25 @@ export function absorbPairingJson(kit, jsonPath) {
   return { moved };
 }
 
+function quarantineCorrupt(file, err) {
+  if (!isSqlCorruptionError(err)) return;
+  try {
+    quarantineSqlFile(file);
+  } catch {
+    /* copy is best-effort; still refuse the open */
+  }
+}
+
 export function openControlPlane(cfg) {
   const file = controlPlaneFile(cfg);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const kit = openKit(file, { label: "control plane" });
+  let kit;
+  try {
+    kit = openKit(file, { label: "control plane" });
+  } catch (err) {
+    quarantineCorrupt(file, err);
+    throw err;
+  }
   try {
     const ver = readSchemaVersion(kit.db);
     if (ver != null && ver > CONTROL_SCHEMA_VERSION) {
@@ -245,14 +262,24 @@ export function openControlPlane(cfg) {
     } catch {
       /* still throw the original refuse */
     }
+    quarantineCorrupt(file, err);
     throw err;
   }
 }
 
 let plane = null;
+let planeFailed = null;
 
 export function getControlPlane(cfg) {
-  if (!plane) plane = openControlPlane(cfg);
+  if (planeFailed) throw planeFailed;
+  if (!plane) {
+    try {
+      plane = openControlPlane(cfg);
+    } catch (err) {
+      if (isSqlCorruptionError(err)) planeFailed = err;
+      throw err;
+    }
+  }
   return plane;
 }
 
@@ -263,4 +290,5 @@ export function stopControlPlane() {
     /* already closed */
   }
   plane = null;
+  planeFailed = null;
 }

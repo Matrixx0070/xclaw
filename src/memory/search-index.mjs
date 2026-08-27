@@ -12,6 +12,8 @@ import os from "node:os";
 import path from "node:path";
 import { openKit } from "../persist/query-kit.mjs";
 import { lexicalIndexAvailable } from "../persist/engine-load.mjs";
+import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
+import { quarantineSqlFile } from "../persist/sql-quarantine.mjs";
 
 export function memoryIndexFile(cfg) {
   if (cfg?.paths?.memoryIndexFile) return cfg.paths.memoryIndexFile;
@@ -20,11 +22,27 @@ export function memoryIndexFile(cfg) {
   return path.join(root, "main.sqlite");
 }
 
+function quarantineCorrupt(file, err) {
+  if (!isSqlCorruptionError(err)) return;
+  try {
+    quarantineSqlFile(file);
+  } catch {
+    /* copy is best-effort; still refuse the open */
+  }
+}
+
 export function openMemoryIndex(cfg) {
   const file = memoryIndexFile(cfg);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const kit = openKit(file, { label: "memory index" });
-  kit.exec(`
+  let kit;
+  try {
+    kit = openKit(file, { label: "memory index" });
+  } catch (err) {
+    quarantineCorrupt(file, err);
+    throw err;
+  }
+  try {
+    kit.exec(`
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS files (
       path TEXT PRIMARY KEY,
@@ -56,11 +74,20 @@ export function openMemoryIndex(cfg) {
       PRIMARY KEY (provider, model, provider_key, hash)
     );
   `);
-  const fts = lexicalIndexAvailable();
-  if (fts.ready) {
-    kit.exec("CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, id UNINDEXED, path UNINDEXED)");
+    const fts = lexicalIndexAvailable();
+    if (fts.ready) {
+      kit.exec("CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, id UNINDEXED, path UNINDEXED)");
+    }
+    return { kit, fts: fts.ready };
+  } catch (err) {
+    try {
+      kit.close();
+    } catch {
+      /* still throw */
+    }
+    quarantineCorrupt(file, err);
+    throw err;
   }
-  return { kit, fts: fts.ready };
 }
 
 export function searchMemory(kit, { q, limit = 20 } = {}) {

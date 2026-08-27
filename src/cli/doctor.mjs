@@ -24,6 +24,9 @@ import { describeHost, HOST_ENGINE_RANGE } from "../runtime/host-compat.mjs";
 import { inspectNodeBinary, formatHostRefusal } from "../runtime/host-probe.mjs";
 import { loadBuiltinSql, lexicalIndexAvailable, openLocalSql } from "../persist/engine-load.mjs";
 import { cronLedgerFile } from "../cron/durable-jobs.mjs";
+import { probeSqlFile } from "../persist/sql-quarantine.mjs";
+import { controlPlaneFile } from "../state/control-plane.mjs";
+import { memoryIndexFile } from "../memory/search-index.mjs";
 
 
 function httpGet(url, timeoutMs = 3000) {
@@ -400,6 +403,10 @@ export async function runDoctor(opts = {}) {
   } catch (e) {
     push("cron.ledger", "warn", e?.message || String(e));
   }
+
+  // Spec §11.17 — later SQL files. Lock is busy, not corruption.
+  probeSqlFile(push, "sql.control", controlPlaneFile(cfg));
+  probeSqlFile(push, "sql.memory", memoryIndexFile(cfg));
 
   // API key presence (not validity)
   const key =

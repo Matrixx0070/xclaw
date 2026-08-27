@@ -1,3 +1,16 @@
+## 3.250.0 (2026-08-27)
+
+- DURABLE SQL corruption recovery (spec §11.18 + §11.17): new
+  `src/persist/sql-quarantine.mjs` copies a corrupt control or memory file
+  plus `-wal`/`-shm` to `file.corrupt.<stamp>` and leaves the original.
+  `openControlPlane` / `openMemoryIndex` quarantine on `isSqlCorruptionError`
+  then refuse; schema refuse is not corruption and does not copy.
+  `getControlPlane` latches the corruption error so a later get does not
+  loop-reopen. Doctor probes `sql.control` and `sql.memory` (missing = info,
+  lock = warn busy, corrupt = error) and does not quarantine; default doctor
+  stays read-only. Tests: `test/sql-quarantine.test.mjs` (mutation-verified
+  quarantine-on-open and no-loop-reopen latch both directions).
+
 ## 3.249.0 (2026-08-27)
 
 - DURABLE SQL memory search index (spec §11.5 + §11.8): new
