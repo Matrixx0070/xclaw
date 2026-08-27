@@ -416,6 +416,24 @@ export async function runDoctor(opts = {}) {
   probeSqlFile(push, "sql.control", controlPlaneFile(cfg));
   probeSqlFile(push, "sql.memory", memoryIndexFile(cfg));
 
+  // Spec §12.4 — vec is opt-in; warn only when requested but not loadable.
+  if (cfg.memory?.vec === true) {
+    try {
+      const { tryLoadVec } = await import("../persist/vec-extension.mjs");
+      const { openLocalSql } = await import("../persist/engine-load.mjs");
+      const db = openLocalSql(":memory:", { allowExtension: true });
+      try {
+        const vec = tryLoadVec(db);
+        if (vec.ready) push("sql.vec", "ok", `sqlite-vec loaded (${vec.file})`);
+        else push("sql.vec", "warn", "memory.vec requested but sqlite-vec failed to load (XCLAW_SQLITE_VEC or native/sqlite-vec)");
+      } finally {
+        try { db.close(); } catch { /* best-effort */ }
+      }
+    } catch (e) {
+      push("sql.vec", "warn", e?.message || String(e));
+    }
+  }
+
   // Spec §12.2 — retired names still present warn; default doctor never drops.
   try {
     const { listRetiredPresent } = await import("../state/schema-retirements.mjs");

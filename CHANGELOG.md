@@ -1,3 +1,20 @@
+## 3.271.0 (2026-08-27)
+
+- MEMORY VECTOR extension loader (spec §12.4 — the FINAL NeoServer spec
+  item): `src/persist/vec-extension.mjs` — `tryLoadVec(db)` loads
+  sqlite-vec only on a handle opened with `{ allowExtension: true }`
+  (the default everywhere stays no-extensions; a plain handle refuses
+  distinctly with `{ ready:false, refused:true }`). Candidates:
+  `$XCLAW_SQLITE_VEC`, then `native/sqlite-vec`; success proven by
+  `SELECT vec_version()`; extension loading is re-disabled after the
+  attempt. Deviation verified live: node:sqlite authorizes only the
+  `db.loadExtension()` method — the spec's SQL loader call stays "not
+  authorized" — so the loader uses the method. Doctor probes `sql.vec`
+  ONLY when `memory.vec === true` in config (absent by default — no live
+  change); the memory index still stores embedding JSON and never opens
+  with allowExtension. Tests: `test/vec-extension.test.mjs`
+  (mutation-verified refuse-marker and re-disable both directions).
+
 ## 3.270.0 (2026-08-27)
 
 - FIX (live incident 2026-08-27): the gateway called `startCron()` with
