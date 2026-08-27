@@ -1,12 +1,14 @@
 /**
  * Control-plane file (~/.xclaw/state/control.sqlite).
  *
- * Pairing-only slice (spec §11.4 + §11.11 + §11.16): open via the query kit,
- * refuse a newer schema_meta.version, refuse a v1 file that is missing a
- * stable table, cache one handle per process. Absorb of pairing.json is
- * explicit (same shape as cron JSON → ledger) and is NOT run from open —
- * live telegram/discord still read ~/.xclaw/pairing.json through
- * createPairingStore. Do not fold cron payload jobs into this file.
+ * Pairing slice (spec §11.4 + §11.11 + §11.16) plus later groups (spec §11.7):
+ * open via the query kit, refuse a newer schema_meta.version, refuse a
+ * current-version file that is missing a stable table, migrate v1 → v2 by
+ * CREATE TABLE IF NOT EXISTS only (never DROP a populated table to "fix"
+ * a mismatch). Absorb of pairing.json is explicit and is NOT run from open
+ * — live telegram/discord still read ~/.xclaw/pairing.json through
+ * createPairingStore. Do not fold cron payload jobs into this file. Do not
+ * absorb seats/approvals/plugin JSON in this binary.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -15,9 +17,10 @@ import { openKit } from "../persist/query-kit.mjs";
 import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
 import { quarantineSqlFile } from "../persist/sql-quarantine.mjs";
 
-export const CONTROL_SCHEMA_VERSION = 1;
+export const CONTROL_SCHEMA_VERSION = 2;
 
-const CONTROL_TABLES = [
+/** Tables present from v1. A v1 file missing one of these is incomplete. */
+const V1_TABLES = [
   "schema_meta",
   "pair_pending",
   "pair_done",
@@ -26,6 +29,18 @@ const CONTROL_TABLES = [
   "task_runs",
   "transcript_events",
 ];
+
+/** Extra group (spec §11.7). Added on v1→v2; required at v2. */
+const V2_TABLES = [
+  "state_leases",
+  "operator_approvals",
+  "plugin_state",
+  "plugin_blobs",
+  "audit_events",
+  "session_heads",
+];
+
+const CONTROL_TABLES = [...V1_TABLES, ...V2_TABLES];
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -79,6 +94,55 @@ CREATE TABLE IF NOT EXISTS transcript_events (
 CREATE INDEX IF NOT EXISTS transcript_session ON transcript_events(session_key, seq);
 `;
 
+const V2_DDL = `
+CREATE TABLE IF NOT EXISTS state_leases (
+  scope TEXT NOT NULL,
+  key TEXT NOT NULL,
+  owner TEXT,
+  payload TEXT NOT NULL,
+  expires_at TEXT,
+  touched_at TEXT NOT NULL,
+  PRIMARY KEY (scope, key)
+);
+CREATE TABLE IF NOT EXISTS operator_approvals (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE TABLE IF NOT EXISTS plugin_state (
+  namespace TEXT NOT NULL,
+  key TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  touched_at TEXT NOT NULL,
+  PRIMARY KEY (namespace, key)
+);
+CREATE TABLE IF NOT EXISTS plugin_blobs (
+  namespace TEXT NOT NULL,
+  key TEXT NOT NULL,
+  meta TEXT,
+  blob BLOB,
+  touched_at TEXT NOT NULL,
+  PRIMARY KEY (namespace, key)
+);
+CREATE TABLE IF NOT EXISTS audit_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT NOT NULL,
+  action TEXT NOT NULL,
+  status TEXT,
+  payload TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS session_heads (
+  session_key TEXT PRIMARY KEY,
+  agent TEXT,
+  last_seq INTEGER NOT NULL,
+  touched_at TEXT NOT NULL
+);
+`;
+
 function refuse(code, text) {
   const err = new Error(text);
   err.code = code;
@@ -116,15 +180,31 @@ export function readSchemaVersion(db, key = "control") {
   }
 }
 
-export function assertControlShape(db) {
+function assertTables(db, tables) {
   const names = tableNames(db);
-  const missing = CONTROL_TABLES.filter((n) => !names.includes(n));
+  const missing = tables.filter((n) => !names.includes(n));
   if (missing.length) {
     throw refuse(
       "XCLAW_SCHEMA_INCOMPLETE",
       `control plane missing tables: ${missing.join(", ")}`,
     );
   }
+}
+
+export function assertControlShape(db) {
+  assertTables(db, CONTROL_TABLES);
+}
+
+function migrateV1ToV2(kit) {
+  assertTables(kit.db, V1_TABLES);
+  kit.atomic(() => {
+    kit.exec(V2_DDL);
+    const now = new Date().toISOString();
+    kit
+      .prepare("UPDATE schema_meta SET version = ?, touched_at = ? WHERE key = ?")
+      .run(CONTROL_SCHEMA_VERSION, now, "control");
+  });
+  assertControlShape(kit.db);
 }
 
 export function foldSidecars(db) {
@@ -239,19 +319,21 @@ export function openControlPlane(cfg) {
         `control plane schema ${ver} is newer than ${CONTROL_SCHEMA_VERSION}; upgrade the gateway binary`,
       );
     }
-    if (ver != null && ver < CONTROL_SCHEMA_VERSION) {
+    if (ver === 1) {
+      migrateV1ToV2(kit);
+    } else if (ver != null && ver < CONTROL_SCHEMA_VERSION) {
       throw refuse(
         "XCLAW_SCHEMA_OLDER",
         `control plane schema ${ver} is older than ${CONTROL_SCHEMA_VERSION}; no bump in this binary`,
       );
-    }
-    if (ver === CONTROL_SCHEMA_VERSION) {
+    } else if (ver === CONTROL_SCHEMA_VERSION) {
       assertControlShape(kit.db);
       kit.atomic(() => stampSchema(kit, { writeVersion: false }));
     } else if (tableNames(kit.db).length > 0) {
       assertControlShape(kit.db);
     } else {
       kit.exec(DDL);
+      kit.exec(V2_DDL);
       kit.atomic(() => stampSchema(kit, { writeVersion: true }));
     }
     foldSidecars(kit.db);

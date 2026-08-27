@@ -1,3 +1,16 @@
+## 3.252.0 (2026-08-27)
+
+- DURABLE SQL extra control-plane tables (spec §11.7): `CONTROL_SCHEMA_VERSION`
+  is 2. Fresh `control.sqlite` creates `state_leases`, `operator_approvals`,
+  `plugin_state`, `plugin_blobs`, `audit_events`, and `session_heads` next to
+  the v1 pairing group. A v1 file migrates in place (`CREATE TABLE IF NOT
+  EXISTS` only, then stamp version 2 in the same `runAtomic`). Never DROP a
+  populated table to "fix" a mismatch — incomplete v1 stays at version 1 and
+  refuses; incomplete v2 refuses and does not recreate. Unknown older versions
+  still refuse `XCLAW_SCHEMA_OLDER`. Does not absorb pairing/seats/plugin JSON.
+  Tests: `test/control-plane.test.mjs` (mutation-verified v1→v2 migrate and
+  incomplete-v1 no-bump both directions).
+
 ## 3.251.0 (2026-08-27)
 
 - HOST runtime Bun gate (spec §11.1): `describeRuntime()` sits next to

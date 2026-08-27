@@ -1,7 +1,8 @@
 /**
- * Control plane (spec §11.4 + §11.11 + §11.16), pairing-only.
- * Pins: fresh open at v1, absorb pairing.json, refuse newer schema,
- * refuse incomplete shape (do not CREATE the missing table), cache/stop.
+ * Control plane (spec §11.4 + §11.11 + §11.16 + §11.7).
+ * Pins: fresh open at v2, absorb pairing.json, refuse newer schema,
+ * refuse incomplete shape (do not CREATE the missing table), v1→v2
+ * migrate (CREATE IF NOT EXISTS only, never DROP), cache/stop.
  * openControlPlane must not rename pairing.json — live channels still use it.
  */
 import assert from "node:assert/strict";
@@ -32,6 +33,74 @@ function tmpCfg() {
       },
     },
   };
+}
+
+async function seedV1(cfg, { dropPending = false } = {}) {
+  const { openKit } = await import("../src/persist/query-kit.mjs");
+  const file = controlPlaneFile(cfg);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const kit = openKit(file, { label: "seed-v1" });
+  try {
+    kit.exec(`
+      CREATE TABLE IF NOT EXISTS schema_meta (
+        key TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        touched_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS pair_pending (
+        id TEXT PRIMARY KEY,
+        device TEXT,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS pair_done (
+        id TEXT PRIMARY KEY,
+        device TEXT,
+        payload TEXT NOT NULL,
+        paired_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS devices (
+        id TEXT PRIMARY KEY,
+        role TEXT,
+        token_hash TEXT,
+        scopes TEXT,
+        payload TEXT NOT NULL,
+        touched_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS delivery_queue (
+        id TEXT PRIMARY KEY,
+        queue TEXT NOT NULL,
+        status TEXT NOT NULL,
+        session_id TEXT,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS task_runs (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS transcript_events (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_key TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        at TEXT NOT NULL
+      );
+    `);
+    kit
+      .prepare("INSERT INTO schema_meta(key, version, touched_at) VALUES (?, ?, ?)")
+      .run("control", 1, "2026-08-26T00:00:00.000Z");
+    kit
+      .prepare("INSERT INTO pair_pending(id, device, payload, created_at) VALUES (?, ?, ?, ?)")
+      .run("telegram:keep", "telegram", JSON.stringify({ id: "keep" }), "2026-08-26T00:00:00.000Z");
+    if (dropPending) kit.exec("DROP TABLE pair_pending");
+  } finally {
+    kit.close();
+  }
 }
 
 function writePairing(file, extra = {}) {
@@ -65,16 +134,21 @@ function writePairing(file, extra = {}) {
 }
 
 describe("control plane", () => {
-  it("opens a missing file at CONTROL_SCHEMA_VERSION with the v1 tables", () => {
+  it("opens a missing file at CONTROL_SCHEMA_VERSION with the v2 tables", () => {
     const { dir, cfg } = tmpCfg();
     const kit = openControlPlane(cfg);
     try {
       const file = controlPlaneFile(cfg);
       assert.equal(fs.existsSync(file), true);
+      assert.equal(CONTROL_SCHEMA_VERSION, 2);
       assert.equal(readSchemaVersion(kit.db), CONTROL_SCHEMA_VERSION);
       assertControlShape(kit.db);
       const n = kit.prepare("SELECT COUNT(*) AS n FROM pair_pending").get().n;
       assert.equal(n, 0);
+      const leases = kit.prepare("SELECT COUNT(*) AS n FROM state_leases").get().n;
+      assert.equal(leases, 0);
+      const heads = kit.prepare("SELECT COUNT(*) AS n FROM session_heads").get().n;
+      assert.equal(heads, 0);
     } finally {
       kit.close();
       fs.rmSync(dir, { recursive: true, force: true });
@@ -152,7 +226,7 @@ describe("control plane", () => {
     }
   });
 
-  it("refuses a v1 file missing a stable table and does not recreate it", async () => {
+  it("refuses a current-version file missing a stable table and does not recreate it", async () => {
     const { dir, cfg } = tmpCfg();
     const first = openControlPlane(cfg);
     first.exec("DROP TABLE pair_pending");
@@ -175,6 +249,122 @@ describe("control plane", () => {
           .all()
           .map((r) => r.name);
         assert.equal(names.includes("pair_pending"), false);
+      } finally {
+        probe.close();
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("migrates a v1 file to v2, keeps pairing rows, and does not DROP", async () => {
+    const { dir, cfg } = tmpCfg();
+    await seedV1(cfg);
+    const kit = openControlPlane(cfg);
+    try {
+      assert.equal(readSchemaVersion(kit.db), 2);
+      assertControlShape(kit.db);
+      const pending = kit.prepare("SELECT id FROM pair_pending").all().map((r) => r.id);
+      assert.deepEqual(pending, ["telegram:keep"]);
+      assert.equal(kit.prepare("SELECT COUNT(*) AS n FROM state_leases").get().n, 0);
+      assert.equal(kit.prepare("SELECT COUNT(*) AS n FROM operator_approvals").get().n, 0);
+      assert.equal(kit.prepare("SELECT COUNT(*) AS n FROM plugin_state").get().n, 0);
+      assert.equal(kit.prepare("SELECT COUNT(*) AS n FROM plugin_blobs").get().n, 0);
+      assert.equal(kit.prepare("SELECT COUNT(*) AS n FROM audit_events").get().n, 0);
+      assert.equal(kit.prepare("SELECT COUNT(*) AS n FROM session_heads").get().n, 0);
+    } finally {
+      kit.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an incomplete v1 file, does not recreate the table, and does not bump version", async () => {
+    const { dir, cfg } = tmpCfg();
+    await seedV1(cfg, { dropPending: true });
+    let err;
+    try {
+      openControlPlane(cfg);
+    } catch (e) {
+      err = e;
+    }
+    try {
+      assert.ok(err, "incomplete v1 must refuse");
+      assert.equal(err.code, "XCLAW_SCHEMA_INCOMPLETE");
+      assert.match(err.message, /pair_pending/);
+      const { openKit } = await import("../src/persist/query-kit.mjs");
+      const probe = openKit(controlPlaneFile(cfg), { label: "probe-v1" });
+      try {
+        const names = probe
+          .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+          .all()
+          .map((r) => r.name);
+        assert.equal(names.includes("pair_pending"), false);
+        assert.equal(names.includes("state_leases"), false);
+        assert.equal(readSchemaVersion(probe.db), 1);
+      } finally {
+        probe.close();
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a v2 file missing a v2 table and does not recreate it", async () => {
+    const { dir, cfg } = tmpCfg();
+    const first = openControlPlane(cfg);
+    first.exec("DROP TABLE state_leases");
+    first.close();
+    let err;
+    try {
+      openControlPlane(cfg);
+    } catch (e) {
+      err = e;
+    }
+    try {
+      assert.ok(err, "incomplete v2 must refuse");
+      assert.equal(err.code, "XCLAW_SCHEMA_INCOMPLETE");
+      assert.match(err.message, /state_leases/);
+      const { openKit } = await import("../src/persist/query-kit.mjs");
+      const probe = openKit(controlPlaneFile(cfg), { label: "probe-v2" });
+      try {
+        const names = probe
+          .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+          .all()
+          .map((r) => r.name);
+        assert.equal(names.includes("state_leases"), false);
+        assert.equal(readSchemaVersion(probe.db), 2);
+      } finally {
+        probe.close();
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an unknown older schema_meta.version and does not write", async () => {
+    const { dir, cfg } = tmpCfg();
+    await seedV1(cfg);
+    const { openKit } = await import("../src/persist/query-kit.mjs");
+    const seed = openKit(controlPlaneFile(cfg), { label: "seed-old" });
+    seed.prepare("UPDATE schema_meta SET version = 0 WHERE key = ?").run("control");
+    seed.close();
+    let err;
+    try {
+      openControlPlane(cfg);
+    } catch (e) {
+      err = e;
+    }
+    try {
+      assert.ok(err, "unknown older schema must refuse");
+      assert.equal(err.code, "XCLAW_SCHEMA_OLDER");
+      const probe = openKit(controlPlaneFile(cfg), { label: "probe-old" });
+      try {
+        assert.equal(readSchemaVersion(probe.db), 0);
+        const names = probe
+          .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+          .all()
+          .map((r) => r.name);
+        assert.equal(names.includes("state_leases"), false);
       } finally {
         probe.close();
       }
