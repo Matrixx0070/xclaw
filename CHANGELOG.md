@@ -1,3 +1,19 @@
+## 3.262.0 (2026-08-27)
+
+- DURABLE SQL audit migration runner (spec §12.9):
+  `src/persist/migration-runs.mjs` — `ensureMigrationRuns`,
+  `runNamedMigration` (the migration body and its ok audit row commit in
+  ONE `kit.atomic`; a failing body rolls back and leaves a permanent
+  error row with the message, then rethrows), `listMigrationHistory`
+  ordered by started_at. Rows are never deleted — no delete helper, and
+  a test pins no DELETE statement in the module. Self-contained on any
+  kit (control-plane or per-agent); openControlPlane untouched (§12.7
+  starter schema is separate). §12.8 CONTROL_GROUPS skipped — it names
+  §12.1 catalog tables that do not exist in this schema. House TEXT ISO
+  timestamps (documented deviation from the spec's INTEGER ms + STRICT).
+  Tests: `test/migration-runs.test.mjs` (mutation-verified atomic-wrap
+  and error-row both directions).
+
 ## 3.261.0 (2026-08-27)
 
 - DURABLE SQL per-agent VFS / artifacts / boards tables (spec §12.6):
