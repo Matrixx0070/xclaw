@@ -1,3 +1,18 @@
+## 3.268.0 (2026-08-27)
+
+- SQL-FIRST generated types (spec §12.3, dev-only):
+  `scripts/gen-control-types.mjs` applies `control-schema.sql` to a temp
+  DatabaseSync and writes `src/state/control-schema.generated.mjs`
+  (table → column list, committed). Runtime stays on query-kit /
+  openLocalSql — a test pins that no runtime module imports the
+  generated file; another regenerates and asserts byte-identity (drift
+  guard). §12.5 attachRunLoop is SKIPPED as superseded — the shipped
+  §13.2/§13.3 harness is a strict superset (single-instance lock, fence,
+  pendingStartup, exit-gated stop). §12.1 is inventory-only (groups are
+  created when their feature ships). Tests:
+  `test/gen-control-types.test.mjs` (mutation-verified drift-guard and
+  column-extraction both directions).
+
 ## 3.267.0 (2026-08-27)
 
 - DURABLE SQL starter schema (spec §12.7, final NeoServer leftover):
