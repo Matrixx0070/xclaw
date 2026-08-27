@@ -36,6 +36,25 @@ describe("telegram error classification", () => {
     assert.ok(backoffMsFromClassification(r) >= 12000);
   });
 
+  // Sweep #70: the 12s retry_after above lands INSIDE the 60s ceiling, so
+  // removing the ceiling left the full suite green — a flood-control
+  // retry_after of 3600 would sleep the live poll for an hour. Pin all
+  // three backoff bounds with values strictly in each bound's active range.
+  it("backoff bounds fire alone: 60s ceiling, 500ms floor, 30s exp cap", () => {
+    assert.equal(
+      backoffMsFromClassification({ retryAfterSec: 3600 }),
+      60_000,
+      "a huge retry_after must cap at 60s",
+    );
+    assert.equal(
+      backoffMsFromClassification({ retryAfterSec: 0 }),
+      500,
+      "a zero retry_after must floor at 500ms (never busy-spin)",
+    );
+    const capped = backoffMsFromClassification({ retryable: true, retryAfterSec: null }, 20);
+    assert.ok(capped >= 30_000 && capped < 31_000, `exp path must cap at 30s+jitter, got ${capped}`);
+  });
+
   it("unauthorized is not retryable", () => {
     const u = classifyTelegramError(new Error("Unauthorized"));
     assert.equal(u.code, "UNAUTHORIZED");

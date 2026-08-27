@@ -1,3 +1,16 @@
+## 3.280.0 (2026-08-27)
+
+- COVERAGE PIN (mutation sweep #70, RULE(n)): the Telegram poll backoff
+  BOUNDS were pinned by NO test — the existing retry_after case (12s)
+  lands inside every bound, so removing the 60s ceiling left the FULL
+  suite green (3877/0): a flood-control `retry_after: 3600` from
+  Telegram would sleep the live poll for an hour. All three bounds now
+  fire alone: huge retry_after caps at 60s, zero retry_after floors at
+  500ms (never busy-spin), and the exponential path caps at 30s+jitter.
+  The poll-loop's fatal-stop on UNAUTHORIZED was probed too and is
+  already covered (mutant RED — ship nothing there). Mutation-verified
+  three ways. Shipping code byte-identical.
+
 ## 3.279.0 (2026-08-27)
 
 - COVERAGE PIN (mutation sweep #69, RULE(n)xRULE(k)): the client-side
