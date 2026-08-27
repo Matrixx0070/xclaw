@@ -141,8 +141,24 @@ export function backoffMsFromClassification(c, attempt = 0) {
   return exp + jitter;
 }
 
+
+/**
+ * Redact a bot token from error/log text (sweep #71). Telegram API URLs
+ * embed the token (`/bot<token>/…`); runtime errors can echo the full
+ * URL (proven: fetch's "Failed to parse URL from …" carries it), and
+ * those messages flow into classifier `raw`, pm2 logs, and even
+ * agent-visible media-failure text. Applied at the api()/download
+ * boundaries so no error path can carry the credential outward.
+ */
+export function redactTelegramToken(text, token) {
+  const s = String(text ?? "");
+  if (!token) return s;
+  return s.split(String(token)).join("<token>");
+}
+
 export default {
   classifyTelegramError,
   telegramApiError,
   backoffMsFromClassification,
+  redactTelegramToken,
 };

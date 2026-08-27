@@ -1,3 +1,18 @@
+## 3.281.0 (2026-08-27)
+
+- SECURITY HARDENING (mutation sweep #71): the Telegram bot token could
+  reach error/log egress. API URLs embed the token (`/bot<token>/...`)
+  and a runtime error can echo the full URL — REPRODUCED: fetch's
+  "Failed to parse URL from <url>" carries it, so a misconfigured API
+  base would leak the live credential into pm2 logs on every poll, and
+  the media-download failure path would place it in AGENT-VISIBLE text.
+  New pure `redactTelegramToken` (errors.mjs) applied at the three
+  egress boundaries: api()'s network-error wrap, the media-download
+  retry warn, and the media-failure text handed to the agent. The
+  end-to-end repro is pinned (a bad API base must surface `<token>`,
+  never the credential). Mutation-verified both directions
+  (identity-redactor and unredacted-boundary each RED).
+
 ## 3.280.0 (2026-08-27)
 
 - COVERAGE PIN (mutation sweep #70, RULE(n)): the Telegram poll backoff

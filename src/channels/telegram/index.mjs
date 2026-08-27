@@ -71,6 +71,7 @@ import {
   classifyTelegramError,
   telegramApiError,
   backoffMsFromClassification,
+  redactTelegramToken,
 } from "./errors.mjs";
 import { runTelegramPollLoop } from "./poll-loop.mjs";
 import { enrichStickerMeta } from "./sticker-meta.mjs";
@@ -164,7 +165,7 @@ export function createTelegramChannel(cfg) {
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch (err) {
-      const e = new Error(`Telegram ${method}: ${err.message || err}`);
+      const e = new Error(`Telegram ${method}: ${redactTelegramToken(err.message || err, token)}`);
       e.code = err.code || "NETWORK";
       throw e;
     }
@@ -320,7 +321,7 @@ export function createTelegramChannel(cfg) {
       } catch (err) {
         lastErr = err;
         console.warn(
-          `[telegram] media download attempt ${attempt + 1}/3 failed: ${err.message}`
+          `[telegram] media download attempt ${attempt + 1}/3 failed: ${redactTelegramToken(err.message, token)}`
         );
       }
     }
@@ -402,7 +403,7 @@ export function createTelegramChannel(cfg) {
         }
       }
     } catch (err) {
-      parts.push(`[Media download failed: ${err.message}]`);
+      parts.push(`[Media download failed: ${redactTelegramToken(err.message, token)}]`);
     }
 
     // P3 structured: sticker, location, venue, contact, poll, …
