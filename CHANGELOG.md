@@ -1,3 +1,18 @@
+## 3.269.0 (2026-08-27)
+
+- SCHEMA RETIREMENT LIST (spec §12.2): shipped
+  `src/state/schema-retirements.json` (empty lists) +
+  `src/state/schema-retirements.mjs` (`listRetiredPresent`,
+  `dropRetiredIfEmpty`). Doctor WARNS (`sql.retirements`) when a retired
+  name is still present in the control plane; `doctor --fix`
+  (`fix.retirements`) drops retired indexes and only EMPTY retired
+  tables — a populated retired table is reported and kept. The open path
+  never drops (test-pinned), default doctor never drops, and a guard
+  test asserts no retired name ever collides with the shipping DDL (fix
+  must never CREATE a retired table). With the shipped empty lists every
+  path is a no-op. Tests: `test/schema-retirements.test.mjs`
+  (mutation-verified emptiness-guard and type-filter both directions).
+
 ## 3.268.0 (2026-08-27)
 
 - SQL-FIRST generated types (spec §12.3, dev-only):

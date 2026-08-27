@@ -416,6 +416,30 @@ export async function runDoctor(opts = {}) {
   probeSqlFile(push, "sql.control", controlPlaneFile(cfg));
   probeSqlFile(push, "sql.memory", memoryIndexFile(cfg));
 
+  // Spec §12.2 — retired names still present warn; default doctor never drops.
+  try {
+    const { listRetiredPresent } = await import("../state/schema-retirements.mjs");
+    const { openLocalSql } = await import("../persist/engine-load.mjs");
+    const controlFile = controlPlaneFile(cfg);
+    if (fsSync.existsSync(controlFile)) {
+      const db = openLocalSql(controlFile);
+      try {
+        const present = listRetiredPresent(db, "control");
+        if (present.length) {
+          push(
+            "sql.retirements",
+            "warn",
+            `retired names still present: ${present.map((p) => `${p.type}:${p.name}`).join(", ")} — doctor --fix drops empty ones`,
+          );
+        }
+      } finally {
+        try { db.close(); } catch { /* best-effort */ }
+      }
+    }
+  } catch (e) {
+    push("sql.retirements", "warn", e?.message || String(e));
+  }
+
   // API key presence (not validity)
   const key =
     cfg.agent?.apiKey ||

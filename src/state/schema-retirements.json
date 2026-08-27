@@ -1,0 +1,11 @@
+{
+  "control": {
+    "retiredTables": [],
+    "retiredIndexes": [],
+    "notes": "Add a name here only after a bump that dropped it. Doctor --fix must not CREATE a retired table."
+  },
+  "agent": {
+    "retiredTables": [],
+    "retiredIndexes": []
+  }
+}
