@@ -136,18 +136,18 @@ describe("conversation glyphs (spec §16.2)", () => {
     assert.deepEqual(calls, [{ messageId: "msg-1", ok: true, op: "replace", emoji: "heart" }]);
   });
 
-  it("NOT wired to the live message tool in this binary (spec §16.3 separate)", () => {
+  it("wired ONLY through the react tool (spec §16.3, v3.265.0)", () => {
     const hits = [];
     const walk = (dir) => {
       for (const e of fs.readdirSync(dir, { recursive: true })) {
         const f = `${dir}/${e}`;
         if (!f.endsWith(".mjs") || f.includes("conversation-glyph")) continue;
         if (fs.statSync(f).isFile() && fs.readFileSync(f, "utf8").includes("applyConversationGlyph")) {
-          hits.push(f);
+          hits.push(f.slice(f.indexOf("src/")));
         }
       }
     };
     walk(new URL("../src", import.meta.url).pathname);
-    assert.deepEqual(hits, []);
+    assert.deepEqual(hits, ["src/channels/react-tool.mjs"]);
   });
 });

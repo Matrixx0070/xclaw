@@ -39,6 +39,8 @@ export async function replyWithAgent({
   /** Segmentation contract: objective segments pass false (they own their
    *  own continuation); interactive chat turns leave it on. */
   continuation,
+  /** Inbound-channel context (spec §16.3): gates the `react` tool. */
+  channelContext,
 }) {
   const { runWithRequestContext } = await import("../connected/request-context.mjs");
   const { normalizeChannelUserId, resolveVaultUserId } = await import(
@@ -67,6 +69,7 @@ export async function replyWithAgent({
       ...(chatSessionId ? { chatSessionId } : {}),
       ...(rescuePrompt ? { rescuePrompt } : {}),
       ...(continuation !== undefined ? { continuation } : {}),
+      ...(channelContext ? { channelContext } : {}),
     });
     return {
       text: result.text || "(no response)",

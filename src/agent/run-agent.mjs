@@ -83,6 +83,8 @@ export function normalizeAgentRequest(req = {}) {
     // Segmentation contract (S3): undefined = default (auto-continue past
     // the per-segment turn budget); false = single-segment run.
     continuation: req.continuation,
+    // Inbound-channel context (spec §16.3): gates the `react` tool.
+    channelContext: req.channelContext || null,
   };
 }
 
@@ -122,6 +124,7 @@ export async function runAgent(req = {}) {
       chatSessionId: opts.chatSessionId,
       ...(opts.history !== undefined ? { history: opts.history } : {}),
       ...(opts.rescuePrompt ? { rescuePrompt: opts.rescuePrompt } : {}),
+      ...(opts.channelContext ? { channelContext: opts.channelContext } : {}),
     });
 
     const { text, presentationText } = splitScoreAndPresentationText(raw);

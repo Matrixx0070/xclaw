@@ -279,6 +279,7 @@ export async function processInbound(inbound, opts = {}) {
     chatId: inbound.chatId,
     onEvent,
     stream: opts.stream === true,
+    ...(opts.channelContext ? { channelContext: opts.channelContext } : {}),
   });
 
   // Auto-promotion: the run was CUT OFF by the turn cap mid-work — the exact

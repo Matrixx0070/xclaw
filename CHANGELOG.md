@@ -1,3 +1,22 @@
+## 3.265.0 (2026-08-27)
+
+- CONVERSATION GLYPH react tool LIVE (spec §16.3): new `react` agent
+  tool — the model can react to the user's current message with an emoji
+  (empty clears; optional messageId targets another message). Registered
+  ONLY when the inbound channel hands the loop a react-capable
+  `channelContext` (telegram → processInbound → replyWithAgent →
+  runAgent → loop; both tool sites); every other run never sees the
+  tool. Plans through `planGlyphAction` (§16.2) so per-channel rules
+  hold. Telegram adapter: `setMessageReaction` sets the whole reaction
+  list (`src/channels/telegram/react.mjs` — add = one emoji,
+  remove/clear = empty). Ack glyph while the agent works is wired but
+  DEFAULT OFF (`channels.telegram.ackReaction` unset → no-op; falls back
+  identity glyph → `eyes` when on). Errors return `ok:false`, never
+  throw into the loop. Tests: `test/react-tool.test.mjs` +
+  updated wiring pin in `test/conversation-glyph.test.mjs`
+  (mutation-verified telegram payload and registry gate both
+  directions).
+
 ## 3.264.1 (2026-08-27)
 
 - TEST FIX: `test/crash-guard.test.mjs` used a session-local scratch

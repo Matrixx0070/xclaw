@@ -16,6 +16,7 @@ import { createPythonTools } from "./python-tools.mjs";
 import { createMockMailTools } from "./mock-mail.mjs";
 import { createMockChatTools } from "./mock-chat.mjs";
 import { createFastApiMockTools } from "./mock-fastapi-client.mjs";
+import { createReactTool } from "../channels/react-tool.mjs";
 
 export function createAllLocalTools(ctx = {}) {
   const workingDir = ctx.workingDir || process.cwd();
@@ -35,6 +36,11 @@ export function createAllLocalTools(ctx = {}) {
     // Stateful Jupyter-kernel Python (advertised only when the kernel venv
     // exists on this host); exec-family for risk purposes — never auto-runs.
     ...createPythonTools({ workingDir, cfg }),
+    // Conversation glyph react (spec §16.3): only when the inbound channel
+    // handed us a react-capable context — other runs never see the tool.
+    ...(ctx.channelContext?.adapter?.react
+      ? [createReactTool(ctx.channelContext)]
+      : []),
     // Eval-only mock tools (mail/chat/fastapi) are NOT part of the
     // production tool surface: advertising xclaw_gmail_send etc. to the
     // model in real runs invites it to "send email" into a mock

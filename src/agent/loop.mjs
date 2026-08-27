@@ -184,6 +184,9 @@ export async function runAgentLoop(options) {
     /** Override the maxTurns final-answer rescue instruction (orchestrated
      *  segments want the mission state block, not a user-facing answer) */
     rescuePrompt = null,
+    /** Inbound-channel context (spec §16.3): { channel, messageId,
+     *  adapter: { react } } — gates the `react` tool registration */
+    channelContext = null,
   } = options;
   const transcriptId =
     chatSessionId || options.conversationId || chatId || null;
@@ -569,7 +572,7 @@ export async function runAgentLoop(options) {
       }
     }
     // Local tools (glob/grep/web/media/finance/x/connected)
-    var localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId });
+    var localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId, channelContext });
     tools.push(...localToolsAsOpenAI(localTools));
     // Cross-session recall (durable memory + receipts)
     if (cfg.memory?.recall !== false) {
@@ -665,7 +668,7 @@ export async function runAgentLoop(options) {
     await computer.destroySession(sessionId).catch(() => {});
     throw new Error(`Failed to list computer tools: ${err.message}`);
   }
-  if (typeof localTools === "undefined") localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId });
+  if (typeof localTools === "undefined") localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId, channelContext });
   const mcpHandlers = {};
   if (mcpTools?.enabled) {
     for (const n of mcpTools.names) {

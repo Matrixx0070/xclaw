@@ -58,6 +58,8 @@ import {
   structuredToAgentHint,
 } from "./structured-inbound.mjs";
 import { deliverStructuredReply } from "./structured-outbound.mjs";
+import { buildReactionCall } from "./react.mjs";
+import { resolveAckGlyph } from "../conversation-glyph.mjs";
 import {
   suggestionsInlineKeyboard,
   formatSuggestionsPlain,
@@ -746,6 +748,37 @@ export function createTelegramChannel(cfg) {
         typing = null;
       }
 
+      // Conversation glyphs (spec §16.3): react adapter bound to this chat.
+      // Telegram sets the bot's whole reaction list — remove/clear = empty.
+      const channelContext = {
+        channel: "telegram",
+        messageId: String(msg.message_id),
+        adapter: {
+          react: async ({ messageId, op, emoji }) => {
+            const call = buildReactionCall({
+              chatId,
+              messageId: messageId ?? msg.message_id,
+              op,
+              emoji,
+            });
+            const res = await api(call.method, call.body);
+            return { ok: res?.ok !== false, op, emoji: emoji || "" };
+          },
+        },
+      };
+      // Ack glyph while the agent works — only when configured (default off).
+      const ackGlyph = resolveAckGlyph({
+        ackConfig: conf.ackReaction,
+        identityGlyph: conf.identityGlyph,
+      });
+      if (ackGlyph) {
+        channelContext.adapter
+          .react({ messageId: String(msg.message_id), op: "add", emoji: ackGlyph })
+          .catch((err) => {
+            console.warn(`[telegram] ack react failed:`, err?.message || err);
+          });
+      }
+
       const inbound = fromTelegramUpdate({ message: msg });
       inbound.text = text;
       const structuredHint = structuredToAgentHint(extracted.structured || []);
@@ -769,6 +802,7 @@ export function createTelegramChannel(cfg) {
         },
         workingDir: workspace,
         rateLimiter,
+        channelContext,
         stream: streamOpts.enabled && streamOpts.partialText !== false,
         // detached mission updates (objective runtime) push through the bot
         notify: async (t) => {
