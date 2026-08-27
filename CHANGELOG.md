@@ -1,3 +1,19 @@
+## 3.276.0 (2026-08-27)
+
+- COVERAGE PIN (mutation sweep #66, RULE(n)): the approval-prompt dedup
+  latch (`promptedApprovals`) behind Telegram's `notifyOwnerApproval`
+  had only a SOURCE pin — a regex that still matches a fail-opened
+  `if (false && …has(…))`. Proven: the mutant left the FULL suite green
+  (3867/0), i.e. every approval re-emission would re-prompt the owner
+  (the exact v3.124.0 duplicate-prompt storm). Now pinned BEHAVIORALLY
+  via the local Bot API mock: the same pending id prompts exactly once;
+  a FAILED delivery does not latch (both HTML and plain fallback
+  attempts must fail — the loop's re-emission then succeeds); and the
+  >200 clear actually fires on the 202nd distinct prompt (bounded
+  memory, old id re-prompts by design). Mutation-verified three ways
+  (dedup fail-open, latch-before-delivery, clear dropped — each RED).
+  Shipping code byte-identical.
+
 ## 3.275.0 (2026-08-27)
 
 - COVERAGE PIN (mutation sweep #65, RULE(n)): the Telegram update dedup
