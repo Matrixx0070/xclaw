@@ -1,3 +1,20 @@
+## 3.263.0 (2026-08-27)
+
+- GATEWAY RUN-LOOP harness module (spec §13.2):
+  `src/gateway/run-loop.mjs` — `acquireGatewayLock` single-instance file
+  lock under `<stateDir>/tmp/gateway-<port>.lock` (stale-pid reap,
+  live-foreign-pid refuse `XCLAW_GATEWAY_LOCKED`, same-pid re-acquire),
+  `runGatewayLoop` (SIGINT/SIGTERM stop, SIGUSR1 in-process restart in
+  the same pid, second-signal fence, hard-exit watchdog at drainMs + 2s
+  exit 1), `drainProcessStores` (cron → control plane → agent stores —
+  the agent-store close is a house addition per §12.6's close-on-stop
+  rule). Shutdown order stop → drain SQL → release lock is test-pinned.
+  NOT adopted by the live gateway — startGateway still owns its signals
+  (spec §13.3 adoption is a separate live-surface slice; a test pins
+  that gateway/index.mjs does not import the harness). Tests:
+  `test/run-loop.test.mjs` (real-signal restart/stop/fence on a fake
+  server; mutation-verified fence-latch and lock-refuse both directions).
+
 ## 3.262.0 (2026-08-27)
 
 - DURABLE SQL audit migration runner (spec §12.9):
