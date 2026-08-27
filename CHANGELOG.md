@@ -1,3 +1,17 @@
+## 3.258.0 (2026-08-27)
+
+- DURABLE SQL per-agent file (spec §11.13): `agentStoreFile` /
+  `openAgentStore` / `getAgentStore` / `stopAgentStores` in
+  `src/state/agent-store.mjs`. Path is `cfg.paths.agentDir` or
+  `~/.xclaw/agents/<id>/agent.sqlite`. Same DDL as `transcript_events` +
+  `session_heads`. Cache is a Map keyed by agent id; gateway stop walks
+  the cache and `kit.close()` each handle next to `stopControlPlane`.
+  Gateway start does not open a per-agent file. Control plane stays
+  global. Does not bump `CONTROL_SCHEMA_VERSION`, does not absorb
+  pairing.json, and does not move live transcripts. Tests:
+  `test/agent-store.test.mjs` (mutation-verified cache-hit and close-on-stop
+  both directions).
+
 ## 3.257.0 (2026-08-27)
 
 - DURABLE SQL task run helpers (spec §11.23): `startTask` and `finishTask` in

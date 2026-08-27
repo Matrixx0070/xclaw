@@ -104,6 +104,7 @@ import { createMcpClient } from "../mcp/client.mjs";
 import { createMcpServer } from "../mcp/server.mjs";
 import { createPairingStore } from "../pairing/pairing-store.mjs";
 import { getControlPlane, stopControlPlane } from "../state/control-plane.mjs";
+import { stopAgentStores } from "../state/agent-store.mjs";
 import { createGatewayAuth, stripApiVersion } from "./auth.mjs";
 import { matchUiRoute, isWebchatEnabled } from "./ui-routes.mjs";
 import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
@@ -1676,6 +1677,7 @@ export async function startGateway({ root } = {}) {
     // Close the durable cron ledger cleanly (TRUNCATE checkpoint on orderly exit).
     try { stopCron(); } catch { /* already closed */ }
     try { stopControlPlane(); } catch { /* already closed */ }
+    try { stopAgentStores(); } catch { /* already closed */ }
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));
