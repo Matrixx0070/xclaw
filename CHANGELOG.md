@@ -1,3 +1,20 @@
+## 3.273.0 (2026-08-27)
+
+- COVERAGE PIN (mutation sweep #63, new RULE(n) quantitative caps): the
+  readiness queue load-shed bound (`checkReadiness` — `ready = false`
+  when `queued > maxQueued`, default 100) was pinned by NO test:
+  fail-opening it left the FULL suite green (3858/0), meaning `/ready`
+  would report ready forever on a drowning queue and a load balancer or
+  supervisor would keep routing to it. Shipping code is byte-identical
+  (the line is correct — pure pin). `test/readiness-queue-bound.test.mjs`
+  drives the real `checkReadiness` against a real tmp queue dir:
+  `maxQueued: -1` puts even an empty queue over the bound (not_ready /
+  503) and `maxQueued: 0` sits exactly on it (`<=` admits → ready /
+  200). Mutation-verified both directions — dropping the ready flip and
+  tightening the `<=` mirror each redden their own subtest. Census also
+  confirmed the inbound rate limiter's off-by-one boundary is already
+  covered (mutant → RED, ship nothing there).
+
 ## 3.272.0 (2026-08-27)
 
 - SECURITY HARDENING (mutation sweep #61, RULE(m) file-mode): the
