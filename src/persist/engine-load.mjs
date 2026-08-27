@@ -10,7 +10,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { describeHost, HOST_ENGINE_RANGE } from "../runtime/host-compat.mjs";
+import { describeRuntime, HOST_ENGINE_RANGE } from "../runtime/host-compat.mjs";
 import { libClearsWalResetWindow, linkedAgainstSystemSqlite } from "./sql-safety.mjs";
 import { armSqlNoticeFilter } from "./notice-filter.mjs";
 
@@ -55,7 +55,9 @@ function confirmLibrary(sqlite) {
 export function loadBuiltinSql() {
   armSqlNoticeFilter();
   if (loaded) return loaded;
-  const host = describeHost();
+  const host = process.versions.bun
+    ? describeRuntime({ sqlite: detectLoadedLibVersion() })
+    : describeRuntime();
   if (!host.allowed) {
     refuse(
       "XCLAW_SQL_UNAVAILABLE",

@@ -20,9 +20,9 @@ import { planClick } from "../browser/motor.mjs";
 import { findChromeBinary } from "../browser/dedicated.mjs";
 import { buildChromeArgs, chromeArgsInvariants } from "../computer/chrome-args.mjs";
 import fsSync from "node:fs";
-import { describeHost, HOST_ENGINE_RANGE } from "../runtime/host-compat.mjs";
+import { describeRuntime, HOST_ENGINE_RANGE } from "../runtime/host-compat.mjs";
 import { inspectNodeBinary, formatHostRefusal } from "../runtime/host-probe.mjs";
-import { loadBuiltinSql, lexicalIndexAvailable, openLocalSql } from "../persist/engine-load.mjs";
+import { loadBuiltinSql, lexicalIndexAvailable, openLocalSql, detectLoadedLibVersion } from "../persist/engine-load.mjs";
 import { cronLedgerFile } from "../cron/durable-jobs.mjs";
 import { probeSqlFile } from "../persist/sql-quarantine.mjs";
 import { controlPlaneFile } from "../state/control-plane.mjs";
@@ -353,12 +353,20 @@ export async function runDoctor(opts = {}) {
     push("owner.safety", "warn", e.message || String(e));
   }
 
-    // Host runtime line (Gate A: Node allowlist)
-  const hostLine = describeHost();
-  if (hostLine.allowed) {
-    push("node", "ok", `Node ${process.version} — band ${hostLine.band}`, HOST_ENGINE_RANGE);
+    // Host runtime line (Gate A: Node allowlist; Bun §11.1 when versions.bun is set)
+  const runtimeLine = describeRuntime({
+    sqlite: process.versions.bun ? detectLoadedLibVersion() : undefined,
+  });
+  if (runtimeLine.kind === "bun") {
+    if (runtimeLine.allowed) {
+      push("bun", "ok", `Bun ${runtimeLine.version} — SQLite ${runtimeLine.sqlite}`, runtimeLine);
+    } else {
+      push("bun", "error", runtimeLine.detail || `Bun ${runtimeLine.version} unsupported`, runtimeLine);
+    }
+  } else if (runtimeLine.allowed) {
+    push("node", "ok", `Node ${process.version} — band ${runtimeLine.band}`, HOST_ENGINE_RANGE);
   } else {
-    push("node", "error", `Node ${process.version} unsupported`, hostLine.detail || HOST_ENGINE_RANGE);
+    push("node", "error", `Node ${process.version} unsupported`, runtimeLine.detail || HOST_ENGINE_RANGE);
   }
 
   // Node binary probe (the real execPath, not just process.versions)
@@ -1811,6 +1819,7 @@ function doctorGroup(id) {
     s.startsWith("config") ||
     s.startsWith("profile") ||
     s === "node" ||
+    s === "bun" ||
     s.startsWith("paths")
   )
     return "Config";

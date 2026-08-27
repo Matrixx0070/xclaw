@@ -11,7 +11,13 @@
  *
  * The engines string is the source of truth. Evaluation splits on || and
  * applies >=min <upper per clause (upper may be a major-only token).
+ *
+ * Bun (spec §11.1): if process.versions.bun is set, require Bun >= 1.4.0,
+ * node:sqlite present, and the same SQLite WAL window. Node remains the
+ * ship default. Do not add a Bun path to Docker/CI.
  */
+import { libClearsWalResetWindow } from "../persist/sql-safety.mjs";
+
 const LINE_RE =
   /^v?(\d+)\.(\d+)\.(\d+)(?:-[\w.-]+)?(?:\+[\w.-]+)?$/;
 const ENGINE_CLAUSE_RE =
@@ -126,4 +132,59 @@ export function refuseUnsupportedHost(raw = process.versions.node) {
 
 export function hostPasses(raw = process.versions.node) {
   return hostSatisfiesEngine(raw, HOST_ENGINE_RANGE) === true;
+}
+
+export const BUN_FLOOR = { major: 1, minor: 4, patch: 0 };
+
+export function bunPasses(raw = process.versions.bun) {
+  if (!raw) return false;
+  const t = readHostTriple(raw);
+  if (!t) return false;
+  if (t.major !== BUN_FLOOR.major) return t.major > BUN_FLOOR.major;
+  if (t.minor !== BUN_FLOOR.minor) return t.minor > BUN_FLOOR.minor;
+  return t.patch >= BUN_FLOOR.patch;
+}
+
+/**
+ * @param {{ bun?: string, node?: string, sqlite?: string | null }} [opts]
+ */
+export function describeRuntime(opts = {}) {
+  const bun = opts.bun !== undefined ? opts.bun : process.versions.bun;
+  if (bun) {
+    const ver = opts.sqlite !== undefined ? opts.sqlite : null;
+    const bunOk = bunPasses(bun);
+    const sqlOk = Boolean(ver) && libClearsWalResetWindow(ver);
+    const allowed = bunOk && sqlOk;
+    let detail;
+    if (!bunOk) {
+      detail = `Bun ${bun} is below 1.4.0.`;
+    } else if (!ver) {
+      detail = `Bun ${bun} has no usable node:sqlite.`;
+    } else if (!sqlOk) {
+      detail = `Bun ${bun} embeds SQLite ${ver}, which is not WAL-reset safe.`;
+    }
+    return {
+      kind: "bun",
+      version: String(bun),
+      raw: String(bun),
+      allowed: Boolean(allowed),
+      sqlite: ver || null,
+      detail,
+    };
+  }
+  return opts.node !== undefined
+    ? { kind: "node", ...describeHost(opts.node) }
+    : { kind: "node", ...describeHost() };
+}
+
+export function runtimeCompatBanner(info) {
+  if (info?.kind === "bun") {
+    return [
+      `xclaw refused to start on Bun v${info.version || info.raw}`,
+      info.detail,
+      "Bun 1.4.0+ with node:sqlite and a WAL-reset-safe SQLite is required.",
+      "Node remains the ship default.",
+    ].join("\n");
+  }
+  return hostCompatBanner(info);
 }

@@ -1,3 +1,14 @@
+## 3.251.0 (2026-08-27)
+
+- HOST runtime Bun gate (spec §11.1): `describeRuntime()` sits next to
+  `describeHost()` in `src/runtime/host-compat.mjs`. If `process.versions.bun`
+  is set, require Bun `>= 1.4.0`, `node:sqlite` present, and the same SQLite
+  WAL-reset window. CLI boot and `init` refuse via `runtimeCompatBanner` when
+  kind is bun and not allowed. Doctor reports `bun` (not "Node unsupported")
+  on a Bun host and keeps `node` on Node. Node remains the ship default; no
+  Bun path in Docker/CI. Tests: `test/host-compat.test.mjs` (mutation-verified
+  bun floor and WAL-window both directions).
+
 ## 3.250.0 (2026-08-27)
 
 - DURABLE SQL corruption recovery (spec §11.18 + §11.17): new

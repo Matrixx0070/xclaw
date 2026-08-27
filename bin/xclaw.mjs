@@ -2,11 +2,16 @@
 /**
  * XClaw CLI — Phase 4
  */
-import { describeHost, hostCompatBanner } from "../src/runtime/host-compat.mjs";
+import { describeRuntime, runtimeCompatBanner } from "../src/runtime/host-compat.mjs";
 
-const host = describeHost();
+let bunSqlite;
+if (process.versions.bun) {
+  const { detectLoadedLibVersion } = await import("../src/persist/engine-load.mjs");
+  bunSqlite = detectLoadedLibVersion();
+}
+const host = describeRuntime({ sqlite: bunSqlite });
 if (!host.allowed) {
-  process.stderr.write(hostCompatBanner(host) + "\n");
+  process.stderr.write(runtimeCompatBanner(host) + "\n");
   process.exit(1);
 }
 

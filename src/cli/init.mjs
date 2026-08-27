@@ -20,7 +20,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { pathToFileURL } from "node:url";
 import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
 import { findTailscaleBinary } from "../net/tailscale.mjs";
-import { describeHost, hostCompatBanner } from "../runtime/host-compat.mjs";
+import { describeRuntime, runtimeCompatBanner } from "../runtime/host-compat.mjs";
 
 function flag(args, name) {
   return args.indexOf(name) >= 0;
@@ -103,9 +103,15 @@ export async function initMain(args = []) {
 
   // Gate A: refuse onboarding on an unsupported host (installers call this
   // module directly, so the bin/xclaw.mjs entry gate does not cover it).
-  const hostLine = describeHost();
+  // Bun (spec §11.1): kind bun and not allowed → refuse. Node stays the default.
+  let bunSqlite;
+  if (process.versions.bun) {
+    const { detectLoadedLibVersion } = await import("../persist/engine-load.mjs");
+    bunSqlite = detectLoadedLibVersion();
+  }
+  const hostLine = describeRuntime({ sqlite: bunSqlite });
   if (!hostLine.allowed) {
-    process.stderr.write(hostCompatBanner(hostLine) + "\n");
+    process.stderr.write(runtimeCompatBanner(hostLine) + "\n");
     process.exit(1);
   }
 
