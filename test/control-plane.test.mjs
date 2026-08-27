@@ -1,11 +1,12 @@
 /**
- * Control plane (spec §11.4 + §11.11 + §11.16 + §11.7 + §11.24 + §11.22).
+ * Control plane (spec §11.4 + §11.11 + §11.16 + §11.7 + §11.24 + §11.22 + §11.23).
  * Pins: fresh open at v2, absorb pairing.json, refuse newer schema,
  * refuse incomplete shape (do not CREATE the missing table), v1→v2
  * migrate (CREATE IF NOT EXISTS only, never DROP), cache/stop,
  * first-open exclusive lock (drop before kit open; skip when file exists),
  * delivery queue helpers (enqueue pending, take oldest+inflight in one
- * atomic, finish status). openControlPlane must not rename pairing.json
+ * atomic, finish status), task run helpers (start running, finish merges
+ * extra onto payload). openControlPlane must not rename pairing.json
  * — live channels still use it.
  */
 import assert from "node:assert/strict";
@@ -20,11 +21,13 @@ import {
   controlPlaneFile,
   enqueueDelivery,
   finishDelivery,
+  finishTask,
   getControlPlane,
   openControlPlane,
   openControlPlaneExclusive,
   pairingJsonFile,
   readSchemaVersion,
+  startTask,
   stopControlPlane,
   takeDelivery,
 } from "../src/state/control-plane.mjs";
@@ -561,5 +564,73 @@ describe("control plane", () => {
       body.indexOf("status = 'inflight'") < close,
       "inflight UPDATE must close inside kit.atomic",
     );
+  });
+
+  it("startTask inserts running with payload; finished_at is null", () => {
+    const { dir, cfg } = tmpCfg();
+    const kit = openControlPlane(cfg);
+    try {
+      startTask(kit, { id: "t1", payload: { kind: "eval", n: 1 } });
+      const row = kit.prepare("SELECT * FROM task_runs WHERE id = ?").get("t1");
+      assert.equal(row.id, "t1");
+      assert.equal(row.status, "running");
+      assert.equal(JSON.parse(row.payload).kind, "eval");
+      assert.equal(JSON.parse(row.payload).n, 1);
+      assert.ok(row.started_at);
+      assert.equal(row.finished_at, null);
+    } finally {
+      kit.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("finishTask merges extra onto payload and sets status + finished_at", () => {
+    const { dir, cfg } = tmpCfg();
+    const kit = openControlPlane(cfg);
+    try {
+      startTask(kit, { id: "t1", payload: { kind: "eval", n: 1 } });
+      finishTask(kit, "t1", "done", { result: "ok", n: 2 });
+      const row = kit.prepare("SELECT * FROM task_runs WHERE id = ?").get("t1");
+      assert.equal(row.status, "done");
+      const body = JSON.parse(row.payload);
+      assert.equal(body.kind, "eval");
+      assert.equal(body.result, "ok");
+      assert.equal(body.n, 2);
+      assert.ok(row.finished_at);
+      assert.ok(row.finished_at >= row.started_at);
+      startTask(kit, { id: "t2", payload: { kind: "job" } });
+      finishTask(kit, "t2", "failed");
+      const failed = kit.prepare("SELECT status, payload FROM task_runs WHERE id = ?").get("t2");
+      assert.equal(failed.status, "failed");
+      assert.equal(JSON.parse(failed.payload).kind, "job");
+    } finally {
+      kit.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("finishTask SELECT+UPDATE is one atomic unit", () => {
+    const src = fs.readFileSync(
+      new URL("../src/state/control-plane.mjs", import.meta.url),
+      "utf8",
+    );
+    const fn = src.slice(src.indexOf("export function finishTask"));
+    const body = fn.slice(0, fn.indexOf("\nfunction quarantineCorrupt"));
+    assert.match(body, /kit\.atomic\(\(\) => \{/);
+    assert.ok(
+      body.indexOf("kit.atomic") < body.indexOf("SELECT payload FROM task_runs"),
+      "SELECT must run inside kit.atomic",
+    );
+    assert.ok(
+      body.indexOf("SELECT payload FROM task_runs") <
+        body.indexOf("UPDATE task_runs SET status"),
+      "UPDATE must follow the SELECT in the same atomic",
+    );
+    const close = body.lastIndexOf("});");
+    assert.ok(
+      body.indexOf("UPDATE task_runs SET status") < close,
+      "payload UPDATE must close inside kit.atomic",
+    );
+    assert.match(body, /\.\.\.\(prev \? JSON\.parse\(prev\.payload\) : \{\}\), \.\.\.extra/);
   });
 });

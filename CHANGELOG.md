@@ -1,3 +1,13 @@
+## 3.257.0 (2026-08-27)
+
+- DURABLE SQL task run helpers (spec §11.23): `startTask` and `finishTask` in
+  `src/state/control-plane.mjs` sit on an open kit. Start INSERT `running`;
+  finish SELECT+merge extra onto stored payload JSON + UPDATE status /
+  finished_at is one `kit.atomic` so two callers cannot clobber the merge.
+  Not wired to the live runner. Does not bump `CONTROL_SCHEMA_VERSION` and
+  does not absorb pairing.json. Tests: `test/control-plane.test.mjs`
+  (mutation-verified atomic wrap and payload merge both directions).
+
 ## 3.256.0 (2026-08-27)
 
 - DURABLE SQL delivery queue helpers (spec §11.22): `enqueueDelivery`,

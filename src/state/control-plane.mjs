@@ -11,9 +11,10 @@
  * coordinator as cron import (spec §11.24) then drops it before the kit
  * open — BEGIN EXCLUSIVE on the coordinator handle blocks a second
  * DatabaseSync. After the file exists, later opens skip the lock. Delivery
- * queue helpers (spec §11.22) sit on an open kit and are not wired to live
- * outbound. Do not fold cron payload jobs into this file. Do not absorb
- * seats/approvals/plugin JSON in this binary.
+ * queue helpers (spec §11.22) and task run helpers (spec §11.23) sit on an
+ * open kit and are not wired to live outbound or the live runner. Do not
+ * fold cron payload jobs into this file. Do not absorb seats/approvals/
+ * plugin JSON in this binary.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -336,6 +337,31 @@ export function finishDelivery(kit, id, status = "done") {
   kit
     .prepare("UPDATE delivery_queue SET status = ?, updated_at = ? WHERE id = ?")
     .run(status, new Date().toISOString(), id);
+}
+
+/**
+ * Task run helpers (spec §11.23).
+ *
+ * Sit on an open kit. Do not replace the live runner in this binary.
+ * finishTask merges extra onto the stored payload JSON so callers can
+ * attach a result without dropping the start payload.
+ */
+export function startTask(kit, { id, payload }) {
+  kit
+    .prepare(
+      `INSERT INTO task_runs(id, status, payload, started_at) VALUES (?, 'running', ?, ?)`,
+    )
+    .run(id, JSON.stringify(payload || {}), new Date().toISOString());
+}
+
+export function finishTask(kit, id, status, extra = {}) {
+  kit.atomic(() => {
+    const prev = kit.prepare("SELECT payload FROM task_runs WHERE id = ?").get(id);
+    const body = { ...(prev ? JSON.parse(prev.payload) : {}), ...extra };
+    kit
+      .prepare("UPDATE task_runs SET status = ?, payload = ?, finished_at = ? WHERE id = ?")
+      .run(status, JSON.stringify(body), new Date().toISOString(), id);
+  });
 }
 
 function quarantineCorrupt(file, err) {
