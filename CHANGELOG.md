@@ -1,3 +1,15 @@
+## 3.249.0 (2026-08-27)
+
+- DURABLE SQL memory search index (spec §11.5 + §11.8): new
+  `src/memory/search-index.mjs` opens `~/.xclaw/memory/main.sqlite` through
+  the query kit (separate from `control.sqlite`). Creates `meta` / `files` /
+  `chunks` / `embed_cache` and, when FTS5 is available, `chunks_fts`.
+  `searchMemory` MATCH+rank with LIKE fallback; `upsertChunk` replaces the
+  FTS row so an update does not duplicate hits. Vector extension is not
+  loaded. Not opened from the gateway — recall still reads `events.jsonl`.
+  Tests: `test/memory-search-index.test.mjs` (mutation-verified FTS replace
+  and LIKE fallback both directions).
+
 ## 3.248.0 (2026-08-26)
 
 - DURABLE SQL doctor --fix (spec §11.6 + §11.10): leftover `cron-jobs.json`
