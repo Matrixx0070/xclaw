@@ -1,3 +1,16 @@
+## 3.278.0 (2026-08-27)
+
+- COVERAGE PIN (mutation sweep #68, RULE(n), closing the #63 carry):
+  the readiness `strictQueue` opt-in — a THROWING queue store must
+  unready the node when the operator asks for strictness — was pinned by
+  NO test: fail-opening it left the FULL suite green (3874/0). Pinned
+  both arms behaviorally (a FILE planted at `<configDir>/job-queue`
+  makes queueStats throw for real): with `strictQueue: true` the node
+  goes not_ready/503 with the error surfaced; by DEFAULT it stays ready
+  (the resilient fail-open is deliberate and now pinned too, so a future
+  "always unready on error" regression is caught from the other
+  direction). Mutation-verified both ways. Shipping code byte-identical.
+
 ## 3.277.0 (2026-08-27)
 
 - COVERAGE PIN (mutation sweep #67, RULE(n)+RULE(k)): the per-job cost

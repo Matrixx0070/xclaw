@@ -42,6 +42,36 @@ describe("readiness queue bound (sweep #63)", () => {
     }
   });
 
+  it("a THROWING queue store unreadies only under strictQueue (sweep #68)", async () => {
+    // A FILE planted at <configDir>/job-queue makes ensureDir → queueStats throw.
+    const strict = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-readyq-"));
+    const lax = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-readyq-"));
+    try {
+      fs.writeFileSync(path.join(strict, "job-queue"), "not a directory");
+      fs.writeFileSync(path.join(lax, "job-queue"), "not a directory");
+      const rStrict = await checkReadiness({
+        profile: "lab",
+        paths: { configDir: strict },
+        readiness: { requireComputer: false, strictQueue: true },
+      });
+      assert.equal(rStrict.body.checks.queue.ok, false);
+      assert.ok(rStrict.body.checks.queue.error, "the throw is surfaced");
+      assert.equal(rStrict.ready, false, "strictQueue must unready on a broken queue store");
+      assert.equal(rStrict.status, 503);
+      const rLax = await checkReadiness({
+        profile: "lab",
+        paths: { configDir: lax },
+        readiness: { requireComputer: false },
+      });
+      assert.equal(rLax.body.checks.queue.ok, false);
+      assert.equal(rLax.ready, true, "default stays resilient: a queue-store error alone must not unready");
+      assert.equal(rLax.status, 200);
+    } finally {
+      fs.rmSync(strict, { recursive: true, force: true });
+      fs.rmSync(lax, { recursive: true, force: true });
+    }
+  });
+
   it("queue exactly at the bound stays ready (<= admits the boundary)", async () => {
     const { dir, cfg } = tmpCfg(0);
     try {
