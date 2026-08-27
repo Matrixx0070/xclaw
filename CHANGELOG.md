@@ -1,3 +1,13 @@
+## 3.254.0 (2026-08-27)
+
+- DURABLE SQL sync query-builder dialect (spec §11.9): `createSyncDialect(file)`
+  in `src/persist/sync-dialect.mjs` sits on `openLocalSql`. SELECT / PRAGMA /
+  WITH return `{ rows }`; other statements return `{ rows: [], numAffectedRows }`.
+  `release()` does not close the handle; `destroy()` does. Does not import
+  `node:sqlite`. Does not bump `CONTROL_SCHEMA_VERSION` and is not opened from
+  the gateway. Tests: `test/sync-dialect.test.mjs` (mutation-verified WITH
+  row-path and destroy-closes both directions).
+
 ## 3.253.0 (2026-08-27)
 
 - DURABLE SQL additive columns (spec §11.14): `addColumnIfMissing(db, table,
