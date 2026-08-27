@@ -1,3 +1,17 @@
+## 3.264.0 (2026-08-27)
+
+- GATEWAY HARNESS companions (spec §13.4 + §13.5):
+  `src/gateway/crash-guard.mjs` — `applyCrashLoopGuard` (every process
+  exit records a timestamp into `gateway-crash-history.json`; boots
+  inside a 15-minute window back off 0 / 30s at 4 / 5m at 7 and refuse
+  `XCLAW_CRASH_LOOP` at 10; `clear()` after a successful start so
+  intentional restarts do not count) and `waitForPort` (poll a TCP
+  connect every 200ms until the deadline). Exit-hook recording is proven
+  in a real child process. NOT adopted by the live gateway — companions
+  to the (also unadopted) §13.2 run-loop; a test pins the absence.
+  Tests: `test/crash-guard.test.mjs` (mutation-verified refuse-threshold
+  and exit-recording both directions).
+
 ## 3.263.0 (2026-08-27)
 
 - GATEWAY RUN-LOOP harness module (spec §13.2):
