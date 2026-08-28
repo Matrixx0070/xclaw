@@ -1,3 +1,46 @@
+## 3.324.0 (2026-08-28)
+
+### Fixed — `xclaw queue batch`: the third writer that bypassed the owner
+
+`src/jobs/batch.mjs` hand-rolled its own enqueue, so both 3.323.0 defects
+survived in it. Measured live against the running 3.323.0 gateway with an idle,
+unpaused queue, before a line was written — one JSONL item, `harness: true,
+class: "interactive", priority: 5, verify: [...]`:
+
+```
+$ xclaw queue batch jobs.jsonl
+record as the OWNER stored it (q_mtd83n10_9393a703):
+  { "harness": false, "class": "batch", "priority": 5,
+    "verify": 1, "maxAttempts": 1 }
+t=4s status=queued  ...  t=24s status=queued
+```
+
+Two failures in one line:
+
+1. **The capability was dropped in transit.** The item's `harness: true` never
+   arrived: it kept its `verify` steps and lost every flag that makes them
+   enforced — a verified job silently downgraded to an unverified one that
+   still reports success. `class` was overwritten too, and
+   `priority: it.priority ?? 0` forced 0 for any item that named a class
+   instead of a number. The accepted shape now comes from the exported
+   `pickEnqueueRequest()`, the same one `POST /queue` uses.
+2. **The owner was never told.** `enqueueJob()`'s `kick()` fires in the
+   *calling* process, so the batch armed a worker inside a CLI that exits
+   0.1s later. The gateway arms its worker at boot and re-arms it only while
+   items remain, so a job appearing on disk while it is idle is never picked
+   up — hence `queued` 24s on. Batch items now go through `runQueueControl()`,
+   which posts to the owner and falls back to disk *with a printed note* when
+   no gateway answers.
+
+### Removed
+
+- `enqueueFromFile`'s never-injected `enqueueLocal` dependency, an unreachable
+  `!Array.isArray` throw (valid JSON starting with `[` is always an array), and
+  a `!out.ok` branch that cannot be reached — an `add` given a local fallback
+  either succeeds or throws. That contract is now pinned on the callee instead,
+  and a thrown item is reported as *that item's* error rather than aborting the
+  whole batch.
+
 ## 3.323.0 (2026-08-28)
 
 ### Fixed — the CLI acted as the queue's owner; the running gateway is

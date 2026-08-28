@@ -125,6 +125,17 @@ describe("queue CLI: the gateway owns the queue", () => {
     assert.equal(out.result.id, "local1");
     assert.match(out.note, /gateway/i, "an operator must know nothing will run it yet");
   });
+
+  it("fails an add with no local fallback instead of returning a blank result", async () => {
+    // The contract enqueueFromFile relies on: given a fallback, an add never
+    // comes back !ok, so it has no !ok branch of its own. Without one it must
+    // report the failure, never hand back {ok:true, result:undefined}.
+    const f = fakeFetch(new Error("ECONNREFUSED"));
+    const out = await runQueueControl(CFG, "add", { goal: "offline" }, { fetchImpl: f });
+    assert.equal(out.ok, false);
+    assert.equal(out.exitCode, 1);
+    assert.match(out.error, /ECONNREFUSED|gateway|fetch/i);
+  });
 });
 
 describe("gateway-client: one base URL builder", () => {
@@ -230,6 +241,31 @@ describe("xclaw goal: end to end", () => {
       String(r.stderr || ""),
       /gateway/i,
       "an operator must be told the job is parked, not running"
+    );
+    await fs.rm(home, { recursive: true, force: true });
+  });
+
+  it("says it about a whole batch file too", async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-batch-home-"));
+    await fs.mkdir(path.join(home, ".xclaw"), { recursive: true });
+    await fs.writeFile(
+      path.join(home, ".xclaw", "xclaw.json"),
+      JSON.stringify({ gateway: { host: "127.0.0.1", port: 18999 } })
+    );
+    const jobs = path.join(home, "jobs.jsonl");
+    await fs.writeFile(jobs, JSON.stringify({ goal: "one", harness: true }) + "\n");
+    const r = await execFileP("node", [path.join(REPO, "bin", "xclaw.mjs"), "queue", "batch", jobs], {
+      env: { ...process.env, HOME: home },
+      timeout: 60000,
+    })
+      .then((x) => ({ ...x, code: 0 }))
+      .catch((e) => e);
+    assert.equal(r.code, 0);
+    assert.match(String(r.stdout || ""), /"count": 1/);
+    assert.match(
+      String(r.stderr || ""),
+      /gateway/i,
+      "a batch parked on disk must say so once, like a single goal does"
     );
     await fs.rm(home, { recursive: true, force: true });
   });

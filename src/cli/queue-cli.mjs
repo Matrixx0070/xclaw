@@ -47,7 +47,8 @@ export async function runQueueControl(cfg, sub, payload = {}, deps = {}) {
     // The gateway's POST /queue enqueues AND kicks its own worker. Enqueueing
     // from here instead only writes a file: the gateway arms its worker at
     // boot and re-arms it only while items remain, so a job appearing on disk
-    // while it is idle is never picked up (measured: still "queued" after 1s).
+    // while it is idle is never picked up (measured live: still "queued" 24s
+    // after an `xclaw queue batch` against an idle gateway).
     if (r.ok) return { ok: true, via: "gateway", result: r.body };
     if (!enqueueLocal) return { ok: false, exitCode: 1, error: r.error };
     const item = await enqueueLocal(cfg, payload);

@@ -2270,6 +2270,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         if (!file) { console.error("Usage: xclaw queue batch <file.json|jsonl>"); process.exit(1); }
         const { enqueueFromFile } = await import("../src/jobs/batch.mjs");
         const out = await enqueueFromFile(cfg, file);
+        if (out.note) console.error(`[xclaw] ${out.note}`);
         console.log(JSON.stringify(out, null, 2));
         process.exitCode = out.errors.length ? 1 : 0;
         break;
