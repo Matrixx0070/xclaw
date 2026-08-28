@@ -5,6 +5,7 @@ import { DEFAULT_CONFIG, CONFIG_DIR_NAME, CONFIG_FILE_NAME } from "./defaults.mj
 import {
   applyProfile,
   canonicalProfileName,
+  setActiveProfile,
   isHardenedProfile,
 } from "./profiles.mjs";
 import { applyAutonomyLevel } from "./autonomy-policy.mjs";
@@ -240,6 +241,8 @@ export async function loadConfig(opts = {}) {
   // chose, so a file saying "strict" got the prod pack and prod hardening but
   // still reported profile="strict" to /metrics, doctor and every raw reader.
   cfg.profile = envProfile || userProfile || cfg.profile;
+  // Publish it for gates below the config layer, which cannot be handed a cfg.
+  setActiveProfile(cfg.profile);
 
   // Prefer xAI when model is grok-* and only XAI key is present
   if (String(cfg.agent?.model || "").startsWith("grok") && !cfg.agent.baseUrl) {

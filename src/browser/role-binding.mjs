@@ -10,6 +10,7 @@
  * Under XCLAW_FABRIC_ENFORCE / prod strict, env role is ignored unless
  * XCLAW_ROLE_FROM_ENV=1 was explicitly set (still warn via doctor).
  */
+import { isHardenedProfile } from "../config/profiles.mjs";
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -101,7 +102,10 @@ function strictMode() {
     process.env.XCLAW_FABRIC_ENFORCE === "1" ||
     process.env.XCLAW_FABRIC_ENFORCE === "true" ||
     process.env.XCLAW_ENFORCEMENT_STRICT === "1" ||
-    process.env.XCLAW_PROFILE === "prod"
+    // Same owning predicate the jsCode gate asks. This was a byte-identical
+    // copy of the raw compare, so a config-hardened host skipped the
+    // observer downgrade and unbound sessions actuated as "actor".
+    isHardenedProfile()
   );
 }
 

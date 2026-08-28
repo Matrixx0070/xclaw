@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 const DOCTOR_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
 import { validateConfig } from "../config/validate.mjs";
+import { isHardenedProfile } from "../config/profiles.mjs";
 import { isComputerRunning } from "../computer/manager.mjs";
 import { runSecurityAudit } from "../security/audit.mjs";
 import { auditRow } from "./doctor-audit-row.mjs";
@@ -1641,17 +1642,12 @@ export async function runDoctor(opts = {}) {
 
     // A7 jsCode + role binding
     try {
-      const { assertJsCodeAllowed, jscodeMode } = await import("../browser/jscode-policy.mjs");
+      const { assertJsCodeAllowed, jscodeMode, gradeJsCodePolicy } = await import("../browser/jscode-policy.mjs");
       const mode = jscodeMode();
       push("a.jscode_mode", "ok", `mode=${mode}`);
       const blocked = assertJsCodeAllowed("document.querySelector('x').click()");
-      if (mode === "allow") {
-        push("a.jscode_policy", "ok", "jsCode allow (lab) — motor patterns not blocked");
-      } else if (!blocked.ok) {
-        push("a.jscode_policy", "ok", `motor-like jsCode blocked (${blocked.code})`);
-      } else {
-        push("a.jscode_policy", "warn", "expected motor jsCode to be blocked under current mode");
-      }
+      const grade = gradeJsCodePolicy({ mode, hardened: isHardenedProfile(cfg), blocked });
+      push("a.jscode_policy", grade.severity, grade.detail);
     } catch (e) {
       push("a.jscode_policy", "warn", e.message || String(e));
     }
@@ -1665,9 +1661,7 @@ export async function runDoctor(opts = {}) {
 
     // Prod profile expectations
     const isProd =
-      process.env.XCLAW_PROFILE === "prod" ||
-      cfg.profile === "prod" ||
-      process.env.XCLAW_ENFORCEMENT_STRICT === "1";
+      isHardenedProfile(cfg) || process.env.XCLAW_ENFORCEMENT_STRICT === "1";
     if (isProd) {
       const commitGatesOn =
         process.env.XCLAW_COMMIT_GATES === "1" ||

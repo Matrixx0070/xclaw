@@ -148,8 +148,47 @@ export function resolveProfileName(raw) {
 }
 
 /**
+ * The canonical profile this process resolved at load time, or null before
+ * loadConfig has run.
+ *
+ * Gates that live below the config layer — a browser hook, a policy module
+ * reached through a bridge — cannot be handed a cfg, so they used to ask
+ * process.env.XCLAW_PROFILE directly. Nothing in src/ or bin/ ever assigns
+ * that variable: an operator who hardened the host the documented way, with
+ * profile:"prod" in xclaw.json, left it unset, and every such gate silently
+ * read "unhardened" while the rest of the config agreed the host was prod.
+ * loadConfig publishes the settled name here so those gates can ask the same
+ * question and get the same answer.
+ *
+ * @type {string|null}
+ */
+let activeProfile = null;
+
+/**
+ * Publish the profile this process is running under. Called once by loadConfig
+ * after it settles the name; pass null to clear (tests).
+ *
+ * @param {string|null} name canonical profile id
+ */
+export function setActiveProfile(name) {
+  activeProfile = name || null;
+}
+
+/**
+ * The published profile, or null if loadConfig has not run in this process.
+ *
+ * @returns {string|null}
+ */
+export function getActiveProfile() {
+  return activeProfile;
+}
+
+/**
  * True when the resolved profile is the hardened one. The single answer to
  * "is this host hardened?", for every gate that needs to ask.
+ *
+ * An explicit source always outranks the published one: a caller holding a cfg
+ * is asking about THAT config, not about the process.
  *
  * @param {object|string} source cfg, or a bare profile name
  */
@@ -157,7 +196,7 @@ export function isHardenedProfile(source) {
   const name =
     typeof source === "string"
       ? source
-      : source?.profile || process.env.XCLAW_PROFILE || "";
+      : source?.profile || activeProfile || process.env.XCLAW_PROFILE || "";
   return resolveProfileName(name).id === "prod";
 }
 
