@@ -18,12 +18,29 @@ const lastSent = new Map();
  * silently suppressed by instance A's — the same silent-alert-loss class the
  * self-deploy watcher hit — and the test suite wrote into the operator's real
  * `~/.xclaw/alert-state.json`, corrupting the forensic record it is kept for.
+ *
+ * Honouring `paths.configDir` closed only half of that. With NO config the
+ * fallback still landed in the live home dir, and every remaining leak reaches
+ * this module through src/ indirection a text rule cannot see —
+ * `getSharedAlerter(cfgRef || {})` (health-watchdog), `job._cfg || {}`
+ * (scheduler), `cfg || {}` (eval/doctor cron). The operator's file was 100
+ * fixture entries deep on 2026-08-28 with zero real deliveries in it, because
+ * `saveState` keeps only the last 100: each fixture write EVICTS a real record,
+ * and `markSent` stamps the shared cooldown map, which can suppress a genuine
+ * page for a full `cooldownMs`.
+ *
+ * `loadConfig()` stamps `paths.configDir` unconditionally (config/load.mjs:187),
+ * so a cfg without one is never a real caller. Such an alerter keeps its state
+ * in memory and reports `statePath: null` rather than guessing at the home dir.
+ * Same shape and same reasoning as `appendCronEvent`'s `no_config` guard.
  */
 function defaultStatePath(cfg) {
-  return path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "alert-state.json");
+  const dir = cfg?.paths?.configDir;
+  return dir ? path.join(dir, "alert-state.json") : null;
 }
 
 function loadState(filePath) {
+  if (!filePath) return { lastSent: {}, history: [] };
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
   } catch {
@@ -32,9 +49,10 @@ function loadState(filePath) {
 }
 
 function saveState(filePath, state) {
+  state.history = (state.history || []).slice(-100);
+  if (!filePath) return; // no config to own it: in-memory only
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    state.history = (state.history || []).slice(-100);
     fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
   } catch (err) {
     console.error("[xclaw:alert] state save", err.message);

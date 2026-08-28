@@ -1,3 +1,37 @@
+## 3.302.0 (2026-08-28)
+
+- The same live-`~/.xclaw` leak, one module over: alert state. v3.300.0 taught
+  `defaultStatePath()` to honour `paths.configDir`, but the other half of that
+  `||` still resolved to `os.homedir()/.xclaw` — and every remaining leak
+  reaches the alerter through src/ indirection that the text-rule guard in
+  `test/alerter-test-isolation.test.mjs` cannot see by construction:
+  `getSharedAlerter(cfgRef || {})` (health-watchdog:93), `job._cfg || {}`
+  (scheduler:243), `cfg || {}` (eval-job:97, doctor-job:62). The operator's
+  `alert-state.json` was 100 entries deep with ZERO real deliveries in it — 12
+  `cron:job`, 12 `enforcement:a.bundle_navigate_hook`, 12
+  `live-e2e:live.commit_gate`, 62 `self-deploy:*`, every one a fixture key and
+  every one `skipped:"no_targets"` (the live config carries a real telegram
+  target, so a production caller could not have produced them).
+- This is destructive, not merely untidy. `saveState` keeps `history.slice(-100)`,
+  so each fixture write EVICTS a real forensic record 1:1; and `markSent`
+  persists `lastSent[key]` into the same file, so a non-production caller can
+  stamp the live cooldown map and suppress a genuine page for a full
+  `cooldownMs` (30 min default). The live map already held `fire-drill:ping`,
+  `alert-path-live-test` and `cron:job-alpha`.
+- `loadConfig()` stamps `paths.configDir` unconditionally, so a cfg without one
+  is never a real caller. `defaultStatePath()` now returns `null` there, `status()`
+  reports `statePath: null`, and the alerter keeps its bounded state in memory —
+  it delivers, cools down and records history exactly as before, it just owns no
+  file. An explicit `alerting.statePath` and a real install are unchanged. Same
+  shape as `appendCronEvent`'s `no_config` guard shipped in 3.301.0.
+- Deleted `test/alerter-test-isolation.test.mjs`. It scanned test sources for
+  inline alerting configs that named no state path, and its whole premise —
+  "send() would write `~/.xclaw/alert-state.json`" — is now false: a runtime
+  guard supersedes a text rule that could only ever see literals, never the
+  indirection that caused the actual damage. Its two pinned exceptions in
+  `test/alert-state-config-dir.test.mjs` went with it; that file's last case now
+  asserts the reverse of what it originally pinned, and says why.
+
 ## 3.301.0 (2026-08-28)
 
 - The test suite was writing into the operator's live `~/.xclaw`. `loadConfig()`

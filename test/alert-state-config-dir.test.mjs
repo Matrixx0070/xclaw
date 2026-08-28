@@ -17,7 +17,8 @@
  *     output, not the deployer's, which is what made the live alert history
  *     unusable as forensic evidence.
  *
- * The home path stays the fallback: nothing changes for a normal install.
+ * The home fallback was kept at first and has since been REMOVED — see the last
+ * test in this file, and `test/alert-state-scope.test.mjs` for why.
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -74,11 +75,17 @@ describe("alert state follows paths.configDir", () => {
     assert.equal(alerter.status().statePath, explicit);
   });
 
-  test("with no configDir the home path remains the fallback", () => {
-    // Pinned deliberately: a normal install has no paths.configDir, and moving
-    // its alert history to cwd would lose the operator's record. Resolving the
-    // path is not sending — nothing here writes. alerter-home-fallback-ok
-    assert.equal(createAlerter({ alerting: { enabled: true } }).status().statePath, HOME_STATE);
-    assert.equal(createAlerter().status().statePath, HOME_STATE);
+  test("with no configDir there is NO home fallback — it names no file", () => {
+    // This assertion is the reverse of what it pinned when written. The old
+    // rationale was "a normal install has no paths.configDir", and that is
+    // simply false: `loadConfig()` stamps `cfg.paths` unconditionally
+    // (src/config/load.mjs:187), so every real caller arrives with one. What
+    // actually reached the fallback was the bare-cfg indirection in src/ —
+    // `getSharedAlerter(cfgRef || {})` and friends — i.e. the leak this pin was
+    // meant to prevent. Guessing at the home dir is now refused outright;
+    // `test/alert-state-scope.test.mjs` covers the behaviour that replaces it.
+    assert.equal(createAlerter({ alerting: { enabled: true } }).status().statePath, null);
+    assert.equal(createAlerter().status().statePath, null);
+    assert.notEqual(createAlerter().status().statePath, HOME_STATE);
   });
 });
