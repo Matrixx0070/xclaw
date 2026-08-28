@@ -1,3 +1,41 @@
+## 3.315.0 (2026-08-28)
+
+### Fixed — a sha256-attested audit bundle that silently dropped evidence
+
+`exportProofBundle` writes the truth proof bundle: flows, policy rules, action
+bindings, and a `contentSha256` over the whole thing. The hash makes it
+tamper-evident. It did not make it complete, and nothing in the bundle said so.
+
+`bindings: bindings.slice(0, 50)` clipped the binding list at 50 with no count
+and no marker — while `flowCount` and `ruleCount` sat in the same object. The
+bundle's own format establishes the convention that every evidence array is
+reported alongside its size; bindings were the one array left out of it, so a
+reader had no way to tell 50-of-50 from 50-of-2351.
+
+Measured on this host: `action-bindings.jsonl` holds **2351** rows, and of the
+1214 bundles in `~/.xclaw/mitm/proofs`, **1212 carry exactly 50** bindings. (The
+file count is residue from the confdir leak fixed in 3.310.0 — but those
+runs read the operator's real bindings file, so the 50s are real reads of a
+2351-row population.) The cap was being hit on essentially every export, and a
+hash was stamped over the sample as though it were the record. A sha256 over
+silently-clipped evidence is worse than no hash: it reads as authoritative.
+
+Now every evidence array carries a count, and `truncated` says whether the
+bundle holds the population or a sample of it:
+
+- `bindingCount` joins `flowCount` and `ruleCount`.
+- `truncated: { flows, bindings }` is set whenever rows were dropped — by the
+  `limit` slice, or by `readMitmFlows`' internal 500-row read ceiling.
+- `mitm_export` prints `bindings: 50 (truncated)`, because a marker only the
+  JSON carries is a marker nobody reads.
+
+Both bundle fields are additive; older readers ignore them. Bindings truncation
+is detected by asking for one row more than is kept (`limit: 51`, down from
+`100`) — since `readActionBindings` returns newest-first, the retained 50 are
+byte-identical to what the old read produced, verified against the live 2351-row
+file. Flows truncation was already paid for: the function over-fetches `limit * 2`
+and then discarded the one fact that over-fetch buys.
+
 ## 3.314.0 (2026-08-28)
 
 ### Fixed — three doctor rows that reported "no data" as a fault

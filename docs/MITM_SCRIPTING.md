@@ -211,6 +211,23 @@ Path: `$XCLAW_MITM_CONFDIR/policy.json` (default `~/.xclaw/mitm/policy.json`)
 
 Agent tools: `mitm_policy` (get\|set\|test), `mitm_export` (proof bundle).
 
+### Proof bundle
+
+`mitm_export` writes a redacted JSON bundle stamped with `contentSha256`. The
+hash makes it tamper-evident; the counts make it *completeness*-evident, which
+is the part that matters when reading one as evidence:
+
+| field | meaning |
+|-------|---------|
+| `flowCount` / `ruleCount` / `bindingCount` | how many rows of each kind the bundle actually holds |
+| `truncated.flows` / `truncated.bindings` | `true` when rows were dropped before the hash was taken |
+
+A bundle with `truncated.bindings: true` is a **sample**, not the record —
+`bindings` is capped at 50 and flows at `limit` (default 200, with a 500-row
+read ceiling underneath). Raise `limit`, or read `action-bindings.jsonl`
+directly, when the full population is needed. Never read `flowCount` as the
+size of the population; it is the size of the sample.
+
 ```bash
 export XCLAW_TRUTH_AUTO_ASSERT=1   # annotate browser_* tool results with require-rule checks
 export XCLAW_MITM_SYNC_ADDON=1     # resync addons.py after upgrades

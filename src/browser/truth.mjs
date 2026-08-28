@@ -272,6 +272,28 @@ export async function afterBrowserToolTruth(toolName, result, opts = {}) {
 /**
  * Build a redacted proof / export bundle for audit.
  */
+/**
+ * Write a redacted, sha256-attested proof bundle.
+ *
+ * The bundle is evidence, so it must be completeness-evident and not merely
+ * tamper-evident: `contentSha256` proves nobody edited it after the fact, and
+ * says nothing about what was dropped before it was stamped. Bindings were
+ * clipped at 50 with no count and no marker while `flowCount` and `ruleCount`
+ * sat in the same object -- so a reader could not tell 50-of-50 from
+ * 50-of-2351.
+ *
+ * Measured on the live host at 3.314.0: action-bindings.jsonl holds 2351 rows,
+ * and of the 1214 bundles in ~/.xclaw/mitm/proofs, 1212 carry exactly 50
+ * bindings. (That file count is residue from the confdir leak fixed in
+ * 3.310.0 -- but those exports read the operator's REAL bindings
+ * file, so the 50s are real reads of a 2351-row population, and they are the
+ * measurement: the cap is hit on essentially every export, silently, under a
+ * hash that reads as authoritative.)
+ *
+ * Every evidence array now carries a count, and `truncated` says whether it is
+ * the whole population or a sample of it. Both fields are additive; older
+ * readers ignore them.
+ */
 export async function exportProofBundle(opts = {}) {
   const cfg = opts.cfg || null;
   const confdir = mitmConfdir(cfg);
@@ -282,7 +304,20 @@ export async function exportProofBundle(opts = {}) {
     ? flows.filter((f) => Number(f.ts) >= Number(sinceTs))
     : flows.slice(0, limit);
 
-  const bindings = await readActionBindings({ cfg, limit: 100 });
+  // readMitmFlows clamps its own read at 500, so the 2x over-fetch above can be
+  // clipped twice: once by that ceiling, once by the slice. Both are knowable
+  // here for free -- the over-fetch already paid for the extra rows.
+  const readCeiling = Math.min(500, Math.max(1, limit * 2));
+  const readWasClipped = flows.length >= readCeiling;
+  const flowsTruncated = sinceTs ? readWasClipped : readWasClipped || flows.length > limit;
+
+  // Ask for one more than we will keep. If it comes back, something was left
+  // behind. Costs one row and, because readActionBindings returns newest-first,
+  // the kept 50 are byte-identical to what limit:100 produced.
+  const BINDING_CAP = 50;
+  const allBindings = await readActionBindings({ cfg, limit: BINDING_CAP + 1 });
+  const bindings = allBindings.slice(0, BINDING_CAP);
+  const bindingsTruncated = allBindings.length > BINDING_CAP;
   const policy = await loadPolicy(cfg);
   const caPath = await findMitmCaCert();
 
@@ -314,7 +349,9 @@ export async function exportProofBundle(opts = {}) {
       // bodies already redacted at write time when capture enabled
       url: typeof f.url === "string" ? f.url.slice(0, 300) : undefined,
     })),
-    bindings: bindings.slice(0, 50),
+    bindingCount: bindings.length,
+    bindings,
+    truncated: { flows: flowsTruncated, bindings: bindingsTruncated },
   };
 
   const json = JSON.stringify(bundle, null, 2);
@@ -331,7 +368,15 @@ export async function exportProofBundle(opts = {}) {
     await fs.mkdir(path.dirname(outPath), { recursive: true });
   }
   await fs.writeFile(outPath, finalJson + "\n");
-  return { ok: true, path: outPath, sha256: hash, flowCount: bundle.flowCount, ruleCount: bundle.policy.ruleCount };
+  return {
+    ok: true,
+    path: outPath,
+    sha256: hash,
+    flowCount: bundle.flowCount,
+    ruleCount: bundle.policy.ruleCount,
+    bindingCount: bundle.bindingCount,
+    truncated: bundle.truncated,
+  };
 }
 
 /**

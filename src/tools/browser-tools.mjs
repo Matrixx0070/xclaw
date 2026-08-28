@@ -773,8 +773,13 @@ export function createMitmExportTool(ctx = {}) {
           limit: args.limit,
           sinceTs: args.sinceTs,
         });
+        // A truncation marker only the JSON carries is a marker nobody reads.
+        const mark = (n) => (n ? " (truncated)" : "");
         return textResult(
-          `Proof exported: ${r.path}\nsha256: ${r.sha256}\nflows: ${r.flowCount}\nrules: ${r.ruleCount}`,
+          `Proof exported: ${r.path}\nsha256: ${r.sha256}\n` +
+            `flows: ${r.flowCount}${mark(r.truncated?.flows)}\n` +
+            `rules: ${r.ruleCount}\n` +
+            `bindings: ${r.bindingCount}${mark(r.truncated?.bindings)}`,
           { metadata: r }
         );
       } catch (e) {
