@@ -1,7 +1,7 @@
 /**
  * Prometheus text exposition (subset) for ops scrapers.
  */
-import { queueStats } from "../jobs/queue.mjs";
+import { queueStats, QUEUE_STATUSES } from "../jobs/queue.mjs";
 import { summarizeEvalSpend } from "../eval/spend.mjs";
 import { isComputerRunning } from "../computer/manager.mjs";
 // xclaw_info{version=...} is the gauge a scraper uses to confirm a rollout
@@ -50,7 +50,10 @@ export async function renderMetrics(cfg) {
     const q = await queueStats(cfg);
     lines.push("# HELP xclaw_queue_jobs Jobs by status");
     lines.push("# TYPE xclaw_queue_jobs gauge");
-    for (const st of ["queued", "running", "succeeded", "failed", "cancelled"]) {
+    // Enumerating the statuses here left `abandoned` out of the one gauge a
+    // scraper watches, while /queue/stats counted it — the two surfaces
+    // disagreed. Derive the list from the queue that defines it.
+    for (const st of QUEUE_STATUSES) {
       lines.push(`xclaw_queue_jobs{status="${st}"} ${q[st] || 0}`);
     }
     lines.push("# HELP xclaw_queue_dead_letter Failed after maxAttempts");

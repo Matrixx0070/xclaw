@@ -1,3 +1,67 @@
+## 3.327.0
+
+### `abandoned` was a queue status the rest of the system did not know exists
+
+`processNext` abandons a queued item once it has waited past the admission
+controller's patience budget and writes `status: "abandoned"`. Two other
+surfaces enumerated the statuses by hand and neither list included it.
+
+**`/metrics` could not see it.** `renderMetrics` looped a five-element literal
+`["queued","running","succeeded","failed","cancelled"]`, so
+`xclaw_queue_jobs{status="abandoned"}` was never emitted — not even as 0.
+`/queue/stats` counted abandoned items the whole time, so the two surfaces
+disagreed, and the one status that means *the queue is over capacity* was the
+one a scraper could not alert on. The list is now derived from
+`QUEUE_STATUSES`, exported by the module that defines the statuses.
+
+**An abandoned record was immortal.** `clearCompletedQueue` removed
+`succeeded|failed|cancelled` only, so no API could ever delete an abandoned
+item. `listQueue` reads and JSON-parses every file in the queue directory on
+every call, and it is called by every enqueue, every `processNext` and every
+scrape — so each undeletable record was a permanent tax on all three. Clearing
+now uses a new `TERMINAL_QUEUE_STATUSES` export; `queued` and `running` are
+deliberately absent from it, so clearing still never deletes live work.
+
+### The admission controller's documented defaults were NaN
+
+```js
+let maxDepth = Math.max(0, Number(cfg.maxDepth) ?? 100);
+```
+
+`Number(undefined)` is `NaN`, not `undefined`, so `??` never fires and the
+fallback never applied. Both `maxDepth` and `maxWaitMs` initialised to `NaN`,
+which makes every comparison false: `queued >= maxDepth` never admits-false,
+`waited > maxWaitMs` never abandons. Proved against the live config
+(`"queue": {"concurrency": 1}`) on the running 3.326.0 build:
+
+```
+internal maxDepth  = NaN      tryAdmit at 10000 queued -> admit:true
+internal maxWaitMs = NaN      shouldAbandon a 24h-old item -> false
+```
+
+**Queue enforcement was not disabled.** Both live call sites — `enqueueJob`
+and `processNext` — call `adm.configure(...)` with values from `queue.mjs`'s
+own `maxDepth(cfg)` / `maxWaitMsCfg(cfg)` helpers, which implement exactly the
+right guard, immediately before use. The bound came back before it was
+enforced. That guarded duplicate sitting beside the broken original is why
+this survived: `queueStats` passes the same helper values into
+`adm.snapshot({...})`, which spreads them last, so `/queue/stats` displayed a
+correct `maxDepth: 100` over a controller holding `NaN`.
+
+**The reachable live consequence was a reporting failure.** `GET
+/queue/admission` answers `q.maxDepth ?? adm.maxDepth`, reading the controller
+directly with no configure in between. On the running 3.326.0 gateway:
+
+```
+"policy": { "concurrency": 1, "maxDepth": null, "maxWaitMs": null, ... }
+```
+
+`NaN` serialises to JSON `null` — the endpoint told the operator the queue had
+no finite buffer and no patience budget at all. Both bounds now go through a
+single `boundedNumber(v, fallback)` used on construction and in `configure`,
+so an unusable value (a missing key, or `"maxWaitMs": "5m"` typed into
+`xclaw.json`) falls back to the documented default instead of to `NaN`.
+
 ## 3.326.0 (2026-08-28)
 
 ### Fixed — a fabric lock could be stolen while its owner was still writing it

@@ -23,6 +23,31 @@ function emitQueue(data) {
 }
 
 
+/**
+ * Every status a queue item can hold. `abandoned` (patience budget exhausted)
+ * was known only to the code that writes it: /metrics enumerated five statuses
+ * and clearCompletedQueue three, so an abandoned job was invisible to scrapers
+ * and could never be removed — and listQueue reads every file in the dir on
+ * every call, so an unremovable record taxes every enqueue and every scrape.
+ * One list, exported, so a new status cannot be added to only half the system.
+ */
+export const QUEUE_STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "abandoned",
+];
+
+/** Statuses where the item is finished: safe to clear, never re-run. */
+export const TERMINAL_QUEUE_STATUSES = [
+  "succeeded",
+  "failed",
+  "cancelled",
+  "abandoned",
+];
+
 /** Priority classes: higher number runs first; aging bumps batch/cron over time */
 export const PRIORITY_CLASS = {
   interactive: 100,
@@ -466,7 +491,7 @@ export async function cancelQueueItem(cfg, id) {
 
 export async function queueStats(cfg) {
   const items = await listQueue(cfg, { limit: 500 });
-  const by = { queued: 0, running: 0, succeeded: 0, failed: 0, cancelled: 0 };
+  const by = Object.fromEntries(QUEUE_STATUSES.map((st) => [st, 0]));
   let deadLetter = 0;
   for (const it of items) {
     by[it.status] = (by[it.status] || 0) + 1;
@@ -474,8 +499,6 @@ export async function queueStats(cfg) {
       deadLetter += 1;
     }
   }
-  const abandoned = items.filter((i) => i.status === "abandoned").length;
-  by.abandoned = abandoned;
   const adm = getDefaultAdmission(cfg);
   return {
     ...by,
@@ -521,7 +544,7 @@ export async function clearCompletedQueue(cfg) {
   const items = await listQueue(cfg, { limit: 500 });
   let removed = 0;
   for (const it of items) {
-    if (["succeeded", "failed", "cancelled"].includes(it.status)) {
+    if (TERMINAL_QUEUE_STATUSES.includes(it.status)) {
       try {
         await fs.unlink(path.join(dir, `${it.id}.json`));
         removed += 1;

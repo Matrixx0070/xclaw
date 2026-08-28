@@ -67,8 +67,11 @@ function emitAdmission(channel, data) {
 export function createAdmissionController(cfg = {}) {
   const maxConcurrencyCap = Math.max(1, Number(cfg.maxConcurrencyCap) || 16);
   let concurrency = clampInt(cfg.concurrency ?? 1, 1, maxConcurrencyCap);
-  let maxDepth = Math.max(0, Number(cfg.maxDepth) ?? 100);
-  let maxWaitMs = Math.max(0, Number(cfg.maxWaitMs) ?? 300_000);
+  // Number(undefined) is NaN, not undefined, so `Number(x) ?? default` never
+  // reaches the default: both bounds became NaN, which disables the finite
+  // buffer (tryAdmit fails OPEN) and patience (shouldAbandon always false).
+  let maxDepth = boundedNumber(cfg.maxDepth, 100);
+  let maxWaitMs = boundedNumber(cfg.maxWaitMs, 300_000);
 
   const metrics = {
     admitted: 0,
@@ -78,6 +81,11 @@ export function createAdmissionController(cfg = {}) {
     failed: 0,
     timedOutJob: 0,
   };
+
+  function boundedNumber(v, fallback) {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  }
 
   function clampInt(n, lo, hi) {
     const x = Math.floor(Number(n));
@@ -149,8 +157,12 @@ export function createAdmissionController(cfg = {}) {
     if (next.concurrency != null) {
       concurrency = clampInt(next.concurrency, 1, maxConcurrencyCap);
     }
-    if (next.maxDepth != null) maxDepth = Math.max(0, Number(next.maxDepth));
-    if (next.maxWaitMs != null) maxWaitMs = Math.max(0, Number(next.maxWaitMs));
+    // getDefaultAdmission forwards cfg.queue.* here verbatim, so an operator
+    // typo ("maxWaitMs": "5m") reached Math.max(0, NaN) and left the shared
+    // controller unbounded for every reader until the next enqueue happened to
+    // re-configure it with a real number. Same guard as construction.
+    if (next.maxDepth != null) maxDepth = boundedNumber(next.maxDepth, maxDepth);
+    if (next.maxWaitMs != null) maxWaitMs = boundedNumber(next.maxWaitMs, maxWaitMs);
     return snapshot();
   }
 
