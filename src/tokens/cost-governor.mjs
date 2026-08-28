@@ -232,7 +232,10 @@ async function notifyBandTransition(cfg, { from, to, ledger, lim, economyAt }) {
     ` subscription/OAuth traffic is notional, not billed)`;
   const detail =
     to === "halt"
-      ? `Hard cap $${lim.dailyHardUsd} reached — queue paused, new jobs refused until tomorrow or /cost resume. ${split}`
+      // Name only remedies that exist. There is no /cost command and no `cost
+      // resume` subcommand — and "until tomorrow" was itself false until
+      // 3.322.0, because the halt latched the queue worker permanently.
+      ? `Hard cap $${lim.dailyHardUsd} reached — queue paused, new jobs refused. Clears at the daily reset, or resume now from the control UI (Cost governor → Resume). ${split}`
       : to === "economy"
         ? `Economy threshold $${economyAt} reached — role router may reroute to cheaper models (if configured). ${split}`
         : `Back to normal. ${split}`;

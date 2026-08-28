@@ -183,17 +183,39 @@ async function saveItem(cfg, rec) {
   await fs.writeFile(path.join(dir, `${rec.id}.json`), JSON.stringify(rec, null, 2));
 }
 
+/**
+ * The budget halt is DERIVED from the governor on every kick, never latched.
+ *
+ * This used to write the governor's verdict into worker.paused — the flag
+ * pauseQueue()/resumeQueue() own — which made a hard-cap hit permanent: both
+ * documented recovery paths (the control UI's Resume, and the midnight
+ * rollover the halt alert promises) reset the governor LEDGER, and nothing
+ * anywhere cleared worker.paused, so kick() returned early for the rest of the
+ * process's life. One flag was carrying two facts: an operator pause, which
+ * must latch until a human lifts it, and a budget halt, which must lift the
+ * moment the budget does. They are now separate fields, and only the operator
+ * one is sticky.
+ *
+ * A governor read that throws leaves the previous verdict standing rather than
+ * inventing one — loadLedger already swallows its own IO errors, so reaching
+ * that catch means something structural, and neither guessing "halted" (a
+ * queue stopped by a bad read) nor guessing "clear" (a queue spending past a
+ * cap it could not see) is better than the last thing we actually measured.
+ *
+ * kick() MEASURES; processNext() decides. The gate used to be here as well, and
+ * two copies of one predicate in one file is the divergent-duplicate shape — it
+ * also put enforcement where work is *scheduled*, which a timer armed a moment
+ * earlier simply outruns. Arming a timer that finds the gate shut costs one
+ * no-op tick and keeps the decision in exactly one place.
+ */
 function kick(cfg) {
-  if (!worker) worker = { cfg, running: 0, timer: null, paused: false };
+  if (!worker) worker = { cfg, running: 0, timer: null, paused: false, governorHalt: false };
   worker.cfg = cfg;
-  void (async () => {
+  worker.settled = (async () => {
     try {
       const cost = await getCostGovernorStatus(worker.cfg);
-      if (cost.paused || cost.hard) {
-        worker.paused = true;
-      }
-    } catch { /* */ }
-    if (worker.paused) return;
+      worker.governorHalt = Boolean(cost.paused || cost.hard);
+    } catch { /* keep the last measured verdict */ }
     const slots = maxConcurrency(cfg) - (worker.running || 0);
     if (slots <= 0) return;
     worker.timer = setTimeout(() => void processNext(cfg), 50);
@@ -201,8 +223,29 @@ function kick(cfg) {
   })();
 }
 
+/**
+ * Resolves once the most recent kick's governor read has landed.
+ *
+ * kick() must not block its callers, so its budget check runs detached — which
+ * left the decision unobservable from outside: queueStatus() read a verdict
+ * that was still in flight, and the only way to wait for it was to guess a
+ * number of event-loop ticks. A gate nothing can await is a gate nothing can
+ * test, so the in-flight promise is kept and exposed rather than guessed at.
+ */
+export function queueSettled() {
+  return Promise.resolve(worker?.settled);
+}
+
 async function processNext(cfg) {
   worker = worker || { cfg, running: 0 };
+  // THE gate: the single place that decides whether a job starts. It sits here,
+  // where work actually begins, and not in kick(), where work is merely
+  // scheduled — a pause or a budget halt landing inside kick's 50ms timer
+  // window was otherwise ignored outright. Measured: pauseQueue(), then an
+  // enqueue, and the job ran 50ms later anyway on the timer armed before the
+  // pause. The verdict read here is the last one kick() measured; re-reading
+  // the governor here would make this a second, racing source of truth.
+  if (worker.paused || worker.governorHalt) return;
   if ((worker.running || 0) >= maxConcurrency(cfg)) return;
   worker.running = (worker.running || 0) + 1;
   try {
@@ -331,18 +374,22 @@ export function queueStatus(cfg) {
     maxDepth: maxDepth(c),
     maxWaitMs: maxWaitMsCfg(c),
     running: worker?.running || 0,
+    // `paused` is the operator's switch; `governorHalt` is the budget's.
+    // `blocked` is the only one that answers "will this queue run a job?".
     paused: Boolean(worker?.paused),
+    governorHalt: Boolean(worker?.governorHalt),
+    blocked: Boolean(worker?.paused || worker?.governorHalt),
   };
 }
 
 export function pauseQueue() {
-  worker = worker || { cfg: null, running: 0, timer: null, paused: true };
+  worker = worker || { cfg: null, running: 0, timer: null, paused: true, governorHalt: false };
   worker.paused = true;
   return queueStatus(worker.cfg);
 }
 
 export function resumeQueue(cfg) {
-  worker = worker || { cfg, running: 0, timer: null, paused: false };
+  worker = worker || { cfg, running: 0, timer: null, paused: false, governorHalt: false };
   worker.paused = false;
   worker.cfg = cfg || worker.cfg;
   kick(cfg || worker.cfg);

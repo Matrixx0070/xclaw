@@ -51,6 +51,24 @@ describe("cost governor band transitions", () => {
     await fs.rm(cfg._dir, { recursive: true, force: true });
   });
 
+  // The halt DM told the owner to run `/cost resume`. There is no /cost
+  // channel command and no `cost resume` CLI subcommand — grep both surfaces —
+  // so the one instruction the owner got for an unattended halt was a dead end.
+  // "until tomorrow" was false too, until the halt stopped latching the queue.
+  it("names only remedies that exist", async () => {
+    const cfg = await cfgTmp();
+    const alerter = resetSharedAlerter(cfg);
+    await recordJobCost(cfg, { usd: 5, estimated: false }); // straight past hard
+    await new Promise((r) => setTimeout(r, 50)); // notify is fire-and-forget
+    const halt = alerter.history(10).find((h) => h.key === "cost-band:halt");
+    assert.ok(halt, "halt alert attempted");
+    assert.doesNotMatch(halt.body, /\/cost|cost resume/, "no such command");
+    assert.match(halt.body, /daily reset/);
+    assert.match(halt.body, /control UI/);
+    resetSharedAlerter({});
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+  });
+
   it("no transition → no band event, no alert", async () => {
     const cfg = await cfgTmp({ dailySoftUsd: 100, dailyHardUsd: 200 });
     const alerter = resetSharedAlerter(cfg);

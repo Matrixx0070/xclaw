@@ -1,3 +1,50 @@
+## 3.322.0 (2026-08-28)
+
+### Fixed — the budget halt that latched the queue worker forever
+
+When the cost governor hit its daily hard cap, `kick()` wrote that verdict into
+`worker.paused` — the same flag `pauseQueue()`/`resumeQueue()` own. Nothing on
+either documented recovery path clears it: the control UI's Resume and the
+midnight rollover both reset the governor **ledger**, and no code anywhere
+cleared `worker.paused`. So the queue worker returned at its early guard for
+the remaining life of the gateway process, and the halt alert's promise that
+jobs resume "tomorrow" was false. Measured against the real modules before the
+fix:
+
+```
+over cap     governor{hard:true  paused:true }  queueStatus.paused=true
+after resume governor{hard:false paused:false}  queueStatus.paused=true
+next day     governor{hard:false paused:false}  queueStatus.paused=true
+```
+
+One flag was carrying two facts. An operator pause must latch until a human
+lifts it; a budget halt must lift the moment the budget does. They are separate
+fields now — `paused` (the operator's, sticky) and `governorHalt` (derived from
+the governor on every kick, in both directions) — with `blocked` answering the
+only question callers actually have: will this queue run a job?
+
+- The gate now sits in `processNext`, where work starts, and nowhere else.
+  It was also in `kick`, where work is merely *scheduled*: a pause landing
+  inside kick's 50ms timer window was outrun by the timer armed a moment
+  earlier, and the job ran anyway. Two copies of one predicate in one file is
+  the divergent-duplicate shape besides.
+- `queueSettled()` exposes the in-flight governor read. `kick()` must not block
+  its callers, so the check runs detached — which left the decision
+  unobservable: `queueStatus()` read a verdict still in flight, and readings
+  came back literally one kick behind. A gate nothing can await is a gate
+  nothing can test.
+- Metrics: `xclaw_queue_paused` now reports `blocked`, so an alert on "the
+  queue stopped" does not go quiet because the halt stopped latching, and a new
+  `xclaw_queue_governor_halt` gauge says *which* of the two reasons it is.
+- The halt DM told the owner to run `/cost resume`. There is no `/cost` channel
+  command and no `cost resume` subcommand — grep both surfaces. It now names
+  the daily reset and the control UI, which exist.
+
+10 tests in `test/queue-governor-release.test.mjs` (including two that watch a
+real queue item refuse to start and then start), 1 in
+`test/cost-band-transitions.test.mjs`; 14 mutations across every shipping line,
+all RED.
+
 ## 3.321.0 (2026-08-28)
 
 ### Fixed — the security audit had no opinion about the binds that matter

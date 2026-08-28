@@ -59,9 +59,15 @@ export async function renderMetrics(cfg) {
     lines.push("# HELP xclaw_queue_worker_running Active queue workers");
     lines.push("# TYPE xclaw_queue_worker_running gauge");
     lines.push(`xclaw_queue_worker_running ${q.worker?.running || 0}`);
-    lines.push("# HELP xclaw_queue_paused Queue worker paused");
+    // Stays 1 for a budget halt, which is what it has always reported (the
+    // halt used to latch worker.paused) — an alert on "the queue stopped" must
+    // not go quiet just because the halt is now derived instead of latched.
+    lines.push("# HELP xclaw_queue_paused Queue worker not running jobs (operator pause or budget halt)");
     lines.push("# TYPE xclaw_queue_paused gauge");
-    lines.push(`xclaw_queue_paused ${q.worker?.paused ? 1 : 0}`);
+    lines.push(`xclaw_queue_paused ${q.worker?.blocked ? 1 : 0}`);
+    lines.push("# HELP xclaw_queue_governor_halt Queue stopped by the cost governor, not by an operator");
+    lines.push("# TYPE xclaw_queue_governor_halt gauge");
+    lines.push(`xclaw_queue_governor_halt ${q.worker?.governorHalt ? 1 : 0}`);
     try {
       const { subagentMetrics } = await import("../agents/spawn.mjs");
       lines.push("# HELP xclaw_subagents_running In-memory running subagents");
