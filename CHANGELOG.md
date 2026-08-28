@@ -1,6 +1,6 @@
 ## 3.288.0 (2026-08-28)
 
-- `xclaw doctor` ran five of its probes two or three times per invocation and
+- `xclaw doctor` ran six of its probes two or three times per invocation and
   printed each verdict once per run. Found by live-driving the gateway after
   3.287.0: `ops.auth_refresh` — the probe that release had just repaired —
   printed its warning twice, byte-identical.
@@ -12,17 +12,24 @@
   three times: once inside `pushPerfChecksEnsured`, which calls it, and twice
   more directly from two byte-identical blocks.
 - Not only cosmetic. Doctor reports a warning count and exits on it, so sixteen
-  warnings overstated fourteen distinct findings, and an operator counting them
+  warnings overstated thirteen distinct findings, and an operator counting them
   across runs saw movement that was not there. The repeats also did the work
   again: `ops.cold_start` made three live health requests per doctor run.
 - Deleted the six redundant call sites; `doctor-ops-bundle.mjs` is now the
   single owner of its probes and `pushPerfChecksEnsured` the single caller of
   `pushPerfChecks`. Net 42 lines removed, no probe lost.
-- `gateway.stopRoute` was duplicated the same way but emitted nothing on this
-  host, so the live output could not show it. The regression test reads the
-  probe call graph out of the source and walks one hop past each shim, which
-  catches a duplicate whether or not it happens to emit — it names all five,
-  including the invisible one, when the deletion is reverted.
+- Correction to this entry, made after publishing it: it first claimed
+  `gateway.stopRoute` was duplicated but "emitted nothing on this host". That
+  was wrong, and asserted without checking. Re-running the pre-change file
+  (sha256 `2e3c22eb…`) against this host shows all six probes duplicated in the
+  visible output — `ops.cold_start` and `eval.flake_budget` three times each,
+  `ops.auth_refresh`, `ops.receipt_metrics`, `ops.smoke_compare` and
+  `gateway.stopRoute` twice each — and the summary line moving 16 warnings to
+  13. The counts above are the corrected ones.
+- The regression test reads the probe call graph out of the source and walks one
+  hop past each shim, so it catches a duplicate whether or not it happens to
+  emit on the host running it. That property is the reason for the approach; it
+  is not what happened here, where every duplicate was visible.
 - Removed `patches/doctor-receipt-metrics.patch` and its entries in the batch-3
   and production land manifests. That patch wired the probe inline into
   `doctor.mjs` before the bundle existed; batch-4's `doctor-ops-bundle.patch`
