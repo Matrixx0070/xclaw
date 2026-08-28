@@ -1,3 +1,31 @@
+## 3.335.0
+
+### An assertion's signature was verified; the ceremony it signed for was not
+
+`completeAssertion` (the WebAuthn gate's second half, signature-verified since
+3.332.0) checked challenge, signature and counter — and nothing else about
+what the signature actually covered. The ceremony context lives INSIDE the
+signed payload (WebAuthn L2 §7.2), and each unchecked field is a way a
+signature obtained in another context verifies here. Measured before the fix,
+all four forgeries were accepted, each signed with the registered credential's
+real key:
+
+- `clientData.type` unchecked: a `webauthn.create` (registration) response
+  replayed as an assertion — cross-protocol confusion.
+- `clientData.origin` unchecked: a phishing page's assertion — which the
+  victim's real authenticator happily signs, over clientData naming the evil
+  origin — opened the gate.
+- `authData.rpIdHash` unchecked: an assertion scoped to a different relying
+  party verified against this one.
+- UP flag unchecked: a response produced with no human present passed a gate
+  whose purpose is proving a human is present.
+
+All four are now enforced before the store is touched (rpIdHash via
+`crypto.timingSafeEqual`), each with its own error code, each check
+mutation-verified individually. The registration half still stores unverified
+attestation by design (documented; registration is an operator-side trusted
+flow) — verifying attestation remains a recommendation, not this fix.
+
 ## 3.334.0
 
 ### Queue aggregates and sweeps saw a page of the queue, not the queue

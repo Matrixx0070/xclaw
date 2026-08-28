@@ -252,19 +252,6 @@ export async function completeAssertion(cfg = {}, assertion = {}) {
   const cred = store.credentials.find((c) => c.credentialId === id);
   if (!cred) return { ok: false, error: "unknown credential" };
 
-  if (assertion.clientDataJSON) {
-    try {
-      const cd = JSON.parse(
-        fromB64url(assertion.clientDataJSON).toString("utf8")
-      );
-      if (cd.challenge !== pending.challenge) {
-        return { ok: false, error: "challenge mismatch" };
-      }
-    } catch {
-      return { ok: false, error: "invalid clientDataJSON" };
-    }
-  }
-
   // An authenticator signs authData || SHA256(clientDataJSON). Every one of
   // these returns BEFORE the store is touched: a rejected assertion that still
   // stamped lastAssertAt would open the gate it just refused.
@@ -276,6 +263,38 @@ export async function completeAssertion(cfg = {}, assertion = {}) {
   }
   if (!assertion.clientDataJSON) {
     return { ok: false, error: "assertion carries no clientDataJSON", code: "CLIENTDATA_REQUIRED" };
+  }
+
+  // The signature proves the authenticator signed — not that it signed for
+  // THIS ceremony. The ceremony context lives inside the signed payload
+  // (WebAuthn L2 §7.2) and each field must be checked, or a signature obtained
+  // in another context verifies here: a registration response replayed as an
+  // assertion (type), a phishing page the victim's real authenticator happily
+  // signed for (origin), another relying party's assertion (rpIdHash), a
+  // response produced with no human present (UP flag).
+  let cd;
+  try {
+    cd = JSON.parse(fromB64url(assertion.clientDataJSON).toString("utf8"));
+  } catch {
+    return { ok: false, error: "invalid clientDataJSON" };
+  }
+  if (cd.type !== "webauthn.get") {
+    return {
+      ok: false,
+      error: `clientData type is ${JSON.stringify(cd.type)}, not "webauthn.get"`,
+      code: "CLIENTDATA_TYPE",
+    };
+  }
+  if (cd.challenge !== pending.challenge) {
+    return { ok: false, error: "challenge mismatch" };
+  }
+  const wa = waCfg(cfg);
+  if (cd.origin !== wa.origin) {
+    return {
+      ok: false,
+      error: `assertion origin ${JSON.stringify(cd.origin)} is not the configured origin ${JSON.stringify(wa.origin)}`,
+      code: "ORIGIN_MISMATCH",
+    };
   }
   if (!cred.publicKey) {
     return {
@@ -289,6 +308,21 @@ export async function completeAssertion(cfg = {}, assertion = {}) {
   // rpIdHash(32) | flags(1) | signCount(4)
   if (authData.length < 37) {
     return { ok: false, error: "authenticatorData too short", code: "AUTHDATA_INVALID" };
+  }
+  const expectedRpIdHash = crypto.createHash("sha256").update(wa.rpId).digest();
+  if (!crypto.timingSafeEqual(authData.subarray(0, 32), expectedRpIdHash)) {
+    return {
+      ok: false,
+      error: `authenticatorData rpIdHash does not match rp id ${JSON.stringify(wa.rpId)}`,
+      code: "RPID_MISMATCH",
+    };
+  }
+  if ((authData[32] & 0x01) === 0) {
+    return {
+      ok: false,
+      error: "user presence flag not set — the authenticator did not attest a present user",
+      code: "USER_PRESENCE_REQUIRED",
+    };
   }
   const toBeSigned = Buffer.concat([
     authData,
