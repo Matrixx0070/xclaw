@@ -71,7 +71,17 @@ export async function runDueOps(cfg = {}, opts = {}) {
   return { ran: true, tmp, maintenance, errors };
 }
 
-/** Log one run's outcome through the caller's logger. */
+/**
+ * Log one run's outcome through the caller's logger.
+ *
+ * This is the ONLY path from runOpsMaintenance's result to a human — nothing
+ * else in the codebase reads that object. It used to print the ledger and the
+ * rotations and drop everything else, so the proof-bundle (3.316.0),
+ * checkpoint (3.317.0) and memory-store (3.318.0) censuses were computed once
+ * a day and seen by no one. The memory sweep in particular promises that a
+ * directory it cannot attribute is counted `unattributable` and left alone;
+ * that promise is worth nothing unheard.
+ */
 export function reportOpsRun(result, log = console.log, warn = console.warn) {
   if (!result?.ran) return;
   if (result.tmp?.removed?.length) {
@@ -84,6 +94,27 @@ export function reportOpsRun(result, log = console.log, warn = console.warn) {
     }
     for (const rot of m.rotated || []) {
       log(`[xclaw:ops] rotated ${rot.path} (${rot.bytes} → ${rot.keptBytes} bytes)`);
+    }
+    // Measurements, not actions. Silence is reserved for what does not exist,
+    // so that a line here always means something was actually measured.
+    for (const s of m.sizes || []) {
+      if (s.rotated || s.reason === "absent") continue;
+      log(`[xclaw:ops] ${s.path}: ${s.bytes} bytes (under cap)`);
+    }
+    for (const d of m.dirs || []) {
+      if (d.reason === "absent") continue;
+      log(`[xclaw:ops] ${d.dir}: ${d.files} files / ${d.bytes} bytes, pruned ${d.pruned}`);
+    }
+    const cp = m.checkpoints;
+    if (cp && cp.reason !== "no_dir") {
+      log(`[xclaw:ops] checkpoints: kept ${cp.kept}, removed ${cp.removed} (protected ${cp.protected || 0})`);
+    }
+    const mem = m.memory;
+    if (mem && mem.reason !== "absent") {
+      log(
+        `[xclaw:ops] memory workspaces: ${mem.workspaces} (${mem.keepers} live, ` +
+          `${mem.orphans} orphaned, ${mem.unattributable} unattributable), pruned ${mem.pruned}`
+      );
     }
     for (const e of m.errors || []) warn(`[xclaw:ops] maintenance ${e.target}:`, e.error);
   }

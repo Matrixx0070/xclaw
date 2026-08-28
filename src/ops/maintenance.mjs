@@ -34,15 +34,39 @@
  *     running eviction from the daily pass makes it independent of both and
  *     leaves that call a harmless idempotent extra.
  *
+ *  5. Durable memory store retention. Each workspace's events.jsonl is
+ *     rotated by appendMemory itself, so every FILE there is bounded — but the
+ *     store is a directory of directories, one minted per distinct workspace
+ *     path and never removed, and that count was bounded by nothing. Measured
+ *     live at 3.317.0: 208 directories growing ~16/day, of which 206 were
+ *     throwaway /tmp eval and job workspaces. Like the proofs and the
+ *     checkpoints before it, the memory store appeared in neither the list
+ *     above nor the exemptions below. Only provable orphans are eligible (see
+ *     pruneMemoryWorkspaces) — the decision lives in the memory module, which
+ *     owns the store's layout.
+ *
  * Every pass returns a census whether or not it changed anything. Rotation's
- * under-cap result used to be computed and then dropped by `if (r.rotated)`,
- * which made a file at 99% of its ceiling indistinguishable from a file that
- * did not exist. A ceiling you only hear about once it is crossed is not
- * observability, so measurements are reported alongside the actions.
+ * under-cap result was computed and then dropped by `if (r.rotated)`, which
+ * made a file at 99% of its ceiling indistinguishable from a file that did not
+ * exist. A ceiling you only hear about once it is crossed is not
+ * observability, so measurements now land in `sizes` (every target, every
+ * pass) alongside the actions in `rotated`. This paragraph described that fix
+ * from 3.316.0 onward while the `if (r.rotated)` line was still there — a
+ * comment is not a test, and it graded itself passing for two releases.
+ *
+ * A census is only observability once something says it out loud:
+ * reportOpsRun (src/ops/scheduler.mjs) is the single path from this result to
+ * a human, and every field added here must be printed there or it is a
+ * measurement nobody reads.
  *
  * Not handled here: per-run / per-session files (blackboard, swarm journals,
  * transcripts) — bounded by their own lifecycle; and the ledger day segments,
  * which compaction owns (whole-day deletes only, never partial loss).
+ * Screenshots (computer-act-tool, browser-cdp) are knowingly deferred, not
+ * forgotten: 21 files / 692K live, and XCLAW_SCREENSHOT_DIR is undocumented.
+ * Three times now a directory of discrete artifacts has been unbounded because
+ * it was named in neither list, so absence from both is no longer allowed to
+ * mean anything — anything not swept is named above as a deliberate choice.
  *
  * Concurrency note: appenders are fire-and-forget fs.appendFile; an append
  * landing between our read and rename is lost. The window is milliseconds
@@ -57,6 +81,7 @@ import { cronEventsLogPath, doctorLogPath } from "../cron/logs.mjs";
 import { defaultLedgerPath } from "../tokens/usage-tracker.mjs";
 import { mitmConfdir } from "../browser/mitm.mjs";
 import { pruneCheckpoints } from "../jobs/checkpoint.mjs";
+import { pruneMemoryWorkspaces } from "../memory/durable.mjs";
 
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024; // 8MB trigger
 const DEFAULT_KEEP_BYTES = 4 * 1024 * 1024; // tail kept in place
@@ -173,7 +198,7 @@ export async function runOpsMaintenance(cfg = {}) {
   }
   const maxBytes = Number(cfg.ops?.maintenance?.maxBytes) || DEFAULT_MAX_BYTES;
   const keepBytes = Math.min(Number(cfg.ops?.maintenance?.keepBytes) || DEFAULT_KEEP_BYTES, maxBytes);
-  const out = { skipped: false, ledger: null, rotated: [], dirs: [], checkpoints: null, errors: [] };
+  const out = { skipped: false, ledger: null, rotated: [], sizes: [], dirs: [], checkpoints: null, memory: null, errors: [] };
 
   try {
     out.ledger = await compactLedger(cfg);
@@ -190,6 +215,10 @@ export async function runOpsMaintenance(cfg = {}) {
   for (const p of targets) {
     try {
       const r = await rotateJsonlIfOversize(p, { maxBytes, keepBytes });
+      // Measurement first, action second: `sizes` holds every target on every
+      // pass so growth is visible before a ceiling is crossed, `rotated` holds
+      // only what was actually moved.
+      out.sizes.push(r);
       if (r.rotated) out.rotated.push(r);
     } catch (e) {
       out.errors.push({ target: p, error: e?.message || String(e) });
@@ -218,6 +247,14 @@ export async function runOpsMaintenance(cfg = {}) {
     out.checkpoints = await pruneCheckpoints(cfg, { dryRun: false });
   } catch (e) {
     out.errors.push({ target: "checkpoints", error: e?.message || String(e) });
+  }
+
+  // Same rule as checkpoints: the primitive owns its policy (cfg.memory.*),
+  // so no default is restated here to drift away from it.
+  try {
+    out.memory = await pruneMemoryWorkspaces(cfg);
+  } catch (e) {
+    out.errors.push({ target: "memory", error: e?.message || String(e) });
   }
 
   return out;

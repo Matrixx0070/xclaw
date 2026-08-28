@@ -1,3 +1,80 @@
+## 3.318.0 (2026-08-28)
+
+### Fixed — the durable memory store was a directory of directories, bounded by nothing
+
+`appendMemory` rotates each workspace's `events.jsonl` at 1MB, so every *file*
+in `~/.xclaw/memory` is bounded. The store itself was not. `memoryPaths()` mints
+one permanent directory per distinct workspace path, keyed by a one-way sha256,
+and nothing ever removed one. `src/ops/maintenance.mjs` — the module whose
+stated job is bounding growth — named the memory store in neither its rotation
+targets nor its "Not handled here" exemptions. That is the third time a
+directory of discrete artifacts has grown forever because it appeared in
+neither list, after the proof bundles (3.316.0) and the checkpoints (3.317.0).
+
+Measured live at 3.317.0: **208 workspace directories, 416 files, 2.5MB, oldest
+13.0 days** — roughly 16 new directories per day, forever. 206 of the 208 were
+throwaway `/tmp` eval and job workspaces; only `/root/xclaw` and
+`/root/xclaw/tmp-live` were real.
+
+**Age alone would have been the wrong rule.** A long-lived workspace's memory is
+the one thing in this store worth keeping, and it is also the most likely to be
+old — a plain age sweep deletes exactly the wrong directories first. The store
+already recorded what makes the distinction safe: `rebuildMemoryMd` has always
+written the workspace into `MEMORY.md` as ``Path: `...` ``. Nothing had ever read
+it back. Reading it turns "old" into "provably unreachable", so retention now
+prunes only a directory whose recorded workspace is **gone**:
+
+- a directory whose workspace still resolves is kept regardless of age;
+- a directory whose path cannot be read is counted `unattributable` and left
+  alone — "I cannot tell" is not a licence to delete;
+- both bounds (`memory.orphanMaxAgeMs`, default 30d; `memory.orphanKeepMax`,
+  default 500, applied to orphans only, newest first) sit above the live
+  population, so enabling retention deletes nothing already on disk.
+
+Of the 208, 169 were provable orphans and 39 still resolved — but only because
+the daily `/tmp` sweeper had not reached them yet. Directory existence is a race
+against that sweeper, not a measure of worth, which is why the count ceiling is
+scoped to orphans and the age grace is generous.
+
+`runOpsMaintenance` now reports a `memory` census every pass whether or not it
+prunes, and the exemption list no longer stays silent about what it skips:
+screenshots are named there as a deliberate deferral. Absence from both lists is
+no longer allowed to mean anything.
+
+### Fixed — three retention censuses were computed daily and printed nowhere
+
+`runOpsMaintenance` has exactly one production caller: the daily ops timer in
+`src/ops/scheduler.mjs`. The only thing that turns its result into words is
+`reportOpsRun`, which logged the ledger compaction and the rotations and
+dropped the rest. So the proof-bundle census (3.316.0), the checkpoint census
+(3.317.0) and the memory census above were each computed once a day and read by
+nobody — nothing else in the codebase consumes that object. The memory sweep's
+whole safety argument is that a directory it cannot attribute is counted
+`unattributable` and left alone; unheard, that is not a promise.
+
+`reportOpsRun` now prints the directory retention census, the checkpoint census
+and the memory census — and stays silent only about stores that do not exist,
+so a line always means a measurement was actually taken.
+
+A fourth instance of the same shape was found in the maintenance module's own
+doc comment, which since 3.316.0 has read: *"Rotation's under-cap result used to
+be computed and then dropped by `if (r.rotated)` ... so measurements are
+reported alongside the actions."* The code still read `if (r.rotated)
+out.rotated.push(r)`. The fix the comment described had never been applied, and
+a file at 99% of its ceiling was still indistinguishable from one that did not
+exist. Measurements now land in a new `sizes` array — every target, every pass —
+and `rotated` keeps its meaning of what was actually moved. A comment is not a
+test; this one graded itself passing for two releases.
+
+### Testing note — a fixture that pinned the one input that could not exhibit the bug
+
+The guard protecting unattributable directories was mutation-tested and the
+mutation stayed **green**. The fixture aged the directory to 400 days and *then*
+removed its `MEMORY.md` — but unlinking a file resets the parent directory's
+mtime, so the directory under test was in fact fresh, and the age bound rather
+than the guard was what spared it. The assertion was true for the wrong reason.
+Aging the directory after the removal makes the mutation fail as it should.
+
 ## 3.317.0 (2026-08-28)
 
 ### Fixed — a retention policy that had a doctor row, tests, and no way to run

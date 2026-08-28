@@ -218,3 +218,138 @@ export async function forgetMemory(cfg, workspacePath, match = {}) {
   await rebuildMemoryMd(cfg, workspacePath);
   return { removed, kept: kept.length };
 }
+
+/** Where the whole store lives. Exported so retention can name it out loud. */
+export function memoryStoreDir(cfg) {
+  return baseDir(cfg);
+}
+
+const MEMORY_MD_PATH_RE = /^Path: `(.+)`$/m;
+
+/**
+ * The workspace a memory directory belongs to, or null when it cannot be told.
+ *
+ * memoryPaths() keys each directory by a one-way sha256 of the workspace path,
+ * so the directory name alone can never identify its owner. rebuildMemoryMd
+ * has always written the path into MEMORY.md; reading it back is what makes a
+ * safe retention decision possible at all. Null is a real answer — a directory
+ * written before MEMORY.md existed, or one whose file was removed — and it
+ * must never be treated as "gone".
+ */
+export async function readWorkspacePath(dir) {
+  let md = "";
+  try {
+    md = await fs.readFile(path.join(dir, "MEMORY.md"), "utf8");
+  } catch {
+    return null;
+  }
+  const m = MEMORY_MD_PATH_RE.exec(md);
+  return m ? m[1] : null;
+}
+
+async function dirBytes(dir) {
+  let total = 0;
+  let entries = [];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const e of entries) {
+    if (!e.isFile()) continue;
+    try {
+      total += (await fs.stat(path.join(dir, e.name))).size;
+    } catch {
+      /* vanished under us */
+    }
+  }
+  return total;
+}
+
+/**
+ * Retention for the store's directories. Every append bounds its own
+ * events.jsonl by rotation; nothing bounded the number of directories, one of
+ * which is minted per distinct workspace path and never removed.
+ *
+ * Only a PROVABLE orphan is eligible: MEMORY.md names a workspace and that
+ * workspace no longer exists. A directory whose workspace still resolves is
+ * kept regardless of age — a long-lived workspace's memory is the only thing
+ * in this store worth keeping, and age is exactly the wrong signal for it. A
+ * directory whose path cannot be read is counted as unattributable and left
+ * alone; "I cannot tell" is not a licence to delete.
+ *
+ * Both bounds sit above the live population measured at 3.317.0 (208
+ * directories, oldest 13.0 days) so enabling retention deletes nothing that is
+ * already on disk — the count ceiling applies to orphans only, newest first.
+ * Returns the census whether or not it pruned.
+ */
+export async function pruneMemoryWorkspaces(cfg = {}, opts = {}) {
+  const mc = cfg?.memory || {};
+  const maxAgeMs = opts.maxAgeMs ?? mc.orphanMaxAgeMs ?? 30 * 86_400_000;
+  const keepMax = opts.keepMax ?? mc.orphanKeepMax ?? 500;
+  const dir = baseDir(cfg);
+  const out = {
+    dir,
+    workspaces: 0,
+    keepers: 0,
+    orphans: 0,
+    unattributable: 0,
+    bytes: 0,
+    pruned: 0,
+    prunedBytes: 0,
+    reason: "ok",
+  };
+
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    out.reason = "absent";
+    return out;
+  }
+
+  const cutoff = Date.now() - maxAgeMs;
+  const orphans = [];
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const d = path.join(dir, e.name);
+    let st;
+    try {
+      st = await fs.stat(d);
+    } catch {
+      continue;
+    }
+    out.workspaces += 1;
+    const bytes = await dirBytes(d);
+    out.bytes += bytes;
+
+    const ws = await readWorkspacePath(d);
+    if (!ws) {
+      out.unattributable += 1;
+      continue;
+    }
+    const alive = await fs
+      .stat(ws)
+      .then(() => true)
+      .catch(() => false);
+    if (alive) {
+      out.keepers += 1;
+      continue;
+    }
+    out.orphans += 1;
+    orphans.push({ path: d, mtimeMs: st.mtimeMs, bytes });
+  }
+
+  orphans.sort((a, b) => b.mtimeMs - a.mtimeMs); // newest first
+  const doomed = orphans.filter((o, i) => o.mtimeMs < cutoff || i >= keepMax);
+  for (const o of doomed) {
+    try {
+      await fs.rm(o.path, { recursive: true, force: true });
+      out.pruned += 1;
+      out.prunedBytes += o.bytes;
+    } catch {
+      // next pass gets it; never let one undeletable directory abort the sweep
+    }
+  }
+  return out;
+}
