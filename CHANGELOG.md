@@ -1,3 +1,46 @@
+## 3.326.0 (2026-08-28)
+
+### Fixed — a fabric lock could be stolen while its owner was still writing it
+
+`acquireFabricLock` created its lockfile with `fs.open(lp, "wx")` and wrote the
+owner payload *afterwards*. Between those two awaits the lock exists and is
+EMPTY. A concurrent acquirer that read it in that window fell through to the
+legacy bare-pid fallback, where `Number("")` is `0`, decided pid 0 was dead,
+**unlinked a live lock and took it**. Mutual exclusion was off for the whole
+overlap.
+
+Two further legs made it worse:
+
+- `release()` did `fs.unlink(lp)` unconditionally — it deleted whatever was at
+  the path, including a lock another holder had since taken.
+- the stale check unlinked the lock on *any* read error: "I could not read this
+  lock, therefore I may take it."
+
+Observed, not theorised — `browser-a8-fabric`'s serialisation subtest failed
+with both critical sections interleaved, which no timing tolerance explains:
+
+```
+["b-start","a-start","b-end","a-end"]
+```
+
+and a direct repro against the shipping source:
+
+```
+lock file exists empty: 0
+STOLE a live-but-unwritten lock: {"pid":979252,"at":...,"host":"srv1474168"}
+```
+
+This is the only thing serialising cross-process read-modify-write on
+`tab-leases.json`, `commit-gates.json`, `session-roles.json`, `clock.json`,
+role binding and the automations store.
+
+Fix: publish the lockfile atomically — write the payload to a unique temp file,
+then `fs.link(tmp, lp)`. `link` fails `EEXIST` when the lock is held, and what
+it publishes already carries the owner payload, so a lock is never observable
+mid-creation. Reclaim now requires *evidence* (a pid read and proven gone, or
+an age past the stale window); an unreadable lock is evidence of nothing and is
+waited on. Release unlinks only while the file still holds the payload it took.
+
 ## 3.325.0 (2026-08-28)
 
 ### Fixed — a cancel, confirmed to the operator, silently reverted and the job re-ran
