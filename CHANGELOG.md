@@ -47,13 +47,24 @@ like a measurement but is the ceiling of the instrument.
 ### Operator note — no retroactive deletion
 
 The live host has no `checkpoints` section in `~/.xclaw/xclaw.json`, so the
-shipped default (100) would have deleted 104 existing job receipts on the first
-daily pass. Consistent with the 3.316.0 rule that *enabling retention must not
-destroy evidence already on disk*, `checkpoints.maxCount` is set to 300 on that
-host — above the live population of 205 — before the fix goes live. Growth is
-now bounded where it was unbounded; the operator can lower the ceiling to the
-default whenever they choose, and the corrected doctor row now shows the real
-total to decide from.
+shipped defaults would apply in full on the first daily pass. Consistent with
+the 3.316.0 rule that *enabling retention must not destroy evidence already on
+disk*, both bounds are raised on that host before the fix goes live:
+`checkpoints.maxCount` to 300 (above the live population of 205) and
+`checkpoints.maxAgeMs` to 60 days.
+
+The age bound is the one that mattered, and it is only visible if you measure
+the distribution rather than the count. At 3.316.0 the store's oldest entry was
+**12.99 days** — nothing was over the 14-day default, so the count rule looked
+like the only binding one. But 167 of the 205 receipts were already over 7 days,
+so within roughly a day of shipping, a policy that had never run once would have
+deleted them in a single pass. "Nothing is over the limit today" is not the same
+statement as "nothing is about to be", and only the second one is a safety
+argument.
+
+Growth is bounded where it was unbounded; the operator can lower either ceiling
+to the default whenever they choose, and the corrected doctor row now shows the
+real total to decide from.
 
 ## 3.316.0 (2026-08-28)
 
