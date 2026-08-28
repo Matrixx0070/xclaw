@@ -22,7 +22,7 @@ import path from "node:path";
 import { openKit } from "../persist/query-kit.mjs";
 import { tryTakeExclusiveLock } from "../persist/engine-load.mjs";
 import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
-import { quarantineSqlFile } from "../persist/sql-quarantine.mjs";
+import { quarantineSqlFile, refuseNotADatabase } from "../persist/sql-quarantine.mjs";
 import { addColumnIfMissing } from "../persist/add-column.mjs";
 
 export const CONTROL_SCHEMA_VERSION = 2;
@@ -398,6 +398,7 @@ function runStarterSchema(kit) {
 export function openControlPlane(cfg) {
   const file = controlPlaneFile(cfg);
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  refuseNotADatabase(file);
   let kit;
   try {
     kit = openKit(file, { label: "control plane" });

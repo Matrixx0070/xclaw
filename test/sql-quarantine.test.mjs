@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   classifySqlProbe,
+  notADatabaseError,
   probeSqlFile,
   quarantineSqlFile,
 } from "../src/persist/sql-quarantine.mjs";
@@ -20,6 +21,7 @@ import {
   stopControlPlane,
 } from "../src/state/control-plane.mjs";
 import { openMemoryIndex } from "../src/memory/search-index.mjs";
+import { openAgentStore } from "../src/state/agent-store.mjs";
 import { openKit } from "../src/persist/query-kit.mjs";
 
 function tmpDir() {
@@ -189,6 +191,75 @@ describe("sql quarantine", () => {
     assert.equal(bad.status, "error");
     assert.match(bad.message, /corrupt/i);
   });
+
+  it("notADatabaseError: missing, empty, and real SQLite files are not errors", () => {
+    const dir = tmpDir();
+    const missing = path.join(dir, "absent.sqlite");
+    const empty = path.join(dir, "empty.sqlite");
+    const real = path.join(dir, "real.sqlite");
+    const bad = path.join(dir, "bad.sqlite");
+    fs.writeFileSync(empty, "");
+    const kit = openKit(real, { label: "real" });
+    kit.exec("CREATE TABLE t(id INTEGER)");
+    kit.close();
+    writeGarbage(bad);
+    try {
+      assert.equal(notADatabaseError(missing), null);
+      assert.equal(notADatabaseError(empty), null);
+      assert.equal(notADatabaseError(real), null);
+      const err = notADatabaseError(bad);
+      assert.match(err.message, /not a database/i);
+      assert.equal(err.errcode & 0xff, 26);
+      assert.equal(corruptCopies(bad).length, 0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * The header peek exists so the sidecars survive: SQLite's own failed open
+   * can unlink -wal/-shm before quarantine runs (1 in 300 under CPU load),
+   * and a -wal holds committed-but-uncheckpointed rows. Every opener that
+   * quarantines must refuse before SQLite ever touches the file.
+   */
+  for (const opener of [
+    {
+      name: "openControlPlane",
+      file: (dir) => path.join(dir, "control.sqlite"),
+      open: (dir, file) => openControlPlane({ paths: { controlPlaneFile: file, stateDir: dir } }),
+    },
+    {
+      name: "openMemoryIndex",
+      file: (dir) => path.join(dir, "main.sqlite"),
+      open: (dir, file) => openMemoryIndex({ paths: { memoryIndexFile: file, memoryDir: dir } }),
+    },
+    {
+      name: "openAgentStore",
+      file: (dir) => path.join(dir, "a1", "agent.sqlite"),
+      open: (dir) => openAgentStore("a1", { paths: { agentDir: dir } }),
+    },
+  ]) {
+    it(`${opener.name} keeps -wal and -shm when it refuses a non-database`, () => {
+      const dir = tmpDir();
+      const file = opener.file(dir);
+      writeGarbage(file, { wal: "wal-bytes", shm: "shm-bytes" });
+      try {
+        // The path in the message is the pre-open guard's signature: SQLite's
+        // own refusal is the bare "file is not a database". Asserting it here
+        // is what pins the guard, because the sidecar loss it prevents is a
+        // race that only lands ~1 run in 300, and only under CPU load.
+        assert.throws(() => opener.open(dir, file), (err) => err.message.includes(file));
+        assert.equal(fs.existsSync(file), true);
+        assert.equal(fs.existsSync(`${file}-wal`), true);
+        assert.equal(fs.existsSync(`${file}-shm`), true);
+        assert.equal(corruptCopies(file).length, 3);
+        const stamped = corruptCopies(file).find((n) => n.endsWith("-wal"));
+        assert.equal(fs.readFileSync(path.join(path.dirname(file), stamped), "utf8"), "wal-bytes");
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
 
   it("default doctor reports sql.control and sql.memory and does not --fix", async () => {
     const dir = tmpDir();

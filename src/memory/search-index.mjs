@@ -13,7 +13,7 @@ import path from "node:path";
 import { openKit } from "../persist/query-kit.mjs";
 import { lexicalIndexAvailable } from "../persist/engine-load.mjs";
 import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
-import { quarantineSqlFile } from "../persist/sql-quarantine.mjs";
+import { quarantineSqlFile, refuseNotADatabase } from "../persist/sql-quarantine.mjs";
 
 export function memoryIndexFile(cfg) {
   if (cfg?.paths?.memoryIndexFile) return cfg.paths.memoryIndexFile;
@@ -34,6 +34,7 @@ function quarantineCorrupt(file, err) {
 export function openMemoryIndex(cfg) {
   const file = memoryIndexFile(cfg);
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  refuseNotADatabase(file);
   let kit;
   try {
     kit = openKit(file, { label: "memory index" });

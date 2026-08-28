@@ -1,3 +1,33 @@
+## 3.299.0 (2026-08-28)
+
+- Quarantine now keeps the `-wal` and `-shm` it promised to keep. Spec §11.18
+  says a corrupt database is copied aside and the original is never deleted,
+  but the openers handed the file to SQLite FIRST and only quarantined in the
+  `catch` — and SQLite's own failed open can unlink the sidecars on its way
+  out. A corrupt main file plus a hot WAL went in and one file came out, so
+  quarantine had nothing left to copy and the committed-but-uncheckpointed
+  transactions in that WAL — the most recoverable data there is — were gone.
+- Found as a CI-only failure: the `openControlPlane` §11.18 test went red on
+  the `24.15` matrix leg at v3.298.0 while the Node binary was byte-identical
+  to the four green commits before it. Adding a test file shifted `node --test`
+  worker scheduling, which shifted load, which exposed a latent race. Local
+  repro: 300/300 correct unloaded, 1 failure in 300 under 12 spinners on 4
+  cores, with the sample directory proving `-wal`/`-shm` had been unlinked
+  from the ORIGINAL directory, not just missed by the copy.
+- Fixed as a primitive, not a patch: `notADatabaseError` peeks at the 16-byte
+  `SQLite format 3\0` header and `refuseNotADatabase` quarantines and throws
+  before SQLite ever touches the file. The refusal is now deterministic
+  instead of a race with SQLite's cleanup, and costs one 16-byte read per
+  open. Missing and zero-length files stay non-errors — SQLite creates the one
+  and treats the other as a brand-new empty database, and so does the guard.
+- Wired into all three openers with the same defect shape, not only the one
+  the test caught: `openControlPlane`, `openMemoryIndex`, `openAgentStore`.
+- The regression test pins the guard by the path in the refusal message —
+  SQLite's own refusal is the bare `file is not a database`. The data loss it
+  prevents lands ~1 run in 300 and only under load, so asserting the sidecars
+  survive cannot fail reliably; asserting the refusal came from before the
+  open can. Mutation-verified both directions on all three openers.
+
 ## 3.298.0 (2026-08-28)
 
 - Caller-side errors answer 4xx instead of 500. Found by live-driving the

@@ -18,7 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import { openKit } from "../persist/query-kit.mjs";
 import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
-import { quarantineSqlFile } from "../persist/sql-quarantine.mjs";
+import { quarantineSqlFile, refuseNotADatabase } from "../persist/sql-quarantine.mjs";
 
 /** Agent schema version marker (spec §12.10). */
 export const AGENT_SCHEMA_VERSION = 1;
@@ -141,6 +141,7 @@ export function openAgentStore(agentId, cfg) {
   const id = agentIdKey(agentId);
   const file = agentStoreFile(id, cfg);
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  refuseNotADatabase(file);
   let kit;
   try {
     kit = openKit(file, { label: `agent store ${id}` });
