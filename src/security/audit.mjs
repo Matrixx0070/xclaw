@@ -1,6 +1,25 @@
 /**
  * Security audit checks for doctor / SECURITY.md (Phase S).
+ *
+ * Two of these rows used to fail open, both by grading a host against a short
+ * list of literals instead of a predicate:
+ *
+ *  - gateway.bind matched three wildcard spellings and two loopback spellings
+ *    and had no else, so every OTHER host — a LAN address, a public address,
+ *    a hostname — produced NO FINDING AT ALL and left ok true. The exposure
+ *    the row exists to report was the one input it could not report on.
+ *    ::1 fell into the same silence, so the audit could not tell the safe
+ *    case from the dangerous one either.
+ *  - gateway.token chose info vs error from the same two literals, never from
+ *    the profile — while the doctor's own owner.gatewayToken row grades the
+ *    identical fact (prod && !token) an error. One config, two verdicts.
+ *
+ * Both now use isLoopbackHost, the same predicate the gateway enforces its
+ * own bind safety with (src/gateway/bind-guard.mjs), so "local" means one
+ * thing in this codebase rather than three.
  */
+import { isLoopbackHost } from "../gateway/bind-guard.mjs";
+
 export function runSecurityAudit(cfg = {}) {
   const findings = [];
 
@@ -8,16 +27,21 @@ export function runSecurityAudit(cfg = {}) {
     findings.push({ id, level, message, fix });
   }
 
+  const prod = cfg.profile === "prod" || process.env.XCLAW_PROFILE === "prod";
   const host = cfg.gateway?.host || "127.0.0.1";
-  if (host === "0.0.0.0" || host === "::" || host === "[::]") {
+  const loopback = isLoopbackHost(host);
+  const wildcard = host === "0.0.0.0" || host === "::" || host === "[::]";
+  if (loopback) {
+    add("gateway.bind", "ok", `Gateway local bind ${host}`);
+  } else {
     add(
       "gateway.bind",
       "warn",
-      `Gateway binds ${host} (all interfaces)`,
+      wildcard
+        ? `Gateway binds ${host} (all interfaces)`
+        : `Gateway binds ${host} (reachable from off this host)`,
       "Set gateway.host to 127.0.0.1 or put behind reverse proxy + auth"
     );
-  } else if (host === "127.0.0.1" || host === "localhost") {
-    add("gateway.bind", "ok", `Gateway local bind ${host}`);
   }
 
   const token =
@@ -27,8 +51,10 @@ export function runSecurityAudit(cfg = {}) {
   if (!token) {
     add(
       "gateway.token",
-      host === "127.0.0.1" || host === "localhost" ? "info" : "error",
-      "No XCLAW_GATEWAY_TOKEN / gateway.token",
+      prod || !loopback ? "error" : "info",
+      prod
+        ? 'profile is "prod" but no XCLAW_GATEWAY_TOKEN / gateway.token'
+        : "No XCLAW_GATEWAY_TOKEN / gateway.token",
       "Export XCLAW_GATEWAY_TOKEN for any non-local or multi-user deploy"
     );
   } else {
@@ -76,7 +102,7 @@ export function runSecurityAudit(cfg = {}) {
     );
   }
 
-  if (cfg.profile === "prod" || process.env.XCLAW_PROFILE === "prod") {
+  if (prod) {
     if (cfg.security?.autoApprove) {
       add("profile.prod", "error", "prod profile with autoApprove");
     } else {

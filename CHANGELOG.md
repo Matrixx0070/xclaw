@@ -1,3 +1,41 @@
+## 3.321.0 (2026-08-28)
+
+### Fixed — the security audit had no opinion about the binds that matter
+
+`runSecurityAudit` graded the gateway's bind address against a list of five
+string literals: three wildcard spellings warned, two loopback spellings were
+ok, and **anything else produced no finding at all**. A gateway bound to a LAN
+address, a public address or a hostname — the exposures the row exists to
+report — was reported on by nobody, and `ok` stayed `true`. Proven against the
+real module before the fix:
+
+```
+LAN bind 10.0.0.5          ok=true | bind: ** NO FINDING **
+public bind 203.0.113.9    ok=true | bind: ** NO FINDING **
+ipv6 loopback ::1          ok=true | bind: ** NO FINDING **
+wildcard 0.0.0.0           ok=true | bind: warn Gateway binds 0.0.0.0 (all interfaces)
+```
+
+`::1` fell into the same silent branch, so the audit could not tell the safe
+case from the dangerous one either. The one bind the suite pinned — `0.0.0.0`
+— was the one input incapable of exhibiting the bug.
+
+Second fail-open in the next three lines: `gateway.token` picked `info` vs
+`error` from those same two loopback literals and never consulted the profile,
+while the doctor's own `owner.gatewayToken` row grades the identical fact
+(`prod && !token`) an `error`. `xclaw security-audit` therefore told a prod
+operator with no gateway token that everything was fine.
+
+- Both rows now use `isLoopbackHost` from `src/gateway/bind-guard.mjs` — the
+  predicate the gateway enforces its own bind safety with — so "local" means
+  one thing in this codebase instead of three, and every non-loopback host
+  gets a `warn` naming it plus the remedy.
+- A tokenless gateway is now `error` when the profile is prod (`cfg.profile`
+  or `XCLAW_PROFILE`) *or* the bind is non-loopback; `info` stays for the lab
+  localhost case it was meant for.
+- 13 new tests (18 in the file), 10 mutations across every shipping line, all
+  RED.
+
 ## 3.320.0 (2026-08-28)
 
 ### Fixed — one config setting, two contradictory doctor rows, hidden by a typo in the id
