@@ -12,6 +12,7 @@
  * Zero dependencies — plain ANSI, same rule as the Control UI.
  */
 import { writeSync } from "node:fs";
+import { gatewayBaseUrl } from "./gateway-client.mjs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -54,12 +55,6 @@ function paint(text, colour, enabled) {
   return enabled === false ? String(text) : `${colour}${text}${C.reset}`;
 }
 
-function gatewayBase(cfg = {}) {
-  const host = cfg.gateway?.host || "127.0.0.1";
-  const port = cfg.gateway?.port || 18790;
-  return `http://${host}:${port}`;
-}
-
 async function getJson(url, token, timeoutMs = 4000) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
@@ -79,7 +74,7 @@ async function getJson(url, token, timeoutMs = 4000) {
 
 /** Fetch everything the status view renders. Never throws. */
 export async function collectTuiSnapshot(cfg = {}, opts = {}) {
-  const base = opts.base || gatewayBase(cfg);
+  const base = opts.base || gatewayBaseUrl(cfg);
   const token = opts.token ?? cfg.gateway?.token ?? null;
   const [info, ready, sessions, approvals, cost, channels] = await Promise.all([
     getJson(`${base}/info`, token),
@@ -932,7 +927,7 @@ export async function runTui(cfg = {}, opts = {}) {
     return { ok: true, help: true };
   }
   const colour = !args.includes("--no-colour") && !args.includes("--no-color");
-  const base = opts.base || gatewayBase(cfg);
+  const base = opts.base || gatewayBaseUrl(cfg);
   const token = opts.token ?? cfg.gateway?.token ?? null;
 
   if (args.includes("--json")) {

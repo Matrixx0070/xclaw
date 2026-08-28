@@ -1,3 +1,76 @@
+## 3.323.0 (2026-08-28)
+
+### Fixed — the CLI acted as the queue's owner; the running gateway is
+
+`xclaw queue pause` called `pauseQueue()`, which flips a **module-level
+`worker` singleton**, printed that singleton, and exited 0. It ran inside the
+CLI's own 0.1s process. Nothing ever reached the gateway. Measured live against
+the running 3.322.0 gateway before any code was written:
+
+```
+gateway /metrics    xclaw_queue_paused 0
+$ xclaw queue pause  ->  {"paused": true, "blocked": true}   exit 0
+gateway /metrics    xclaw_queue_paused 0        <-- the stop did nothing
+```
+
+An operator stopping the queue was told it had stopped. It had not. This is the
+mutating twin of the 3.309.0 class (an out-of-process CLI grading a value it
+cannot observe) — here it *reports* a mutation it cannot perform.
+
+Two more of the same root, both measured against the real modules:
+
+* **A job added by any second process was never picked up.** The gateway arms
+  its worker at boot and re-arms it only `if (left)` after finishing one, so a
+  job appearing on disk while it is idle sits there. Measured: gateway idle, a
+  child process enqueues and exits, one second later still `queued`.
+* **`case "queue"` armed a queue worker for every subcommand**, read-only ones
+  included. Measured, that line does nothing at all — the dispatch timer is
+  `unref()`'d and every subcommand is one disk read from `break`, so the process
+  is gone first (3/3 `queue list` runs left the job `queued`, exit in 0.10s). It
+  is dead code that reads like a dispatcher, and on the day it won the race it
+  would start an agent run in a process about to exit, against the queue
+  directory the gateway owns. Deleted.
+
+The CLI is now a client of the owner. `pause`/`resume` go over HTTP and there
+is **no local fallback** — an undelivered stop exits non-zero and says why,
+because a stop that reads as delivered and is not is worse than a failure.
+`add` goes to `POST /queue`, which enqueues *and* kicks the owner's worker; with
+no gateway running it still queues to disk and says on stderr that nothing will
+start it yet.
+
+### Fixed — a harness job lost its grounding flags in transit
+
+Routing `xclaw goal` through the owner exposed the next defect: `POST /queue`
+forwarded `goal|verify|maxTurns|priority` and dropped everything else, while
+`enqueueJob` honours seven more fields. Measured live against the 3.322.0
+gateway — `xclaw goal "..." --harness --cmd "true"`, as the owner stored it:
+
+```
+harness: false          <-- asked for true
+groundHard              <-- absent
+claimsRequireEvidence   <-- absent
+requireStructuredClaims <-- absent
+```
+
+The job kept its `verify` steps and lost every flag that makes them enforced: a
+verified job silently downgraded to an unverified one that still reports
+success. The accepted request shape is now one exported function,
+`pickEnqueueRequest()`, used by the route — retry and admission-wait ceilings
+stay config-owned and are deliberately not accepted from a request.
+
+### Changed
+
+* One `gatewayBaseUrl()` builder in `src/cli/gateway-client.mjs`; `tui.mjs`'s
+  private copy folded into it. (Seven inline copies remain elsewhere.)
+* The decision moved out of the 2000-line `switch` into `runQueueControl()`, so
+  it can be tested at all.
+
+Live proof after the fix: `xclaw queue pause` moved `xclaw_queue_paused` 0 -> 1
+and `resume` returned it to 0; a job added by the CLI process went
+`t=1s queued -> t=2s running -> t=8s succeeded`.
+
+18 tests (18 new), 21 mutations across every shipping line, all RED.
+
 ## 3.322.0 (2026-08-28)
 
 ### Fixed — the budget halt that latched the queue worker forever

@@ -140,14 +140,11 @@ export async function tryHandleEvalQueueRoute({
   }
   if (p === "/queue" && method === "POST") {
     const body = await readBody(req).catch(() => ({}));
-    const { enqueueJob, startQueueWorker } = await import("../../jobs/queue.mjs");
+    const { enqueueJob, startQueueWorker, pickEnqueueRequest } = await import(
+      "../../jobs/queue.mjs"
+    );
     startQueueWorker(cfg);
-    const item = await enqueueJob(cfg, {
-      goal: body.goal || body.message,
-      verify: body.verify || [],
-      maxTurns: body.maxTurns,
-      priority: body.priority,
-    });
+    const item = await enqueueJob(cfg, pickEnqueueRequest(body));
     json(res, 202, item);
     return true;
   }

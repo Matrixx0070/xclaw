@@ -81,6 +81,35 @@ function maxWaitMsCfg(cfg) {
  * @param {object} cfg
  * @param {{ goal: string, verify?: object[], maxTurns?: number, priority?: number }} item
  */
+/**
+ * The fields an enqueue REQUEST may carry, in one place.
+ *
+ * The gateway owns the queue, so a job asked for by another process arrives as
+ * a request body. Every field enqueueJob() honours has to survive that trip:
+ * the route used to forward goal|verify|maxTurns|priority only, so a harness
+ * job posted over HTTP silently lost `harness`, `class` and all three grounding
+ * flags and ran as a plain batch job. Retry/wait ceilings are deliberately NOT
+ * accepted from a request — those stay config-owned.
+ *
+ * @param {object} body
+ * @returns {object} an item for enqueueJob
+ */
+export function pickEnqueueRequest(body = {}) {
+  return {
+    goal: body.goal || body.message,
+    verify: body.verify || [],
+    workspace: body.workspace,
+    maxTurns: body.maxTurns,
+    timeoutMs: body.timeoutMs,
+    harness: body.harness,
+    groundHard: body.groundHard,
+    claimsRequireEvidence: body.claimsRequireEvidence,
+    requireStructuredClaims: body.requireStructuredClaims,
+    priority: body.priority,
+    class: body.class,
+  };
+}
+
 export async function enqueueJob(cfg, item) {
   if (!item?.goal) throw new Error("goal required");
 

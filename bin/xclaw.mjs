@@ -2201,10 +2201,24 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     }
     case "queue": {
       const { loadConfig } = await import("../src/config/load.mjs");
-      const { enqueueJob, listQueue, getQueueItem, startQueueWorker } = await import("../src/jobs/queue.mjs");
+      const { enqueueJob, listQueue, getQueueItem } = await import("../src/jobs/queue.mjs");
+      const { runQueueControl } = await import("../src/cli/queue-cli.mjs");
       const cfg = await loadConfig();
-      startQueueWorker(cfg);
+      // No startQueueWorker here. The gateway owns the worker; this process
+      // exits in ~100ms and the dispatch timer is unref'd, so arming one here
+      // only ever looked like work. Anything that must change what the worker
+      // is doing goes through runQueueControl, i.e. over HTTP to the owner.
       const sub = args[1];
+      const control = async (name, payload) => {
+        const out = await runQueueControl(cfg, name, payload, { enqueueLocal: enqueueJob });
+        if (!out.ok) {
+          console.error(out.error);
+          process.exitCode = out.exitCode || 1;
+          return;
+        }
+        if (out.note) console.error(`[xclaw] ${out.note}`);
+        console.log(JSON.stringify(out.result, null, 2));
+      };
       if (sub === "list" || !sub) {
         console.log(JSON.stringify(await listQueue(cfg), null, 2));
         break;
@@ -2222,8 +2236,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       if (sub === "add") {
         const goal = args.slice(2).join(" ");
         if (!goal) { console.error("Usage: xclaw queue add <goal>"); process.exit(1); }
-        const item = await enqueueJob(cfg, { goal });
-        console.log(JSON.stringify(item, null, 2));
+        await control("add", { goal });
         break;
       }
       if (sub === "get") {
@@ -2248,14 +2261,8 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         console.log(JSON.stringify(await clearCompletedQueue(cfg), null, 2));
         break;
       }
-      if (sub === "pause") {
-        const { pauseQueue } = await import("../src/jobs/queue.mjs");
-        console.log(JSON.stringify(pauseQueue(), null, 2));
-        break;
-      }
-      if (sub === "resume") {
-        const { resumeQueue } = await import("../src/jobs/queue.mjs");
-        console.log(JSON.stringify(resumeQueue(cfg), null, 2));
+      if (sub === "pause" || sub === "resume") {
+        await control(sub, {});
         break;
       }
       if (sub === "batch") {
@@ -2658,9 +2665,12 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
     }
     case "goal": {
       const { loadConfig } = await import("../src/config/load.mjs");
-      const { enqueueJob, listQueue, startQueueWorker } = await import("../src/jobs/queue.mjs");
+      const { enqueueJob, listQueue } = await import("../src/jobs/queue.mjs");
+      const { runQueueControl } = await import("../src/cli/queue-cli.mjs");
       const cfg = await loadConfig();
-      startQueueWorker(cfg);
+      // No startQueueWorker here either — see `case "queue"`. The gateway owns
+      // the worker; a job added from this process goes to the owner so the
+      // owner kicks it.
       const sub = args[1];
       if (sub === "list") {
         console.log(JSON.stringify({ queue: await listQueue(cfg) }, null, 2));
@@ -2700,7 +2710,7 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         process.exit(1);
       }
       if (verify.length) harness = true;
-      const item = await enqueueJob(cfg, {
+      const out = await runQueueControl(cfg, "add", {
         goal,
         class: "batch",
         harness,
@@ -2709,7 +2719,14 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         groundHard: harness ? true : undefined,
         claimsRequireEvidence: harness ? true : undefined,
         requireStructuredClaims: harness ? true : undefined,
-      });
+      }, { enqueueLocal: enqueueJob });
+      if (!out.ok) {
+        console.error(out.error);
+        process.exitCode = out.exitCode || 1;
+        break;
+      }
+      if (out.note) console.error(`[xclaw] ${out.note}`);
+      const item = out.result || {};
       console.log(JSON.stringify({
         enqueued: true,
         id: item.id,
