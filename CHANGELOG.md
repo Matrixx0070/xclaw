@@ -1,3 +1,38 @@
+## 3.341.0
+
+### The readiness gate healed the wrong machine
+
+Four places in this codebase derive the computer's address. Three of them —
+`computerBaseUrl` in `src/computer/manager.mjs`, the agent client, and
+`capability-reach` — honour `computer.remoteUrl`. The fourth,
+`ensureComputer`, re-derived the address inline: it duplicated
+`computerProbeHost`'s wildcard normalisation byte for byte and dropped the
+remote branch.
+
+It is also the only one of the four that takes an action. On a host configured
+with `XCLAW_COMPUTER_URL` or `computer.remoteUrl`, the health probes went to
+the remote correctly (they go through `computerBaseUrl`), but when the remote
+was down `ensureComputer` spawned up to `attempts` local computer servers that
+no probe would ever look at, and then reported
+
+    Computer not healthy at http://127.0.0.1:4243
+
+naming an address it had never probed. The operator was sent to the wrong
+machine while stray processes accumulated on this one.
+
+`computer.remoteUrl` is this codebase's own "not our process" predicate —
+`reuseEnabled` in `src/agent/computer-client.mjs` already says so. The gate now
+derives its target with `computerBaseUrl` and, when a remote is configured,
+reports the remote's health without starting anything locally.
+
+### Giving up printed nothing
+
+The exhaustion path computed an error string and returned it. Every other
+branch logs; this one did not, even with `log: true`, and all four production
+call sites discard the return value — so the string had no reader. A run that
+started the computer successfully and a run that never got it up produced
+byte-identical output. The give-up reason is now logged where the attempts are.
+
 ## 3.340.0
 
 ### The computer plane refused the safe action and permitted the actuating one
