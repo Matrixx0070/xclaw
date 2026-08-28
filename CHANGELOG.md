@@ -1,3 +1,35 @@
+## 3.300.0 (2026-08-28)
+
+- Incidents that alert on entry now alert on EXIT. Three latched conditions
+  raised a page and never closed it: `channel-outage:<ch>`, the restart
+  circuit `channel-circuit-open:<ch>`, and every `slo:<breach>`. PagerDuty
+  dedups on `dedup_key`, so an incident left open by a blip days ago folds the
+  next genuine outage's trigger into itself and does NOT re-notify — an
+  incident that never closes is a fail-open on paging, not a stale row.
+- Closing one correctly needs two non-obvious bypasses, which is why it now
+  lives on the alerter as a primitive (`alerter.resolve()`) rather than being
+  hand-rolled per call site: the cooldown (30 min default) is longer than most
+  outages, so a cooldown-gated resolve would never be delivered at all; and
+  `minSeverity` (default `error`) swallows anything sent at `info`. Both call
+  sites that tried it by hand got it wrong — the SLO monitor's recovery branch
+  sent at `severity:"info"` under a *different* key (`slo:resolve:<b>`), so for
+  its whole life it opened a second incident, left the first open forever, and
+  its only observable effect was pushing a `skipped` entry onto its own return
+  value.
+- A resolve CLEARS the open marker instead of re-arming it. `markSent()` on a
+  resolve would have been the second bug in the fix: it would suppress the next
+  genuine trigger for a full cooldown. And a resolve for a key that was never
+  opened is skipped `not_open` — no "RESOLVED" page for a problem nobody heard
+  about.
+- The watchdog branches explicitly on `typeof alerter.resolve === "function"`
+  with a `send({ eventAction:"resolve" })` fallback. `a?.resolve?.(…)` would
+  have silently no-opped against any alerter predating the primitive — the
+  exact fail-open shape being fixed here.
+- Nine mutations, one per shipped enforcement line (cooldown bypass, marker
+  clear, `not_open` gate, severity bypass, PagerDuty `event_action`, both
+  watchdog resolve call sites, the `circuitAlerted` latch, the SLO key and
+  severity): all nine turn the suite RED, none survives.
+
 ## 3.299.0 (2026-08-28)
 
 - Quarantine now keeps the `-wal` and `-shm` it promised to keep. Spec §11.18

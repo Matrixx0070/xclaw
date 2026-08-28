@@ -35,20 +35,19 @@ export async function checkAndAlertSLOs(cfg) {
 
   for (const b of state.lastBreaches) {
     if (!current.has(b)) {
-      const r = await alerter.send({
-        key: `slo:resolve:${b}`,
-        severity: "info",
+      // Same key as the breach — PagerDuty dedups on it, so `slo:resolve:${b}`
+      // opened a SECOND incident and left the first one open forever. And at
+      // severity "info" it never delivered at all: minSeverity defaults to
+      // "error", so this branch's only observable effect was pushing a skipped
+      // entry onto `resolved`. resolve() bypasses that floor by design.
+      const r = await alerter.resolve({
+        key: `slo:${b}`,
+        severity: b.startsWith("computer_") ? "critical" : "error",
         title: `XClaw SLO recovered: ${b}`,
-        body: `Previously: ${b}`,
+        body: `Previously breaching: ${b}`,
         source: "slo-monitor",
       });
       resolved.push({ breach: b, result: r });
-      // clear open breach cooldown key so re-breach can fire later
-      try {
-        /* resolve via send info */
-      } catch {
-        /* */
-      }
     }
   }
 

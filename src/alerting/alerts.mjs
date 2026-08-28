@@ -119,13 +119,28 @@ export function createAlerter(cfg = {}) {
       saveState(statePath, state);
       return entry;
     }
-    if ((rank[severity] ?? 2) < (rank[minSeverity] ?? 2)) {
+    // A resolve closes the incident its trigger opened, so it must bypass BOTH
+    // the severity floor and the cooldown. Neither bypass is optional: an outage
+    // shorter than cooldownMs (30min by default — most of them) would be skipped
+    // "cooldown" and the PagerDuty incident would stay open forever, and PD
+    // dedups on dedup_key, so a stale open incident silently swallows the NEXT
+    // genuine outage's page. That is a fail-open on paging, not a stale row.
+    // The safe gate for the bypass is "did we actually open it": resolving a key
+    // with no recorded send would page RESOLVED for a problem nobody heard about.
+    const resolving = alert.eventAction === "resolve";
+    if (resolving && !(state.lastSent[key] || lastSent.get(key))) {
+      entry.skipped = "not_open";
+      state.history.push(entry);
+      saveState(statePath, state);
+      return entry;
+    }
+    if (!resolving && (rank[severity] ?? 2) < (rank[minSeverity] ?? 2)) {
       entry.skipped = "below_min_severity";
       state.history.push(entry);
       saveState(statePath, state);
       return entry;
     }
-    if (!shouldSend(key, severity)) {
+    if (!resolving && !shouldSend(key, severity)) {
       entry.skipped = "cooldown";
       state.history.push(entry);
       saveState(statePath, state);
@@ -133,7 +148,7 @@ export function createAlerter(cfg = {}) {
     }
 
     const text = [
-      `XClaw [${severity.toUpperCase()}] ${alert.title || "alert"}`,
+      `XClaw [${resolving ? "RESOLVED" : severity.toUpperCase()}] ${alert.title || "alert"}`,
       alert.body || "",
       alert.meta ? JSON.stringify(alert.meta) : "",
     ]
@@ -173,12 +188,33 @@ export function createAlerter(cfg = {}) {
     }
 
     entry.sent = entry.results.some((r) => r.ok);
-    // Cooldown after any delivery attempt to avoid spam on repeated failures
-    markSent(key);
+    if (resolving) {
+      // Clear the open marker instead of re-arming it. markSent() here would
+      // suppress the next GENUINE trigger for a full cooldown — recovering from
+      // an outage would blind us to the one that follows it.
+      delete state.lastSent[key];
+      lastSent.delete(key);
+    } else {
+      // Cooldown after any delivery attempt to avoid spam on repeated failures
+      markSent(key);
+    }
     state.history.push(entry);
     saveState(statePath, state);
-    console.log(`[xclaw:alert] ${entry.sent ? "sent" : "failed"} ${key}`);
+    console.log(
+      `[xclaw:alert] ${entry.sent ? "sent" : "failed"} ${resolving ? "resolve " : ""}${key}`
+    );
     return entry;
+  }
+
+  /**
+   * Close an incident this alerter opened. A primitive, not something each call
+   * site hand-rolls: closing correctly means knowing the cooldown and severity
+   * gates must be bypassed and that the open marker must be CLEARED rather than
+   * re-armed. No caller should have to know that — and the two that tried
+   * (channel watchdog, SLO monitor) both got it wrong.
+   */
+  async function resolve(alert = {}) {
+    return send({ ...alert, eventAction: "resolve" });
   }
 
   async function alertDoctorFailure(report) {
@@ -268,6 +304,7 @@ export function createAlerter(cfg = {}) {
 
   return {
     send,
+    resolve,
     alertDoctorFailure,
     alertLiveE2eFailure,
     alertEnforcementFailure,

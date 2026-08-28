@@ -80,9 +80,11 @@ describe("watchdog raises outage alerts (transition-only) + recovery event", () 
       alerter: { send: async (a) => alerts.push(a) },
       onEvent: (e) => events.push(e),
     });
+    const triggers = () => alerts.filter((a) => a.eventAction !== "resolve");
+    const resolves = () => alerts.filter((a) => a.eventAction === "resolve");
     await runWatchdogTickOnce();
     await runWatchdogTickOnce(); // second tick while STILL in outage
-    assert.equal(alerts.length, 1, "alert fires on the transition, not every tick");
+    assert.equal(triggers().length, 1, "alert fires on the transition, not every tick");
     assert.equal(alerts[0].key, "channel-outage:telegram");
     assert.equal(alerts[0].severity, "error");
     assert.equal(channelHealthStatus().channels.telegram.outageSince !== null, true);
@@ -96,6 +98,12 @@ describe("watchdog raises outage alerts (transition-only) + recovery event", () 
     await runWatchdogTickOnce();
     assert.equal(channelHealthStatus().channels.telegram.outageSince, null);
     assert.ok(events.some((e) => e.phase === "recovered" && e.channel === "telegram"));
+    // …and the incident is CLOSED. PagerDuty dedups on the key, so an incident
+    // left open by a blip swallows the next real outage's page: recovery has to
+    // deliver a resolve under the SAME key the trigger used, not just log.
+    assert.equal(resolves().length, 1, "recovery resolves the incident");
+    assert.equal(resolves()[0].key, "channel-outage:telegram", "same dedup key as the trigger");
+    assert.ok(events.some((e) => e.phase === "resolved" && e.key === "channel-outage:telegram"));
     // a NEW outage after recovery alerts again
     status = [{
       name: "telegram", enabled: true, running: true, loopAlive: true,
@@ -103,7 +111,44 @@ describe("watchdog raises outage alerts (transition-only) + recovery event", () 
       lastPollErrorAt: new Date().toISOString(), lastError: "fetch failed",
     }];
     await runWatchdogTickOnce();
-    assert.equal(alerts.length, 2);
+    assert.equal(triggers().length, 2);
+    stopChannelHealthWatchdog();
+  });
+});
+
+describe("watchdog closes the restart-circuit incident when the channel returns", () => {
+  it("resolves channel-circuit-open under the same key once the channel is alive", async () => {
+    const { runWatchdogTickOnce } = await import("../src/channels/health-watchdog.mjs");
+    const alerts = [];
+    let status = [{ name: "discord", enabled: true, running: false, loopAlive: false }];
+    const manager = {
+      status: () => status,
+      restart: async () => { throw new Error("boom"); },
+    };
+    // maxConsecutiveFails:1 + no restart backoff so the circuit opens in two
+    // ticks instead of eight minutes.
+    startChannelHealthWatchdog(
+      { channels: { healthWatchdog: { maxConsecutiveFails: 1, minRestartIntervalMs: 0 } } },
+      manager,
+      { intervalMs: 3_600_000, alerter: { send: async (a) => alerts.push(a) } }
+    );
+    await runWatchdogTickOnce(); // restart fails → consecutiveFail = 1
+    await runWatchdogTickOnce(); // circuit opens → alert
+    const opened = alerts.filter((a) => a.key === "channel-circuit-open:discord");
+    assert.equal(opened.length, 1, "giving up on restarts alerts");
+    assert.equal(opened[0].eventAction, undefined, "…as a trigger");
+
+    // channel comes back — the incident must CLOSE, or PagerDuty dedups the
+    // next circuit-open into this stale one and nobody is paged for it.
+    status = [{ name: "discord", enabled: true, running: true, loopAlive: true }];
+    await runWatchdogTickOnce();
+    const closed = alerts.filter(
+      (a) => a.key === "channel-circuit-open:discord" && a.eventAction === "resolve"
+    );
+    assert.equal(closed.length, 1, "recovery resolves the circuit incident");
+    // and only once — the latch is cleared, not re-fired every healthy tick
+    await runWatchdogTickOnce();
+    assert.equal(alerts.length, 2, "no repeat resolves while healthy");
     stopChannelHealthWatchdog();
   });
 });

@@ -80,6 +80,7 @@ function getState(name) {
       consecutiveFail: 0,
       lastRestartAt: null,
       outageSince: null,
+      circuitAlerted: false,
     });
   }
   return channelState.get(name);
@@ -104,6 +105,29 @@ async function raiseAlert(key, title, body, meta = {}) {
   }
   try {
     onEventRef?.({ type: "channel", phase: "alert", key, title, meta });
+  } catch {
+    /* */
+  }
+}
+
+/**
+ * Close the incident raiseAlert() opened, under the SAME key — PagerDuty dedups
+ * on it, so an incident left open from a blip days ago swallows the next real
+ * outage's page. Explicitly branch on `typeof a.resolve`: `a?.resolve?.(…)`
+ * would silently no-op against any alerter that predates the primitive, which
+ * is exactly the fail-open this fixes.
+ */
+async function resolveAlert(key, title, body, meta = {}) {
+  try {
+    const a = await getAlerter();
+    const alert = { key, severity: "error", title, body, meta };
+    if (typeof a?.resolve === "function") await a.resolve(alert);
+    else await a?.send?.({ ...alert, eventAction: "resolve" });
+  } catch (e) {
+    console.warn("[channels:watchdog] alert resolve failed:", e?.message || e);
+  }
+  try {
+    onEventRef?.({ type: "channel", phase: "resolved", key, title, meta });
   } catch {
     /* */
   }
@@ -181,16 +205,32 @@ async function tick() {
           { channel: name, consecutivePollFails: st.consecutivePollFails ?? null, lastPollOkAt: st.lastPollOkAt || null }
         );
       } else if (!inOutage && state.outageSince) {
-        console.log(`[channels:watchdog] ${name} recovered (outage since ${state.outageSince})`);
+        const outageSince = state.outageSince;
+        console.log(`[channels:watchdog] ${name} recovered (outage since ${outageSince})`);
         try {
-          onEventRef?.({ type: "channel", phase: "recovered", channel: name, outageSince: state.outageSince });
+          onEventRef?.({ type: "channel", phase: "recovered", channel: name, outageSince });
         } catch { /* */ }
         state.outageSince = null;
+        await resolveAlert(
+          `channel-outage:${name}`,
+          `xclaw channel recovered: ${name}`,
+          `${name} polls are succeeding again (outage since ${outageSince}).`,
+          { channel: name, outageSince }
+        );
       }
 
       if (!dead && alive) {
         state.consecutiveFail = 0;
         if (!state.lastOkAt) state.lastOkAt = new Date().toISOString();
+        if (state.circuitAlerted) {
+          state.circuitAlerted = false;
+          await resolveAlert(
+            `channel-circuit-open:${name}`,
+            `xclaw channel back: ${name}`,
+            `${name} is alive again; the watchdog's restart circuit is closed.`,
+            { channel: name, restarts: state.restarts }
+          );
+        }
         continue;
       }
 
@@ -215,6 +255,7 @@ async function tick() {
         lastError = state.lastError;
         console.warn(`[channels:watchdog] ${state.lastError}`);
         // giving up on restarts used to be SILENT — the operator must know
+        state.circuitAlerted = true;
         await raiseAlert(
           `channel-circuit-open:${name}`,
           `xclaw channel dead: ${name}`,
