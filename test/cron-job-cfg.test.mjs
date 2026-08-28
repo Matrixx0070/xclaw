@@ -22,6 +22,13 @@ describe("cron payload jobs carry real cfg (2026-08-27 incident)", () => {
     assert.doesNotMatch(gw, /startCron\(\);/);
   });
 
+  it("…and so does the CLI — the fix landed on one call site, not the class", () => {
+    // `xclaw cron` runs the same scheduler as a long-lived daemon: a bare
+    // start there re-hydrates every payload job with a null config too.
+    const cli = fs.readFileSync(new URL("../bin/xclaw.mjs", import.meta.url), "utf8");
+    assert.doesNotMatch(cli, /\bstartCron\(\);/);
+  });
+
   it("restorePersistedJobs stamps _cfg onto every re-hydrated job", () => {
     const cfg = { cost: { dailyHardUsd: 60 }, marker: "real-config" };
     const rec = {

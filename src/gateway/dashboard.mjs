@@ -58,7 +58,7 @@ export async function buildDashboard(cfg) {
   }
   let cron = null;
   try {
-    cron = evalCronStatus();
+    cron = evalCronStatus(cfg);
   } catch {
     /* */
   }

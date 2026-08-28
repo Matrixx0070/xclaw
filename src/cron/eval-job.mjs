@@ -3,7 +3,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { addJob, getJob, listJobs } from "./scheduler.mjs";
 import { ensureComputer } from "../computer/ensure.mjs";
@@ -11,11 +10,12 @@ import { runEvalSuite, formatEvalReport } from "../eval/runner.mjs";
 import { getSharedAlerter } from "../alerting/alerts.mjs";
 import { checkSpendThresholds } from "../eval/spend-alerts.mjs";
 import { buildStatusReport } from "../gateway/report.mjs";
+import { cronLogPath } from "./logs.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-function defaultLogPath() {
-  return path.join(os.homedir(), ".xclaw", "eval-cron.log");
+export function defaultLogPath(cfg) {
+  return cronLogPath(cfg, "eval-cron.log");
 }
 
 function appendLog(logPath, text) {
@@ -34,7 +34,7 @@ export async function runScheduledEval(opts = {}) {
   const {
     cfg,
     tag = null,
-    logPath = defaultLogPath(),
+    logPath = defaultLogPath(cfg),
     writeBaseline = process.env.XCLAW_UPDATE_BASELINE === "1",
     notifyOnFail = true,
   } = opts;
@@ -162,7 +162,11 @@ export function ensureEvalCronJob(opts = {}) {
   return job;
 }
 
-export function evalCronStatus() {
+/**
+ * `cfg` is optional: with none, `defaultLogPath` falls back to the home dir,
+ * which is what a CLI status call before any config must still report.
+ */
+export function evalCronStatus(cfg) {
   const job = listJobs().find((j) => j.name === "eval-suite");
   return {
     registered: Boolean(job),
@@ -175,6 +179,6 @@ export function evalCronStatus() {
           enabled: job.enabled,
         }
       : null,
-    logPath: defaultLogPath(),
+    logPath: defaultLogPath(cfg),
   };
 }

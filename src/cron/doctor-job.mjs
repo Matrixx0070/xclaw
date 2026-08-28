@@ -3,14 +3,21 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { buildDoctorReport, formatDoctorReport } from "../gateway/doctor.mjs";
 import { addJob, getJob, listJobs, cancelJob } from "./scheduler.mjs";
 import { deliverToChannel } from "./channel-deliver.mjs";
 import { getSharedAlerter } from "../alerting/alerts.mjs";
+import { doctorLogPath } from "./logs.mjs";
 
-function defaultLogPath() {
-  return path.join(os.homedir(), ".xclaw", "doctor-cron.log");
+/**
+ * The writer used to hard-code `~/.xclaw/doctor-cron.log` while the reader
+ * (`monitorCronLogs` → `doctorLogPath`) honoured `doctor.cron.logPath` and the
+ * config dir. `xclaw doctor-cron` passes no explicit logPath, so an operator
+ * who configured one had their doctor runs written to a file `xclaw cron
+ * monitor` never tailed. Same resolver on both sides now.
+ */
+function defaultLogPath(cfg) {
+  return doctorLogPath(cfg || {});
 }
 
 function appendLog(logPath, text) {
@@ -30,7 +37,7 @@ export async function runDoctorCheck(opts = {}) {
     cfg,
     channelManager,
     isComputerRunning,
-    logPath = defaultLogPath(),
+    logPath = defaultLogPath(cfg),
     notifyOnFail = true,
     notifyOnOk = false,
     delivery = null, // { channel, to } for alert
@@ -158,7 +165,7 @@ export function ensureDoctorCronJob(opts = {}) {
         cfg: opts.cfg,
         channelManager: opts.channelManager,
         isComputerRunning: opts.isComputerRunning,
-        logPath: opts.logPath || defaultLogPath(),
+        logPath: opts.logPath || defaultLogPath(opts.cfg),
         notifyOnFail: opts.notifyOnFail !== false,
         notifyOnOk: opts.notifyOnOk === true,
         delivery: opts.delivery || null,

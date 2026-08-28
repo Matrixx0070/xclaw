@@ -5,17 +5,35 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
+/**
+ * `loadConfig()` stamps `paths.configDir` on every real config, and the rest
+ * of the cron stores resolve through it (see `cronLedgerFile`). These two did
+ * not: they went straight to the home dir, so a test that carefully scoped
+ * itself to a temp `configDir` still appended its fixture events to the
+ * OPERATOR'S live log. Honouring it is behaviour-identical in production,
+ * where configDir IS ~/.xclaw.
+ */
+function cronStoreRoot(cfg) {
+  return cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
+}
+
 export function doctorLogPath(cfg = {}) {
   return (
-    cfg.doctor?.cron?.logPath ||
-    path.join(os.homedir(), ".xclaw", "doctor-cron.log")
+    cfg.doctor?.cron?.logPath || path.join(cronStoreRoot(cfg), "doctor-cron.log")
   );
 }
 
 export function cronEventsLogPath(cfg = {}) {
-  return (
-    cfg.cron?.logPath || path.join(os.homedir(), ".xclaw", "cron-events.log")
-  );
+  return cfg.cron?.logPath || path.join(cronStoreRoot(cfg), "cron-events.log");
+}
+
+/**
+ * The other cron log writers (doctor / eval / live-e2e) each had their own
+ * private `defaultLogPath()` hard-coded to the home dir. One resolver, so the
+ * config dir is honoured in one place instead of four.
+ */
+export function cronLogPath(cfg, filename) {
+  return path.join(cronStoreRoot(cfg), filename);
 }
 
 /**
@@ -81,6 +99,14 @@ export function parseDoctorLogRuns(text) {
 }
 
 export function appendCronEvent(cfg, event) {
+  // `scheduler.mjs` writes through `job._cfg || {}`, so a job that lost its
+  // config would otherwise log into whatever `os.homedir()` happens to be —
+  // in a test process, the operator's production log. A bare cfg is never a
+  // real caller (config/load.mjs always sets paths), so it writes nowhere.
+  // Same guard as src/providers/model-stats.mjs.
+  if (!cfg?.cron?.logPath && !cfg?.paths?.configDir) {
+    return { skipped: "no_config", path: null };
+  }
   const p = cronEventsLogPath(cfg);
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -89,8 +115,10 @@ export function appendCronEvent(cfg, event) {
       ...event,
     });
     fs.appendFileSync(p, line + "\n");
+    return { skipped: null, path: p };
   } catch (err) {
     console.error("[xclaw:cron-log]", err.message);
+    return { skipped: "error", path: p, error: err.message };
   }
 }
 

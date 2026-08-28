@@ -6,18 +6,18 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { addJob, listJobs, cancelJob } from "./scheduler.mjs";
 import { deliverToChannel } from "./channel-deliver.mjs";
 import { getSharedAlerter } from "../alerting/alerts.mjs";
+import { cronLogPath } from "./logs.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "../..");
 
-function defaultLogPath() {
-  return path.join(os.homedir(), ".xclaw", "live-e2e-cron.log");
+function defaultLogPath(cfg) {
+  return cronLogPath(cfg, "live-e2e-cron.log");
 }
 
 function appendLog(logPath, text) {
@@ -65,7 +65,7 @@ function runLiveE2e(root, extraArgs = []) {
  */
 export async function runLiveE2eCheck(opts = {}) {
   const root = opts.root || process.env.XCLAW_ROOT || PACKAGE_ROOT;
-  const logPath = opts.logPath || defaultLogPath();
+  const logPath = opts.logPath || defaultLogPath(opts.cfg);
   const cfg = opts.cfg || {};
   const stamp = new Date().toISOString();
 
@@ -163,7 +163,7 @@ export function ensureLiveE2eCronJob(opts = {}) {
       await runLiveE2eCheck({
         cfg: opts.cfg,
         root: opts.root || process.env.XCLAW_ROOT || PACKAGE_ROOT,
-        logPath: opts.logPath || defaultLogPath(),
+        logPath: opts.logPath || defaultLogPath(opts.cfg),
         notifyOnFail: opts.notifyOnFail !== false,
         delivery: opts.delivery || null,
         strict: opts.strict === true,

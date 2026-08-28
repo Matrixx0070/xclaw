@@ -202,7 +202,11 @@ async function main() {
       const { start: startCron, stop: stopCron, listJobs } = await import("../src/cron/scheduler.mjs");
       const cfg = await loadConfig();
       const everyMs = Number(args[1]) || cfg.doctor?.cron?.everyMs || 3600000;
-      startCron();
+      // With no cfg, every payload job restored from the ledger runs with a
+      // null config — default model, the $15 no-config governor fallback, and
+      // (since it has no paths.configDir) no cron event log. Same defect the
+      // gateway carried until 2026-08-27; this call site was missed.
+      startCron(cfg);
       installCronShutdown(stopCron);
       const job = ensureDoctorCronJob({
         cfg,
@@ -236,7 +240,7 @@ async function main() {
       const root = process.env.XCLAW_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
       const cfg = await loadConfig({ strict: false });
       const everyMs = Number(args[1]) || cfg.liveE2e?.cron?.everyMs || 86_400_000;
-      startCron();
+      startCron(cfg);
       installCronShutdown(stopCron);
       const job = ensureLiveE2eCronJob({
         cfg,
@@ -2272,11 +2276,11 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
       const { ensureEvalCronJob, evalCronStatus, runScheduledEval } = await import("../src/cron/eval-job.mjs");
       const { start: startCron, stop: stopCron } = await import("../src/cron/scheduler.mjs");
       const cfg = await loadConfig();
-      startCron();
+      startCron(cfg);
       installCronShutdown(stopCron);
       const sub = args[1] || "status";
       if (sub === "status") {
-        console.log(JSON.stringify(evalCronStatus(), null, 2));
+        console.log(JSON.stringify(evalCronStatus(cfg), null, 2));
         break;
       }
       if (sub === "register") {

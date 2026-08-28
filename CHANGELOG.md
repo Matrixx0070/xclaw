@@ -1,3 +1,52 @@
+## 3.301.0 (2026-08-28)
+
+- The test suite was writing into the operator's live `~/.xclaw`. `loadConfig()`
+  stamps `paths.configDir` on every real config and ~20 stores resolve through
+  it — which is exactly what lets a test redirect its whole world into a temp
+  dir. `src/cron/logs.mjs` never read it: both `cronEventsLogPath` and
+  `doctorLogPath` went straight to `os.homedir()/.xclaw`. So
+  `test/cron-anchor-restart.test.mjs`, which DOES scope itself correctly, still
+  appended its fixture events — `"error":"suite exploded"` among them — into the
+  production `cron-events.log`, ~1031 lines of them. The test was right; the
+  module ignored it. Both resolvers now go through the same `cronStoreRoot(cfg)`
+  helper as `cronLedgerFile`, which is behaviour-identical in production where
+  `configDir` IS `~/.xclaw`.
+- The doctor / eval / live-e2e cron writers each carried their own private
+  `defaultLogPath()` hard-coded to the home dir; all three now resolve through
+  one `cronLogPath(cfg, file)`. The doctor one was more than a scoping hazard:
+  its READER (`monitorCronLogs` → `doctorLogPath`) honoured
+  `doctor.cron.logPath` while its writer ignored it, and `xclaw doctor-cron`
+  passes no explicit path — so an operator who configured a doctor log had runs
+  written to one file and tailed from another. Reader and writer share a
+  resolver now, and three unused `node:os` imports go with the duplication.
+- `legacyCronJsonFile` had the same hard-coding while its sibling three lines up
+  honoured `configDir`, so a scoped caller would have absorbed the OPERATOR'S
+  legacy job file — and renamed it to `.bak` — instead of its own.
+- `appendCronEvent` refuses to write when handed a bare cfg. `scheduler.mjs`
+  logs through `job._cfg || {}`, so a job that lost its config previously fell
+  through to whatever `os.homedir()` happened to be. A bare `{}` is by
+  construction never a real caller, so it now writes nowhere and says so
+  (`{skipped:"no_config"}`) rather than guessing. It also returns the path it
+  wrote and surfaces append failures instead of only logging them — a failed
+  append is now visible to its caller. Same guard as
+  `src/providers/model-stats.mjs`.
+- `evalCronStatus()` reports the log path its writer would actually use: it
+  takes a cfg now, and all five callers (dashboard, `GET /cron/eval`, ops
+  status, doctor, `xclaw eval-schedule status`) pass the one they already hold.
+  It previously named the home-dir default no matter how the config was scoped.
+  Worth recording how close this went the other way: threading cfg through
+  briefly left `defaultLogPath(opts.cfg)` inside a function with no `opts`, and
+  the full suite stayed green — nothing exercises this function, and three of
+  its five callers swallow the throw in a bare `catch {}`, so only the HTTP
+  route would have shown it, as a 500. It now has a direct test.
+- The v3.270.0 fix landed on one call site, not the class: the gateway got
+  `startCron(cfg)` but `bin/xclaw.mjs` still had three bare `startCron()` calls
+  (`cron`, `live-e2e-schedule`, `eval-schedule`). Every payload job those
+  re-hydrated ran with a null config — default model and the $15 no-config
+  governor fallback, the same shape as the incident that paused the live
+  governor against a $60 operator cap. All three now pass the loaded config, and
+  a test pins the absence of a bare call in both the gateway and the CLI.
+
 ## 3.300.0 (2026-08-28)
 
 - Incidents that alert on entry now alert on EXIT. Three latched conditions

@@ -164,7 +164,7 @@ export async function tryHandleEvalQueueRoute({
   }
   if (p === "/cron/eval" && method === "GET") {
     const { evalCronStatus } = await import("../../cron/eval-job.mjs");
-    json(res, 200, evalCronStatus());
+    json(res, 200, evalCronStatus(cfg));
     return true;
   }
   if (p === "/cron/eval/run" && method === "POST") {

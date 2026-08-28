@@ -22,20 +22,26 @@ CREATE TABLE IF NOT EXISTS payload_jobs (
 CREATE INDEX IF NOT EXISTS payload_jobs_name ON payload_jobs(name);
 `;
 
+function cronStoreRoot(cfg) {
+  return cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
+}
+
 export function cronLedgerFile(cfg) {
-  const root = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
   return (
     cfg?.paths?.cronLedgerFile ||
     process.env.XCLAW_CRON_LEDGER_FILE ||
-    path.join(root, "cron", "jobs.sqlite")
+    path.join(cronStoreRoot(cfg), "cron", "jobs.sqlite")
   );
 }
 
 export function legacyCronJsonFile(cfg) {
+  // Was hard-coded to the home dir while its sibling three lines up honoured
+  // configDir: a scoped caller absorbed the OPERATOR'S legacy job file (and
+  // renamed it to .bak) instead of its own.
   return (
     cfg?.paths?.cronJobsFile ||
     process.env.XCLAW_CRON_JOBS_FILE ||
-    path.join(os.homedir(), ".xclaw", "cron-jobs.json")
+    path.join(cronStoreRoot(cfg), "cron-jobs.json")
   );
 }
 

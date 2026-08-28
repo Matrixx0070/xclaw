@@ -191,7 +191,7 @@ export async function tryHandleOpsRoute({
         }
         try {
           const { evalCronStatus } = await import("../../cron/eval-job.mjs");
-          ops.evalCronRegistered = Boolean(evalCronStatus()?.registered);
+          ops.evalCronRegistered = Boolean(evalCronStatus(cfg)?.registered);
         } catch {
           ops.evalCronRegistered = null;
         }

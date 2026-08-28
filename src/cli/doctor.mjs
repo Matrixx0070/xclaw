@@ -699,7 +699,7 @@ export async function runDoctor(opts = {}) {
   }
   try {
     const { evalCronStatus } = await import("../cron/eval-job.mjs");
-    const st = evalCronStatus();
+    const st = evalCronStatus(cfg);
     const registered = st.registered || liveOps?.evalCronRegistered === true;
     push(
       "eval.cron",
