@@ -1,3 +1,38 @@
+## 3.294.0 (2026-08-28)
+
+- `security.safeAuto` no longer outranks the critical risk tier. safeAuto is a
+  list of tool NAMES; risk is assessed per CALL, and those are not the same
+  question. `file_read` is a read-safe family — which is why it ships in the
+  default list and in the prod overlay — but `file_read ~/.xclaw/credentials.json`
+  is the most direct exfiltration path there is, and `assessRisk` already tiers
+  it critical for exactly that reason ("touches credential/secret material").
+  The name matched first, so the verdict was thrown away: the read auto-ran, no
+  human saw it, and because the decision journal only records the bypass path,
+  nothing recorded that it had happened.
+- The asymmetry was the tell. Every other permissive path in `needsApproval`
+  deliberately stops short of critical — `bypassApprovals` (Trust Sprint),
+  blanket `autoApprove` (A2) and `autoApproveMaxTier: "critical"` (M5) each
+  escalate, each with a comment saying so. safeAuto was the one path that did
+  not, in both of its occurrences: the risk-tier branch and the legacy
+  `approvalPolicy` branch below it. The prod and supervised overlays ship a
+  safeAuto list and no `autoApproveMaxTier`, so the live config went through
+  the second one. `approvalPolicy: "never"` had the same gap, reachable only
+  from a hand-written config — every shipped profile pairs it with
+  `autoApprove`, which escalates.
+- The fix is one hoisted check rather than three patched branches, so the
+  guarantee now holds regardless of which path below would have allowed the
+  call. `criticalOverride: "legacy"` still restores the old behaviour for all
+  of them, as it does for every other path.
+- Sweep #41 pinned the CONTENTS of the prod safeAuto list and even documented
+  the mechanism as "an unconditional auto-approve short-circuit" — but which
+  names are listed says nothing about what a listed name does at critical tier,
+  so the control flow itself was never asserted. `test/safeauto-critical.test.mjs`
+  (16 tests) pins the mechanism in both config shapes, mutation-verified in
+  both directions, and keeps the escape hatch, the degraded `risk === null`
+  path and ordinary safeAuto reads pinned alongside it. `docs/APPROVALS.md`
+  carried a five-step decision order that had been stale for several releases;
+  it now matches the code.
+
 ## 3.293.0 (2026-08-28)
 
 - The Telegram writer lock now reads the `host` it has always written. The lock

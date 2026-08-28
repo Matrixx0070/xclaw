@@ -2,11 +2,25 @@
 
 ## Decision order (`needsApproval`)
 
-1. `security.autoApprove === true` → **never ask**
-2. `security.approvalPolicy === "never"` → **never ask**
-3. Tool in `security.safeAuto` → **never ask** (reads, list_dir, …)
-4. `approvalPolicy === "always"` → **always ask**
-5. `approvalPolicy === "risky"` (default) → ask only if tool ∈ `requireApproval`
+1. `security.bypassApprovals === true` → **never ask, except critical**
+2. `security.autoApprove === true` → **never ask, except critical**
+3. **Critical always asks** — no setting below this line overrides it
+4. `security.autoApproveMaxTier` (or an active `/trust` window) → ask only when
+   the call's tier exceeds the ceiling; tools in `security.safeAuto` never ask
+5. `security.approvalPolicy === "never"` → **never ask**
+6. Tool in `security.safeAuto` → **never ask** (reads, list_dir, …)
+7. `approvalPolicy === "always"` → **always ask**
+8. MCP tools (`mcp__*`) → ask unless `security.mcpAutoApprove === true`
+9. `approvalPolicy === "risky"` (default) → ask only if tool ∈ `requireApproval`
+
+`security.criticalOverride` governs step 3: `"ask"` (default) escalates,
+`"deny"` refuses outright, `"legacy"` restores pre-3.155 behaviour and lets
+steps 1, 2, 4, 5 and 6 auto-approve a critical call.
+
+Why step 3 sits above `safeAuto`: `safeAuto` lists tool **names**, but risk is
+assessed per **call**. `file_read` is a read-safe family; `file_read` of
+`~/.xclaw/credentials.json` is an exfiltration, and `assessRisk` tiers it
+critical. Until 3.294.0 the name matched first and the verdict was discarded.
 
 Default `requireApproval`: `xclaw_bash`, `bash`, `xclaw_file_write`
 

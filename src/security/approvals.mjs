@@ -278,12 +278,25 @@ export function createApprovalGate(cfg = {}) {
       trust && (!autoApproveMaxTier || tierRank(trust.maxTier) > tierRank(autoApproveMaxTier))
         ? trust.maxTier
         : autoApproveMaxTier;
+    // Critical outranks every remaining permissive path, the way it already
+    // outranks bypassApprovals and blanket autoApprove above.
+    //
+    // M5 established this for a max tier of "critical". The same rule was
+    // missing for `safeAuto`, which is a list of tool NAMES while risk is
+    // assessed per CALL — not the same question. `file_read` is a read-safe
+    // family, and `file_read ~/.xclaw/credentials.json` is an exfiltration:
+    // assessRisk tiers it critical for that reason, and a name-keyed
+    // short-circuit sitting ahead of this check discarded the verdict, in the
+    // tier branch and the legacy branch both. `approvalPolicy: "never"` had
+    // the same gap (reachable only hand-configured — every shipped profile
+    // pairs it with autoApprove, which escalates).
+    //
+    // Hoisting it here is what makes the guarantee hold no matter which path
+    // below would have allowed the call. criticalOverride:"legacy" restores
+    // pre-3.155 behaviour for all of them, unchanged.
+    if (critical && criticalOverride !== "legacy") return true;
     if (effectiveMaxTier && risk) {
       if (safeAuto.has(n)) return false;
-      // M5: critical actions still honor criticalOverride even when the
-      // configured max tier is "critical" — a max of "critical" must not be a
-      // silent blanket auto-approve for the most dangerous class.
-      if (critical && criticalOverride !== "legacy") return true;
       return tierRank(risk.tier) > tierRank(effectiveMaxTier);
     }
     if (policy === "never") return false;
