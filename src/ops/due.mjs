@@ -27,14 +27,26 @@ export function dueStatePath(cfg = {}) {
   return path.join(base, "ops-schedule.json");
 }
 
-function parseDueState(text) {
-  const raw = JSON.parse(text);
+function parseMap(raw) {
   const out = {};
-  for (const [k, v] of Object.entries(raw?.lastRun || {})) {
+  for (const [k, v] of Object.entries(raw || {})) {
     const n = Number(v);
     if (Number.isFinite(n) && n > 0) out[k] = n;
   }
   return out;
+}
+
+function parseDueState(text) {
+  return parseMap(JSON.parse(text)?.lastRun);
+}
+
+/**
+ * The two epochs a schedule can count from, read together because they share
+ * one file: when a job last ran, and when its clock was first started.
+ */
+function parseAnchors(text) {
+  const raw = JSON.parse(text);
+  return { lastRun: parseMap(raw?.lastRun), armed: parseMap(raw?.armed) };
 }
 
 /** @returns {Promise<Record<string, number>>} name → last run epoch ms */
@@ -61,6 +73,61 @@ export function readDueStateSync(cfg = {}) {
 }
 
 /**
+ * One stamp file, so every writer shares one chain: two writers read-modify-
+ * writing concurrently would drop a stamp, and a job whose stamp keeps getting
+ * dropped re-runs at every boot — the hot loop this design exists to prevent.
+ */
+let writeChain = Promise.resolve();
+
+async function readAnchors(cfg = {}) {
+  try {
+    return parseAnchors(await fsp.readFile(dueStatePath(cfg), "utf8"));
+  } catch {
+    return { lastRun: {}, armed: {} };
+  }
+}
+
+/** Sync twin of readAnchors, for the scheduler's synchronous addJob. */
+export function readAnchorsSync(cfg = {}) {
+  try {
+    return parseAnchors(fs.readFileSync(dueStatePath(cfg), "utf8"));
+  } catch {
+    return { lastRun: {}, armed: {} };
+  }
+}
+
+/**
+ * Record that a job's clock has STARTED, so an interval longer than the host's
+ * uptime can still elapse.
+ *
+ * Anchoring to the last run resumes a schedule but cannot begin one: with no
+ * stamp the first run stays a full interval out, and a host that restarts more
+ * often than the interval recomputes that same distant first run forever. Two
+ * of the three live maintenance crons sat in exactly that state after 3.285.0
+ * — the hourly doctor and the daily eval suite, against a 24-minute median
+ * uptime — because neither had ever produced a run stamp to anchor to.
+ *
+ * Kept separate from `lastRun` rather than seeding it, because seeding would
+ * make `doctor` report a run that never happened. First arm wins: re-arming at
+ * each boot would reset the clock and restore the bug this exists to fix, so
+ * the check and the write share one serialized turn.
+ */
+export function markArmed(cfg = {}, name, now = Date.now()) {
+  const run = writeChain.then(async () => {
+    const { lastRun, armed } = await readAnchors(cfg);
+    if (Number.isFinite(armed[name])) return false; // already counting; leave it
+    armed[name] = now;
+    await durableAtomicWriteJson(dueStatePath(cfg), { lastRun, armed }, { mode: 0o600 });
+    return true;
+  });
+  writeChain = run.then(
+    () => {},
+    () => {}
+  );
+  return run.catch(() => false);
+}
+
+/**
  * Due when never run, when the stamp is in the future (clock moved back), or
  * when at least intervalMs has elapsed.
  */
@@ -80,12 +147,13 @@ export async function isDue(cfg = {}, name, intervalMs, now = Date.now()) {
  * prevent. Interleaving became reachable the moment a second job adopted the
  * primitive.
  */
-let writeChain = Promise.resolve();
 export function markRan(cfg = {}, name, now = Date.now()) {
   const run = writeChain.then(async () => {
-    const state = await readDueState(cfg);
-    state[name] = now;
-    await durableAtomicWriteJson(dueStatePath(cfg), { lastRun: state }, { mode: 0o600 });
+    const { lastRun, armed } = await readAnchors(cfg);
+    lastRun[name] = now;
+    // Rewrites the whole file, so it must carry `armed` forward: dropping it
+    // would re-arm every job at the next boot and reset the clocks.
+    await durableAtomicWriteJson(dueStatePath(cfg), { lastRun, armed }, { mode: 0o600 });
     return true;
   });
   writeChain = run.then(
@@ -136,8 +204,10 @@ export default {
   dueStatePath,
   readDueState,
   readDueStateSync,
+  readAnchorsSync,
   isDue,
   markRan,
+  markArmed,
   dueJobStatus,
   startPeriodic,
 };

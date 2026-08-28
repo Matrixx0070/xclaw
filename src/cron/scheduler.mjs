@@ -24,7 +24,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { computeNextRun } from "./schedule.mjs";
-import { readDueStateSync, markRan } from "../ops/due.mjs";
+import { readAnchorsSync, markArmed, markRan } from "../ops/due.mjs";
 import {
   openCronLedger,
   absorbLegacyCronJson,
@@ -71,8 +71,10 @@ const ANCHOR_BOOT_GRACE_MS = 60_000;
  * overdue job runs shortly after boot, an up-to-date one waits out the
  * remainder of its interval rather than restarting it.
  *
- * A never-run anchored job keeps the relative first run on purpose — a fresh
- * install must not launch an hour-long suite while it is still booting.
+ * A never-run anchored job still waits a full interval before its first run —
+ * a fresh install must not launch an hour-long suite while it is booting — but
+ * that interval is measured from a durable arm stamp, so it keeps counting
+ * across restarts instead of resetting at each one.
  */
 function anchorOf(job) {
   // Anchoring needs a config: without one there is no durable home to trust,
@@ -84,9 +86,20 @@ function anchorOf(job) {
 function nextRunFor(job, now = Date.now()) {
   const anchor = anchorOf(job);
   if (!anchor || job.schedule?.kind !== "every") return computeNextRun(job.schedule, now);
-  const last = readDueStateSync(job._cfg)[anchor];
-  if (!Number.isFinite(last) || last > now) return computeNextRun(job.schedule, now);
-  return Math.max(last + Number(job.schedule.everyMs || 0), now + ANCHOR_BOOT_GRACE_MS);
+
+  // A run stamp is the better epoch; the arm stamp is what lets a job that has
+  // never run get there at all. Both are ignored if they sit in the future,
+  // which means the clock moved back — fall through to the relative schedule
+  // rather than parking the job until the stamp catches up.
+  const { lastRun, armed } = readAnchorsSync(job._cfg);
+  const epoch = [lastRun[anchor], armed[anchor]].find((t) => Number.isFinite(t) && t <= now);
+  if (!Number.isFinite(epoch)) {
+    // First sight of this job: start its clock durably, so the next boot
+    // measures from here instead of recomputing the same distant first run.
+    markArmed(job._cfg, anchor, now);
+    return computeNextRun(job.schedule, now);
+  }
+  return Math.max(epoch + Number(job.schedule.everyMs || 0), now + ANCHOR_BOOT_GRACE_MS);
 }
 
 function serializeJob(job) {

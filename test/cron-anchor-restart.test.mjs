@@ -18,8 +18,10 @@ import os from "node:os";
 import path from "node:path";
 import {
   markRan,
+  markArmed,
   readDueState,
   readDueStateSync,
+  readAnchorsSync,
   dueStatePath,
   dueJobStatus,
   startPeriodic,
@@ -114,11 +116,12 @@ describe("interval cron jobs survive restarts", () => {
     }
   });
 
-  it("a never-run anchored job keeps the relative first run", async () => {
+  it("a never-run anchored job waits a full interval, but arms durably", async () => {
     const f = fixture();
     try {
       // A fresh install must not launch an hour-long suite while it is still
-      // booting, so absent a stamp the anchor changes nothing.
+      // booting, so the first run stays an interval out — but the clock it
+      // counts on is written down rather than held in process memory.
       const t0 = Date.now();
       const job = register({
         schedule: { kind: "every", everyMs: DAY },
@@ -126,7 +129,109 @@ describe("interval cron jobs survive restarts", () => {
         anchorKey: KEY,
       });
       assert.ok(job.nextRunAt - t0 > 23 * HOUR, "first run stays a full interval out");
-      assert.equal(fs.existsSync(dueStatePath(f.cfg)), false, "registering writes no stamp");
+      await waitFor(() => Number.isFinite(readAnchorsSync(f.cfg).armed[KEY]));
+      assert.equal(readAnchorsSync(f.cfg).lastRun[KEY], undefined, "armed is not a run");
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it("THE SECOND REGRESSION: a job whose interval exceeds uptime still converges", async () => {
+    const f = fixture();
+    try {
+      // Anchoring to the last run resumes a schedule but cannot begin one:
+      // with no stamp at all, every boot recomputes the same distant first run
+      // and a host that restarts more often than the interval never reaches
+      // it. Measured live at 3.285.0: of the three anchored maintenance crons
+      // only the 5-minute digest had ever stamped — the hourly doctor and the
+      // daily eval suite had not, against a 24-minute median uptime.
+      const t0 = Date.now();
+      const first = register({ schedule: { kind: "every", everyMs: DAY }, cfg: f.cfg, anchorKey: KEY });
+      await waitFor(() => Number.isFinite(readAnchorsSync(f.cfg).armed[KEY]));
+      const armedAt = readAnchorsSync(f.cfg).armed[KEY];
+
+      // Ten restarts. Without a durable arm each one pushes the first run a
+      // further full day out; with one they all agree on the same target.
+      let job = first;
+      for (let i = 0; i < 10; i++) {
+        cancelJob(added.pop());
+        job = register({ schedule: { kind: "every", everyMs: DAY }, cfg: f.cfg, anchorKey: KEY });
+      }
+      // The scheduler arms fire-and-forget, so settle the shared write chain
+      // before reading — otherwise a re-arm that IS happening has simply not
+      // landed yet and the assertion passes for the wrong reason.
+      await markArmed(f.cfg, "drain.probe", Date.now());
+      assert.equal(readAnchorsSync(f.cfg).armed[KEY], armedAt, "first arm wins; boots do not re-arm");
+      const drift = job.nextRunAt - (armedAt + DAY);
+      assert.ok(
+        Math.abs(drift) < 60_000,
+        `after 10 restarts the first run must still be ~1 interval from the ARM, got ${drift}ms off`
+      );
+      assert.ok(job.nextRunAt - t0 <= DAY, "the target never moves further away with each boot");
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it("arming twice keeps the first arm, so a boot cannot restart the clock", async () => {
+    const f = fixture();
+    try {
+      // The scheduler only calls markArmed when no epoch exists, so this
+      // invariant lives at the primitive: two registrations racing before the
+      // first write lands both reach here, and a later arm overwriting an
+      // earlier one is precisely the reset-at-every-boot bug.
+      const t0 = 1_700_000_000_000;
+      assert.equal(await markArmed(f.cfg, KEY, t0), true, "first arm is written");
+      assert.equal(await markArmed(f.cfg, KEY, t0 + HOUR), false, "second arm is refused");
+      assert.equal(readAnchorsSync(f.cfg).armed[KEY], t0, "the clock still counts from the first");
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it("a run stamp outranks the arm stamp once the job has actually run", async () => {
+    const f = fixture();
+    try {
+      const t0 = Date.now();
+      await markArmed(f.cfg, KEY, t0 - 10 * DAY); // armed long ago
+      await markRan(f.cfg, KEY, t0 - 23 * HOUR); // but ran an hour ago-ish
+      const job = register({ schedule: { kind: "every", everyMs: DAY }, cfg: f.cfg, anchorKey: KEY });
+      const drift = job.nextRunAt - (t0 + HOUR);
+      assert.ok(Math.abs(drift) < 60_000, `must count from the run, not the arm; ${drift}ms off`);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it("the two stamps survive each other's writes", async () => {
+    const f = fixture();
+    try {
+      // Each writer rewrites the whole file. Dropping `armed` here would
+      // silently re-arm every job at the next boot and reset the clocks.
+      const t0 = 1_700_000_000_000;
+      await markArmed(f.cfg, KEY, t0);
+      await markRan(f.cfg, KEY, t0 + 5);
+      assert.equal(readAnchorsSync(f.cfg).armed[KEY], t0, "markRan preserved the arm");
+
+      await markArmed(f.cfg, "cron.doctor", t0 + 9);
+      const after = readAnchorsSync(f.cfg);
+      assert.equal(after.lastRun[KEY], t0 + 5, "markArmed preserved the run");
+      assert.equal(after.armed["cron.doctor"], t0 + 9);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it("an arm stamp is never reported as a run", async () => {
+    const f = fixture();
+    try {
+      // Seeding lastRun would have been the shorter fix and would have made
+      // doctor claim a run that never happened. Freshness reporting has to
+      // stay honest.
+      const t0 = 1_700_000_000_000;
+      await markArmed(f.cfg, KEY, t0);
+      assert.deepEqual(await dueJobStatus(f.cfg, KEY, DAY, t0 + DAY), { ran: false, overdue: false });
+      assert.deepEqual(readDueStateSync(f.cfg), {}, "the lastRun view ignores arms entirely");
     } finally {
       f.cleanup();
     }

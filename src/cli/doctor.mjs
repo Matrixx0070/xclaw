@@ -767,25 +767,17 @@ export async function runDoctor(opts = {}) {
   // version stopped firing for six days and nothing said so — a job that
   // never runs logs nothing, so silence read as health. Overdue is now a
   // reported state, not an invisible one.
-  const humanMs = (ms) =>
-    ms >= 3600_000
-      ? `${(ms / 3600_000).toFixed(1).replace(/\.0$/, "")}h`
-      : `${Math.max(0, Math.round(ms / 60_000))}m`;
-
-  async function reportSchedule(probe, label, name, intervalMs) {
-    const { dueJobStatus } = await import("../ops/due.mjs");
-    const s = await dueJobStatus(cfg, name, intervalMs);
-    if (!s.ran) {
-      push(probe, "ok", `never run yet (runs shortly after next gateway boot)`);
-      return;
-    }
-    push(
-      probe,
-      s.overdue ? "warn" : "ok",
-      s.overdue
-        ? `${label} last ran ${humanMs(s.ageMs)} ago (interval ${humanMs(intervalMs)}) — is the gateway up?`
-        : `${label} ran ${humanMs(s.ageMs)} ago`
-    );
+  async function reportSchedule(probe, label, name, intervalMs, anchored = false) {
+    const { dueJobStatus, readAnchorsSync } = await import("../ops/due.mjs");
+    const { scheduleProbe } = await import("./doctor-schedule.mjs");
+    const r = scheduleProbe({
+      status: await dueJobStatus(cfg, name, intervalMs),
+      label,
+      intervalMs,
+      armed: anchored ? readAnchorsSync(cfg).armed[name] : undefined,
+      anchored,
+    });
+    push(probe, r.status, r.message);
   }
 
   try {
@@ -824,7 +816,7 @@ export async function runDoctor(opts = {}) {
   ]) {
     try {
       if (!p.enabled) push(p.probe, "ok", "disabled by config");
-      else await reportSchedule(p.probe, p.label, p.key, p.intervalMs);
+      else await reportSchedule(p.probe, p.label, p.key, p.intervalMs, true);
     } catch (err) {
       push(p.probe, "warn", err.message);
     }

@@ -1,3 +1,47 @@
+## 3.286.0 (2026-08-28)
+
+- 3.285.0 closed only half of its own defect. Anchoring to the last run lets a
+  restart RESUME a schedule; it cannot START one. A job that has never run has
+  no stamp to anchor to, so `nextRunFor` falls through to `now + everyMs` at
+  every boot, and a host that restarts more often than the interval recomputes
+  the same distant first run forever. That is the original bug, untouched, for
+  exactly the jobs that had never run.
+- MEASURED ON THE HOST after 3.285.0 was live, not inferred: `ops-schedule.json`
+  holds one key, `lastRun`, with two entries — `ops.maintenance` (73.7m old) and
+  `cron.approvalDigest` (3.7m old). `cron.doctor` and `cron.evalSuite` are
+  absent. Gateway uptime 15.1 minutes, 355 restarts. Only the five-minute digest
+  is short enough to reach its first run inside one process lifetime; the hourly
+  doctor and the daily eval suite were still in the pre-3.285.0 state, which is
+  why the eval-suite claim in that entry was premature.
+- Fix is a second durable epoch, `armed`, in the same file: the moment a job's
+  clock STARTED. `nextRunFor` counts from `lastRun ?? armed`, so a never-run job
+  still waits its full interval before firing — a fresh install must not launch
+  an hour-long suite while it is booting — but that interval is now measured
+  from a stamp that survives restarts instead of resetting at each one.
+- Kept separate from `lastRun` rather than seeding it. Seeding would be one
+  fewer field and would make `doctor` report a run that never happened, which is
+  precisely the confusion the `eval.cron` / `eval.cron.lastRun` split was added
+  to prevent last release. `dueJobStatus` and `readDueStateSync` are deliberately
+  blind to `armed`, and a test pins that.
+- First arm wins. Re-arming at each boot would reset the clock and restore the
+  bug this exists to fix, so the guard and the write share one serialized turn on
+  the file's existing write chain. `markRan` now carries the `armed` map forward
+  — it rewrites the whole file, and dropping the map would re-arm everything at
+  the next boot. Both hazards are mutation-verified: removing the guard, ignoring
+  the arm epoch, and dropping the map each turn the suite red on a distinct test.
+- Anchoring still requires a cfg, unchanged from 3.285.0, so a bare-registered
+  job cannot write into the running gateway's stamp file — which also makes the
+  guard unreachable through the scheduler, so it is tested against the primitive
+  directly.
+- `doctor` said "never run yet (runs shortly after next gateway boot)", which
+  was true of the boot-catch-up jobs it was written for and false the moment an
+  anchored job adopted it: an anchored job waits a full interval. It now
+  distinguishes three states — catches up after boot, armed with a countdown
+  ("armed 1.5h ago, first run in 22.5h"), and anchored but not yet armed. The
+  wording moved to `src/cli/doctor-schedule.mjs` to get there: the probes sit
+  inside `runDoctor`, which loads the real config and cannot be aimed at a
+  fixture, so they shipped last release with no test. The decision is now pure
+  and pinned; the config plumbing stays where it was.
 ## 3.285.0 (2026-08-28)
 
 - CORRECTION TO 3.284.0: that entry closed the uptime-fail-open class on the
