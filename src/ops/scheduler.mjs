@@ -9,7 +9,7 @@
  * run once if the job is overdue (after a settle delay so readiness is not
  * slowed), then keep the interval as the steady-state path.
  */
-import { isDue, markRan } from "./due.mjs";
+import { isDue, markRan, startPeriodic } from "./due.mjs";
 
 export const OPS_JOB = "ops.maintenance";
 const DEFAULT_INTERVAL_MS = 24 * 3600 * 1000;
@@ -104,18 +104,13 @@ export function startOpsSchedule(cfg = {}, opts = {}) {
       .then((r) => reportOpsRun(r, log, warn))
       .catch((e) => warn("[xclaw:ops] scheduled run failed:", e?.message || e));
 
-  const bootDelayMs = Number(opts.bootDelayMs ?? DEFAULT_BOOT_DELAY_MS);
-  const boot = setTimeout(tick, Math.max(0, bootDelayMs));
-  const interval = setInterval(tick, intervalMs);
-  for (const t of [boot, interval]) if (t.unref) t.unref();
   return {
     enabled: true,
-    intervalMs,
-    timers: [boot, interval],
-    stop() {
-      clearTimeout(boot);
-      clearInterval(interval);
-    },
+    ...startPeriodic({
+      intervalMs,
+      bootDelayMs: opts.bootDelayMs ?? DEFAULT_BOOT_DELAY_MS,
+      tick,
+    }),
   };
 }
 

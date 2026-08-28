@@ -1,3 +1,50 @@
+## 3.284.0 (2026-08-28)
+
+- SAME FAIL-OPEN, ONE FILE OVER: a fresh literal census of every
+  `setInterval` in `src/` for the v3.283.0 defect shape found exactly one
+  more instance — the approval digest, armed by the gateway as a bare
+  `setInterval(sendApprovalDigest, cfg.security.digestIntervalMs)` with no
+  boot run and no durable stamp. The natural setting for that feature is a
+  daily digest and the live host redeploys several times a day, so an
+  operator who enabled it would have received zero digests, forever, with
+  nothing in the logs to say so — a digest that is not sent is invisible.
+  Latent rather than active when found (`security.digestIntervalMs` is
+  unset live), so this is a fix ahead of the outage rather than after it.
+  New `runDueDigest` / `startApprovalDigestSchedule` in
+  `src/security/approval-digest.mjs` schedule it against the same persisted
+  stamp the ops job uses; `send` is injectable in the spirit of the existing
+  `deliver` seam, so the schedule is testable without standing up the shared
+  approval gate (whose singleton upgrades its frozen policy in place and
+  arms an SLA timer).
+- The rest of the census came back clean, and that is the useful half of the
+  result: `auth/key-rotation-scheduler.mjs` (60s check interval +
+  `runImmediately` boot run + "rotate if due") and
+  `connected/refresh-scheduler.mjs` (15min + a 5s boot `setTimeout`) already
+  implement the correct pattern. Every remaining timer is a seconds-scale
+  heartbeat, typing indicator, watchdog, or WAL checkpoint whose value
+  exists only while the process is alive, and is therefore legitimately
+  uptime-scoped. The class is now closed.
+- `startPeriodic` extracted into `src/ops/due.mjs` as the shared timer
+  primitive, so the property that actually fixes this bug — an overdue
+  catch-up shortly after boot, not just an interval — is carried by the
+  primitive rather than re-implemented per caller. It owns timers only;
+  the caller's `tick` owns due-ness and stamping. `startOpsSchedule` moves
+  onto it with no behavior change (net -5 lines).
+- `markRan` is now serialized through a promise chain. All jobs share one
+  stamp file, so the moment a SECOND job adopted the primitive a concurrent
+  read-modify-write could drop a stamp — and a job whose stamp keeps getting
+  dropped re-runs at every boot, which is the hot loop the stamp exists to
+  prevent. The two boot delays are also staggered (ops 60s, digest 90s).
+- `doctor` gains `security.digest`, and both schedule probes now share one
+  `dueJobStatus` helper: never-run is reported as fine (the boot catch-up
+  will take it), past twice the interval warns. Shipping the detector with
+  the fix is the point — the v3.283.0 outage lasted six days precisely
+  because nothing reported a job that was not running.
+- 8 new tests (3899 total, 0 failures), each mutation-verified in both
+  directions: removing the boot catch-up turns both schedule suites RED,
+  unserializing `markRan` drops the ops stamp, and stamping only on success
+  makes a permanently-failing digest retry at every boot.
+
 ## 3.283.0 (2026-08-28)
 
 - LIVE FAIL-OPEN FIX (found by observation, not by census): the daily ops

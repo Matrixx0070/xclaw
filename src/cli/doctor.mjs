@@ -767,30 +767,43 @@ export async function runDoctor(opts = {}) {
   // version stopped firing for six days and nothing said so — a job that
   // never runs logs nothing, so silence read as health. Overdue is now a
   // reported state, not an invisible one.
-  try {
-    const { readDueState } = await import("../ops/due.mjs");
-    const { OPS_JOB, opsIntervalMs, opsScheduleEnabled } = await import("../ops/scheduler.mjs");
-    if (!opsScheduleEnabled(cfg)) {
-      push("ops.schedule", "ok", "disabled by config");
-    } else {
-      const last = (await readDueState(cfg))[OPS_JOB];
-      const interval = opsIntervalMs(cfg);
-      if (!Number.isFinite(last)) {
-        push("ops.schedule", "ok", "never run yet (runs shortly after next gateway boot)");
-      } else {
-        const ageMs = Date.now() - last;
-        const hrs = (ageMs / 3600_000).toFixed(1);
-        push(
-          "ops.schedule",
-          ageMs > 2 * interval ? "warn" : "ok",
-          ageMs > 2 * interval
-            ? `daily ops job last ran ${hrs}h ago (interval ${(interval / 3600_000).toFixed(0)}h) — is the gateway up?`
-            : `daily ops job ran ${hrs}h ago`
-        );
-      }
+  async function reportSchedule(probe, label, name, intervalMs) {
+    const { dueJobStatus } = await import("../ops/due.mjs");
+    const s = await dueJobStatus(cfg, name, intervalMs);
+    if (!s.ran) {
+      push(probe, "ok", `never run yet (runs shortly after next gateway boot)`);
+      return;
     }
+    const hrs = s.ageHours.toFixed(1);
+    push(
+      probe,
+      s.overdue ? "warn" : "ok",
+      s.overdue
+        ? `${label} last ran ${hrs}h ago (interval ${(intervalMs / 3600_000).toFixed(0)}h) — is the gateway up?`
+        : `${label} ran ${hrs}h ago`
+    );
+  }
+
+  try {
+    const { OPS_JOB, opsIntervalMs, opsScheduleEnabled } = await import("../ops/scheduler.mjs");
+    if (!opsScheduleEnabled(cfg)) push("ops.schedule", "ok", "disabled by config");
+    else await reportSchedule("ops.schedule", "daily ops job", OPS_JOB, opsIntervalMs(cfg));
   } catch (err) {
     push("ops.schedule", "warn", err.message);
+  }
+
+  // Same check for the approval digest, which had the identical fail-open
+  // shape until v3.284.0. A digest that is not sent is invisible to the
+  // operator who configured it, so overdue must be a reported state.
+  try {
+    const interval = Number(cfg.security?.digestIntervalMs) || 0;
+    if (interval <= 0) push("security.digest", "ok", "disabled by config");
+    else {
+      const { DIGEST_JOB } = await import("../security/approval-digest.mjs");
+      await reportSchedule("security.digest", "approval digest", DIGEST_JOB, interval);
+    }
+  } catch (err) {
+    push("security.digest", "warn", err.message);
   }
 
   // Long-run objectives needing attention: a missed escalation DM used to

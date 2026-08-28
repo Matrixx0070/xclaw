@@ -1183,12 +1183,11 @@ export async function startGateway({ root, harness = false } = {}) {
   }
 
   if (cfg.security?.digestIntervalMs) {
-    const iv = setInterval(() => {
-      import("../security/approval-digest.mjs")
-        .then(({ sendApprovalDigest }) => sendApprovalDigest(cfg))
-        .catch((e) => console.warn("[xclaw:digest]", e.message));
-    }, cfg.security.digestIntervalMs);
-    if (iv.unref) iv.unref();
+    // Scheduled against a persisted last-run stamp, not process uptime: a
+    // daily digest armed as a bare interval never fires on a host that
+    // redeploys daily.
+    const { startApprovalDigestSchedule } = await import("../security/approval-digest.mjs");
+    startApprovalDigestSchedule(cfg);
     console.log(`[xclaw] approval digest every ${cfg.security.digestIntervalMs}ms`);
   }
   try {

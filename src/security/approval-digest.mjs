@@ -4,6 +4,9 @@
 import { getSharedApprovalGate } from "./approvals.mjs";
 import { deliverToChannel } from "../cron/channel-deliver.mjs";
 import { buildRoutedApprovalDigest } from "./approval-digest-route.mjs";
+import { isDue, markRan, startPeriodic } from "../ops/due.mjs";
+
+export const DIGEST_JOB = "security.approvalDigest";
 
 export function buildApprovalDigest(cfg) {
   const gate = getSharedApprovalGate(cfg);
@@ -57,4 +60,55 @@ export async function sendApprovalDigest(cfg, { deliver = deliverToChannel } = {
   await sendBucket(routed.soft, "soft");
   const sent = deliveries.some((d) => d.sent);
   return { sent, digest, routed, deliveries };
+}
+
+/**
+ * Send the digest if its interval has elapsed since the last recorded send.
+ * `send` is injectable in the same spirit as `deliver` above, so the schedule
+ * can be exercised without standing up the shared approval gate.
+ */
+export async function runDueDigest(cfg = {}, opts = {}) {
+  const intervalMs = Number(cfg?.security?.digestIntervalMs) || 0;
+  if (intervalMs <= 0) return { ran: false, skipped: "disabled" };
+  const now = Number(opts.now) || Date.now();
+  if (!opts.force && !(await isDue(cfg, DIGEST_JOB, intervalMs, now))) {
+    return { ran: false, skipped: "not-due" };
+  }
+  const send = opts.send || sendApprovalDigest;
+  let result;
+  let error;
+  try {
+    result = await send(cfg, opts);
+  } catch (err) {
+    error = err?.message || String(err);
+  }
+  // Stamp on failure too: a digest that always throws must not retry at every
+  // boot, and the operator asked for a cadence, not a spin.
+  await markRan(cfg, DIGEST_JOB, now);
+  return { ran: true, result, error };
+}
+
+/**
+ * Arm the digest on a persisted stamp rather than process uptime.
+ *
+ * The inline `setInterval(sendApprovalDigest, digestIntervalMs)` this replaces
+ * had the same fail-open shape as the daily ops job (see src/ops/due.mjs): the
+ * natural setting for this feature is a daily digest, and on a host that
+ * redeploys daily that timer would never once have fired — silently, since a
+ * digest that is not sent logs nothing.
+ */
+export function startApprovalDigestSchedule(cfg = {}, opts = {}) {
+  const intervalMs = Number(cfg?.security?.digestIntervalMs) || 0;
+  if (intervalMs <= 0) return { enabled: false, timers: [] };
+  const warn = opts.warn || console.warn;
+  const tick = () =>
+    runDueDigest(cfg)
+      .then((r) => {
+        if (r.error) warn("[xclaw:digest]", r.error);
+      })
+      .catch((e) => warn("[xclaw:digest]", e?.message || e));
+  return {
+    enabled: true,
+    ...startPeriodic({ intervalMs, bootDelayMs: opts.bootDelayMs ?? 90_000, tick }),
+  };
 }

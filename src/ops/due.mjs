@@ -53,16 +53,65 @@ export async function isDue(cfg = {}, name, intervalMs, now = Date.now()) {
   return now - last >= Math.max(0, Number(intervalMs) || 0);
 }
 
-/** Record a completed run. Best-effort: a failed stamp must not fail the job. */
-export async function markRan(cfg = {}, name, now = Date.now()) {
-  const state = await readDueState(cfg);
-  state[name] = now;
-  try {
+/**
+ * Record a completed run. Best-effort: a failed stamp must not fail the job.
+ *
+ * Serialized, because every job shares one stamp file: two jobs read-modify-
+ * writing concurrently would drop one stamp, and a job whose stamp keeps
+ * getting dropped re-runs at every boot — the hot-loop this design exists to
+ * prevent. Interleaving became reachable the moment a second job adopted the
+ * primitive.
+ */
+let writeChain = Promise.resolve();
+export function markRan(cfg = {}, name, now = Date.now()) {
+  const run = writeChain.then(async () => {
+    const state = await readDueState(cfg);
+    state[name] = now;
     await durableAtomicWriteJson(dueStatePath(cfg), { lastRun: state }, { mode: 0o600 });
     return true;
-  } catch {
-    return false;
-  }
+  });
+  writeChain = run.then(
+    () => {},
+    () => {},
+  );
+  return run.catch(() => false);
 }
 
-export default { dueStatePath, readDueState, isDue, markRan };
+/**
+ * Health of a scheduled job, for reporting.
+ *
+ * Never-run is not a fault — the boot catch-up will pick it up. Past twice
+ * its interval means the schedule is not actually running, which is exactly
+ * the failure this module exists to make visible: the six-day outage was
+ * silent because a job that does not run logs nothing.
+ */
+export async function dueJobStatus(cfg = {}, name, intervalMs, now = Date.now()) {
+  const last = (await readDueState(cfg))[name];
+  if (!Number.isFinite(last)) return { ran: false, overdue: false };
+  const ageMs = Math.max(0, now - last);
+  return { ran: true, ageMs, ageHours: ageMs / 3600_000, overdue: ageMs > 2 * intervalMs };
+}
+
+/**
+ * Arm a periodic job: an overdue catch-up shortly after boot, then the
+ * interval. The boot run is the half that makes a schedule survive restarts —
+ * an interval alone re-arms from zero every boot and, on a host that redeploys
+ * faster than the interval, fires never.
+ *
+ * Owns timers only; `tick` owns due-ness and stamping.
+ */
+export function startPeriodic({ intervalMs, bootDelayMs = 60_000, tick }) {
+  const boot = setTimeout(tick, Math.max(0, Number(bootDelayMs) || 0));
+  const interval = setInterval(tick, intervalMs);
+  for (const t of [boot, interval]) if (t.unref) t.unref();
+  return {
+    intervalMs,
+    timers: [boot, interval],
+    stop() {
+      clearTimeout(boot);
+      clearInterval(interval);
+    },
+  };
+}
+
+export default { dueStatePath, readDueState, isDue, markRan, dueJobStatus, startPeriodic };
