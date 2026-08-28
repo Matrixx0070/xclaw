@@ -1,3 +1,58 @@
+## 3.329.0
+
+### One profile name, three recognizers, and the unknown case failed open
+
+`profile` is a free-form operator string. Three gates read it, each normalising
+it differently, so "is this host hardened?" had three answers:
+
+| `profile` | `enforceProdHardening` | prod audit rules | profile pack |
+|---|---|---|---|
+| `prod`   | hardens | applies | applied |
+| `Prod`   | hardens (it lowercases) | **skipped** (raw `===`) | **none** (no `PROFILES.Prod`) |
+| `strict` | **skipped** | **skipped** | **none** |
+| `prd`    | skipped | skipped | none — and nothing said so |
+
+`strict` is not a name I invented. `src/config/profiles.mjs` line 2 says
+`prod (strict)`, and sixteen source files already test `profile === "strict"`
+as the hardened case. The config layer was the one reader that never learned
+the name — so an operator who wrote `strict`, following the codebase's own
+vocabulary, got a host that sixteen modules treated as hardened and the three
+that actually enforce anything treated as `dev`.
+
+The unknown case is the fail-open one: a typo'd `XCLAW_PROFILE` applies no
+pack and no hardening, so the host keeps whatever `autoApprove` the shared
+config file carries while the operator believes they selected a profile. Its
+only signal was a boot `console.warn` — an error channel with no reader
+(class 14).
+
+Fixed with one predicate rather than a longer list of literals, in the module
+that owns profiles: `resolveProfileName` (trim, lowercase, alias table) and
+`isHardenedProfile`, which both `enforceProdHardening` and the security audit
+now call. A typo is **not** guessed at — `prd` could as easily have meant
+`dev` as `prod` — it is reported as a machine-readable `profile.unknown`
+audit error, quoting the operator's own spelling back at them, which
+`doctor-audit-row.mjs` renders as a doctor row.
+
+**A fourth writer, found by the mutation sweep.** `loadConfig` does
+`deepMerge(cfg, user)` *after* `applyProfile`, which lands the user file's raw
+`profile` string back on top of the canonical name — and the final re-stamp
+covered only the env path. A config file saying `strict` therefore got the
+prod pack **and** prod hardening but still reported `profile="strict"` to
+`/metrics`, to doctor, and to every raw reader. One settling writer now
+resolves the name once, last.
+
+Severity, honestly: the live host is `profile: lab`, so there is no live
+exposure. The exposure is for any operator who sets `strict` or typos
+`XCLAW_PROFILE`.
+
+Mutation sweep: 22 mutations, 21 RED. The survivor (`reapply-guard-raw`) is a
+proven equivalent mutant — the double-apply is idempotent when both sides name
+the same canonical profile; verified by config diff (8059 bytes byte-identical
+both ways, the user's own `agent.maxTurns` intact). Four earlier survivors were
+genuine holes: tests that composed `applyProfile` first were masking whether
+the downstream gates could resolve a name themselves, so each gate is now
+exercised directly with non-canonical input.
+
 ## 3.328.0
 
 ### A DM security check asked what the operator wrote, not what the channel enforces

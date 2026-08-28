@@ -20,6 +20,7 @@
  */
 import { isLoopbackHost } from "../gateway/bind-guard.mjs";
 import { DM_POSTURE, isOpenDm, dmRemedy } from "../channels/dm-posture.mjs";
+import { PROFILES, resolveProfileName, isHardenedProfile } from "../config/profiles.mjs";
 
 export function runSecurityAudit(cfg = {}) {
   const findings = [];
@@ -28,7 +29,24 @@ export function runSecurityAudit(cfg = {}) {
     findings.push({ id, level, message, fix });
   }
 
-  const prod = cfg.profile === "prod" || process.env.XCLAW_PROFILE === "prod";
+  // Was `cfg.profile === "prod" || env === "prod"` — a raw string compare, so
+  // `Prod` (which enforceProdHardening DID harden, because it lowercases) and
+  // `strict` both skipped every prod rule below. One predicate now answers
+  // "is this host hardened?" for the audit and the hardening gate alike.
+  const prod = isHardenedProfile(cfg);
+  const profileName = resolveProfileName(cfg.profile || process.env.XCLAW_PROFILE || "");
+  if (profileName.input && !profileName.known) {
+    // A typo'd XCLAW_PROFILE ("production", "prd") applies no profile pack and
+    // no prod hardening: the host keeps whatever autoApprove the shared config
+    // file carries, while the operator believes they selected a hardened
+    // profile. The boot console.warn is not a reader; this is.
+    add(
+      "profile.unknown",
+      "error",
+      `unknown profile "${profileName.input}" — no profile pack or prod hardening applied`,
+      `Set profile to one of: ${Object.keys(PROFILES).join(", ")}`
+    );
+  }
   const host = cfg.gateway?.host || "127.0.0.1";
   const loopback = isLoopbackHost(host);
   const wildcard = host === "0.0.0.0" || host === "::" || host === "[::]";

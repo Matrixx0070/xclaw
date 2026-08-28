@@ -2,7 +2,11 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { DEFAULT_CONFIG, CONFIG_DIR_NAME, CONFIG_FILE_NAME } from "./defaults.mjs";
-import { applyProfile } from "./profiles.mjs";
+import {
+  applyProfile,
+  canonicalProfileName,
+  isHardenedProfile,
+} from "./profiles.mjs";
 import { applyAutonomyLevel } from "./autonomy-policy.mjs";
 import { coupleTailscaleExposure } from "../net/tailscale.mjs";
 
@@ -81,8 +85,7 @@ function deepMerge(base, over) {
  * Opt-out: XCLAW_ALLOW_PROD_AUTO=1 (explicit break-glass).
  */
 export function enforceProdHardening(cfg = {}) {
-  const profile = String(cfg.profile || process.env.XCLAW_PROFILE || "").toLowerCase();
-  if (profile !== "prod") return cfg;
+  if (!isHardenedProfile(cfg)) return cfg;
   const allow =
     process.env.XCLAW_ALLOW_PROD_AUTO === "1" ||
     process.env.XCLAW_ALLOW_PROD_AUTO === "true";
@@ -170,15 +173,22 @@ export async function loadConfig(opts = {}) {
   // Profile NAME selection: env XCLAW_PROFILE wins over user.profile (ops override).
   // User-explicit security.* still wins over profile pack after merge (Telegram hang fix).
   const defaultProfile = DEFAULT_CONFIG.profile || "lab";
-  const envProfile = process.env.XCLAW_PROFILE || null;
+  // Canonical from here down: the raw env string used to be re-stamped onto
+  // cfg.profile after applyProfile had normalised it (three times below), so
+  // every downstream gate saw the operator's spelling rather than the profile
+  // that was actually applied.
+  const envProfile = process.env.XCLAW_PROFILE
+    ? canonicalProfileName(process.env.XCLAW_PROFILE)
+    : null;
+  const userProfile = user.profile ? canonicalProfileName(user.profile) : null;
   const profileName =
-    envProfile || user.profile || defaultProfile || "lab";
+    envProfile || userProfile || defaultProfile || "lab";
   let cfg = deepMerge(structuredClone(DEFAULT_CONFIG), { profile: profileName });
   cfg = applyProfile(cfg); // profile pack for profileName
   cfg = deepMerge(cfg, user); // user file wins on keys present
   // If env selected a different profile than user.profile, re-apply env pack
   // then re-merge user so explicit user keys still win — but profile name stays env.
-  if (envProfile && envProfile !== (user.profile || defaultProfile)) {
+  if (envProfile && envProfile !== (userProfile || defaultProfile)) {
     cfg.profile = envProfile;
     cfg = applyProfile(cfg);
     cfg = deepMerge(cfg, user);
@@ -225,7 +235,11 @@ export async function loadConfig(opts = {}) {
   }
 
   if (process.env.XCLAW_API_BASE) cfg.agent.baseUrl = process.env.XCLAW_API_BASE;
-  if (envProfile) cfg.profile = envProfile;
+  // Settle the name once, last. deepMerge(cfg, user) above lands the user
+  // file's raw `profile` string back on top of the canonical one applyProfile
+  // chose, so a file saying "strict" got the prod pack and prod hardening but
+  // still reported profile="strict" to /metrics, doctor and every raw reader.
+  cfg.profile = envProfile || userProfile || cfg.profile;
 
   // Prefer xAI when model is grok-* and only XAI key is present
   if (String(cfg.agent?.model || "").startsWith("grok") && !cfg.agent.baseUrl) {

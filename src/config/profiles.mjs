@@ -120,18 +120,80 @@ export const PROFILES = {
 };
 
 /**
+ * `strict` is not a typo — profiles.mjs's own header calls prod "(strict)" and
+ * sixteen source files test `profile === "strict"` as the hardened case. The
+ * config layer was the one reader that had never learned the name, so it
+ * applied no pack at all and the most hardened-sounding value produced the
+ * least hardened host.
+ */
+export const PROFILE_ALIASES = { strict: "prod" };
+
+/**
+ * Resolve an operator's free-form profile string to one canonical id.
+ *
+ * Three gates each used to normalise for themselves — enforceProdHardening
+ * lowercased, the security audit compared raw, applyProfile did an exact key
+ * lookup — so `Prod` hardened the config while the audit graded it a non-prod
+ * host, and `strict` satisfied neither. Normalising in one place is what keeps
+ * them agreeing.
+ *
+ * @param {string} raw
+ * @returns {{ input: string, id: string, known: boolean }}
+ */
+export function resolveProfileName(raw) {
+  const input = String(raw ?? "").trim();
+  const lower = input.toLowerCase();
+  const id = PROFILE_ALIASES[lower] || lower;
+  return { input, id, known: Object.hasOwn(PROFILES, id) };
+}
+
+/**
+ * True when the resolved profile is the hardened one. The single answer to
+ * "is this host hardened?", for every gate that needs to ask.
+ *
+ * @param {object|string} source cfg, or a bare profile name
+ */
+export function isHardenedProfile(source) {
+  const name =
+    typeof source === "string"
+      ? source
+      : source?.profile || process.env.XCLAW_PROFILE || "";
+  return resolveProfileName(name).id === "prod";
+}
+
+/**
+ * Canonical id for a known profile; the operator's own spelling for anything
+ * else, so the audit can quote back exactly what they typed rather than a
+ * guess. Use this wherever a profile name is stored or compared.
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+export function canonicalProfileName(raw) {
+  const r = resolveProfileName(raw);
+  return r.known ? r.id : r.input;
+}
+
+/**
  * Apply profile defaults onto cfg.
  * Call BEFORE merging user file so explicit user security/agent settings win.
  * Order in loadConfig: DEFAULT → applyProfile → user → env
  */
 export function applyProfile(cfg) {
-  const name = cfg.profile || process.env.XCLAW_PROFILE || "dev";
-  const prof = PROFILES[name];
-  if (!prof) {
-    console.warn(`[xclaw] unknown profile "${name}" — using config as-is`);
+  const { input, id, known } = resolveProfileName(
+    cfg.profile || process.env.XCLAW_PROFILE || "dev"
+  );
+  if (!known) {
+    // Reported as an audit error too (security/audit.mjs profile.unknown): a
+    // boot warning nobody reads is how a typo'd XCLAW_PROFILE ran a host on
+    // full auto-approve while the operator believed they had hardened it.
+    console.warn(
+      `[xclaw] unknown profile "${input}" — no profile pack applied; valid: ${Object.keys(PROFILES).join(", ")}`
+    );
     return cfg;
   }
-  const out = { ...cfg, profile: name };
+  const prof = PROFILES[id];
+  const out = { ...cfg, profile: id };
   for (const [k, v] of Object.entries(prof)) {
     if (k === "description") continue;
     if (v && typeof v === "object" && !Array.isArray(v) && out[k] && typeof out[k] === "object") {
