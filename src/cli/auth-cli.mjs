@@ -245,6 +245,18 @@ export async function runAuthCli(cfg, argv = []) {
     return r.ok ? 0 : 1;
   }
 
+  // Subcommands this CLI never implemented. They were unreachable while a
+  // duplicate `case "auth"` held them, so unknown-sub must delegate before it
+  // prints usage — otherwise restoring them is a rename nobody can invoke.
+  if (sub === "connected" || sub === "token" || sub === "accounts") {
+    const { runLegacyAuthCli } = await import("./auth-legacy-cli.mjs");
+    return runLegacyAuthCli(cfg, ["auth", sub, ...args]);
+  }
+  if (sub === "login" && (args.includes("--connected") || args.includes("--oauth"))) {
+    const { runLegacyAuthCli } = await import("./auth-legacy-cli.mjs");
+    return runLegacyAuthCli(cfg, ["auth", sub, ...args]);
+  }
+
   console.error(`Usage:
   xclaw auth modes
   xclaw auth login --method api|oauth|web|device|pkce|import-grok|auto
@@ -255,6 +267,8 @@ export async function runAuthCli(cfg, argv = []) {
   xclaw auth gate
   xclaw auth logout
   xclaw auth status
-  xclaw auth import-grok`);
+  xclaw auth import-grok
+  xclaw auth token | connected [list|status|login|refresh|logout|vault]
+  xclaw auth accounts [list|link|unlink|create|normalize|migrate]`);
   return 1;
 }

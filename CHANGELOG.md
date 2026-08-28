@@ -1,3 +1,40 @@
+## 3.331.0
+
+### A duplicate `case` label silently deleted ~220 lines of shipped CLI
+
+`bin/xclaw.mjs` dispatches every command from one `switch (cmd)`. It contained
+two `case "auth"` and two `case "merge"`. JavaScript runs the FIRST matching
+case and never warns about the second, so both later blocks were unreachable
+code that no build, no lint and no test ever complained about.
+
+What was dead, in every release up to 3.330.0:
+
+- `xclaw auth connected …` (the connected-OAuth provider vault), `xclaw auth
+  token`, `xclaw auth accounts …` — all implemented, all exiting 1 on a real
+  host. Live proof before the fix: `auth accounts list`, `auth connected list`
+  and `auth token` exited 1 while `auth status` exited 0.
+- `xclaw merge <subagentId>` — the subagent worktree merge. `merge` reached the
+  swarm merge-proposal CLI instead, which takes ids of a different kind.
+
+Why it stayed invisible from both sides: the shadowed block's own usage text
+never mentioned the shadowing command, and the live auth CLI's usage text never
+mentioned the shadowed subcommands. Each half was self-consistent; only the
+dispatch table showed the collision.
+
+Fixed:
+
+- The shadowed auth block is now `src/cli/auth-legacy-cli.mjs`, and the live
+  `runAuthCli` delegates `connected` / `token` / `accounts` (and
+  `login --connected|--oauth`) to it before printing usage. A rename nobody can
+  invoke is not a restoration.
+- The worktree merge is `xclaw merge-worktree <subagentId>` — additive, so the
+  existing `merge` keeps its meaning.
+- `test/cli-command-shadowing.test.mjs` scans the dispatcher for duplicate
+  labels (asserting the scanner still finds >60 cases, so a reformat cannot
+  turn it into a census that finds nothing and grades itself passing) and
+  proves the restored commands reach a handler on a real argv in a subprocess,
+  rather than proving a handler merely exists.
+
 ## 3.330.0
 
 ### The isolation enforcer nothing called, and the one breach the sandbox cannot see
