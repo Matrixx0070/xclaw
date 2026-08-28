@@ -145,7 +145,7 @@ export async function beforeNavigate(ctx = {}) {
   }
 
   const actionId = createActionId("navigate");
-  const cursor = networkCursor();
+  const cursor = networkCursor(ctx.cfg || null);
   if (tabId && fabricEnforce()) {
     try {
       await touchLease(tabId, { agentId });
@@ -215,7 +215,7 @@ export async function beforeInput(ctx = {}) {
   }
 
   const actionId = createActionId(action || "input");
-  const cursor = networkCursor();
+  const cursor = networkCursor(ctx.cfg || null);
   if (ctx.tabId && fabricEnforce()) {
     try {
       await touchLease(ctx.tabId, { agentId });
@@ -233,11 +233,12 @@ export async function beforeInput(ctx = {}) {
  */
 export async function afterAction(ctx = {}, result = {}) {
   const actionId = ctx.actionId || createActionId("action");
-  const cursor = ctx.cursor || networkCursor();
+  const cursor = ctx.cursor || networkCursor(ctx.cfg || null);
   let delta = { enabled: false, flows: [], count: 0 };
   try {
-    delta = await networkDeltaSince(cursor, { limit: 50 });
+    delta = await networkDeltaSince(cursor, { cfg: ctx.cfg || null, limit: 50 });
     await bindActionFlows(actionId, delta.flows || [], {
+      cfg: ctx.cfg || null,
       label: ctx.label || ctx.action || "action",
       tabId: ctx.tabId,
     });

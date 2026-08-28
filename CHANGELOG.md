@@ -1,3 +1,55 @@
+## 3.310.0 (2026-08-28)
+
+- The clue was in the operator's own home directory: `~/.xclaw/mitm/proofs/`
+  held 1214 audit bundles, ~9.6 MB, and grew by two every time the test suite
+  ran. Tests were writing real proof bundles into the live install. The leak was
+  not a test bug though — it was the shortest path to a defect in the shipped
+  code, because a test that cannot redirect a write is usually looking at code
+  that cannot be redirected at all.
+
+  Two families of code resolve the mitm confdir. The proxy plane always threaded
+  configuration through `mitmConfdir(cfg)`. The truth/sense plane dropped it at
+  every single site. With `browser.mitm.confdir` set, the two halves of the same
+  subsystem disagreed about which directory they were discussing:
+
+  - `mitm_policy set` wrote block and allowlist rules into the DEFAULT directory
+    while the running proxy read the CONFIGURED one. An operator adding a rule
+    got a success result and an inert rule. `savePolicy` had accepted a `cfg`
+    parameter since the day it was written and not one caller ever passed it.
+  - `exportProofBundle` stamped `mitmEnabled:false` and the default confdir into
+    every bundle regardless of configuration. An audit artifact that misreports
+    its own provenance is worse than a missing one — it is evidence for a claim
+    about a directory it never read.
+  - Action bindings were written to one directory and read back from another, so
+    require-rule evaluation saw no bindings for actions that had them, and
+    `trace_score` scored a timeline that was structurally empty.
+
+  Seven wired lines across `truth.mjs`, `sense.mjs`, `timetravel.mjs`,
+  `browser-tools.mjs` and the eval scorer now carry `cfg`. Each was verified the
+  only way that means anything: mutated one at a time back to the shipped form,
+  with at least one named pin required to go RED for each, all four files then
+  restored byte-identical by sha256 and the baseline re-proven green.
+
+  `XCLAW_MITM_CONFDIR` outranks `cfg`, so the new pins delete it — the env var
+  is exactly the input under which the cfg path is never exercised, and a test
+  that leaves it set passes for the wrong reason. Same trap the v3.309.0 suite
+  fell into: a fixture that pins the value which cannot exhibit the bug.
+
+  Containment doubles as the regression pin. The tool sweep supplies its confdir
+  through `cfg` alone, then asserts both halves — the sandbox received at least
+  one bundle AND the operator's real `proofs/` is unchanged. Asserting only the
+  second would go green if the write simply stopped happening.
+
+  Three more suites were writing into the live install through the plane with no
+  cfg seam at all: `browser-hooks` and `browser-sense` appended action bindings,
+  `browser-tab-native-cdp` grew the fabric clock and commit-gate ledgers. They
+  are sandboxed at the file level now. The full suite leaves `~/.xclaw`
+  byte-identical.
+
+  The 1214 stray bundles are left in place. They are operator data and they are
+  the evidence for this entry; an unbounded `proofs/` directory is separately a
+  job for size-gated rotation.
+
 ## 3.309.0 (2026-08-28)
 
 - Live-driving v3.308.0 landed on the alerter, and the probe that was meant to

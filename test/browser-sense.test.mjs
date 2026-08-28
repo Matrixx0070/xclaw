@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -16,6 +16,21 @@ import {
 import { createBrowserTools } from "../src/tools/browser-tools.mjs";
 
 describe("Horizon 1 Fusion Sense", () => {
+  // withNetworkBinding always records a binding, even when mitm is disabled and
+  // the delta is empty — so without a sandbox this suite appended to the
+  // operator's real ~/.xclaw/mitm/action-bindings.jsonl on every run. cfg is
+  // used rather than XCLAW_MITM_CONFDIR because cfg is the path production
+  // takes; the env var outranks it and would leave the cfg thread unexercised.
+  let sandbox;
+  let cfg;
+  before(async () => {
+    sandbox = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-sense-box-"));
+    cfg = { browser: { mitm: { confdir: sandbox } } };
+  });
+  after(async () => {
+    if (sandbox) await fs.rm(sandbox, { recursive: true, force: true });
+  });
+
   it("createActionId is unique and prefixed", () => {
     const a = createActionId("t");
     const b = createActionId("t");
@@ -67,7 +82,7 @@ describe("Horizon 1 Fusion Sense", () => {
     const inner = async () => ({
       content: [{ type: "text", text: "hello" }],
     });
-    const wrapped = withNetworkBinding(inner, { label: "test" });
+    const wrapped = withNetworkBinding(inner, { label: "test", cfg });
     const r = await wrapped({});
     assert.ok(r.metadata?.actionId?.startsWith("act_"));
     assert.ok(r.metadata?.network);

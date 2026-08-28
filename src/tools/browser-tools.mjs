@@ -173,7 +173,7 @@ export function createBrowserSnapshotTool(ctx = {}) {
         return errorResult("Computer session required");
       }
       const actionId = createActionId("browser_snapshot");
-      const cursor = networkCursor();
+      const cursor = networkCursor(ctx.cfg || null);
       try {
         const result = await computer.callTool(sessionId, "xclaw_browser_tab", {
           tabId: args.tabId,
@@ -181,8 +181,12 @@ export function createBrowserSnapshotTool(ctx = {}) {
           waitTime: args.url ? 1.5 : 0.3,
           jsCode: STRUCTURE_SNAPSHOT_JS,
         });
-        const delta = await networkDeltaSince(cursor);
-        await bindActionFlows(actionId, delta.flows, { label: "browser_snapshot", tabId: args.tabId });
+        const delta = await networkDeltaSince(cursor, { cfg: ctx.cfg || null });
+        await bindActionFlows(actionId, delta.flows, {
+          cfg: ctx.cfg || null,
+          label: "browser_snapshot",
+          tabId: args.tabId,
+        });
 
         // Parse structure from tool text if possible
         let structure = null;
@@ -660,7 +664,7 @@ export function createBrowserAssertTool(ctx = {}) {
       },
     },
     async execute(args = {}) {
-      if (!isMitmEnabled()) {
+      if (!isMitmEnabled(ctx.cfg || null)) {
         return textResult(
           JSON.stringify({
             ok: false,
@@ -672,12 +676,12 @@ export function createBrowserAssertTool(ctx = {}) {
       }
       let flows = [];
       if (args.actionId) {
-        const bindings = await readActionBindings({ limit: 100 });
+        const bindings = await readActionBindings({ cfg: ctx.cfg || null, limit: 100 });
         const hit = bindings.find((b) => b.actionId === args.actionId);
         flows = hit?.flows || [];
       } else {
         const sinceTs = Number(args.sinceTs) || Date.now() / 1000 - 60;
-        const delta = await networkDeltaSince({ ts: sinceTs });
+        const delta = await networkDeltaSince({ ts: sinceTs }, { cfg: ctx.cfg || null });
         flows = delta.flows;
       }
       const verdict = assertOutcome(
@@ -718,9 +722,10 @@ export function createMitmPolicyTool(ctx = {}) {
       required: ["action"],
     },
     async execute(args = {}) {
+      const cfg = ctx.cfg || null;
       const action = String(args.action || "get").toLowerCase();
       if (action === "get") {
-        const p = await loadPolicy();
+        const p = await loadPolicy(cfg);
         return textResult(JSON.stringify(p, null, 2), { metadata: p });
       }
       if (action === "set") {
@@ -729,11 +734,11 @@ export function createMitmPolicyTool(ctx = {}) {
         if (!policy || !Array.isArray(policy.rules)) {
           return errorResult("set requires policy:{rules:[...]} or rules:[]");
         }
-        const r = await savePolicy(policy);
+        const r = await savePolicy(policy, cfg);
         return textResult(JSON.stringify(r, null, 2), { metadata: r });
       }
       if (action === "test") {
-        const p = await loadPolicy();
+        const p = await loadPolicy(cfg);
         const decision = evaluateRequestPolicy(p, {
           host: args.host || "",
           path: args.path || "/",
@@ -763,6 +768,7 @@ export function createMitmExportTool(ctx = {}) {
     async execute(args = {}) {
       try {
         const r = await exportProofBundle({
+          cfg: ctx.cfg || null,
           dest: args.dest,
           limit: args.limit,
           sinceTs: args.sinceTs,
@@ -969,7 +975,11 @@ export function createTraceScoreTool(ctx = {}) {
       required: ["expect"],
     },
     async execute(args = {}) {
-      const timeline = await loadTimeline({ sinceTs: args.sinceTs, limit: args.limit || 300 });
+      const timeline = await loadTimeline({
+        cfg: ctx.cfg || null,
+        sinceTs: args.sinceTs,
+        limit: args.limit || 300,
+      });
       const scored = scoreCausal(args.expect || {}, timeline);
       return textResult(JSON.stringify(scored, null, 2), {
         metadata: scored,

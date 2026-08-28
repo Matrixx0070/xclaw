@@ -122,6 +122,7 @@ export async function scoreCase(caseDef, jobResult) {
   if (causalExpect && (causalExpect.network || causalExpect.actions || causalExpect.minFlows != null || causalExpect.forbidHosts)) {
     try {
       const timeline = jobResult.timeline || (await loadTimeline({
+        cfg: jobResult.cfg || null,
         confdir: jobResult.mitmConfdir,
         limit: 500,
       }));

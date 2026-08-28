@@ -14,14 +14,22 @@ import { openCommitGate, resolveCommitGate } from "../src/browser/physics.mjs";
 
 describe("Phase A2 driver hooks", () => {
   let tmp;
+  let savedConfdir;
   before(async () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-a2-"));
     process.env.XCLAW_FABRIC_DIR = tmp;
+    // afterAction binds flows through mitmConfdir; the hook ctx here carries no
+    // cfg (that is the default path under test), so the env var is the only
+    // lever that keeps those bindings out of the operator's real ~/.xclaw.
+    savedConfdir = process.env.XCLAW_MITM_CONFDIR;
+    process.env.XCLAW_MITM_CONFDIR = path.join(tmp, "mitm");
     delete process.env.XCLAW_COMMIT_GATES;
     delete process.env.XCLAW_FABRIC_ENFORCE;
   });
   after(async () => {
     delete process.env.XCLAW_FABRIC_DIR;
+    if (savedConfdir === undefined) delete process.env.XCLAW_MITM_CONFDIR;
+    else process.env.XCLAW_MITM_CONFDIR = savedConfdir;
     delete process.env.XCLAW_COMMIT_GATES;
     delete process.env.XCLAW_FABRIC_ENFORCE;
     await fs.rm(tmp, { recursive: true, force: true });

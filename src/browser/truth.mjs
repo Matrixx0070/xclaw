@@ -209,12 +209,12 @@ export async function evaluateRequireRules(policy, opts = {}) {
   let flows = opts.flows;
   if (!flows) {
     if (opts.actionId) {
-      const bindings = await readActionBindings({ limit: 100 });
+      const bindings = await readActionBindings({ cfg: opts.cfg || null, limit: 100 });
       const hit = bindings.find((b) => b.actionId === opts.actionId);
       flows = hit?.flows || [];
     } else {
       const sinceTs = opts.sinceTs || Date.now() / 1000 - 120;
-      const delta = await networkDeltaSince({ ts: sinceTs });
+      const delta = await networkDeltaSince({ ts: sinceTs }, { cfg: opts.cfg || null });
       flows = delta.flows;
     }
   }
@@ -246,14 +246,15 @@ export async function afterBrowserToolTruth(toolName, result, opts = {}) {
     process.env.XCLAW_TRUTH_AUTO_ASSERT === "true";
   if (!auto) return null;
   if (!toolName || !String(toolName).startsWith("browser_")) return null;
-  if (!isMitmEnabled()) return null;
+  if (!isMitmEnabled(opts.cfg || null)) return null;
 
   const actionId = result?.metadata?.actionId;
-  const policy = await loadPolicy();
+  const policy = await loadPolicy(opts.cfg || null);
   const requires = requireRules(policy);
   if (!requires.length && !opts.expect) return null;
 
   const evaluation = await evaluateRequireRules(policy, {
+    cfg: opts.cfg || null,
     actionId,
     flows: result?.metadata?.network?.flows,
   });
@@ -272,23 +273,24 @@ export async function afterBrowserToolTruth(toolName, result, opts = {}) {
  * Build a redacted proof / export bundle for audit.
  */
 export async function exportProofBundle(opts = {}) {
-  const confdir = mitmConfdir();
+  const cfg = opts.cfg || null;
+  const confdir = mitmConfdir(cfg);
   const limit = opts.limit || 200;
   const sinceTs = opts.sinceTs;
-  const flows = await readMitmFlows(null, { limit: limit * 2 });
+  const flows = await readMitmFlows(cfg, { limit: limit * 2 });
   const filtered = sinceTs
     ? flows.filter((f) => Number(f.ts) >= Number(sinceTs))
     : flows.slice(0, limit);
 
-  const bindings = await readActionBindings({ limit: 100 });
-  const policy = await loadPolicy();
+  const bindings = await readActionBindings({ cfg, limit: 100 });
+  const policy = await loadPolicy(cfg);
   const caPath = await findMitmCaCert();
 
   const bundle = {
     version: 1,
     kind: "xclaw-truth-proof",
     exportedAt: new Date().toISOString(),
-    mitmEnabled: isMitmEnabled(),
+    mitmEnabled: isMitmEnabled(cfg),
     confdir,
     caPresent: Boolean(caPath),
     policy: {

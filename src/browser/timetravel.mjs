@@ -23,7 +23,7 @@ import { exportProofBundle, loadPolicy } from "./truth.mjs";
  * Load unified timeline from confdir traces.
  */
 export async function loadTimeline(opts = {}) {
-  const confdir = opts.confdir || mitmConfdir();
+  const confdir = opts.confdir || mitmConfdir(opts.cfg || null);
   const limit = opts.limit || 500;
   let flows = [];
   try {
@@ -41,7 +41,7 @@ export async function loadTimeline(opts = {}) {
 
   let bindings = [];
   try {
-    bindings = await readActionBindings({ limit });
+    bindings = await readActionBindings({ cfg: opts.cfg || null, limit });
   } catch {
     bindings = [];
   }
@@ -300,6 +300,7 @@ export async function timeTravelReport(opts = {}) {
   let proof = null;
   if (opts.exportProof) {
     proof = await exportProofBundle({
+      cfg: opts.cfg || null,
       limit: opts.limit || 200,
       sinceTs: opts.sinceTs,
       dest: opts.proofDest,
@@ -316,7 +317,7 @@ export async function timeTravelReport(opts = {}) {
     plan,
     causal,
     proof,
-    policy: opts.includePolicy ? await loadPolicy() : undefined,
+    policy: opts.includePolicy ? await loadPolicy(opts.cfg || null) : undefined,
   };
 }
 

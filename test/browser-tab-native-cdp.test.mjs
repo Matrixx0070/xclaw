@@ -3,8 +3,11 @@
  * Chrome/network work (enforcement hooks and validation fire first), so no
  * browser is spawned.
  */
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { runBrowserTab, _resetTabsForTests } from "../src/computer/modules/browser-tab-tool.mjs";
 
 function withEnv(vars, fn) {
@@ -25,6 +28,22 @@ function withEnv(vars, fn) {
 }
 
 describe("browser_tab native CDP tier — engine-side enforcement", () => {
+  // The commit-gate and fabric paths persist clock.json / commit-gates.json.
+  // Fabric has no cfg seam, so XCLAW_FABRIC_DIR is the only redirect; without
+  // it this suite grew the operator's real ~/.xclaw on every run.
+  let fabricDir;
+  let savedFabric;
+  before(async () => {
+    fabricDir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-cdp-fabric-"));
+    savedFabric = process.env.XCLAW_FABRIC_DIR;
+    process.env.XCLAW_FABRIC_DIR = fabricDir;
+  });
+  after(async () => {
+    if (savedFabric === undefined) delete process.env.XCLAW_FABRIC_DIR;
+    else process.env.XCLAW_FABRIC_DIR = savedFabric;
+    if (fabricDir) await fs.rm(fabricDir, { recursive: true, force: true });
+  });
+
   it("commit gate blocks checkout navigate in-process (bundle-parity)", async () => {
     _resetTabsForTests();
     await withEnv({ XCLAW_COMMIT_GATES: "1" }, async () => {

@@ -41,10 +41,10 @@ export function getActionMeta(actionId) {
 /**
  * Cursor for network delta: timestamp (seconds) + optional flow count hint.
  */
-export function networkCursor() {
+export function networkCursor(cfg = null) {
   return {
     ts: Date.now() / 1000,
-    mitm: isMitmEnabled(),
+    mitm: isMitmEnabled(cfg),
   };
 }
 
@@ -52,11 +52,11 @@ export function networkCursor() {
  * Flows that occurred after cursor.ts (and match optional host filter).
  */
 export async function networkDeltaSince(cursor, opts = {}) {
-  if (!cursor || !isMitmEnabled()) {
+  if (!cursor || !isMitmEnabled(opts.cfg || null)) {
     return { enabled: false, flows: [], count: 0 };
   }
   const sinceTs = Number(cursor.ts) || 0;
-  const flows = await readMitmFlows(null, {
+  const flows = await readMitmFlows(opts.cfg || null, {
     limit: opts.limit || 100,
     host: opts.host,
     method: opts.method,
@@ -92,7 +92,7 @@ export async function bindActionFlows(actionId, flows, extra = {}) {
     meta.bound = rec;
   }
   try {
-    const confdir = mitmConfdir();
+    const confdir = mitmConfdir(extra.cfg || null);
     await fs.mkdir(confdir, { recursive: true });
     const line = JSON.stringify(rec) + "\n";
     await fs.appendFile(path.join(confdir, "action-bindings.jsonl"), line);
@@ -117,20 +117,21 @@ function compactFlow(f) {
 /**
  * Wrap a browser tool execute: open network cursor → run → attach delta + actionId.
  */
-export function withNetworkBinding(executeFn, { label } = {}) {
+export function withNetworkBinding(executeFn, { label, cfg = null } = {}) {
   return async function boundExecute(args = {}, ...rest) {
     const actionId = createActionId(label || "browser");
-    const cursor = networkCursor();
+    const cursor = networkCursor(cfg);
     let result;
     try {
       result = await executeFn(args, ...rest);
     } catch (e) {
-      const delta = await networkDeltaSince(cursor);
-      await bindActionFlows(actionId, delta.flows, { label, error: true });
+      const delta = await networkDeltaSince(cursor, { cfg });
+      await bindActionFlows(actionId, delta.flows, { cfg, label, error: true });
       throw e;
     }
-    const delta = await networkDeltaSince(cursor);
+    const delta = await networkDeltaSince(cursor, { cfg });
     await bindActionFlows(actionId, delta.flows, {
+      cfg,
       label,
       tabId: args.tabId,
     });
@@ -321,7 +322,7 @@ export function assertOutcome(expect = {}, flows = []) {
 export async function readActionBindings(opts = {}) {
   const limit = opts.limit || 50;
   try {
-    const p = path.join(mitmConfdir(), "action-bindings.jsonl");
+    const p = path.join(mitmConfdir(opts.cfg || null), "action-bindings.jsonl");
     const raw = await fs.readFile(p, "utf8");
     const lines = raw.trim().split("\n").filter(Boolean);
     return lines
