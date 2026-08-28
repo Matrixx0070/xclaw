@@ -1,3 +1,25 @@
+## 3.295.0 (2026-08-28)
+
+- The self-deploy watcher re-reads config before it acts. `xclaw self-deploy
+  watch` is the one xclaw process that outlives every config edit: the gateway
+  restarts constantly (365 restarts on the live box), the watcher is started
+  once by the supervisor and then runs for weeks — 14 days, live, at the time
+  of writing. It called `loadConfig()` once in the CLI and every decision it
+  made afterwards used that snapshot.
+- The alerting target was added to `~/.xclaw/xclaw.json` after that boot, so
+  the watcher resolved zero alert targets and stayed that way: all 100 entries
+  in the live alert history were `skipped: "no_targets"`. Losing
+  `deploying`/`deployed` (severity info) costs nothing, but `rolled_back`
+  and `ROLLBACK FAILED` are severity `error`, and the `no_targets` check in
+  `send()` sits ABOVE the severity check — so the one alert that says the
+  machine failed to redeploy itself and needs a human went nowhere either.
+- `getSharedAlerter` already carries an upgrade-in-place repair for a frozen
+  target-less alerter, but it can only fire when a caller hands it a config
+  that DOES resolve targets. A caller that never re-reads config can never
+  trigger the repair built for it.
+- Re-reading is gated on a pending intent, because `loadConfig()` logs on
+  every call and the watch loop ticks every 5s.
+
 ## 3.294.0 (2026-08-28)
 
 - `security.safeAuto` no longer outranks the critical risk tier. safeAuto is a

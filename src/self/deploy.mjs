@@ -245,12 +245,37 @@ export async function runDeployOnce(cfg) {
   return intent;
 }
 
-/** Long-running watcher (run under pm2 / the supervisor). */
-export async function runDeployWatch(cfg, { intervalMs = 5000, signal } = {}) {
-  // eslint-disable-next-line no-constant-condition
+/**
+ * Long-running watcher (run under pm2 / the supervisor).
+ *
+ * This is the one xclaw process that outlives every config edit — the gateway
+ * restarts constantly, the watcher is started once and runs for weeks. Holding
+ * the config it booted with meant an alerting target added afterwards never
+ * reached it: the live watcher's alerter resolved zero targets for 14 days and
+ * every self-deploy alert was skipped "no_targets", `ROLLBACK FAILED`
+ * included (that check sits above the severity check in `send()`, so error-level
+ * alerts died with the info ones). `getSharedAlerter` already repairs a frozen
+ * target-less alerter, but only when a caller hands it a config that resolves
+ * targets — which a caller that never re-reads config cannot do.
+ *
+ * So re-read before acting, and only then: `loadConfig()` logs on every call
+ * and this loop ticks every 5s. `reload`/`consume` are injectable for tests.
+ */
+export async function runDeployWatch(cfg, { intervalMs = 5000, signal, reload, consume } = {}) {
+  const reloadCfg = reload || (async () => (await import("../config/load.mjs")).loadConfig());
+  const consumeOnce = consume || runDeployOnce;
+  let current = cfg;
   while (!signal?.aborted) {
     try {
-      await runDeployOnce(cfg);
+      if (await readIntent(current)) {
+        try {
+          const fresh = await reloadCfg();
+          if (fresh) current = fresh;
+        } catch {
+          /* a half-written config must not strand a pending deploy */
+        }
+        await consumeOnce(current);
+      }
     } catch {
       /* keep watching */
     }
