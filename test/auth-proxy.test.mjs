@@ -17,15 +17,22 @@ describe("auth proxy", () => {
     });
     await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
     upPort = upstream.address().port;
-    proxyPort = 0; // will set after listen — startComputerAuthProxy uses fixed port
-    // use high random-ish port
-    proxyPort = 18000 + Math.floor(Math.random() * 1000);
+    // Ephemeral port, read back after bind. This used to pick a random port
+    // in 18000-18999 — a range that contains 18790, the live gateway — and on
+    // collision the fetches below reached the gateway's open /health instead
+    // of the proxy: 200 without a token, wrong body, a failure that looked
+    // like the proxy's and was the fixture's.
     proxy = startComputerAuthProxy({
       cfg: { computer: { authToken: "proxy-secret" } },
       upstream: `http://127.0.0.1:${upPort}`,
-      listenPort: proxyPort,
+      listenPort: 0,
     });
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((resolve, reject) => {
+      proxy.once("listening", resolve);
+      proxy.once("error", reject);
+    });
+    proxyPort = proxy.address().port;
+    assert.notEqual(proxyPort, 4244, "listenPort: 0 was rewritten to the default — an ephemeral bind is unrequestable");
   });
 
   after(async () => {

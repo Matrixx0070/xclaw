@@ -156,18 +156,38 @@ export async function completeRegistration(cfg = {}, cred = {}) {
   const id = cred.id || cred.rawId;
   if (!id) return { ok: false, error: "missing credential id" };
 
-  // Optional: verify clientData.challenge matches pending
-  if (cred.clientDataJSON) {
-    try {
-      const cd = JSON.parse(
-        fromB64url(cred.clientDataJSON).toString("utf8")
-      );
-      if (cd.challenge !== pending.challenge) {
-        return { ok: false, error: "challenge mismatch" };
-      }
-    } catch {
-      return { ok: false, error: "invalid clientDataJSON" };
-    }
+  // §7.1 sibling of the assertion's context checks: the ceremony context —
+  // type, challenge, origin — rides in clientDataJSON, so it is required
+  // (a check that vanishes when the field is omitted is decorative) and each
+  // field is enforced. Unchecked, an assertion response replays as a
+  // registration, and a credential minted on a phishing origin registers here
+  // and then gates everything from then on.
+  if (!cred.clientDataJSON) {
+    return { ok: false, error: "registration carries no clientDataJSON", code: "CLIENTDATA_REQUIRED" };
+  }
+  let cd;
+  try {
+    cd = JSON.parse(fromB64url(cred.clientDataJSON).toString("utf8"));
+  } catch {
+    return { ok: false, error: "invalid clientDataJSON" };
+  }
+  if (cd.type !== "webauthn.create") {
+    return {
+      ok: false,
+      error: `clientData type is ${JSON.stringify(cd.type)}, not "webauthn.create"`,
+      code: "CLIENTDATA_TYPE",
+    };
+  }
+  if (cd.challenge !== pending.challenge) {
+    return { ok: false, error: "challenge mismatch" };
+  }
+  const wa = waCfg(cfg);
+  if (cd.origin !== wa.origin) {
+    return {
+      ok: false,
+      error: `registration origin ${JSON.stringify(cd.origin)} is not the configured origin ${JSON.stringify(wa.origin)}`,
+      code: "ORIGIN_MISMATCH",
+    };
   }
 
   const entry = {

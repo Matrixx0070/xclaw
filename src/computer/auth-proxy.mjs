@@ -14,7 +14,11 @@ import { verifyComputerAuth, computerAuthToken } from "./auth.mjs";
 export function startComputerAuthProxy(opts = {}) {
   const cfg = opts.cfg || {};
   const upstream = new URL(opts.upstream || `http://127.0.0.1:${cfg.computer?.port || 4243}`);
-  const listenPort = opts.listenPort || Number(process.env.XCLAW_COMPUTER_PROXY_PORT) || 4244;
+  // ?? not ||: 0 is a legitimate request — "bind an ephemeral port" — and the
+  // falsy-default rewrote it to 4244, so nothing could ask for one. The test
+  // that needed it resorted to a random fixed port and collided with the live
+  // gateway on 18790.
+  const listenPort = opts.listenPort ?? (Number(process.env.XCLAW_COMPUTER_PROXY_PORT) || 4244);
   const token = computerAuthToken(cfg);
   if (!token && !opts.allowOpen) {
     console.warn("[xclaw:auth-proxy] no token configured — refusing to start open proxy");
@@ -66,7 +70,7 @@ export function startComputerAuthProxy(opts = {}) {
 
   server.listen(listenPort, "127.0.0.1", () => {
     console.log(
-      `[xclaw:auth-proxy] listening :${listenPort} → ${upstream.origin} (auth ${token ? "on" : "off"})`
+      `[xclaw:auth-proxy] listening :${server.address().port} → ${upstream.origin} (auth ${token ? "on" : "off"})`
     );
   });
   return server;

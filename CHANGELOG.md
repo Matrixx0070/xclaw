@@ -1,3 +1,31 @@
+## 3.336.0
+
+### The registration half now checks the ceremony context too
+
+The §7.1 sibling of 3.335.0's assertion fix. `completeRegistration` treated
+clientDataJSON as optional and, when present, checked only the challenge.
+Measured before the fix: an assertion response (`type: "webauthn.get"`)
+replayed as a registration was accepted, and a credential minted on
+`https://evil.example` — the origin a victim's browser stamps into
+clientData when phished — registered and would then gate everything from
+then on. clientDataJSON is now required (a check that vanishes when the
+field is omitted is decorative), and `type === "webauthn.create"` and the
+configured origin are enforced, each mutation-verified. Attestation
+verification remains a documented recommendation — registration is an
+operator-side flow; the assertion is the gate.
+
+### An ephemeral port was unrequestable, so a test gambled against the live gateway
+
+`startComputerAuthProxy` resolved its port with `opts.listenPort || … || 4244`,
+so `listenPort: 0` — "bind an ephemeral port" — was silently rewritten to the
+default. The test that needed one resorted to a random port in 18000–18999, a
+range that contains 18790, the live gateway: on collision its fetches reached
+the gateway's open `/health` instead of the proxy (200 without a token, wrong
+body — the failure looked like the proxy's and was the fixture's; caught as a
+1-in-1000 full-suite failure on this host). `??` now honors 0, the listen log
+reports the BOUND port, and the test binds ephemeral, reads the port back, and
+pins that 0 is not rewritten.
+
 ## 3.335.0
 
 ### An assertion's signature was verified; the ceremony it signed for was not
