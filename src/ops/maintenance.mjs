@@ -13,6 +13,20 @@
  *     so live readers (usage analytics, model-stats, cron monitor) keep their
  *     recent window without interruption.
  *
+ *  3. Retention on directories of discrete artifacts. Rotation is a
+ *     single-file, line-aligned primitive; a directory that gains one whole
+ *     file per operation is the same unboundedness in a different shape and
+ *     needs a different tool. First target: the proof bundles from
+ *     exportProofBundle, which appeared in NEITHER the list above nor the
+ *     exemptions below — 1214 files / 9.7MB measured live at 3.315.0, with no
+ *     reader anywhere in the codebase and no doctor probe watching them.
+ *
+ * Every pass returns a census whether or not it changed anything. Rotation's
+ * under-cap result used to be computed and then dropped by `if (r.rotated)`,
+ * which made a file at 99% of its ceiling indistinguishable from a file that
+ * did not exist. A ceiling you only hear about once it is crossed is not
+ * observability, so measurements are reported alongside the actions.
+ *
  * Not handled here: per-run / per-session files (blackboard, swarm journals,
  * transcripts) — bounded by their own lifecycle; and the ledger day segments,
  * which compaction owns (whole-day deletes only, never partial loss).
@@ -23,13 +37,24 @@
  */
 
 import fs from "node:fs/promises";
+import path from "node:path";
 import { compactLedger } from "./ledger.mjs";
 import { routerEventsPath } from "../providers/model-stats.mjs";
 import { cronEventsLogPath, doctorLogPath } from "../cron/logs.mjs";
 import { defaultLedgerPath } from "../tokens/usage-tracker.mjs";
+import { mitmConfdir } from "../browser/mitm.mjs";
 
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024; // 8MB trigger
 const DEFAULT_KEEP_BYTES = 4 * 1024 * 1024; // tail kept in place
+
+// Proof bundles are audit evidence: worth a month, not worth forever. The
+// count ceiling is the bound that actually holds — age alone lets a burst
+// blow the directory up inside the window. Both are sized above the live
+// population (1214 files over 15 days) so enabling retention does not
+// retroactively destroy evidence already on disk.
+const DEFAULT_PROOF_MAX_AGE_DAYS = 30;
+const DEFAULT_PROOF_KEEP_MAX = 2000;
+const PROOF_BUNDLE_RE = /^proof_\d+\.json$/;
 
 // same resolution as the loop's persistLedger (loop.mjs ~L678)
 function costLedgerPath(cfg = {}) {
@@ -68,6 +93,62 @@ export async function rotateJsonlIfOversize(p, opts = {}) {
   return { rotated: true, bytes: st.size, keptBytes: tail.length, path: p };
 }
 
+
+/**
+ * Retention for a directory of discrete files: delete entries older than
+ * maxAgeMs, then keep at most keepMax of what remains (newest first).
+ *
+ * Deletes only regular files whose name matches `match`, so a mis-pointed dir
+ * cannot eat anything it did not create. Returns the census — files/bytes seen
+ * — regardless of whether it pruned, because the point is to make growth
+ * visible before a ceiling is reached, not only after.
+ */
+export async function pruneDirByAge(dir, opts = {}) {
+  const maxAgeMs = Number(opts.maxAgeMs) > 0 ? Number(opts.maxAgeMs) : Infinity;
+  const keepMax = Number(opts.keepMax) > 0 ? Number(opts.keepMax) : Infinity;
+  const match = opts.match instanceof RegExp ? opts.match : null;
+  const out = { dir, files: 0, bytes: 0, pruned: 0, prunedBytes: 0, reason: "ok" };
+
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    out.reason = "absent";
+    return out;
+  }
+
+  const cutoff = Date.now() - maxAgeMs;
+  const eligible = [];
+  for (const e of entries) {
+    if (!e.isFile()) continue;
+    const p = path.join(dir, e.name);
+    let st;
+    try {
+      st = await fs.stat(p);
+    } catch {
+      continue; // vanished under us; nothing to count and nothing to delete
+    }
+    out.files += 1;
+    out.bytes += st.size;
+    if (match && !match.test(e.name)) continue;
+    eligible.push({ path: p, mtimeMs: st.mtimeMs, size: st.size });
+  }
+
+  eligible.sort((a, b) => b.mtimeMs - a.mtimeMs); // newest first
+  const doomed = eligible.filter((f, i) => f.mtimeMs < cutoff || i >= keepMax);
+  for (const f of doomed) {
+    try {
+      await fs.unlink(f.path);
+      out.pruned += 1;
+      out.prunedBytes += f.size;
+    } catch {
+      // a concurrent reader on Windows, or a file already gone: the next pass
+      // gets it. Never let one undeletable file abort the sweep.
+    }
+  }
+  return out;
+}
+
 /**
  * Run the daily maintenance pass. Never throws; per-target failures are
  * reported in the result. Gate: cfg.ops.maintenance.enabled !== false.
@@ -78,7 +159,7 @@ export async function runOpsMaintenance(cfg = {}) {
   }
   const maxBytes = Number(cfg.ops?.maintenance?.maxBytes) || DEFAULT_MAX_BYTES;
   const keepBytes = Math.min(Number(cfg.ops?.maintenance?.keepBytes) || DEFAULT_KEEP_BYTES, maxBytes);
-  const out = { skipped: false, ledger: null, rotated: [], errors: [] };
+  const out = { skipped: false, ledger: null, rotated: [], dirs: [], errors: [] };
 
   try {
     out.ledger = await compactLedger(cfg);
@@ -100,7 +181,24 @@ export async function runOpsMaintenance(cfg = {}) {
       out.errors.push({ target: p, error: e?.message || String(e) });
     }
   }
+
+  const mt = cfg.ops?.maintenance || {};
+  const proofsDir = path.join(mitmConfdir(cfg), "proofs");
+  try {
+    out.dirs.push(
+      await pruneDirByAge(proofsDir, {
+        maxAgeMs:
+          (Number(mt.proofMaxAgeDays) > 0 ? Number(mt.proofMaxAgeDays) : DEFAULT_PROOF_MAX_AGE_DAYS) *
+          86_400_000,
+        keepMax: Number(mt.proofKeepMax) > 0 ? Number(mt.proofKeepMax) : DEFAULT_PROOF_KEEP_MAX,
+        match: PROOF_BUNDLE_RE,
+      })
+    );
+  } catch (e) {
+    out.errors.push({ target: proofsDir, error: e?.message || String(e) });
+  }
+
   return out;
 }
 
-export default { runOpsMaintenance, rotateJsonlIfOversize };
+export default { runOpsMaintenance, rotateJsonlIfOversize, pruneDirByAge };

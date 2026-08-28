@@ -1,3 +1,37 @@
+## 3.316.0 (2026-08-28)
+
+### Fixed — a directory of audit artifacts that nothing bounded, read, or watched
+
+`exportProofBundle` writes `proof_<ts>.json` into `<mitm confdir>/proofs` on
+every call. Nothing in the codebase ever reads a bundle back, no doctor probe
+looks at the directory, and `ops.maintenance` — the module whose stated job is
+"unbounded append-only files" — listed the directory neither in its rotation
+targets nor in its "Not handled here" exemptions. It was omitted, not exempted.
+
+Measured live: **1214 bundles, 9.7 MB**, oldest 2026-08-13, newest the same hour
+it was measured. (Most are residue from the smoke-test confdir leak fixed in
+3.310.0; the growth path itself was never bounded.)
+
+Rotation could not cover this. `rotateJsonlIfOversize` splits one file at a line
+boundary; a directory that gains a whole file per operation is the same
+unboundedness in a different shape. New `pruneDirByAge(dir, opts)` primitive:
+age ceiling, then a newest-first count ceiling, deleting only regular files
+matching a caller-supplied name pattern so a mis-pointed directory cannot eat
+anything it did not create. Wired into the daily pass for the proofs directory
+at 30 days / 2000 files (`ops.maintenance.proofMaxAgeDays`, `.proofKeepMax`).
+
+Both ceilings sit above the current live population deliberately: enabling
+retention must not retroactively delete evidence already on disk. Nothing is
+pruned on this host today; growth from here is bounded.
+
+### Fixed — measurements computed and then thrown away
+
+`runOpsMaintenance` did `if (r.rotated) out.rotated.push(r)`, so a file at 99% of
+its cap and a file that does not exist produced identical (empty) output. A
+ceiling you only hear about once it has been crossed is not observability. The
+new directory pass returns its census — files, bytes, pruned, prunedBytes —
+whether or not it changed anything, and `out.dirs` carries it every run.
+
 ## 3.315.0 (2026-08-28)
 
 ### Fixed — a sha256-attested audit bundle that silently dropped evidence

@@ -228,6 +228,17 @@ read ceiling underneath). Raise `limit`, or read `action-bindings.jsonl`
 directly, when the full population is needed. Never read `flowCount` as the
 size of the population; it is the size of the sample.
 
+Bundles accumulate in `<confdir>/proofs/` as `proof_<ts>.json`, one per export.
+Nothing reads them back — they exist to be handed to a person — so the daily
+ops pass applies retention rather than letting the directory grow forever:
+entries older than `ops.maintenance.proofMaxAgeDays` (30) are deleted, then all
+but the newest `ops.maintenance.proofKeepMax` (2000). Only files matching
+`proof_<digits>.json` are touched; anything else you leave in that directory
+survives. Each pass reports `{ dir, files, bytes, pruned, prunedBytes }` in the
+maintenance result whether or not it deleted anything, so the directory's size
+is visible before a ceiling is reached. Archive any bundle you need to keep
+beyond the retention window outside `proofs/`.
+
 ```bash
 export XCLAW_TRUTH_AUTO_ASSERT=1   # annotate browser_* tool results with require-rule checks
 export XCLAW_MITM_SYNC_ADDON=1     # resync addons.py after upgrades
