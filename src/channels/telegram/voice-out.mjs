@@ -8,6 +8,7 @@ import os from "node:os";
 import { spawn } from "node:child_process";
 import { localSpeak } from "../../voice/providers/local.mjs";
 import { toSpeakableText } from "../../voice/speakable.mjs";
+import { telegramUploadTimeoutMs, isAbortLikeError } from "./errors.mjs";
 
 function run(cmd, args) {
   return new Promise((resolve) => {
@@ -108,30 +109,52 @@ export async function sendTelegramVoiceNote(opts) {
   if (caption) form.append("caption", String(caption).slice(0, 1024));
 
   const filename = path.basename(filePath);
+  const timeoutMs = opts.timeoutMs;
   if (format === "ogg") {
     form.append("voice", blob, filename.endsWith(".ogg") ? filename : "voice.ogg");
     const url = `https://api.telegram.org/bot${token}/sendVoice`;
-    const res = await fetch(url, { method: "POST", body: form });
+    // Unbounded, a silent socket parks the whole reply turn (v3.290.0); the
+    // budget scales with the note so a long one is not cut off.
+    const budget = timeoutMs ?? telegramUploadTimeoutMs(buf.length);
+    const res = await fetch(url, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(budget),
+    });
     const j = await res.json();
     if (!j.ok) {
       // fallback: send as document
-      return sendAsDocument({ token, chatId, filePath, replyTo, caption, buf, filename });
+      return sendAsDocument({ token, chatId, filePath, replyTo, caption, buf, filename, timeoutMs });
     }
     return { ok: true, method: "sendVoice", result: j.result };
   }
 
-  return sendAsDocument({ token, chatId, filePath, replyTo, caption, buf, filename });
+  return sendAsDocument({ token, chatId, filePath, replyTo, caption, buf, filename, timeoutMs });
 }
 
-async function sendAsDocument({ token, chatId, filePath, replyTo, caption, buf, filename }) {
+async function sendAsDocument({ token, chatId, filePath, replyTo, caption, buf, filename, timeoutMs }) {
   const form = new FormData();
   form.append("chat_id", String(chatId));
   if (replyTo != null) form.append("reply_to_message_id", String(replyTo));
   if (caption) form.append("caption", String(caption).slice(0, 1024));
-  const blob = new Blob([buf || (await fs.readFile(filePath))]);
+  const bytes = buf || (await fs.readFile(filePath));
+  const blob = new Blob([bytes]);
   form.append("document", blob, filename || "voice.wav");
   const url = `https://api.telegram.org/bot${token}/sendDocument`;
-  const res = await fetch(url, { method: "POST", body: form });
+  const budget = timeoutMs ?? telegramUploadTimeoutMs(bytes.length);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(budget),
+    });
+  } catch (e) {
+    // This path already reports failure by throwing; keep that contract but
+    // name the timeout, which is otherwise an opaque "The operation was aborted".
+    if (isAbortLikeError(e)) throw new Error(`Telegram sendDocument timed out after ${budget}ms`);
+    throw e;
+  }
   const j = await res.json();
   if (!j.ok) {
     throw new Error(`Telegram sendDocument: ${j.description || res.status}`);

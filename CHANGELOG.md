@@ -1,3 +1,37 @@
+## 3.292.0 (2026-08-28)
+
+- The five Telegram media-upload requests are bounded. v3.290.0 fixed the JSON
+  `api()` path — Node's `fetch` has no total-request timeout, so a socket that
+  opens and then goes silent parks the awaiting caller forever — and explicitly
+  deferred the multipart paths. Those were the worse case: `sendPhotoUrl`,
+  `sendPhotoFile`, both `sendAsDocument` helpers and `sendVoice` each awaited a
+  `fetch` with no signal, so one silent socket held the whole reply turn with
+  nothing to time it out and nothing to report it.
+- Uploads cannot share `api()`'s flat budget, so the new
+  `telegramUploadTimeoutMs(bytes)` derives one from the payload: a 30s
+  allowance for connect, TLS and Telegram's own post-upload processing, plus
+  wire time at a deliberately pessimistic 128 KiB/s, clamped to 10 minutes. The
+  clamp is what restores the guarantee — no size, however absurd or
+  miscomputed, can make the request unbounded again — and the ceiling still
+  leaves room for Telegram's own 50 MB document limit at the assumed rate, so a
+  legitimately large upload never aborts itself. A flat 30s would have cut off
+  every multi-megabyte generated image on a slow link, trading a hang for a
+  silent delivery failure.
+- `sendPhotoFile` no longer routes an abort into its document fallback. That
+  `catch` treated every error as "Telegram refused this format" and re-uploaded
+  the identical buffer — so a wedged socket became two, and the second one had
+  the same reason to wedge as the first. A timeout is now reported; a genuine
+  rejection still falls back, and the fallback carries the same budget.
+- Voice-out keeps its throwing contract (its caller warns and records a
+  `voice_out` channel error) but names the timeout, which `AbortSignal` would
+  otherwise surface as an opaque "The operation was aborted".
+- `test/telegram-upload-timeout.test.mjs` (10 tests) covers the budget's
+  monotonicity, its clamp, and its garbage-input floor, then drives all three
+  send functions against a server that accepts and never answers: without a
+  signal each call never settles, which the test reports as HUNG rather than
+  hanging the suite. It also pins the invariant at the source — every `fetch(`
+  in photo-out and voice-out must carry a `signal:`. All three wirings were
+  mutation-verified in both directions, including the fallback branch.
 ## 3.291.0 (2026-08-28)
 
 - Every process-liveness check now routes through the one primitive in

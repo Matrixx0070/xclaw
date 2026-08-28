@@ -180,6 +180,49 @@ export function telegramRequestTimeoutMs(_method, body, opts = {}) {
 }
 
 /**
+ * Total-request budget for a multipart *upload* (sendPhoto / sendVoice /
+ * sendDocument), derived from the payload size.
+ *
+ * Same root cause as `telegramRequestTimeoutMs` — Node's `fetch` has no total
+ * timeout, so a socket that opens and then goes silent parks the caller
+ * forever — but uploads cannot share that function's flat budget. 30s is
+ * generous for a 40 KB voice note and far too tight for a 40 MB document on a
+ * slow link, and an upload that aborts early is a *delivered-nothing* failure
+ * the user sees, so the budget has to scale with what is actually being sent.
+ *
+ * Model: a fixed allowance for connect, TLS and Telegram's own post-upload
+ * processing, plus wire time at a deliberately pessimistic assumed throughput.
+ * The clamp is what keeps the guarantee: no size, however absurd or
+ * miscomputed, can make this unbounded again. The default ceiling still leaves
+ * room for Telegram's own 50 MB document limit at the assumed rate, so a
+ * legitimate large upload never aborts itself.
+ *
+ * @param {number} bytes payload size; anything non-finite falls back to base
+ * @param {{baseMs?: number, bytesPerSec?: number, maxMs?: number}} [opts]
+ * @returns {number} ms, always finite and >= baseMs
+ */
+export function telegramUploadTimeoutMs(bytes, opts = {}) {
+  const { baseMs = 30_000, bytesPerSec = 128 * 1024, maxMs = 600_000 } = opts;
+  const base = Math.max(1_000, Number(baseMs) || 30_000);
+  const rate = Math.max(1, Number(bytesPerSec) || 128 * 1024);
+  const cap = Math.max(base, Number(maxMs) || 600_000);
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return base;
+  return Math.min(cap, base + Math.round((n / rate) * 1000));
+}
+
+/**
+ * True for the rejection an `AbortSignal.timeout()` produces (and a manual
+ * abort). Callers need it because an upload that timed out must not be
+ * retried down a fallback path: the bytes are identical, so the second
+ * request wedges exactly like the first.
+ */
+export function isAbortLikeError(err) {
+  const name = String(err?.name || "");
+  return name === "TimeoutError" || name === "AbortError";
+}
+
+/**
  * Redact a bot token from error/log text (sweep #71). Telegram API URLs
  * embed the token (`/bot<token>/…`); runtime errors can echo the full
  * URL (proven: fetch's "Failed to parse URL from …" carries it), and
@@ -199,4 +242,6 @@ export default {
   backoffMsFromClassification,
   redactTelegramToken,
   telegramRequestTimeoutMs,
+  telegramUploadTimeoutMs,
+  isAbortLikeError,
 };
