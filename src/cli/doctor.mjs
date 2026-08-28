@@ -13,6 +13,7 @@ import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
 import { validateConfig } from "../config/validate.mjs";
 import { isComputerRunning } from "../computer/manager.mjs";
 import { runSecurityAudit } from "../security/audit.mjs";
+import { auditRow } from "./doctor-audit-row.mjs";
 import { isMitmEnabled, mitmStatus, findMitmdump, mitmCaStatus } from "../browser/mitm.mjs";
 import { horizon0Checklist, buildProductionChromeArgs } from "../browser/horizon0.mjs";
 import { hooksStatus, beforeNavigate, beforeInput } from "../browser/hooks.mjs";
@@ -455,25 +456,17 @@ export async function runDoctor(opts = {}) {
     `strategy=${r.strategy || "full"} retries=${r.retries ?? 3} maxDelayMs=${r.maxDelayMs ?? 30000}`
   );
 
-  // Security
-  if (cfg.security?.autoApprove) {
-    push("security.autoApprove", "warn", "autoApprove=true — tools may run without human gate");
-  } else {
-    push("security.autoApprove", "ok", "autoApprove disabled or unset");
-  }
-
-  // Phase S security audit
+  // Security — every row here comes from runSecurityAudit, translated by
+  // auditRow. There used to be an inline security.autoApprove push above this
+  // block as well, a second verdict on the same setting with weaker advice and
+  // no remedy; the audit's finding of that name says the same thing and carries
+  // the fix. Both were live simultaneously, hidden by the doubled prefix that
+  // made the audit's copy read `security.security.autoApprove`.
   try {
     const audit = runSecurityAudit(cfg);
     for (const f of audit.findings) {
-      if (f.level === "ok" || f.level === "info") {
-        if (f.level === "ok") push(`security.${f.id}`, "ok", f.message);
-        else push(`security.${f.id}`, "ok", f.message);
-      } else if (f.level === "warn") {
-        push(`security.${f.id}`, "warn", f.fix ? `${f.message} — ${f.fix}` : f.message);
-      } else {
-        push(`security.${f.id}`, "error", f.fix ? `${f.message} — ${f.fix}` : f.message);
-      }
+      const row = auditRow(f);
+      push(row.id, row.status, row.message);
     }
   } catch (err) {
     push("security.audit", "warn", err.message);

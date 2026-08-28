@@ -1,3 +1,52 @@
+## 3.320.0 (2026-08-28)
+
+### Fixed — one config setting, two contradictory doctor rows, hidden by a typo in the id
+
+`xclaw doctor` translates every `runSecurityAudit` finding into a report row.
+That translation was three inline lines in `runDoctor`, and each one was wrong.
+
+**The prefix was applied unconditionally.** Three of the audit's ids already
+carry it — `security.autoApprove`, `security.systemRunPlan`,
+`security.requirePinnedExe` — so the live report printed
+`security.security.autoApprove`. The doubling was not cosmetic. The doctor also
+pushed its *own* `security.autoApprove` row a few lines above, and because the
+audit's copy came out under a different id, both shipped, on every host, saying
+different things about the same setting:
+
+```
+warn | config.warn                   | security.autoApprove=true with requireApproval list — approvals may be auto-granted
+warn | security.autoApprove          | autoApprove=true — tools may run without human gate
+warn | security.security.autoApprove | autoApprove=true — Use only in lab; prod should use approvalPolicy risky/safeAuto
+```
+
+`test/doctor-no-duplicate-probes.test.mjs` exists and could not see this: it
+pins the probe *functions* runDoctor reaches, not the row ids they emit. A
+duplicate that renames itself is invisible to a duplicate check. The inline
+push is deleted — the audit's finding of the same name says the same thing and
+carries the remedy the inline one lacked — which is also what makes
+de-doubling safe, since the two otherwise collapse onto one id and contradict
+each other.
+
+**The level map had a dead branch.**
+`if (level === "ok") push(…, "ok"); else push(…, "ok");` — byte-identical arms,
+which is how audit `info` was reported as `ok`. The doctor has rendered `info`
+since 3.313.0 (`cron.ledger`, `ops.smoke_compare`, `ops.quota_escalate`), and
+that level exists for "nothing to report either way". A localhost host with no
+gateway token got a green row reading *No XCLAW_GATEWAY_TOKEN / gateway.token*.
+Levels now map through unchanged; a level the doctor cannot render stays an
+error rather than being rendered green.
+
+**The remedy was dropped from advisory rows.** `fix` was appended for
+warn/error only — so the one `info` finding that carries a fix lost it. The
+rule is now uniform across levels: one branch fewer, and no level can silently
+lose information again.
+
+Translation is a pure module (`src/cli/doctor-audit-row.mjs`) with unit tests;
+its wiring back into `runDoctor` — which loads real config and makes live HTTP,
+so it cannot be fixtured — is pinned by a test that reads the call site as
+text, including that the inline duplicate has not returned. All shipping lines
+are mutation-verified.
+
 ## 3.319.0 (2026-08-28)
 
 ### Fixed — the tmp sweeper's failures were unreadable by construction
