@@ -197,9 +197,17 @@ export async function tryHandleOpsRoute({
         }
         try {
           const { channelHealthStatus } = await import("../../channels/health-watchdog.mjs");
-          ops.channelWatchdogRunning = Boolean(channelHealthStatus()?.running);
+          const { projectChannelHealth } = await import("../../channels/health-report.mjs");
+          const st = channelHealthStatus();
+          ops.channelWatchdogRunning = Boolean(st?.running);
+          // The boolean alone cannot carry a diagnosis: a watchdog that is
+          // running while a channel sits in a poll outage or a latched-open
+          // restart circuit reports `true`, so the out-of-process doctor had
+          // nothing to escalate on. Relay the (allow-listed) state too.
+          ops.channelWatchdog = projectChannelHealth(st);
         } catch {
           ops.channelWatchdogRunning = null;
+          ops.channelWatchdog = null;
         }
         return ops;
       })(),

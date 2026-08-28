@@ -1046,20 +1046,15 @@ export async function runDoctor(opts = {}) {
   // R1 channel + computer health
   try {
     const { channelHealthStatus } = await import("../channels/health-watchdog.mjs");
+    const { summarizeChannelHealth } = await import("../channels/health-report.mjs");
     const { watchdogStatus } = await import("../computer/watchdog.mjs");
-    const ch = channelHealthStatus();
-    if (!ch.running) {
-      push("channels.health", "ok", "channel watchdog idle (start gateway to enable)");
-    } else {
-      const parts = Object.entries(ch.channels || {}).map(
-        ([n, s]) => `${n}:restarts=${s.restarts||0}${s.lastError ? ":err" : ""}`
-      );
-      push(
-        "channels.health",
-        ch.lastError ? "warn" : "ok",
-        ch.lastError || `watchdog up lastTick=${ch.lastTickAt || "—"} ${parts.join(" ") || "(no channel state yet)"}`
-      );
-    }
+    // Consult the RUNNING gateway, exactly as computer.watchdog and eval.cron
+    // above do. This probe read only its own process, where `running` is always
+    // false, so it printed "idle (start gateway to enable)" at severity ok
+    // while /gateway/info reported the watchdog up — and never reached the
+    // per-channel state, hiding outages and open circuits from the CLI.
+    const sum = summarizeChannelHealth(channelHealthStatus(), liveOps);
+    push("channels.health", sum.severity, sum.message);
     const cw = watchdogStatus();
     if (cw) {
       push(

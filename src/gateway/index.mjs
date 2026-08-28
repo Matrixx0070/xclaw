@@ -51,7 +51,6 @@ import { proxyComputerRequest, isComputerProxyEnabled } from "./computer-proxy.m
 import {
   startChannelHealthWatchdog,
   stopChannelHealthWatchdog,
-  channelHealthStatus,
 } from "../channels/health-watchdog.mjs";
 import { runAgentLoop } from "../agent/loop.mjs";
 import {

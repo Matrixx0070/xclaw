@@ -1,3 +1,38 @@
+## 3.303.0 (2026-08-28)
+
+- `xclaw doctor` reported the channel watchdog as idle on a box where it was
+  demonstrably running. One live run, three lines from the same output:
+
+      [OK  ] computer.watchdog: active every 30000ms (in gateway)
+      [OK  ] eval.cron: registered (in gateway)
+      [OK  ] channels.health: channel watchdog idle (start gateway to enable)
+
+  while `/gateway/info` returned `ops.channelWatchdogRunning: true`. That `ops`
+  block exists precisely to kill this lie — it shipped with three fields, and
+  only two were ever wired into the doctor. `channelWatchdogRunning` had zero
+  consumers repo-wide: written on one line, read on none.
+- The wording was the harmless half. The probe branched on its OWN process's
+  `running`, which is false in the CLI by construction (the watchdog lives in
+  the gateway), so it took the idle branch and never reached `ch.channels` at
+  all. A channel sitting in a poll outage (`outageSince`) or one whose restart
+  circuit had latched open (`circuitAlerted`) could not be surfaced by the CLI
+  under any circumstances — and the watchdog pages the operator for both
+  (`channel-outage:<name>`, `channel-circuit-open:<name>`), so `ok` here
+  contradicted an alert xclaw itself had already sent.
+- `/gateway/info` now relays `ops.channelWatchdog` — the per-channel state
+  behind an explicit allow-list, not a spread, because `channelState` entries
+  are an internal map free to grow fields and a public route must not start
+  publishing them by accident. The `channelWatchdogRunning` boolean stays: it
+  shipped on a public surface.
+- Doctor consults that relay exactly as `computer.watchdog` and `eval.cron`
+  already do, and escalates what the watchdog paged for — `warn` on an outage,
+  `error` on an open circuit (which outranks an outage elsewhere). The decision
+  lives in `src/channels/health-report.mjs` as two pure functions, because a
+  probe written inline in `runDoctor` is untestable by construction: it calls
+  `loadConfig()` itself.
+- Dead import removed: `src/gateway/index.mjs` imported `channelHealthStatus`
+  and never called it.
+
 ## 3.302.0 (2026-08-28)
 
 - The same live-`~/.xclaw` leak, one module over: alert state. v3.300.0 taught
