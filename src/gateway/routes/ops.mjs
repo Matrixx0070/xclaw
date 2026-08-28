@@ -183,9 +183,17 @@ export async function tryHandleOpsRoute({
         const ops = {};
         try {
           const { watchdogStatus } = await import("../../computer/watchdog.mjs");
-          ops.computerWatchdogActive = Boolean(watchdogStatus()?.active);
+          const { projectComputerWatchdog } = await import("../../computer/watchdog-report.mjs");
+          const w = watchdogStatus();
+          ops.computerWatchdogActive = Boolean(w?.active);
+          // The boolean cannot carry a diagnosis. restartCount / lastError /
+          // consecutiveFail live in this process, so the out-of-process doctor
+          // printed its OWN zeros as "checks ok restarts=0" while this watchdog
+          // could have been crash-looping the computer server.
+          ops.computerWatchdog = projectComputerWatchdog(w);
         } catch {
           ops.computerWatchdogActive = null;
+          ops.computerWatchdog = null;
         }
         try {
           const { evalCronStatus } = await import("../../cron/eval-job.mjs");

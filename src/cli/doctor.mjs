@@ -665,18 +665,18 @@ export async function runDoctor(opts = {}) {
   }
   try {
     const { watchdogStatus } = await import("../computer/watchdog.mjs");
-    const w = watchdogStatus();
-    const enabled = cfg.computer?.watchdog?.enabled !== false;
-    const active = w.active || liveOps?.computerWatchdogActive === true;
-    push(
-      "computer.watchdog",
-      enabled ? (active ? "ok" : "warn") : "ok",
-      enabled
-        ? (active
-            ? `active every ${cfg.computer?.watchdog?.intervalMs ?? 30000}ms${w.active ? "" : " (in gateway)"}`
-            : "enabled but not running (start gateway)")
-        : "disabled"
-    );
+    const { summarizeComputerWatchdog } = await import("../computer/watchdog-report.mjs");
+    // ONE row, built from whichever view is real. This probe used to print two
+    // under the same key: this relay-aware line, and further down the CLI's own
+    // untouched counters rendered as "checks ok restarts=0 last=—" — a healthy
+    // reading of a process that has never run the watchdog. `gh.ok` is passed
+    // separately from `liveOps` because "the gateway is down" is the only case
+    // where "start gateway" is the right advice.
+    const sum = summarizeComputerWatchdog(watchdogStatus(), liveOps, gh.ok, {
+      enabled: cfg.computer?.watchdog?.enabled !== false,
+      intervalMs: cfg.computer?.watchdog?.intervalMs ?? 30000,
+    });
+    push("computer.watchdog", sum.severity, sum.message);
   } catch (err) {
     push("computer.watchdog", "warn", err.message);
   }
@@ -720,7 +720,10 @@ export async function runDoctor(opts = {}) {
         ? st.registered
           ? `registered next=${st.job?.nextRunAt ? new Date(st.job.nextRunAt).toISOString() : "—"}`
           : "registered (in gateway)"
-        : "not registered (start gateway)"
+        : gh.ok
+          // A live gateway that answered is not a gateway to start.
+          ? "NOT registered inside a live gateway — scheduled evals will not run (restart the gateway)"
+          : "not registered (start gateway)"
     );
   } catch (err) {
     push("eval.cron", "warn", err.message);
@@ -1059,7 +1062,6 @@ export async function runDoctor(opts = {}) {
   try {
     const { channelHealthStatus } = await import("../channels/health-watchdog.mjs");
     const { summarizeChannelHealth } = await import("../channels/health-report.mjs");
-    const { watchdogStatus } = await import("../computer/watchdog.mjs");
     // Consult the RUNNING gateway, exactly as computer.watchdog and eval.cron
     // above do. This probe read only its own process, where `running` is always
     // false, so it printed "idle (start gateway to enable)" at severity ok
@@ -1071,15 +1073,6 @@ export async function runDoctor(opts = {}) {
     // advice.
     const sum = summarizeChannelHealth(channelHealthStatus(), liveOps, gh.ok);
     push("channels.health", sum.severity, sum.message);
-    const cw = watchdogStatus();
-    if (cw) {
-      push(
-        "computer.watchdog",
-        cw.lastError ? "warn" : "ok",
-        cw.lastError ||
-          `checks ok restarts=${cw.restartCount ?? 0} last=${cw.lastCheckAt || "—"}`
-      );
-    }
   } catch (e) {
     push("channels.health", "warn", e.message || String(e));
   }

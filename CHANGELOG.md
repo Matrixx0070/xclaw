@@ -1,3 +1,43 @@
+## 3.306.0 (2026-08-28)
+
+- The same defect the last two releases fixed for the channel watchdog, found by
+  live-driving `xclaw doctor` afterwards: it printed **two** rows under one key.
+
+      [OK  ] computer.watchdog: active every 30000ms (in gateway)
+      [OK  ] computer.watchdog: checks ok restarts=0 last=—
+
+  The second row is fiction. The computer-server watchdog runs inside the
+  gateway; the CLI runs out of process, where `watchdogStatus()` returns the
+  module's untouched initial state, and the probe rendered that object as a
+  measurement. `restarts=0 last=—` was never an observation of a healthy
+  watchdog — it was the CLI reading counters it had never incremented, graded
+  `ok`.
+
+  It could not have been right in any run. `/gateway/info` relayed only the
+  boolean `computerWatchdogActive`; `restartCount`, `lastError` and
+  `consecutiveFail` had no way to cross the process boundary. A gateway watchdog
+  crash-looping the computer server — 40 restarts, a live `lastError`,
+  `consecutiveFail` climbing — produced that byte-identical "checks ok" row.
+
+  `/gateway/info` now relays the (allow-listed) watchdog state, and the CLI
+  builds ONE row from whichever view is real, in the new pure
+  `src/computer/watchdog-report.mjs`:
+
+  - `consecutiveFail` past the threshold → **error**, "cannot restart the
+    computer server", with the last error.
+  - a `lastError` → **warn**, with the real restart count.
+  - relayed and healthy → the gateway's own `restarts=` / `lastCheck=`.
+  - gateway up, watchdog NOT active → **error**: a computer server that dies
+    will not be restarted. It no longer says "start gateway" — a relayed value
+    exists only because a gateway answered.
+  - gateway up but relaying nothing (older build, or the relay threw) → **warn**.
+    Unknown is not healthy.
+  - gateway genuinely down → warn, and no invented counters.
+
+- `eval.cron` carried the same wrong advice: "not registered (start gateway)"
+  was reachable with the gateway up. It now says the evals will not run and to
+  restart the gateway it just talked to.
+
 ## 3.305.0 (2026-08-28)
 
 - 3.303.0 wired `ops.channelWatchdog` into `xclaw doctor` so the out-of-process
