@@ -1,3 +1,44 @@
+## 3.312.0 (2026-08-28)
+
+- The CI run for v3.311.0 came back red on one matrix leg only — `gate (24.15)`
+  failed while `gate (22.22)` passed — with one failing assertion in
+  `test/cron-anchor-restart.test.mjs`: *the target never moves further away with
+  each boot*. The shipped change was not the cause. That test's fixture passes
+  an explicit `paths.configDir`, so a redirected `HOME` never reaches it; the
+  assertion was already flaky and the hermetic run merely changed the timing
+  enough to expose it. Reproduced locally at 1 failure in 15 runs under twelve
+  spinners on four cores.
+
+  The assertion was `job.nextRunAt - t0 <= DAY`. It cannot hold. `nextRunAt` is
+  `armedAt + DAY` and `armedAt >= t0` by construction, because the durable arm
+  is stamped after `t0` is read — so the quantity being bounded by `DAY` is
+  always at least `DAY`, and the test passes only when the arm lands inside the
+  same millisecond. A zero-tolerance bound on a value that is inherently at or
+  above the bound is not a check; it is a coin flip that usually lands heads.
+
+  The deeper problem is that fixing the flake by widening the tolerance would
+  have preserved a test that could never have caught its own regression. Its ten
+  simulated restarts ran inside one tight loop, so the anchored target and the
+  unanchored one differed only by the loop's own runtime — a few milliseconds.
+  The bug it is named for is measured in hours. A scenario compressed into
+  milliseconds cannot observe a defect that only becomes visible over a day of
+  reboots, which is why the assertion had to be simultaneously flaky and blind:
+  those are the same fact seen from two sides.
+
+  So the ten boots are now spread over ten hours of simulated time
+  (`mock.timers` with `apis: ["Date"]` only — the arm's write chain still
+  settles on real promises, and mocking begins after the one `waitFor` so a
+  frozen clock can never stall it). The tolerance that remains is arm-write
+  latency, not slack. Both assertions were mutation-verified in both directions
+  against a scheduler patched to ignore the durable `armed` stamp: the
+  interval-from-arm check reports `36000000ms off` and the receding-target check
+  reports `receded 600min` — exactly the ten simulated hours, which is the proof
+  that the simulated clock, and not the loop's runtime, now drives the test.
+  Restored byte-identically afterwards (sha256).
+
+  Verified: 30 consecutive runs under the same twelve-spinner load that produced
+  the original failure, zero failures.
+
 ## 3.311.0 (2026-08-28)
 
 - v3.310.0 stopped three tests from writing into the operator's real

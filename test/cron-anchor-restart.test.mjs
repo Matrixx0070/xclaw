@@ -12,7 +12,7 @@
  * must not disturb, and the due.mjs primitives the ops job also rides on.
  */
 import assert from "node:assert/strict";
-import { describe, it, afterEach } from "node:test";
+import { describe, it, afterEach, mock } from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -150,10 +150,16 @@ describe("interval cron jobs survive restarts", () => {
       await waitFor(() => Number.isFinite(readAnchorsSync(f.cfg).armed[KEY]));
       const armedAt = readAnchorsSync(f.cfg).armed[KEY];
 
-      // Ten restarts. Without a durable arm each one pushes the first run a
-      // further full day out; with one they all agree on the same target.
+      // Ten restarts, an hour of simulated time apart. The spacing is the
+      // whole point: boots inside one millisecond compute a target that is
+      // indistinguishable from the anchored one, so the receding-target bug is
+      // invisible without a clock that moves. Only Date is mocked — the write
+      // chain below still settles on real promises — and mocking starts here,
+      // after the wait above, so a frozen clock can never stall waitFor.
+      mock.timers.enable({ apis: ["Date"], now: armedAt });
       let job = first;
-      for (let i = 0; i < 10; i++) {
+      for (let i = 1; i <= 10; i++) {
+        mock.timers.setTime(armedAt + i * HOUR);
         cancelJob(added.pop());
         job = register({ schedule: { kind: "every", everyMs: DAY }, cfg: f.cfg, anchorKey: KEY });
       }
@@ -167,8 +173,16 @@ describe("interval cron jobs survive restarts", () => {
         Math.abs(drift) < 60_000,
         `after 10 restarts the first run must still be ~1 interval from the ARM, got ${drift}ms off`
       );
-      assert.ok(job.nextRunAt - t0 <= DAY, "the target never moves further away with each boot");
+      // Ten hours of boots later the target has not receded ten hours with
+      // them. The tolerance is the arm-write latency, not slack: measured from
+      // the newest boot instead of the arm this overshoots by HOURS.
+      const recede = job.nextRunAt - t0 - DAY;
+      assert.ok(
+        recede <= 60_000,
+        `the target never moves further away with each boot; receded ${Math.round(recede / 60_000)}min`
+      );
     } finally {
+      mock.timers.reset();
       f.cleanup();
     }
   });
