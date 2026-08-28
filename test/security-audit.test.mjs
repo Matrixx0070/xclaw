@@ -227,3 +227,83 @@ describe("approval digest + plan fingerprint", () => {
     await p.catch(() => {});
   });
 });
+
+// security.bypassApprovals removes the approval gate outright: needsApproval
+// returns false for every tier below critical, and for critical too when
+// criticalOverride is "legacy". The audit graded the strictly WEAKER flag
+// (autoApprove) and had no row for this one, so `xclaw security-audit` on a
+// full-autonomy host printed "autoApprove off", ok:true, 0 errors, 0 warnings
+// and exited 0 — the audit's clean bill of health was itself the misreport.
+describe("security audit — bypassApprovals", () => {
+  const base = { gateway: { host: "127.0.0.1", token: "t" }, agent: { apiKey: "k" } };
+  const row = (cfg) =>
+    runSecurityAudit(cfg).findings.find((f) => f.id === "security.bypassApprovals");
+
+  it("reports the gate being removed, and never as clean", () => {
+    const a = runSecurityAudit({ ...base, security: { autoApprove: false, bypassApprovals: true } });
+    const f = a.findings.find((x) => x.id === "security.bypassApprovals");
+    assert.ok(f, "no security.bypassApprovals row — the audit cannot see the gate being removed");
+    assert.notEqual(f.level, "ok");
+    assert.match(f.message, /bypassApprovals/);
+    assert.ok(f.fix, "a row an operator cannot act on is half a report");
+  });
+
+  it("grades it an error on a hardened profile, like autoApprove", () => {
+    const a = runSecurityAudit({
+      ...base,
+      profile: "prod",
+      security: { autoApprove: false, bypassApprovals: true },
+    });
+    assert.equal(a.findings.find((x) => x.id === "security.bypassApprovals").level, "error");
+    assert.equal(a.ok, false);
+  });
+
+  it("grades bypass + criticalOverride:legacy an error on any profile", () => {
+    // The one state where NOTHING asks, at any tier — critical included.
+    const a = runSecurityAudit({
+      ...base,
+      profile: "lab",
+      security: { bypassApprovals: true, criticalOverride: "legacy" },
+    });
+    assert.equal(a.findings.find((x) => x.id === "security.bypassApprovals").level, "error");
+    assert.equal(a.ok, false);
+  });
+
+  it("warns rather than errors on an unhardened profile", () => {
+    const f = row({ ...base, profile: "lab", security: { bypassApprovals: true } });
+    assert.equal(f.level, "warn");
+  });
+
+  it("states the posture when the gate is in place, so its absence is visible", () => {
+    const f = row({ ...base, security: { autoApprove: false } });
+    assert.ok(f, "no row at all when off — an operator cannot tell audited-off from unaudited");
+    assert.equal(f.level, "ok");
+  });
+
+  it("only fires on the literal true, not on any truthy operator value", () => {
+    for (const v of ["false", "no", 0, undefined, null]) {
+      const f = row({ ...base, security: { bypassApprovals: v } });
+      assert.equal(f.level, "ok", `bypassApprovals=${JSON.stringify(v)} is not the enabling value`);
+    }
+  });
+
+  it("tracks the enforcer: what the audit grades is what the gate does", async () => {
+    // Pins the audit's verdict to real behaviour rather than to a config read,
+    // so the two cannot drift apart the way the audit and needsApproval had.
+    const cfg = { ...base, security: { bypassApprovals: true, approvalSlaMs: 60_000 } };
+    resetSharedApprovalGate();
+    const gate = createApprovalGate(cfg);
+    let pended = false;
+    const decision = await gate.authorize(
+      "bash",
+      // Risky, deliberately NOT critical: bypass still pends critical unless
+      // criticalOverride is "legacy", so a critical command would prove nothing.
+      { command: "echo anchor > ./xclaw-bypass-anchor.txt" },
+      { timeoutMs: 3_000, onPending: () => { pended = true; } }
+    );
+    assert.equal(pended, false, "risky call pended — bypass is not actually removing the gate");
+    assert.ok(decision?.approved ?? decision === true, `expected approval, got ${JSON.stringify(decision)}`);
+    // …and because it does, the audit must not call this host clean.
+    assert.notEqual(row(cfg).level, "ok");
+  });
+});

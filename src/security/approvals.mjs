@@ -253,11 +253,14 @@ export function createApprovalGate(cfg = {}) {
   function needsApproval(name, risk = null, { ignoreBypass = false } = {}) {
     const n = normalizeToolName(name);
     const critical = risk?.tier === "critical";
-    // Full autonomy, the equivalent of Claude Code's bypassPermissions: nothing
-    // is ever asked, at any risk tier. Off by default and deliberately its own
-    // flag rather than a tier setting, because it is not a bound — it removes
-    // the gate. The gateway logs it at boot and doctor reports it, so a machine
-    // running this way says so out loud.
+    // Full autonomy, the equivalent of Claude Code's bypassPermissions: it is
+    // not a bound — it removes the gate. Off by default and deliberately its own
+    // flag rather than a tier setting. A machine running this way says so out
+    // loud through `xclaw doctor` (config.warn, via validateConfig) and the
+    // security audit's security.bypassApprovals row. Two claims that stood here
+    // were false and are corrected: there is NO gateway boot log for it, and it
+    // is not true that "nothing is ever asked at any risk tier" — the Trust
+    // Sprint note below is the accurate account.
     // ignoreBypass: a session overlay (TUI Shift+Tab "auto") can drop bypass
     // for one run without rewriting the machine flag. Overlay never loosens.
     // Trust Sprint (2026-08-23): bypass no longer covers CRITICAL actions —

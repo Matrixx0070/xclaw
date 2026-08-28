@@ -96,6 +96,31 @@ export function runSecurityAudit(cfg = {}) {
     add("security.autoApprove", "ok", "autoApprove off");
   }
 
+  // bypassApprovals is the strictly STRONGER sibling of autoApprove: autoApprove
+  // auto-grants within the tier bounds, this removes the gate outright —
+  // needsApproval returns false for every tier below critical, and for critical
+  // too when criticalOverride is "legacy". The audit graded only the weaker
+  // flag, so a full-autonomy host audited clean: ok:true, 0 errors, 0 warnings,
+  // `xclaw security-audit` exit 0 — printed under a row reading "autoApprove
+  // off". The strongest switch in the file was the one nothing could report.
+  if (cfg.security?.bypassApprovals === true) {
+    const total = cfg.security?.criticalOverride === "legacy";
+    add(
+      "security.bypassApprovals",
+      total || prod ? "error" : "warn",
+      total
+        ? "bypassApprovals=true with criticalOverride=legacy — no tool call asks for approval at ANY tier"
+        : "bypassApprovals=true — approvals removed for every tier below critical",
+      "Set security.bypassApprovals=false; bound autonomy with security.approvalPolicy / security.autoApproveMaxTier instead"
+    );
+  } else {
+    add(
+      "security.bypassApprovals",
+      "ok",
+      "bypassApprovals off (tool calls reach the approval gate)"
+    );
+  }
+
   // systemRunPlan binding (TOCTOU mitigation on exec approvals)
   const bindPlan = cfg.security?.bindSystemRunPlan !== false;
   if (!cfg.security?.autoApprove) {
