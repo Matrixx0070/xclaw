@@ -143,6 +143,43 @@ export function backoffMsFromClassification(c, attempt = 0) {
 
 
 /**
+ * Client-side deadline for one Telegram API request, in ms.
+ *
+ * Node's fetch has no total-request timeout, so a half-open socket — the
+ * shape a NAT or a dropped route produces, distinct from a reset, which
+ * errors immediately — leaves the awaiting caller parked forever. On the
+ * `getUpdates` path that is an unbounded intake outage that nothing
+ * detects: the poll loop is suspended *inside* the request, so it stamps
+ * neither `lastPollOkAt` nor `lastPollErrorAt`, and `detectPollOutage`
+ * needs an error newer than the last success to fire. `loopAlive` stays
+ * true, so the channel watchdog reads the wedged poller as healthy.
+ *
+ * The budget is keyed on the request's own long-poll window rather than on
+ * a list of method names: Telegram holds the connection for `timeout`
+ * seconds when a request asks it to, so any such request is expected to be
+ * slow by exactly that much, and everything else is expected to be prompt.
+ * `getUpdates` is the only method that sends it today; a future one gets
+ * the right budget without touching this function.
+ *
+ * @param {string} _method for callers/logging; the budget derives from body
+ * @param {{timeout?: number}|undefined} body outbound JSON body
+ * @param {{baseMs?: number, longPollMarginMs?: number}} [opts]
+ * @returns {number} ms
+ */
+export function telegramRequestTimeoutMs(_method, body, opts = {}) {
+  const { baseMs = 30_000, longPollMarginMs = 15_000 } = opts;
+  const base = Math.max(1_000, Number(baseMs) || 30_000);
+  const longPollSec = Number(body?.timeout);
+  if (Number.isFinite(longPollSec) && longPollSec > 0) {
+    // Margin covers connect, the server's own reply latency after the
+    // window closes, and clock slop — never so tight that an idle
+    // long poll aborts itself on every cycle.
+    return Math.round(longPollSec * 1000) + Math.max(1_000, Number(longPollMarginMs) || 15_000);
+  }
+  return base;
+}
+
+/**
  * Redact a bot token from error/log text (sweep #71). Telegram API URLs
  * embed the token (`/bot<token>/…`); runtime errors can echo the full
  * URL (proven: fetch's "Failed to parse URL from …" carries it), and
@@ -161,4 +198,5 @@ export default {
   telegramApiError,
   backoffMsFromClassification,
   redactTelegramToken,
+  telegramRequestTimeoutMs,
 };

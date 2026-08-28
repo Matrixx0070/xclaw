@@ -72,6 +72,7 @@ import {
   telegramApiError,
   backoffMsFromClassification,
   redactTelegramToken,
+  telegramRequestTimeoutMs,
 } from "./errors.mjs";
 import { runTelegramPollLoop } from "./poll-loop.mjs";
 import { enrichStickerMeta } from "./sticker-meta.mjs";
@@ -163,6 +164,21 @@ export function createTelegramChannel(cfg) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: body ? JSON.stringify(body) : undefined,
+        // Node's fetch has no default request timeout. Without this a
+        // half-open socket parks the caller forever — on getUpdates that
+        // suspends the poll loop inside the request, so it never stamps
+        // lastPollOkAt/lastPollErrorAt and the watchdog reads it as alive.
+        // The budget clears getUpdates' own long-poll window (see
+        // telegramRequestTimeoutMs) so a legitimate idle poll never
+        // self-aborts. requestTimeoutMs/longPollMarginMs are operator
+        // escape hatches (e.g. a slow self-hosted Bot API server) and let
+        // tests exercise the hang path without a real 30s wait.
+        signal: AbortSignal.timeout(
+          telegramRequestTimeoutMs(method, body, {
+            baseMs: conf.requestTimeoutMs,
+            longPollMarginMs: conf.longPollMarginMs,
+          })
+        ),
       });
     } catch (err) {
       const e = new Error(`Telegram ${method}: ${redactTelegramToken(err.message || err, token)}`);

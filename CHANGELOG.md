@@ -1,3 +1,55 @@
+## 3.290.0 (2026-08-28)
+
+- Every Telegram Bot API request now carries a client-side deadline. Node's
+  `fetch` has no total-request timeout, so `api()` was unbounded: a half-open
+  socket — the shape a NAT drop or a dead route produces, distinct from a
+  reset, which errors immediately — parked the awaiting caller forever.
+- On `getUpdates` that was worse than a visible outage, because nothing could
+  see it. The poll loop suspends *inside* the request, so during a hang it
+  stamps neither `lastPollOkAt` nor `lastPollErrorAt` and never increments
+  `consecutivePollFails`. Both arms of `detectPollOutage` need an emitted poll
+  error — `fails >= pollFailThreshold`, or `errAt > okAt && now - okAt >
+  outageAfterMs` — and a hang emits none, so the first arm never counts and the
+  second can never see an error newer than the last success. `loopAlive` stays
+  true because the loop is suspended, not stopped, so the channel watchdog read
+  a wedged poller as healthy and took its `continue` branch: no restart, no
+  alert. Intake stopped and the gateway reported itself fine.
+- The fix is one `AbortSignal.timeout()` on the fetch, budgeted by a new pure
+  `telegramRequestTimeoutMs(method, body, opts)` in
+  `src/channels/telegram/errors.mjs`. No classifier change was needed: an abort
+  rejects with "The operation was aborted due to timeout", which
+  `classifyTelegramError`'s first branch (`/abor|ETIMEDOUT|timeout/i`) already
+  grades `TIMEOUT` and retryable. That converts the silent hang into exactly
+  the error the existing machinery consumes — `lastPollErrorAt`,
+  `consecutivePollFails`, `backoffMsFromClassification` — so the watchdog it
+  was blind to now fires on its normal path rather than through a new one.
+- The budget derives from the request's own long-poll window (`body.timeout`),
+  not from a list of method names. Telegram holds the connection for `timeout`
+  seconds when a request asks it to, so such a request is expected to be slow
+  by exactly that much and everything else is expected to be prompt.
+  `getUpdates` is the only method that sends the field today; a future one gets
+  the right budget without editing the function. Defaults: 30s base, and the
+  long-poll window plus a 15s margin (so the live 30s poll gets 45s, and the
+  50s clamp in `poll-loop.mjs` maxes it at 65s). The margin covers connect, the
+  server's reply latency after the window closes, and clock slop, so an idle
+  long poll never aborts itself on every cycle.
+- New optional config `channels.telegram.requestTimeoutMs` and
+  `channels.telegram.longPollMarginMs` are operator escape hatches for a slow
+  self-hosted Bot API server. Both are floor-clamped to 1s: a sub-second budget
+  on a real network is a self-inflicted outage.
+- Not covered on purpose: the five media-upload fetches in
+  `src/channels/telegram/photo-out.mjs` and `voice-out.mjs` remain unbounded. A
+  large upload on a slow link is legitimately slow, and a cap picked without
+  sizing evidence would turn a slow success into a regression. They are a
+  separate change needing a size-derived budget — this release does not make
+  every Telegram call bounded, only every `api()` call.
+- `test/telegram-request-timeout.test.mjs` covers the budget function's
+  branches and clamps, pins the `api()` wiring and the `getUpdates` body field
+  at the source (the poll loop can't be driven in-process), and proves the fix
+  end-to-end against a real `net.createServer` that accepts the connection and
+  never answers: the request aborts and classifies `TIMEOUT`/retryable instead
+  of hanging.
+
 ## 3.289.0 (2026-08-28)
 
 - `xclaw doctor` reported `[OK] telegram.writerLock: lock present` for a lock
