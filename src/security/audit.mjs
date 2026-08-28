@@ -22,6 +22,9 @@ import { isLoopbackHost } from "../gateway/bind-guard.mjs";
 import { DM_POSTURE, isOpenDm, dmRemedy } from "../channels/dm-posture.mjs";
 import { auditWorkspaceIsolation } from "./workspace-isolation.mjs";
 import { PROFILES, resolveProfileName, isHardenedProfile } from "../config/profiles.mjs";
+import { getSpawnEnforceMode } from "./spawn-enforce.mjs";
+import { shouldUnshareNet } from "./os-sandbox.mjs";
+import { getEgressPolicy } from "./egress.mjs";
 
 export function runSecurityAudit(cfg = {}) {
   const findings = [];
@@ -121,10 +124,41 @@ export function runSecurityAudit(cfg = {}) {
     );
   }
 
+  // mcpAutoApprove blanket-approves every mcp__<server>__<tool> call. The
+  // approval gate's own comment calls MCP tools "third-party code the operator
+  // never vetted tool-by-tool"; this switch waives all of them at once, and no
+  // audit, validate or doctor surface mentioned it.
+  if (cfg.security?.mcpAutoApprove === true) {
+    add(
+      "security.mcpAutoApprove",
+      prod ? "error" : "warn",
+      "mcpAutoApprove=true — every MCP tool auto-runs unapproved (third-party code, not vetted tool-by-tool)",
+      "Set security.mcpAutoApprove=false and opt individual tools out via security.safeAuto"
+    );
+  } else {
+    add("security.mcpAutoApprove", "ok", "mcpAutoApprove off (MCP tools reach the approval gate)");
+  }
+
   // systemRunPlan binding (TOCTOU mitigation on exec approvals)
   const bindPlan = cfg.security?.bindSystemRunPlan !== false;
+  // Freezing the plan and CHECKING it at spawn are two switches, and only the
+  // first was graded. With spawnEnforce "off" this row printed an affirmative
+  // ok — "bindSystemRunPlan on (frozen argv/cwd/exe before approval)" — while
+  // assertPlanAtSpawn returned enforced:false for ANY command: a plan frozen on
+  // `echo safe` still let `curl ... | sh` through. An audit that reassures about
+  // a protection a second switch has disabled is worse than a silent one, so the
+  // reassurance is now conditional on the mode the gate actually obeys. Severity
+  // stays on the security.spawnEnforce row below — one fact, one owner.
+  const spawnMode = getSpawnEnforceMode(cfg);
   if (!cfg.security?.autoApprove) {
-    if (bindPlan) {
+    if (bindPlan && spawnMode === "off") {
+      add(
+        "security.systemRunPlan",
+        "info",
+        "bindSystemRunPlan on but spawnEnforce=off — the frozen plan is not enforced at spawn",
+        "Set security.spawnEnforce to check (default) or strict"
+      );
+    } else if (bindPlan) {
       add(
         "security.systemRunPlan",
         "ok",
@@ -147,6 +181,20 @@ export function runSecurityAudit(cfg = {}) {
     );
   }
 
+  // Graded from getSpawnEnforceMode, not from cfg.security.spawnEnforce: the
+  // gate obeys XCLAW_SPAWN_ENFORCE too, and a row that reads the written value
+  // instead of the enforced one cannot see an env-disabled host.
+  if (spawnMode === "off") {
+    add(
+      "security.spawnEnforce",
+      prod ? "error" : "warn",
+      "spawnEnforce=off — the approved plan is not checked at spawn (mutated command, cwd or argv all run)",
+      "Set security.spawnEnforce to check (default) or strict"
+    );
+  } else {
+    add("security.spawnEnforce", "ok", `spawnEnforce=${spawnMode} (approved plan re-checked at spawn)`);
+  }
+
   if (prod) {
     if (cfg.security?.autoApprove) {
       add("profile.prod", "error", "prod profile with autoApprove");
@@ -160,6 +208,25 @@ export function runSecurityAudit(cfg = {}) {
     add("sandbox", "warn", "sandbox disabled", "Enable sandbox.path escape protection");
   } else {
     add("sandbox", "ok", "sandbox enabled (default)");
+  }
+
+  // Under a deny/allowlist egress policy the network namespace IS the boundary
+  // — egress.mjs's regex command screen is only a fast pre-check — so switching
+  // the netns off downgrades enforcement to that screen. Reported only when the
+  // policy makes it load-bearing; on an open policy there is nothing to
+  // downgrade and a row would be noise. Both facts come from the modules that
+  // enforce them rather than from a second copy of their rules here.
+  if (getEgressPolicy(cfg).mode !== "allow") {
+    if (shouldUnshareNet(cfg)) {
+      add("security.osSandboxUnshareNet", "ok", "sandbox unshares the network (egress boundary intact)");
+    } else {
+      add(
+        "security.osSandboxUnshareNet",
+        prod ? "error" : "warn",
+        "osSandboxUnshareNet=false under a restricted egress policy — enforcement falls back to the regex command screen",
+        "Unset security.osSandboxUnshareNet (or set it true) so the sandbox keeps its own network namespace"
+      );
+    }
   }
 
   const compToken =

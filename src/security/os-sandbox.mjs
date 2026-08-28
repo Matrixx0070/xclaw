@@ -201,7 +201,7 @@ export function probeBwrapNetns() {
   return _bwrapNetnsWorks;
 }
 
-function shouldUnshareNet(cfg) {
+export function shouldUnshareNet(cfg) {
   // Explicit config/env wins; otherwise the egress policy decides:
   // deny/allowlist means the netns is the enforcement boundary (the regex
   // command screen in egress.mjs is only a fast pre-check).

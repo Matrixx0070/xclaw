@@ -307,3 +307,196 @@ describe("security audit — bypassApprovals", () => {
     assert.notEqual(row(cfg).level, "ok");
   });
 });
+
+/**
+ * Pin every env var the graded predicates read, so a test grades the config in
+ * front of it and not the developer's shell.
+ */
+function withEnv(vars, fn) {
+  const keys = [
+    "XCLAW_SPAWN_ENFORCE",
+    "XCLAW_OS_SANDBOX_NET",
+    "XCLAW_OS_SANDBOX",
+    "XCLAW_EGRESS",
+    "XCLAW_PROFILE",
+  ];
+  const prev = {};
+  for (const k of keys) {
+    prev[k] = process.env[k];
+    delete process.env[k];
+  }
+  for (const [k, v] of Object.entries(vars || {})) process.env[k] = v;
+  try {
+    return fn();
+  } finally {
+    for (const k of keys) {
+      if (prev[k] === undefined) delete process.env[k];
+      else process.env[k] = prev[k];
+    }
+  }
+}
+
+const AUDIT_BASE = {
+  profile: "lab",
+  gateway: { host: "127.0.0.1", token: "t" },
+  agent: { apiKey: "k" },
+};
+
+function auditRow(cfg, id) {
+  return runSecurityAudit(cfg).findings.find((f) => f.id === id);
+}
+
+describe("security audit — switches that DISABLE enforcement", () => {
+  it("reports spawnEnforce=off, which unbinds the frozen plan at spawn", () => {
+    withEnv({}, () => {
+      const row = auditRow(
+        { ...AUDIT_BASE, security: { spawnEnforce: "off" } },
+        "security.spawnEnforce"
+      );
+      assert.ok(row, "no security.spawnEnforce row");
+      assert.equal(row.level, "warn");
+      assert.match(row.message, /off/);
+    });
+  });
+
+  it("does NOT claim the plan is enforced while spawnEnforce is off", () => {
+    withEnv({}, () => {
+      const row = auditRow(
+        {
+          ...AUDIT_BASE,
+          security: { bindSystemRunPlan: true, spawnEnforce: "off" },
+        },
+        "security.systemRunPlan"
+      );
+      assert.ok(row, "no security.systemRunPlan row");
+      // The bug: this row printed level "ok" with "bindSystemRunPlan on
+      // (frozen argv/cwd/exe before approval)" while assertPlanAtSpawn was
+      // returning enforced:false for any command at all.
+      assert.notEqual(row.level, "ok");
+      assert.match(row.message, /not enforced at spawn|spawnEnforce/i);
+    });
+  });
+
+  it("grades the ENFORCED spawn mode, so the env override is seen too", () => {
+    withEnv({ XCLAW_SPAWN_ENFORCE: "off" }, () => {
+      // Config says nothing; the env var is what the gate actually obeys.
+      const row = auditRow({ ...AUDIT_BASE, security: {} }, "security.spawnEnforce");
+      assert.ok(row, "env override produced no row");
+      assert.equal(row.level, "warn");
+    });
+  });
+
+  it("escalates spawnEnforce=off to error on a hardened profile", () => {
+    withEnv({}, () => {
+      const row = auditRow(
+        { ...AUDIT_BASE, profile: "prod", security: { spawnEnforce: "off" } },
+        "security.spawnEnforce"
+      );
+      assert.equal(row?.level, "error");
+    });
+  });
+
+  it("emits an explicit ok row when spawn enforcement is on", () => {
+    withEnv({}, () => {
+      const row = auditRow({ ...AUDIT_BASE, security: {} }, "security.spawnEnforce");
+      assert.equal(row?.level, "ok");
+    });
+  });
+
+  it("reports mcpAutoApprove=true — every unvetted MCP tool auto-runs", () => {
+    withEnv({}, () => {
+      const row = auditRow(
+        { ...AUDIT_BASE, security: { mcpAutoApprove: true } },
+        "security.mcpAutoApprove"
+      );
+      assert.ok(row, "no security.mcpAutoApprove row");
+      assert.equal(row.level, "warn");
+      assert.match(row.message, /mcp/i);
+    });
+  });
+
+  it("escalates mcpAutoApprove to error on a hardened profile", () => {
+    withEnv({}, () => {
+      const row = auditRow(
+        { ...AUDIT_BASE, profile: "prod", security: { mcpAutoApprove: true } },
+        "security.mcpAutoApprove"
+      );
+      assert.equal(row?.level, "error");
+    });
+  });
+
+  it("emits an explicit ok row when mcpAutoApprove is off", () => {
+    withEnv({}, () => {
+      const row = auditRow({ ...AUDIT_BASE, security: {} }, "security.mcpAutoApprove");
+      assert.equal(row?.level, "ok");
+    });
+  });
+
+  it("reports osSandboxUnshareNet=false when egress makes the netns the boundary", () => {
+    withEnv({}, () => {
+      const row = auditRow(
+        {
+          ...AUDIT_BASE,
+          security: { egress: { mode: "deny" }, osSandboxUnshareNet: false },
+        },
+        "security.osSandboxUnshareNet"
+      );
+      assert.ok(row, "no security.osSandboxUnshareNet row");
+      assert.equal(row.level, "warn");
+    });
+  });
+
+  it("escalates the netns downgrade to error on a hardened profile", () => {
+    withEnv({}, () => {
+      const row = auditRow(
+        {
+          ...AUDIT_BASE,
+          profile: "prod",
+          security: { egress: { mode: "allowlist" }, osSandboxUnshareNet: false },
+        },
+        "security.osSandboxUnshareNet"
+      );
+      assert.equal(row?.level, "error");
+    });
+  });
+
+  it("stays silent about the netns when egress is open (nothing to downgrade)", () => {
+    withEnv({}, () => {
+      const row = auditRow(
+        {
+          ...AUDIT_BASE,
+          security: { egress: { mode: "allow" }, osSandboxUnshareNet: false },
+        },
+        "security.osSandboxUnshareNet"
+      );
+      assert.equal(row, undefined, "reported a downgrade that cannot apply");
+    });
+  });
+
+  it("emits an ok row when the netns boundary is intact under restricted egress", () => {
+    withEnv({}, () => {
+      const row = auditRow(
+        { ...AUDIT_BASE, security: { egress: { mode: "deny" } } },
+        "security.osSandboxUnshareNet"
+      );
+      assert.equal(row?.level, "ok");
+    });
+  });
+
+  it("a full-autonomy host stops auditing clean", () => {
+    withEnv({}, () => {
+      const r = runSecurityAudit({
+        ...AUDIT_BASE,
+        profile: "prod",
+        security: {
+          spawnEnforce: "off",
+          mcpAutoApprove: true,
+          egress: { mode: "deny" },
+          osSandboxUnshareNet: false,
+        },
+      });
+      assert.equal(r.ok, false, "audit still reports ok on a fully-disarmed host");
+      assert.ok(r.errors >= 3, `expected >=3 errors, got ${r.errors}`);
+    });
+  });
+});

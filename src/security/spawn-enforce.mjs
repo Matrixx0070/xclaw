@@ -36,8 +36,12 @@ export function getSpawnEnforceMode(cfg = {}) {
   if (env === "check") return "check";
   const m = String(cfg?.security?.spawnEnforce || cfg?.spawnEnforce || "").toLowerCase();
   if (m === "off" || m === "check" || m === "strict") return m;
-  // Default: check when a plan is supplied; strict in prod profile
-  if ((cfg?.profile || process.env.XCLAW_PROFILE) === "prod") return "check";
+  // Default in every profile: check — enforce when a plan is supplied, allow
+  // when none is. The prod arm used to be spelled out separately and returned
+  // "check" as well, so it was a no-op whose comment claimed prod defaulted to
+  // strict; it did not, in any release. Raising the prod default to strict is a
+  // behaviour change (it refuses every unplanned exec) and belongs in its own
+  // slice, not hidden behind a branch that reads as if it already happened.
   return "check";
 }
 

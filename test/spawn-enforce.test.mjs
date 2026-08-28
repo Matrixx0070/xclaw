@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   assertPlanAtSpawn,
   buildEnforcedBashSpawn,
+  getSpawnEnforceMode,
 } from "../src/security/spawn-enforce.mjs";
 import { buildSystemRunPlan } from "../src/security/system-run-plan.mjs";
 import { executeBash } from "../src/computer/modules/bash-tool.mjs";
@@ -110,5 +111,66 @@ describe("spawn enforce", () => {
       if (prev == null) delete process.env.XCLAW_OS_SANDBOX;
       else process.env.XCLAW_OS_SANDBOX = prev;
     }
+  });
+});
+
+describe("getSpawnEnforceMode — resolution table", () => {
+  const withEnv = (vars, fn) => {
+    const saved = {};
+    for (const [k, v] of Object.entries(vars)) {
+      saved[k] = process.env[k];
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    try {
+      return fn();
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  };
+  const clean = { XCLAW_SPAWN_ENFORCE: undefined, XCLAW_PROFILE: undefined };
+
+  it("defaults to check with no config and no env", () => {
+    withEnv(clean, () => {
+      assert.equal(getSpawnEnforceMode({}), "check");
+      assert.equal(getSpawnEnforceMode(), "check");
+    });
+  });
+
+  it("defaults to check under the prod profile too (no hidden strict)", () => {
+    // Pins the behaviour the deleted no-op branch claimed to change. Raising
+    // prod to strict is a real behaviour change and must break this test.
+    withEnv(clean, () => {
+      assert.equal(getSpawnEnforceMode({ profile: "prod" }), "check");
+    });
+    withEnv({ ...clean, XCLAW_PROFILE: "prod" }, () => {
+      assert.equal(getSpawnEnforceMode({}), "check");
+    });
+  });
+
+  it("reads the operator config", () => {
+    withEnv(clean, () => {
+      assert.equal(getSpawnEnforceMode({ security: { spawnEnforce: "off" } }), "off");
+      assert.equal(getSpawnEnforceMode({ security: { spawnEnforce: "STRICT" } }), "strict");
+      assert.equal(getSpawnEnforceMode({ spawnEnforce: "off" }), "off");
+    });
+  });
+
+  it("env overrides the config in both directions", () => {
+    withEnv({ ...clean, XCLAW_SPAWN_ENFORCE: "off" }, () => {
+      assert.equal(getSpawnEnforceMode({ security: { spawnEnforce: "strict" } }), "off");
+    });
+    withEnv({ ...clean, XCLAW_SPAWN_ENFORCE: "strict" }, () => {
+      assert.equal(getSpawnEnforceMode({ security: { spawnEnforce: "off" } }), "strict");
+    });
+  });
+
+  it("ignores an unrecognised config word and falls back to check", () => {
+    withEnv(clean, () => {
+      assert.equal(getSpawnEnforceMode({ security: { spawnEnforce: "enforce" } }), "check");
+    });
   });
 });
