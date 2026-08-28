@@ -232,6 +232,37 @@ export async function listCheckpoints(cfg, { limit = 20 } = {}) {
   return out.slice(0, limit);
 }
 
+/**
+ * True population of the checkpoint store, by status.
+ *
+ * listCheckpoints() caps at `limit` and sorts newest-first, which makes it the
+ * wrong instrument for "how many are there". The doctor's checkpoints.store row
+ * printed `listed=${list.length}` from a limit-50 listing, so a directory of
+ * 205 reported 50 — the cap, presented as a measurement. Counting is a
+ * different question from sampling and gets its own primitive.
+ */
+export async function countCheckpoints(cfg) {
+  const d = dir(cfg);
+  const out = { total: 0, byStatus: {} };
+  let files = [];
+  try {
+    files = (await fs.readdir(d)).filter((f) => f.endsWith(".json"));
+  } catch {
+    return out;
+  }
+  for (const f of files) {
+    out.total += 1;
+    let status = "corrupt";
+    try {
+      status = JSON.parse(await fs.readFile(path.join(d, f), "utf8")).status || "unknown";
+    } catch {
+      /* counted as corrupt */
+    }
+    out.byStatus[status] = (out.byStatus[status] || 0) + 1;
+  }
+  return out;
+}
+
 export async function pruneCheckpoints(cfg, opts = {}) {
   const cpc = cfg?.checkpoints || {};
   const maxCount = opts.maxCount ?? cpc.maxCount ?? 100;

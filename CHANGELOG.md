@@ -1,3 +1,60 @@
+## 3.317.0 (2026-08-28)
+
+### Fixed — a retention policy that had a doctor row, tests, and no way to run
+
+`pruneCheckpoints` has enforced a documented policy (`maxCount` 100, `maxAgeMs`
+14 days, `running`/`resuming` never evicted) since the checkpoint store was
+added. It has unit tests. The doctor has a `checkpoints.store` row and a
+`--prune-checkpoints` flag. What it did not have was a production caller that
+runs on a normal host: the only one was `runEvolutionTick`, reached solely from
+`src/cron/heartbeat.mjs`. A host with no heartbeat cron job never runs an
+evolution tick, so it never evicts a checkpoint.
+
+Measured live at 3.316.0: `cron.jobs = 0`, and `~/.xclaw/checkpoints` held
+**205 files, of which 204 were evictable** (122 succeeded, 69 failed, 13
+budget_exceeded, 1 running) against a `maxCount` of 100. A ceiling twice
+exceeded is proof it was never once applied — a quantitative bound verifies its
+own enforcement, which is why this was findable at all.
+
+The omission has the exact shape of the proof-bundle finding in 3.316.0:
+`src/ops/maintenance.mjs`, the module that owns boundedness, named checkpoints
+in **neither** its targets nor its "Not handled here" exemptions. In review an
+omission is indistinguishable from a deliberate exemption.
+
+Eviction now runs from the daily ops pass. It is called with no `maxCount` /
+`maxAgeMs` override, so the single existing `cfg.checkpoints.*` policy governs
+and no second, divergent default is created. The heartbeat call is left in
+place, now a harmless idempotent extra.
+
+Second reason the daily pass is the right home: the heartbeat path sits *after*
+`inQuietHours(cfg)` and `canSpend(cfg, 0)` early returns, so free disk
+housekeeping was gated behind the LLM budget and the time of day. Eviction is
+now independent of both.
+
+### Fixed — a doctor row that printed its own cap as a measurement
+
+`checkpoints.store` reported `listed=${list.length}` from
+`listCheckpoints(cfg, { limit: 50 })`, whose last statement is `.slice(0, limit)`.
+So 205 checkpoints printed `listed=50` — and so would 5000. `running` and
+`resumed` were likewise counted over only the newest 50, hiding an old stuck job
+completely. Counting is a different question from sampling, so it gets its own
+primitive: `countCheckpoints()` returns the true `total` and a `byStatus`
+breakdown, and the row now prints `total=`.
+
+This is the same class as the 3.315.0 evidence clip at 50: a number that looks
+like a measurement but is the ceiling of the instrument.
+
+### Operator note — no retroactive deletion
+
+The live host has no `checkpoints` section in `~/.xclaw/xclaw.json`, so the
+shipped default (100) would have deleted 104 existing job receipts on the first
+daily pass. Consistent with the 3.316.0 rule that *enabling retention must not
+destroy evidence already on disk*, `checkpoints.maxCount` is set to 300 on that
+host — above the live population of 205 — before the fix goes live. Growth is
+now bounded where it was unbounded; the operator can lower the ceiling to the
+default whenever they choose, and the corrected doctor row now shows the real
+total to decide from.
+
 ## 3.316.0 (2026-08-28)
 
 ### Fixed — a directory of audit artifacts that nothing bounded, read, or watched

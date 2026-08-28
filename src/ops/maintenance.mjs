@@ -21,6 +21,19 @@
  *     exemptions below — 1214 files / 9.7MB measured live at 3.315.0, with no
  *     reader anywhere in the codebase and no doctor probe watching them.
  *
+ *  4. Checkpoint eviction. pruneCheckpoints() has had a policy (maxCount 100 /
+ *     14d), tests and a doctor row since the store was added, but its only
+ *     production caller was runEvolutionTick, reached only from the heartbeat
+ *     cron job. A host with no heartbeat job never evicts a checkpoint —
+ *     measured live at 3.316.0: cron.jobs = 0 and 204 of 205 checkpoints
+ *     evictable against a maxCount of 100, a ceiling that had plainly never
+ *     been applied. Checkpoints appeared in neither the list above nor the
+ *     exemptions below, the same omission the proof bundles were found in.
+ *     The heartbeat path additionally sits behind quiet-hours and budget early
+ *     returns, so it skips disk housekeeping when the LLM budget is spent;
+ *     running eviction from the daily pass makes it independent of both and
+ *     leaves that call a harmless idempotent extra.
+ *
  * Every pass returns a census whether or not it changed anything. Rotation's
  * under-cap result used to be computed and then dropped by `if (r.rotated)`,
  * which made a file at 99% of its ceiling indistinguishable from a file that
@@ -43,6 +56,7 @@ import { routerEventsPath } from "../providers/model-stats.mjs";
 import { cronEventsLogPath, doctorLogPath } from "../cron/logs.mjs";
 import { defaultLedgerPath } from "../tokens/usage-tracker.mjs";
 import { mitmConfdir } from "../browser/mitm.mjs";
+import { pruneCheckpoints } from "../jobs/checkpoint.mjs";
 
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024; // 8MB trigger
 const DEFAULT_KEEP_BYTES = 4 * 1024 * 1024; // tail kept in place
@@ -159,7 +173,7 @@ export async function runOpsMaintenance(cfg = {}) {
   }
   const maxBytes = Number(cfg.ops?.maintenance?.maxBytes) || DEFAULT_MAX_BYTES;
   const keepBytes = Math.min(Number(cfg.ops?.maintenance?.keepBytes) || DEFAULT_KEEP_BYTES, maxBytes);
-  const out = { skipped: false, ledger: null, rotated: [], dirs: [], errors: [] };
+  const out = { skipped: false, ledger: null, rotated: [], dirs: [], checkpoints: null, errors: [] };
 
   try {
     out.ledger = await compactLedger(cfg);
@@ -196,6 +210,14 @@ export async function runOpsMaintenance(cfg = {}) {
     );
   } catch (e) {
     out.errors.push({ target: proofsDir, error: e?.message || String(e) });
+  }
+
+  // No override: pruneCheckpoints already reads cfg.checkpoints, and a second
+  // default here would be a divergent duplicate of the policy it owns.
+  try {
+    out.checkpoints = await pruneCheckpoints(cfg, { dryRun: false });
+  } catch (e) {
+    out.errors.push({ target: "checkpoints", error: e?.message || String(e) });
   }
 
   return out;

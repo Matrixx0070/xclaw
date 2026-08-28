@@ -1109,14 +1109,19 @@ export async function runDoctor(opts = {}) {
   }
 
   try {
-    const { listCheckpoints, pruneCheckpoints } = await import("../jobs/checkpoint.mjs");
-    const list = await listCheckpoints(cfg, { limit: 50 });
-    const running = list.filter((c) => c.status === "running" || c.status === "resuming").length;
-    const resumed = list.filter((c) => c.status === "resumed").length;
+    // countCheckpoints, not listCheckpoints: the row used to print
+    // `listed=${list.length}` off a limit-50 listing, so 205 files on disk
+    // reported 50 — and so would 5000. running/resumed were likewise counted
+    // over only the newest 50, hiding an old stuck job entirely.
+    const { countCheckpoints, pruneCheckpoints } = await import("../jobs/checkpoint.mjs");
+    const c = await countCheckpoints(cfg);
+    const running = (c.byStatus.running || 0) + (c.byStatus.resuming || 0);
+    const resumed = c.byStatus.resumed || 0;
     push(
       "checkpoints.store",
       running > 5 ? "warn" : "ok",
-      `listed=${list.length} running=${running} resumed=${resumed} dir=~/.xclaw/checkpoints`
+      `total=${c.total} running=${running} resumed=${resumed} dir=~/.xclaw/checkpoints`,
+      { total: c.total, byStatus: c.byStatus }
     );
     if (opts.pruneCheckpoints) {
       const pr = await pruneCheckpoints(cfg, { dryRun: false });
