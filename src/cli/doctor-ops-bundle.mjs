@@ -59,7 +59,7 @@ export async function pushDoctorOpsBundle(push, cfg = {}, opts = {}) {
 
   try {
     const { pushStopFireDrillChecks } = await import("./doctor-stop-fire-drill.mjs");
-    await pushStopFireDrillChecks(push, cfg, opts);
+    await pushStopFireDrillChecks(push, cfg);
   } catch (e) {
     push("ops.stop_fire_drill", "warn", e.message || String(e));
   }

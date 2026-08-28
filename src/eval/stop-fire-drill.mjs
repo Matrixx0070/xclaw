@@ -1,9 +1,22 @@
 /**
  * Single-port kill-switch fire-drill (no live server required).
  * Covers HTTP auth methods, WS/SSE control signing, TLS path parity markers.
+ *
+ * Ten of the eleven steps run entirely in process. The eleventh — `tls_parity`
+ * — reads a source file, and it used to resolve that file against a caller-
+ * supplied `root` that defaulted to `process.cwd()`. Every caller in this repo
+ * then computed the same repo root module-relatively and handed it back in.
+ * The one caller that could not — `xclaw doctor`, which runs from wherever the
+ * operator happens to stand — fell back to the cwd, `existsSync` was false, and
+ * the drill reported `failed: tls_parity` on a perfectly healthy install. In a
+ * prod/strict/requireAuth profile the doctor prints that as an ERROR: a red
+ * alarm on the kill-switch, raised by standing in the wrong directory.
+ *
+ * `root` is gone. The drill checks the file at a fixed offset from itself, so
+ * it examines the same source in a repo, in an install, and under any cwd.
  */
 import fs from "node:fs";
-import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { authorizeStop, signStopBody } from "../gateway/stop-auth.mjs";
 import { handleWsStopControl } from "../gateway/ws-stop-control.mjs";
 import { handleSseStopControl } from "../gateway/sse-stop-control.mjs";
@@ -122,15 +135,31 @@ export async function fireDrillSseSigned() {
   };
 }
 
-export function fireDrillTlsParity(root) {
-  const tls = path.join(root, "src/gateway/tls.mjs");
-  if (!fs.existsSync(tls)) {
-    return { name: "tls_parity", ok: false, reason: "missing_tls_mjs" };
+/** Where the TLS listener lives, relative to THIS module — never to the cwd. */
+export function defaultTlsPath() {
+  return fileURLToPath(new URL("../gateway/tls.mjs", import.meta.url));
+}
+
+/**
+ * The TLS listener must route /stop through the same proxy the plain HTTP
+ * listener uses, or the kill-switch is reachable on one port and not the other.
+ *
+ * @param {string} [tlsPath] override, for tests that need the negative branch.
+ */
+export function fireDrillTlsParity(tlsPath = defaultTlsPath()) {
+  let src;
+  try {
+    src = fs.readFileSync(tlsPath, "utf8");
+  } catch {
+    // Only reachable if the install itself is broken — `src/` ships in the
+    // package, so this is no longer "you ran doctor from your home directory".
+    return { name: "tls_parity", ok: false, reason: "missing_tls_mjs", path: tlsPath };
   }
-  const src = fs.readFileSync(tls, "utf8");
+  const ok = src.includes("tryHandleGatewayStop") && src.includes("stop-proxy");
   return {
     name: "tls_parity",
-    ok: src.includes("tryHandleGatewayStop") && src.includes("stop-proxy"),
+    ok,
+    ...(ok ? {} : { reason: "markers_absent", path: tlsPath }),
   };
 }
 
@@ -199,10 +228,6 @@ export function fireDrillDrainAuthMethod() {
   };
 }
 
-/**
- * @param {{ root?: string }} opts
- */
-
 export async function fireDrillPostOffline() {
   const signed = buildStopSignResult(
     { gateway: { token: "drill-token", host: "127.0.0.1", port: 9 } },
@@ -224,15 +249,19 @@ export async function fireDrillPostOffline() {
   };
 }
 
+/**
+ * @param {{ tlsPath?: string }} [opts] — `tlsPath` is a test seam. There is
+ *   deliberately no `root`: see the header. The drill's verdict must not
+ *   depend on the caller's working directory.
+ */
 export async function runStopFireDrill(opts = {}) {
-  const root = opts.root || process.cwd();
   const steps = [
     fireDrillHttpToken(),
     fireDrillHttpHmac(),
     fireDrillHmacCanonical(),
     await fireDrillWsSigned(),
     await fireDrillSseSigned(),
-    fireDrillTlsParity(root),
+    fireDrillTlsParity(opts.tlsPath),
     fireDrillPaths(),
     await fireDrillNonPost405(),
     await fireDrillDryRun(),

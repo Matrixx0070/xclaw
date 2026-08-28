@@ -1,3 +1,55 @@
+## 3.308.0 (2026-08-28)
+
+- Live-driving v3.307.0 the same way — running `xclaw doctor` from the repo root
+  and again from `/tmp`, then diffing — turned up a second kill-switch probe
+  whose verdict depended on the working directory, this time in the false-alarm
+  direction:
+
+      ### from the repo root
+        [OK  ] ops.stop_fire_drill: stop fire-drill passed (11 steps)
+      ### from /tmp — the installed-CLI case
+        [WARN] ops.stop_fire_drill: stop fire-drill failed: tls_parity
+
+  Ten of the fire-drill's eleven steps run entirely in process. The eleventh,
+  `tls_parity`, reads `src/gateway/tls.mjs` to confirm the TLS listener routes
+  `/stop` through the same proxy as the plain HTTP listener — and it resolved
+  that file against a caller-supplied `root` that defaulted to `process.cwd()`:
+
+      export function fireDrillTlsParity(root) {
+        const tls = path.join(root, "src/gateway/tls.mjs");
+        if (!fs.existsSync(tls)) {
+          return { name: "tls_parity", ok: false, reason: "missing_tls_mjs" };
+
+  Every caller inside the repo — the CI script, both tests — computed the repo
+  root module-relatively and handed it straight back. The one caller that could
+  not, `xclaw doctor`, runs from wherever the operator happens to stand, so it
+  fell back to the cwd, found no `src/` there, and reported the kill-switch
+  drill as FAILED on a perfectly healthy install. Under a `prod` or `strict`
+  profile, or with `gateway.requireAuth`, the probe promotes that to **error** —
+  so the loudest red line in `doctor` on a production box was raised by the
+  working directory.
+
+  `root` is gone. `fireDrillTlsParity` resolves the file at a fixed offset from
+  its own module (`src/` ships in the package), so the drill examines the same
+  source in a repo, in an install, and under any cwd. The three callers that
+  derived a root only to pass it back lost that code.
+
+- `ops.stop_fire_drill` now names the reason a step failed, not just the step:
+  `failed: tls_parity` could not distinguish "the TLS listener does not route
+  /stop" — a real parity breach, and a genuine emergency — from "that file could
+  not be read". It now reads `tls_parity(markers_absent)` or
+  `tls_parity(missing_tls_mjs)`. The parity check also carries `markers_absent`
+  as an explicit reason rather than a bare `ok: false`.
+
+- The old tests were green throughout because both of them passed the drill the
+  repo root explicitly, which is the one directory where the bug cannot appear —
+  and the doctor test asserted only that the status was one of ok/warn/error.
+  Replaced with 12 tests that pin the verdict itself: the drill and the probe
+  must both pass from an unrelated cwd, a `prod` profile must not turn a healthy
+  install into an error, an unreadable file must never count as a pass, a real
+  parity breach must still fail, and the two must not read alike. Each of the
+  four enforcement lines was mutation-verified to fail the suite.
+
 ## 3.307.0 (2026-08-28)
 
 - Live-driving the previous release's `doctor` turned up the kill-switch probe
