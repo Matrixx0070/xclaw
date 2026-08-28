@@ -1,3 +1,36 @@
+## 3.297.0 (2026-08-28)
+
+- Alert state follows `paths.configDir`. `defaultStatePath()` resolved
+  `~/.xclaw/alert-state.json` from `os.homedir()` alone, while ~40 sibling
+  stores in `src/` resolve `cfg?.paths?.configDir || <home>`. Alert state is
+  the cooldown map plus the delivery history, so two xclaw instances on one
+  host with different config dirs shared one cooldown map: instance B's alert
+  was suppressed as `cooldown` by instance A's — silent alert loss, the same
+  class as the stale-config watcher above.
+- It also meant the test suite wrote into the operator's real
+  `~/.xclaw/alert-state.json`. Confirmed on the live box: running
+  `test/self-mod.test.mjs` — which correctly isolates `paths.configDir` —
+  changed the live file's sha256 (36286 -> 36047 bytes). The 100 `no_targets`
+  entries in the live alert history were therefore test output, not the
+  deployer's, which is why that history was unusable as evidence for 3.295.0;
+  the 3.295.0 entry below has been corrected to cite the out-of-process live
+  drive instead. An explicit `alerting.statePath` still wins, and with no
+  `paths.configDir` the home path remains the fallback — no change for a
+  normal install.
+- Fixing the module was not fixing the class: `test/alerting-b4.test.mjs`
+  passed no config dir at all, so it still landed on the home fallback and
+  still added two entries (`live-e2e:live.commit_gate`,
+  `enforcement:a.bundle_navigate_hook`) to the live alert history on the next
+  suite run. `send()` persists on every path — including the `no_targets` skip
+  those tests assert — so asserting a skip is enough to write the file. That
+  test now isolates, and `test/alerter-test-isolation.test.mjs` pins the rule:
+  an inline alerter config in `test/` must name `paths.configDir` or
+  `alerting.statePath`, unless it carries `alerter-home-fallback-ok` (the
+  deliberate opt-out that pins the home default). The check verifies itself in
+  both directions — which is how a bug in its own matcher (`alerts?:` never
+  matches the real key `alerting:`) was caught before it shipped as a check
+  that could never fail.
+
 ## 3.296.0 (2026-08-28)
 
 - The self-deploy watcher's config reload is gated on an ACTIONABLE intent, not
@@ -19,13 +52,16 @@
   once by the supervisor and then runs for weeks — 14 days, live, at the time
   of writing. It called `loadConfig()` once in the CLI and every decision it
   made afterwards used that snapshot.
-- The alerting target was added to `~/.xclaw/xclaw.json` after that boot, so
-  the watcher resolved zero alert targets and stayed that way: all 100 entries
-  in the live alert history were `skipped: "no_targets"`. Losing
+- A target added to `xclaw.json` after that boot therefore never reaches the
+  watcher's alerter, which stays target-less for its whole life. Losing
   `deploying`/`deployed` (severity info) costs nothing, but `rolled_back`
   and `ROLLBACK FAILED` are severity `error`, and the `no_targets` check in
   `send()` sits ABOVE the severity check — so the one alert that says the
-  machine failed to redeploy itself and needs a human went nowhere either.
+  machine failed to redeploy itself and needs a human goes nowhere either.
+  Proven by driving a real `xclaw self-deploy watch` out-of-process under an
+  isolated HOME: with the reload, both alerts recorded `skipped: null` against
+  a target added after boot; with it disabled, the same drive recorded
+  `severity=error skipped="no_targets" results=[]`.
 - `getSharedAlerter` already carries an upgrade-in-place repair for a frozen
   target-less alerter, but it can only fire when a caller hands it a config
   that DOES resolve targets. A caller that never re-reads config can never

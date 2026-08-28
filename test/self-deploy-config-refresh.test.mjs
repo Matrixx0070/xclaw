@@ -7,14 +7,20 @@
  * — 14 days on the live box at the time of writing. It called `loadConfig()`
  * once, in the CLI, and every decision it made afterwards used that snapshot.
  *
- * The alerting target was added to `~/.xclaw/xclaw.json` after that boot, so
- * the watcher's alerter resolved zero targets and stayed that way: all 100
- * entries in the live alert history were `skipped: "no_targets"`, including
- * the `self-deploy:*` ones. That silences `deploying`/`deployed` (info, and no
- * loss), but it silences `rolled_back` and `ROLLBACK FAILED` too — those are
- * severity `error`, and the `no_targets` check in `send()` sits ABOVE the
- * severity check, so the one alert that says "the machine failed to redeploy
- * itself and needs a human" was dropped with the rest.
+ * A target added to `xclaw.json` after that boot therefore never reaches the
+ * watcher's alerter, which stays target-less for its whole life. That silences
+ * `deploying`/`deployed` (info, and no loss), but it silences `rolled_back` and
+ * `ROLLBACK FAILED` too — those are severity `error`, and the `no_targets`
+ * check in `send()` sits ABOVE the severity check, so the one alert that says
+ * "the machine failed to redeploy itself and needs a human" is dropped with
+ * the rest.
+ *
+ * Proven out-of-process, not inferred: a real `xclaw self-deploy watch` under
+ * an isolated HOME, target added AFTER boot, then a `pending` intent. With the
+ * reload it logged exactly two config banners (boot + one reload) and both
+ * alerts recorded `skipped: null` against the post-boot target — including the
+ * severity-`error` `ROLLBACK FAILED`. With the reload disabled, the identical
+ * drive recorded `severity=error skipped="no_targets" results=[]`.
  *
  * `getSharedAlerter` already carries an upgrade-in-place path for exactly this
  * (a frozen target-less singleton), but it can only fire when a caller hands

@@ -9,8 +9,18 @@ import { sendPagerDutyEvent, pagerDutyDedupKey } from "./pagerduty.mjs";
 
 const lastSent = new Map();
 
-function defaultStatePath() {
-  return path.join(os.homedir(), ".xclaw", "alert-state.json");
+/**
+ * Alert state (cooldowns + the delivery history) belongs to the config dir that
+ * owns the alerting settings, not to whoever's home dir the process happens to
+ * run under. Resolving it from `os.homedir()` alone meant it was the ONE piece
+ * of xclaw state that did not follow a relocated `paths.configDir`: two
+ * instances on one host shared a single cooldown map, so instance B's alert was
+ * silently suppressed by instance A's — the same silent-alert-loss class the
+ * self-deploy watcher hit — and the test suite wrote into the operator's real
+ * `~/.xclaw/alert-state.json`, corrupting the forensic record it is kept for.
+ */
+function defaultStatePath(cfg) {
+  return path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "alert-state.json");
 }
 
 function loadState(filePath) {
@@ -62,7 +72,7 @@ export function createAlerter(cfg = {}) {
     }
   }
 
-  const statePath = alertCfg.statePath || defaultStatePath();
+  const statePath = alertCfg.statePath || defaultStatePath(cfg);
   let state = loadState(statePath);
   const rank = { info: 0, warn: 1, warning: 1, error: 2, critical: 3 };
 
