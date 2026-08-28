@@ -1,3 +1,38 @@
+## 3.288.0 (2026-08-28)
+
+- `xclaw doctor` ran five of its probes two or three times per invocation and
+  printed each verdict once per run. Found by live-driving the gateway after
+  3.287.0: `ops.auth_refresh` — the probe that release had just repaired —
+  printed its warning twice, byte-identical.
+- Cause is duplicated call sites in `runDoctor`. The ops probes had been grouped
+  into `doctor-ops-bundle.mjs`, but the inline calls they replaced were never
+  removed, so `runDoctor` invoked the bundle and then re-invoked four of the
+  bundle's own probes below it — auth-refresh, receipt-metrics, smoke-compare
+  and stop-route — with identical arguments. Separately `pushPerfChecks` ran
+  three times: once inside `pushPerfChecksEnsured`, which calls it, and twice
+  more directly from two byte-identical blocks.
+- Not only cosmetic. Doctor reports a warning count and exits on it, so sixteen
+  warnings overstated fourteen distinct findings, and an operator counting them
+  across runs saw movement that was not there. The repeats also did the work
+  again: `ops.cold_start` made three live health requests per doctor run.
+- Deleted the six redundant call sites; `doctor-ops-bundle.mjs` is now the
+  single owner of its probes and `pushPerfChecksEnsured` the single caller of
+  `pushPerfChecks`. Net 42 lines removed, no probe lost.
+- `gateway.stopRoute` was duplicated the same way but emitted nothing on this
+  host, so the live output could not show it. The regression test reads the
+  probe call graph out of the source and walks one hop past each shim, which
+  catches a duplicate whether or not it happens to emit — it names all five,
+  including the invisible one, when the deletion is reverted.
+- Removed `patches/doctor-receipt-metrics.patch` and its entries in the batch-3
+  and production land manifests. That patch wired the probe inline into
+  `doctor.mjs` before the bundle existed; batch-4's `doctor-ops-bundle.patch`
+  superseded it, and the manifests decide "already landed" by grepping the
+  target file for the probe name — so deleting the inline duplicate made the
+  needle false and the harness tried to re-apply a patch whose context is gone.
+  The guarantee the needle gave is now asserted directly: the regression test
+  names the four probes the manifests used to guard and checks the bundle still
+  invokes each one.
+
 ## 3.287.0 (2026-08-28)
 
 - The `ops.auth_refresh` doctor probe has never run in production. Its shim,

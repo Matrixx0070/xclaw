@@ -8,8 +8,10 @@ import { PRODUCTION_BATCH } from "../scripts/land-production-batch.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("land production batch", () => {
-  it("lists six clean wire patches", () => {
-    assert.equal(PRODUCTION_BATCH.length, 6);
+  // Was six: doctor-receipt-metrics.patch was dropped in 3.288.0 once its
+  // inline wire was superseded by doctor-ops-bundle.patch (batch 4).
+  it("lists five clean wire patches", () => {
+    assert.equal(PRODUCTION_BATCH.length, 5);
   });
 
   it("each patch and target exist", () => {

@@ -56,11 +56,10 @@ export const BATCH3 = [
     target: "src/gateway/tls.mjs",
     needles: ["tryHandleGatewayStop"],
   },
-  {
-    file: "patches/doctor-receipt-metrics.patch",
-    target: "src/cli/doctor.mjs",
-    needles: ["pushReceiptMetricsChecks"],
-  },
+  // doctor-receipt-metrics.patch wired the probe inline into doctor.mjs before
+  // doctor-ops-bundle.mjs existed; batch-4's doctor-ops-bundle.patch superseded
+  // it, and 3.288.0 removed the inline duplicate it had left behind. The wire
+  // now lives in the bundle — see test/doctor-no-duplicate-probes.test.mjs.
 ];
 
 function applied(e) {

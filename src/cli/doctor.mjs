@@ -199,53 +199,17 @@ export async function runDoctor(opts = {}) {
     push("ops.perf", "warn", e.message || String(e));
   }
 
-  try {
-    const { pushPerfChecks } = await import("./doctor-perf-checks.mjs");
-    pushPerfChecks(push, cfg);
-  } catch (e) {
-    push("ops.perf", "warn", e.message || String(e));
-  }
-
-  try {
-    const { pushAuthRefreshChecks } = await import("./doctor-auth-refresh.mjs");
-    await pushAuthRefreshChecks(push, cfg);
-  } catch (e) {
-    push("ops.auth_refresh", "warn", e.message || String(e));
-  }
-
-  try {
-    const { pushPerfChecks } = await import("./doctor-perf-checks.mjs");
-    pushPerfChecks(push, cfg);
-  } catch (e) {
-    push("ops.perf", "warn", e.message || String(e));
-  }
-
-  try {
-    const { pushReceiptMetricsChecks } = await import("./doctor-receipt-metrics.mjs");
-    await pushReceiptMetricsChecks(push, cfg);
-  } catch (e) {
-    push("ops.receipt_metrics", "warn", e.message || String(e));
-  }
-
+  // The ops bundle above already owns auth-refresh, receipt-metrics,
+  // smoke-compare and stop-route — with identical arguments — and
+  // pushPerfChecksEnsured already calls pushPerfChecks itself. Re-invoking them
+  // here ran each probe a second and third time and printed every verdict twice
+  // or three times, inflating the warning count doctor reports and exits on.
+  // The bundle is the single owner; add new ops probes there, not here.
   try {
     const { pushSinglePortChecks } = await import("./doctor-single-port.mjs");
     pushSinglePortChecks(push, cfg);
   } catch (e) {
     push("gateway.singlePort", "warn", e.message || String(e));
-  }
-
-  try {
-    const { pushSmokeCompareChecks } = await import("./doctor-smoke-compare.mjs");
-    pushSmokeCompareChecks(push, opts.root || process.cwd());
-  } catch (e) {
-    push("ops.smoke_compare", "warn", e.message || String(e));
-  }
-
-  try {
-    const { pushStopRouteChecks } = await import("./doctor-stop-route.mjs");
-    await pushStopRouteChecks(push, cfg);
-  } catch (e) {
-    push("gateway.stopRoute", "warn", e.message || String(e));
   }
 
   // F — prod honesty (defaults must match the label)

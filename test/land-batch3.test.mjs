@@ -8,8 +8,10 @@ import { BATCH3 } from "../scripts/land-batch3.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("land-batch3", () => {
-  it("has ten wires including tls-stop-proxy", () => {
-    assert.equal(BATCH3.length, 10);
+  // Was ten: doctor-receipt-metrics.patch was dropped in 3.288.0 once its
+  // inline wire was superseded by doctor-ops-bundle.patch (batch 4).
+  it("has nine wires including tls-stop-proxy", () => {
+    assert.equal(BATCH3.length, 9);
     assert.ok(BATCH3.some((e) => e.file.includes("tls-stop-proxy")));
   });
 

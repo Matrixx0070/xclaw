@@ -36,11 +36,10 @@ export const PRODUCTION_BATCH = [
     target: "scripts/release-gate.mjs",
     needles: ["listStrictExtraTests", "strict-extras"],
   },
-  {
-    file: "patches/doctor-receipt-metrics.patch",
-    target: "src/cli/doctor.mjs",
-    needles: ["pushReceiptMetricsChecks", "ops.receipt_metrics"],
-  },
+  // doctor-receipt-metrics.patch wired the probe inline into doctor.mjs before
+  // doctor-ops-bundle.mjs existed; batch-4's doctor-ops-bundle.patch superseded
+  // it, and 3.288.0 removed the inline duplicate it had left behind. The wire
+  // now lives in the bundle — see test/doctor-no-duplicate-probes.test.mjs.
 ];
 
 function applied(e) {
