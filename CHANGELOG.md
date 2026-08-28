@@ -1,3 +1,44 @@
+## 3.307.0 (2026-08-28)
+
+- Live-driving the previous release's `doctor` turned up the kill-switch probe
+  lying in **both** directions. `gateway.stopRoute` decided whether `POST /stop`
+  was mounted by grepping one file for marker strings:
+
+      const gw = path.join(process.cwd(), "src/gateway/index.mjs");
+      if (fs.existsSync(gw)) mounted = stopRouteMounted(fs.readFileSync(gw, "utf8"));
+
+  From the repo root that printed a **false alarm**: the routes extraction had
+  moved the mount into `src/gateway/routes/stop.mjs`, so the grep found 0
+  markers and the row read `warn: gateway mount not detected` — while the live
+  gateway answered `POST /stop -> 401`. A false alarm on the one route an
+  operator must be able to trust is how a real one gets ignored.
+
+  From anywhere else it printed a **fabrication**. `existsSync` was false, the
+  read never happened, and `mounted` kept its initial value:
+
+      let mounted = helperOk;
+
+  so the row read `ok: POST /stop helper + gateway mount markers present` — a
+  positive claim about a file it had never opened. That is the common case, not
+  the edge: an installed `xclaw doctor` runs from the operator's own directory,
+  never the repo root. The check passed hardest exactly where it checked
+  nothing, and it would have said `ok` with the stop route deleted.
+
+  The probe now reads the gateway sources relative to its own module (`src/`
+  ships in the package, so this holds in a repo and in an install alike) and
+  follows the actual dispatch chain in the new pure `analyzeStopMount()`: the
+  dispatcher carries the markers itself, or it imports a `routes/*.mjs` that
+  carries them **and calls what it imported**. A stop module left orphaned by a
+  refactor — present, exporting, wired to nothing — is not a mount and no longer
+  reads as one. When the sources cannot be read at all the verdict is `null`,
+  reported as **warn** "gateway mount NOT verified", never `ok`.
+
+  The old tests asserted only `helperOk`, never `mounted` or the status — which
+  is how a fail-open shipped under a green suite. `test/doctor-stop-route.test.mjs`
+  now pins the verdict itself (14 tests), including the orphan-module case, the
+  imported-but-never-called case, and identical results from two different cwds.
+  `gateway.stopProbe` still calls the live route; this is its static twin.
+
 ## 3.306.0 (2026-08-28)
 
 - The same defect the last two releases fixed for the channel watchdog, found by
