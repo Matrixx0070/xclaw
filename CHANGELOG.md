@@ -1,3 +1,50 @@
+## 3.314.0 (2026-08-28)
+
+### Fixed — three doctor rows that reported "no data" as a fault
+
+`ops.quota_hard_circuit`, `ops.quota_escalate` and `ops.smoke_compare` warned
+on every doctor run on this host, and had done so for as long as the rows have
+existed. None of them had measured anything.
+
+- `ops.quota_hard_circuit` reads `reports/jobs/index.jsonl`. The file does not
+  exist on a host that has never run a `/job`, so the probe warned and printed
+  `hard-circuit trips=0/0 hardBlocks=0` — a line that reads as a clean
+  measurement, attached to a status that says something is wrong.
+- `ops.quota_escalate` substituted `{ jobs: 0, hardBlocks: 0, hardBlockRate: 0 }`
+  whenever the autonomy smoke artifact was absent, then printed
+  `hardBlockRate=0.000` through `.toFixed(3)`. A rate over an empty denominator
+  is undefined, not 0.000; the zero was fabricated, formatted, and shipped to
+  the operator as a reading.
+- `ops.smoke_compare` reported `missing_current` as a warn.
+
+The shared cause is that nothing in production writes
+`reports/autonomy/last-smoke.json`. Its only writer is
+`scripts/autonomy-smoke-offline.mjs`, invoked from `scripts/ci-ship-pack.mjs`,
+which no GitHub workflow runs — so the artifact exists only inside a build
+checkout that is then thrown away. Two of the three rows were grading a
+CI-gate artifact as if it were operational health, and the third was grading
+an artifact that no host produces.
+
+No sample is not a fault; it is the absence of evidence either way. The doctor
+already has a level for that (`cron.ledger` says "not created yet (no persisted
+jobs)" at `info`, and `runDoctor` already treats `info` and `ok` alike). All
+three rows now report absence at `info`, naming the artifact that is missing —
+and, for the smoke, the command that produces it. `warn` and `error` are left
+to mean a rate actually measured over jobs that actually ran.
+
+A probe that reads the same in the healthy and the broken state is not a probe.
+Recorded as the same class as 3.313.0, at three times the surface.
+
+### Tests
+
+`test/doctor-quota-hard-circuit.test.mjs` previously contained
+`it("warns with empty job index")` — a test asserting the false positive was
+correct. It is now a regression test for the opposite. No test had ever
+asserted the *message text* of either quota probe, which is how a fabricated
+`hardBlockRate=0.000` survived: the new tests assert that the no-data branches
+print no rate at all. 14 tests across the three files, each mutation-verified
+in both directions against the 3.313.0 sources.
+
 ## 3.313.0 (2026-08-28)
 
 ### Fixed — a doctor warn that read the same whether the sweeper worked or not
