@@ -205,8 +205,18 @@ describe("approval digest + plan fingerprint", () => {
         approvalSlaMs: 60_000,
       },
     });
-    const p = shared.authorize("bash", { command: "echo digest-plan" }, { timeoutMs: 5_000 });
-    await new Promise((r) => setTimeout(r, 20));
+    // authorize awaits a filesystem quota preflight before it registers the
+    // pending entry, so its latency is unbounded — a fixed sleep here failed
+    // deterministically under CPU load (5/5 locally, and on CI's 22.x leg).
+    // onPending fires immediately after the entry is registered: wait on that.
+    let registered;
+    const isPending = new Promise((r) => { registered = r; });
+    const p = shared.authorize(
+      "bash",
+      { command: "echo digest-plan" },
+      { timeoutMs: 5_000, onPending: () => registered() },
+    );
+    await isPending;
     const digest = buildApprovalDigest({
       security: { approvalSlaMs: 60_000 },
     });
