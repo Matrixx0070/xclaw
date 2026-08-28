@@ -31,8 +31,14 @@ export const WRITER_LOCK_STALE_MS = 120_000;
  * Reader and writer must agree on liveness or the doctor reports "held by a
  * live pid" while acquisition steals that same lock. Both now ask the one
  * primitive; this re-export keeps the name callers already import.
+ *
+ * `isSameHost` is the other half of that agreement. A pid is only testable on
+ * the machine that minted it, so where `~/.xclaw` is shared between hosts this
+ * module had the holder's `host` in hand — it printed it — and still asserted
+ * "held by live pid=N" about a process it cannot see. That is the same false OK
+ * the module was written to end.
  */
-import { isPidAlive } from "../shared/pid-alive.mjs";
+import { isPidAlive, isSameHost } from "../shared/pid-alive.mjs";
 
 export { isPidAlive };
 
@@ -117,10 +123,16 @@ export function assessTelegramWriter(ev) {
   }
 
   const stampedAt = Date.parse(held?.at || "");
-  const alive = isAlive(pid);
   const where = held?.host ? ` host=${held.host}` : "";
+  // Only a locally-minted pid can be looked up here; for anyone else the
+  // renewal stamp is the whole of the evidence, and claiming liveness from a
+  // local process table would be inventing it.
+  const local = isSameHost(held?.host);
+  const alive = local ? isAlive(pid) : null;
+  const who = local ? `live pid=${pid}${where}` : `pid=${pid} on another host (${held.host})`;
+  const owner = local ? `pid=${pid}` : `pid=${pid} on another host`;
 
-  if (!alive) {
+  if (alive === false) {
     return out(
       {
         level: "warn",
@@ -132,27 +144,30 @@ export function assessTelegramWriter(ev) {
 
   if (!Number.isFinite(stampedAt)) {
     return out(
-      { level: "warn", summary: `lock held by live pid=${pid}${where} but carries no timestamp` },
-      { level: "warn", summary: `owner pid=${pid} alive, but liveness of the poll loop is unprovable` }
+      { level: "warn", summary: `lock held by ${who} but carries no timestamp` },
+      { level: "warn", summary: `owner ${owner} present, but liveness of the poll loop is unprovable` }
     );
   }
 
   const age = now - stampedAt;
   if (age >= staleMs) {
-    // The process is up but the loop stopped renewing: the outage shape a bare
-    // pid check misses.
+    // The lock stopped being renewed: the outage shape a bare pid check misses.
+    // Locally that means the process is up but wedged; remotely it means that
+    // host is unreachable or wedged, and we cannot tell which from here.
     return out(
       {
         level: "warn",
-        summary: `lock held by live pid=${pid}${where} but not renewed for ${secs(age)} (>= ${secs(staleMs)}) — poll loop wedged`,
+        summary: `lock held by ${who} but not renewed for ${secs(age)} (>= ${secs(staleMs)}) — ${
+          local ? "poll loop wedged" : "that host is unreachable or its poll loop wedged"
+        }`,
       },
-      { level: "warn", summary: `poll loop not advancing: owner pid=${pid} last renewed ${secs(age)} ago` }
+      { level: "warn", summary: `poll loop not advancing: owner ${owner} last renewed ${secs(age)} ago` }
     );
   }
 
   return out(
-    { level: "ok", summary: `held by live pid=${pid}${where} renewed ${secs(age)} ago` },
-    { level: "ok", summary: `owner pid=${pid} transport=${transport} renewed ${secs(age)} ago` }
+    { level: "ok", summary: `held by ${who} renewed ${secs(age)} ago` },
+    { level: "ok", summary: `owner ${owner} transport=${transport} renewed ${secs(age)} ago` }
   );
 }
 

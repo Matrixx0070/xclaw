@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import { isPidAlive } from "../../shared/pid-alive.mjs";
+import { isPidAlive, isSameHost } from "../../shared/pid-alive.mjs";
 
 export const TELEGRAM_SECRET_HEADER = "x-telegram-bot-api-secret-token";
 
@@ -83,11 +83,21 @@ export function acquireTelegramWriterLock(opts = {}) {
         /* */
       }
       const age = Date.now() - Date.parse(prev.at || 0);
-      const alive = alivep(prev.pid);
-      if (alive && age < staleMs && prev.pid !== process.pid) {
+      const fresh = age < staleMs;
+      // The pid is only evidence on the host that minted it. `host` has been
+      // recorded here since the lock existed but was never read, so on a shared
+      // `~/.xclaw` (a bind-mounted volume, a restored home, NFS) a live remote
+      // poller's pid was looked up in *this* process table, found missing, and
+      // its lock taken — two processes on `getUpdates` for one token, the exact
+      // failure this lock prevents. For a remote holder the renewal stamp is
+      // the only signal we can interpret, and the owner refreshes it each poll.
+      // Its pid number is not evidence either, so self-reacquire is local-only.
+      const local = isSameHost(prev.host);
+      const held = local ? alivep(prev.pid) && fresh && prev.pid !== process.pid : fresh;
+      if (held) {
         return {
           ok: false,
-          reason: "lock_held",
+          reason: local ? "lock_held" : "lock_held_remote",
           holder: prev,
           lockPath,
         };

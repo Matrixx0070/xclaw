@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import os from "node:os";
 import {
   assessTelegramWriter,
   isPidAlive,
@@ -13,8 +14,11 @@ import {
 // verdicts, not strings: a lock nobody holds is not OK.
 const NOW = Date.parse("2026-08-28T12:00:00.000Z");
 const lockAt = (agoMs) => new Date(NOW - agoMs).toISOString();
+// A pid can only be looked up on the host that minted it, so these
+// pid-liveness cases are stamped local; the cross-host rules live in
+// test/telegram-writer-lock-host.test.mjs.
 const lockFor = (pid, agoMs) =>
-  JSON.stringify({ pid, at: lockAt(agoMs), host: "box" });
+  JSON.stringify({ pid, at: lockAt(agoMs), host: os.hostname() });
 
 function assess(over = {}) {
   const findings = assessTelegramWriter({

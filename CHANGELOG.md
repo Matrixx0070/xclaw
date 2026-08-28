@@ -1,3 +1,39 @@
+## 3.293.0 (2026-08-28)
+
+- The Telegram writer lock now reads the `host` it has always written. The lock
+  payload has carried `host: os.hostname()` since it existed, and nothing ever
+  looked at it — deleting the field left the whole lock suite green, which is
+  what a write-only field looks like. Meanwhile the holder's pid went straight
+  to `isPidAlive`, which asks *this* machine's process table. That is only an
+  answer for a pid this machine minted.
+- Where `~/.xclaw` is not private to one host — a bind-mounted volume whose
+  container is recreated with a new hostname, a restored home, an NFS home —
+  that fails open in both directions. Host B reads host A's fresh lock, looks
+  A's pid up locally, finds nothing and takes the lock: two processes on
+  `getUpdates` for one bot token, the precise failure the lock exists to
+  prevent. The mirror case is a local process coincidentally wearing that pid,
+  which makes B defer forever to a holder that no longer exists — a silent
+  intake outage.
+- `isSameHost` (in `shared/pid-alive.mjs`, beside the liveness primitives so
+  reader and writer cannot drift) gates the pid check on provenance. A remote
+  holder is judged only by its renewal stamp, which `runTelegramPollLoop`
+  refreshes every poll iteration: fresh means held (`lock_held_remote`), stale
+  means reclaimable, so a dead host still cannot wedge intake. A pid number is
+  not evidence off its own host either, so the self-reacquire clause is
+  local-only. A lock with no `host` predates the field and cannot be proven
+  remote, so it keeps exactly its existing pid-driven behaviour.
+- `xclaw doctor` stops claiming liveness it cannot test. It already had the
+  holder's host in hand — it printed it — and still reported `held by live
+  pid=N` about a process on another machine, and `holder pid=N is gone` when a
+  local table lacked that number. It now reports a remote owner as
+  `pid=N on another host (…)`, warns on a stale remote stamp without asserting
+  the process exited, and leaves single-host output byte-identical.
+- `test/telegram-writer-lock-host.test.mjs` (15 tests) covers the primitive
+  (case-insensitivity, the six shapes of a missing host), the acquisition path
+  (a fresh remote lock is not stolen and its bytes survive, a stale one is
+  reclaimable, a colliding pid is still remote, all four same-host combinations
+  unchanged, legacy locks judged by pid in both directions) and the doctor's
+  wording. Both wirings were mutation-verified in both directions.
 ## 3.292.0 (2026-08-28)
 
 - The five Telegram media-upload requests are bounded. v3.290.0 fixed the JSON

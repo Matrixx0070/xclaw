@@ -97,13 +97,16 @@ describe("isPidDefinitelyDead (strict inverse)", () => {
   });
 });
 
+// These stamp `host: os.hostname()` because a pid is only interpretable on
+// the machine that minted it — the cross-host rules are pinned separately
+// in test/telegram-writer-lock-host.test.mjs.
 describe("Telegram single-writer lock refuses to steal from an EPERM holder", () => {
   it("reports lock_held when the holder is alive-but-unsignalable", () => {
     const dir = tmpDir("tg");
     const lockPath = path.join(dir, "telegram-writer.lock");
     fs.writeFileSync(
       lockPath,
-      JSON.stringify({ pid: DEAD_PID, at: new Date().toISOString(), host: "other" }),
+      JSON.stringify({ pid: DEAD_PID, at: new Date().toISOString(), host: os.hostname() }),
       "utf8"
     );
 
@@ -123,7 +126,7 @@ describe("Telegram single-writer lock refuses to steal from an EPERM holder", ()
     const lockPath = path.join(dir, "telegram-writer.lock");
     fs.writeFileSync(
       lockPath,
-      JSON.stringify({ pid: DEAD_PID, at: new Date().toISOString(), host: "other" }),
+      JSON.stringify({ pid: DEAD_PID, at: new Date().toISOString(), host: os.hostname() }),
       "utf8"
     );
 
@@ -143,7 +146,7 @@ describe("Telegram single-writer lock refuses to steal from an EPERM holder", ()
       JSON.stringify({
         pid: DEAD_PID,
         at: new Date(Date.now() - 10 * 60_000).toISOString(),
-        host: "other",
+        host: os.hostname(),
       }),
       "utf8"
     );

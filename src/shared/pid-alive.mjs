@@ -2,6 +2,7 @@
  * Adapted from OpenClaw (MIT) — src/shared/pid-alive.ts
  */
 import fsSync from "node:fs";
+import os from "node:os";
 
 function isValidPid(pid) {
   return Number.isInteger(pid) && pid > 0;
@@ -61,4 +62,33 @@ export function isPidDefinitelyDead(pid, kill = process.kill.bind(process)) {
     return err?.code === "ESRCH";
   }
   return isZombieProcess(pid);
+}
+
+/**
+ * May a pid recorded elsewhere be interpreted here at all?
+ *
+ * The two functions above answer "is this pid alive" by asking *this* machine's
+ * process table, which is only an answer for a pid this machine minted. When a
+ * pid arrives from a file that another host may have written — a bind-mounted
+ * or restored `~/.xclaw`, an NFS home — the same call silently becomes a
+ * question about an unrelated local process, and it is wrong in both
+ * directions: a live remote owner reads as gone (so its lock gets stolen), and
+ * a coincidental local pid reads as the owner still holding (so nothing ever
+ * reclaims it).
+ *
+ * So liveness must be gated on provenance. A record with no host predates the
+ * field and cannot be proven remote, so it stays local and keeps its existing
+ * behaviour. Hostname case is not a difference — `os.hostname()` casing varies
+ * by platform, and a false "remote" verdict would discard a pid we can in fact
+ * test.
+ *
+ * @param {unknown} recordedHost host stamped into the record, if any
+ * @param {string} [self] this machine's hostname
+ * @returns {boolean} true when the pid alongside it is ours to judge
+ */
+export function isSameHost(recordedHost, self = os.hostname()) {
+  const there = typeof recordedHost === "string" ? recordedHost.trim().toLowerCase() : "";
+  if (!there) return true;
+  const here = typeof self === "string" ? self.trim().toLowerCase() : "";
+  return there === here;
 }
