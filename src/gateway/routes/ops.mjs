@@ -9,6 +9,7 @@
  *   *    /computer/health · GET /channels/status · * /gateway
  */
 import { isComputerRunning } from "../../computer/manager.mjs";
+import { clientErrorStatus } from "../../shared/http-error.mjs";
 
 /**
  * @param {object} args — standard route args + root, webchatEnabled,
@@ -46,7 +47,7 @@ export async function tryHandleOpsRoute({
       const r = await softReloadConfig(cfg);
       json(res, 200, r);
     } catch (err) {
-      json(res, 500, { ok: false, error: err.message });
+      json(res, clientErrorStatus(err) ?? 500, { ok: false, error: err.message });
     }
     return true;
   }

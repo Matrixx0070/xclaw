@@ -15,6 +15,7 @@
  * Feature flag: cfg.swarm.decompose.enabled (legacy alias cfg.swarmExt.enabled)
  * — OFF by default; disabled → 404 typed, engine never imported.
  */
+import { clientErrorStatus } from "../../shared/http-error.mjs";
 
 function normalize(p) {
   if (p === "/api/swarm" || p.startsWith("/api/swarm/")) {
@@ -98,7 +99,7 @@ export async function tryHandleSwarmGoalsRoute({ p, method, req, res, url, cfg, 
       return true;
     }
   } catch (err) {
-    json(res, 500, { error: err.message || String(err) });
+    json(res, clientErrorStatus(err) ?? 500, { error: err.message || String(err) });
     return true;
   }
   return false;

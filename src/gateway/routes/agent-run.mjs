@@ -9,6 +9,7 @@
  * runAgentLoop / noteEviction / streamAgentRun are passed in — they are
  * gateway-closure collaborators, not importable singletons.
  */
+import { clientErrorStatus } from "../../shared/http-error.mjs";
 
 /** @returns {Promise<boolean>} true if handled */
 export async function tryHandleAgentRunRoute({
@@ -54,7 +55,7 @@ export async function tryHandleAgentRunRoute({
         events: body.includeEvents ? events : undefined,
       });
     } catch (err) {
-      json(res, 500, {
+      json(res, clientErrorStatus(err) ?? 500, {
         ok: false,
         error: err.message || String(err),
         events: body.includeEvents ? events : undefined,

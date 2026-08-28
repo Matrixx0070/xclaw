@@ -117,6 +117,7 @@ import { softReloadConfig } from "../config/reload.mjs";
 import { resetSharedAlerter } from "../alerting/alerts.mjs";
 import { createApprovalGate, getSharedApprovalGate, resetSharedApprovalGate } from "../security/approvals.mjs";
 import { scheduleJob, cancelJob, listJobs, addJob, run as runCronJob, status as cronStatus, start as startCron, stop as stopCron, getJob } from "../cron/scheduler.mjs";
+import { clientErrorStatus } from "../shared/http-error.mjs";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1378,7 +1379,7 @@ export async function startGateway({ root, harness = false } = {}) {
           const status = result.ok === false ? 422 : 200;
           return json(res, status, result);
         } catch (err) {
-          return json(res, 500, {
+          return json(res, clientErrorStatus(err) ?? 500, {
             ok: false,
             error: err.message || String(err),
             code: "SWARM_HTTP_ERROR",
@@ -1459,7 +1460,10 @@ export async function startGateway({ root, harness = false } = {}) {
             }
             return json(res, 200, { ok: true });
           } catch (err) {
-            return json(res, 500, { ok: false, error: err.message || String(err) });
+            return json(res, clientErrorStatus(err) ?? 500, {
+              ok: false,
+              error: err.message || String(err),
+            });
           }
         }
 
@@ -1491,7 +1495,10 @@ export async function startGateway({ root, harness = false } = {}) {
               events: body.includeEvents ? out.events : undefined,
             });
           } catch (err) {
-            return json(res, 500, { ok: false, error: err.message || String(err) });
+            return json(res, clientErrorStatus(err) ?? 500, {
+              ok: false,
+              error: err.message || String(err),
+            });
           }
         }
 
@@ -1596,7 +1603,9 @@ export async function startGateway({ root, harness = false } = {}) {
       json(res, 404, { error: "not found", path: p });
     } catch (err) {
       if (!res.headersSent) {
-        json(res, 500, { error: err.message || String(err) });
+        // Outermost request catch: every route's uncaught throw lands here, so
+        // honouring the client-error brand once here covers the whole surface.
+        json(res, clientErrorStatus(err) ?? 500, { error: err.message || String(err) });
       } else if (!res.writableEnded) {
         sendSSE(res, "error", { error: err.message || String(err) });
         res.end();

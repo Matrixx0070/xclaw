@@ -1,3 +1,36 @@
+## 3.298.0 (2026-08-28)
+
+- Caller-side errors answer 4xx instead of 500. Found by live-driving the
+  gateway: `POST /channel/webchat/message` with `{"text": "..."}` — the route
+  wants `message` — returned HTTP 500, telling the caller the SERVER had
+  failed. That is not cosmetic. This repo's own HTTP client retries 500 by
+  default (`retryOnHttp = [408, 425, 429, 500, 502, 503, 504]` in
+  `utils/fetch-retry.mjs`, `isRetryableStatus` in `utils/backoff.mjs`), so a
+  request that can never succeed burns its whole retry budget, and the 5xx
+  rate operators page on climbs for a caller-side typo.
+- The obvious fix, `json(res, err.status || 500)`, would have introduced a
+  worse bug than it closed. `err.status` already means the status of an
+  OUTBOUND response in ~19 places, and two of them reach a gateway catch:
+  `providers/failover-router.mjs` sets `err.status = 401` for "No credentials
+  for <model>" — a SERVER misconfiguration, so echoing 401 sends the caller to
+  re-authenticate a token that was never the problem — and `agent/provider.mjs`
+  copies the upstream provider's status (429, 503) onto the error, which would
+  make an upstream rate limit look like ours.
+- So the 4xx rides on a brand an upstream error can never carry, not on the
+  overloaded field: `src/shared/http-error.mjs` exports `clientError` /
+  `badRequest` / `clientErrorStatus`, branding with a module-private `Symbol`
+  (defined, not `Symbol.for`, so unreachable from the global registry) set
+  non-enumerable so it survives neither `JSON.parse(JSON.stringify(err))` nor a
+  structured clone. A caller cannot forge one by sending `{status: 400}`.
+- All seven gateway catches now answer `clientErrorStatus(err) ?? 500`,
+  including the outermost request catch in `gateway/index.mjs`, where every
+  route's uncaught throw lands. Behaviour is unchanged for every error that is
+  not explicitly branded. Deliberate 502/503 responses are left alone: they
+  name which dependency failed and are honest; 500 was the one that collapsed
+  every error class into "the server broke".
+- Pinned two ways, both mutation-verified: an error carrying `err.status = 401`
+  must still answer 500, and no gateway response may hard-code 500.
+
 ## 3.297.0 (2026-08-28)
 
 - Alert state follows `paths.configDir`. `defaultStatePath()` resolved

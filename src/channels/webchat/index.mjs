@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { runAgent } from "../../agent/run-agent.mjs";
 import { runJob } from "../../jobs/job.mjs";
 import { handleChannelCommand } from "../commands.mjs";
+import { badRequest } from "../../shared/http-error.mjs";
 
 /** @type {Map<string, { id: string, createdAt: number, messages: Array, workingDir?: string }>} */
 const sessions = new Map();
@@ -54,7 +55,9 @@ export function listChatSessions() {
  */
 export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, signal, mode, verify }) {
   if (!message || typeof message !== "string" || !message.trim()) {
-    throw new Error("message is required");
+    // The caller can fix this; answering 500 makes retrying clients hammer a
+    // request that can never succeed. See shared/http-error.mjs.
+    throw badRequest("message is required");
   }
   if (signal?.aborted) throw new Error("aborted");
 
