@@ -2,19 +2,9 @@
  * Human-readable markdown status report from dashboard snapshot.
  */
 import { buildDashboard } from "./dashboard.mjs";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-function pkgVersion() {
-  try {
-    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    const j = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-    return j.version || "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-}
+// The status report is read by an operator deciding whether a deploy landed;
+// it must name the build serving the report, not the one on disk.
+import { runningVersion as pkgVersion } from "./build-version.mjs";
 
 export async function buildStatusReport(cfg) {
   const d = await buildDashboard(cfg);

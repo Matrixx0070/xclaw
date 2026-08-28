@@ -9,18 +9,9 @@ import { summarizeEvalSpend } from "../eval/spend.mjs";
 import { evalCronStatus } from "../cron/eval-job.mjs";
 import { listProfiles } from "../config/profiles.mjs";
 import { uptimeInfo } from "./uptime.mjs";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-function pkgVersion() {
-  try {
-    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    return JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version || "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-}
+// Was a local pkgVersion() that re-read package.json on every dashboard build,
+// so the Control UI showed the checkout's version, not the running gateway's.
+import { runningVersion as pkgVersion } from "./build-version.mjs";
 
 export async function buildDashboard(cfg) {
   let computerUp = false;

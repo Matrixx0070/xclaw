@@ -14,6 +14,7 @@ import { defaultSessionsPath } from "../sessions/persist.mjs";
 import { wsClientCount } from "./ws-hub.mjs";
 import { evictionBufferMetrics, evictionListenerCount } from "./eviction-events.mjs";
 import { streamRegistryStats } from "./stream-resume.mjs";
+import { runningVersion } from "./build-version.mjs";
 
 /**
  * @returns {Promise<object>}
@@ -454,18 +455,10 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
 
   const failed = checks.filter((c) => c.ok === false);
   const warnings = checks.filter((c) => c.severity === "warn");
-  let version = "0.0.0";
-  try {
-    const pkgPath = path.join(
-      path.dirname(new URL(import.meta.url).pathname),
-      "..",
-      "..",
-      "package.json"
-    );
-    version = JSON.parse(fs.readFileSync(pkgPath, "utf8")).version || version;
-  } catch {
-    /* keep fallback */
-  }
+  // A report produced BY this gateway must be stamped with the build that
+  // produced it. Read off disk, a stale process labelled its own diagnosis
+  // with the version it had failed to pick up.
+  const version = runningVersion();
   return {
     ok: failed.length === 0,
     service: "XClaw",

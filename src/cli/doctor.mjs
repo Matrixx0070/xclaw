@@ -629,13 +629,25 @@ export async function runDoctor(opts = {}) {
   // cannot see cron/watchdog registrations, which made those checks warn
   // "start gateway" while the gateway was demonstrably up.
   let liveOps = null;
+  let liveVersion = null;
   if (gh.ok) {
     try {
       const info = await httpGet(`http://${gHost === "0.0.0.0" ? "127.0.0.1" : gHost}:${gPort}/gateway/info`);
       if (info.ok && info.data) {
-        try { liveOps = JSON.parse(info.data)?.ops || null; } catch { /* not json */ }
+        try {
+          const body = JSON.parse(info.data);
+          liveOps = body?.ops || null;
+          // Frozen at the gateway's boot, so it names the build actually
+          // serving — the one thing a deploy check has to compare against.
+          liveVersion = body?.version || null;
+        } catch { /* not json */ }
       }
     } catch { /* fall back to in-process view */ }
+  }
+  if (liveVersion) {
+    const { summarizeBuildDrift, readOnDiskVersion } = await import("../gateway/build-version.mjs");
+    const d = summarizeBuildDrift(liveVersion, readOnDiskVersion());
+    push("gateway.build", d.severity, d.message);
   }
 
   const ch = await httpGet(`http://${cHost === "0.0.0.0" ? "127.0.0.1" : cHost}:${cPort}/health`);

@@ -37,9 +37,9 @@ import { resolveGatewayBindHost, startGatewayTailscaleExposure } from "../net/ta
 import { attachWebSocketHub, broadcast as wsBroadcast } from "./ws-hub.mjs";
 import { attachVoiceWebSocket } from "./voice-ws.mjs";
 import fs from "node:fs/promises";
-import fsSync from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+// Static, so the running-build read happens at process boot (see below).
+import { runningVersion } from "./build-version.mjs";
 import { loadConfig } from "../config/load.mjs";
 import {
   startComputer,
@@ -119,23 +119,17 @@ import { scheduleJob, cancelJob, listJobs, addJob, run as runCronJob, status as 
 import { clientErrorStatus } from "../shared/http-error.mjs";
 
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 /**
  * Single source of truth: package.json. This used to be a hardcoded literal
  * with a "keep in sync" comment, and it drifted — the gateway, Control UI,
  * WebChat and /info all reported 0.7.0 while the package was on 3.x.
+ *
+ * The read now lives in build-version.mjs, imported STATICALLY above so it is
+ * evaluated here at boot. That gives one frozen value to the surfaces which
+ * used to re-read the file per request, and so reported whatever the checkout
+ * had been bumped to rather than the build they were executing.
  */
-const XCLAW_VERSION = (() => {
-  try {
-    return (
-      JSON.parse(fsSync.readFileSync(path.join(__dirname, "..", "..", "package.json"), "utf8"))
-        .version || "0.0.0"
-    );
-  } catch {
-    return "0.0.0";
-  }
-})();
+const XCLAW_VERSION = runningVersion();
 const XCLAW_PHASE = 7;
 
 /**
@@ -1307,7 +1301,7 @@ export async function startGateway({ root, harness = false } = {}) {
       if (await tryHandleProvidersRoute(routeArgs)) return;
       if (await tryHandleChannelsRoute({ ...routeArgs, channelManager })) return;
       if (await tryHandleAlertsRoute({ ...routeArgs, channelManager })) return;
-      if (await tryHandleOpsRoute({ ...routeArgs, root, webchatEnabled, channelManager, XCLAW_VERSION, XCLAW_PHASE })) return;
+      if (await tryHandleOpsRoute({ ...routeArgs, webchatEnabled, channelManager, XCLAW_VERSION, XCLAW_PHASE })) return;
       if (await tryHandleLedgerRoute(routeArgs)) return;
       if (await tryHandleEvalQueueRoute({ ...routeArgs, root })) return;
       if (await tryHandleJwksRoute(routeArgs)) return;

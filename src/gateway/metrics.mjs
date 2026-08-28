@@ -4,18 +4,10 @@
 import { queueStats } from "../jobs/queue.mjs";
 import { summarizeEvalSpend } from "../eval/spend.mjs";
 import { isComputerRunning } from "../computer/manager.mjs";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-function pkgVersion() {
-  try {
-    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    return JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version || "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-}
+// xclaw_info{version=...} is the gauge a scraper uses to confirm a rollout
+// reached a host. Read off disk per scrape, it let a process that had never
+// restarted report itself as upgraded — so it must be the RUNNING build.
+import { runningVersion as pkgVersion } from "./build-version.mjs";
 
 /**
  * @param {object} cfg

@@ -12,7 +12,7 @@ import { isComputerRunning } from "../../computer/manager.mjs";
 import { clientErrorStatus } from "../../shared/http-error.mjs";
 
 /**
- * @param {object} args — standard route args + root, webchatEnabled,
+ * @param {object} args — standard route args + webchatEnabled,
  *   channelManager (live), version {XCLAW_VERSION, XCLAW_PHASE}
  * @returns {Promise<boolean>} true if handled
  */
@@ -24,7 +24,6 @@ export async function tryHandleOpsRoute({
   url,
   cfg,
   json,
-  root,
   webchatEnabled,
   channelManager,
   XCLAW_VERSION,
@@ -76,16 +75,15 @@ export async function tryHandleOpsRoute({
     return true;
   }
   if (p === "/version") {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
     const { uptimeInfo } = await import("../uptime.mjs");
-    let version = "0.0.0";
-    try {
-      version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
-    } catch {}
+    const { buildReport } = await import("../build-version.mjs");
+    // `version` is the build this process is RUNNING. It used to be read off
+    // disk during the request, so a gateway that had not restarted since a
+    // deploy reported a version it had never executed. The drift is published
+    // rather than hidden — it is the normal state between deploy and restart.
     json(res, 200, {
       name: "xclaw",
-      version,
+      ...buildReport(XCLAW_VERSION),
       profile: cfg.profile || "dev",
       ...uptimeInfo(),
     });

@@ -1,3 +1,43 @@
+## 3.304.0 (2026-08-28)
+
+- Every gateway version surface answered "what version are you?" by reading
+  `package.json` off disk *during the request*. On a box with a self-deployer
+  that is not the running build. Captured live on this host, one gateway, one
+  moment:
+
+      /version      -> 3.303.0    (disk, read during the request)
+      /gateway/info -> 3.302.0    (frozen at import = the build executing)
+      /health       -> 3.302.0
+      uptimeSec 757, startedAt 09:08:38Z — never restarted since the bump
+
+  `/version` named a build that had never executed on this machine.
+- Six sites, four of them byte-near-identical `pkgVersion()` copies: `/version`,
+  the Control UI dashboard, the Prometheus `xclaw_info` gauge, the markdown
+  status report, stop-health's `surfaceVersion` fallback, and the stamp on the
+  gateway's own doctor report. The metrics gauge is the dangerous one —
+  `xclaw_info{version="…"}` is what a scraper reads to confirm a rollout
+  reached a host, so a process that had never restarted could report itself as
+  upgraded and satisfy its own deploy check.
+- One primitive now owns the read: `src/gateway/build-version.mjs`, imported
+  **statically** by the gateway so it is evaluated at process boot. A module
+  that memoizes on first *dynamic* import inside a route handler would freeze
+  whatever was on disk at the first request — the same bug with extra steps.
+- The drift is published rather than hidden, because it is the normal state
+  between a deploy and its restart. `/version` gains `onDiskVersion`, `stale`,
+  and `staleReason` (`restart-pending` when the checkout moved ahead,
+  `checkout-behind` when the process is ahead of its source), and `xclaw
+  doctor` gains a `gateway.build` probe naming the restart. `version` keeps its
+  name and now carries the truth; every addition is additive.
+- Drift is a `warn`, never an `error` — an operator mid-deploy must not be told
+  the box is broken. An unreadable `package.json` yields `onDiskVersion: null`
+  and `stale: false`: a failed read is not evidence of drift, and inventing one
+  would page someone over a permissions error.
+- Pinned by a call-graph test as well as behaviour. In-process a disk read and
+  `runningVersion()` return the same string, so nothing at runtime distinguishes
+  a correct call from a reintroduced copy — the test asserts instead that no
+  file under `src/gateway/` reads `package.json` for a version except the
+  primitive itself (and stop-health, for the `xclaw.stopSurfaceFreeze` marker,
+  which genuinely is a disk fact).
 ## 3.303.0 (2026-08-28)
 
 - `xclaw doctor` reported the channel watchdog as idle on a box where it was
