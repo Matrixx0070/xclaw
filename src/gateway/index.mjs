@@ -1197,33 +1197,13 @@ export async function startGateway({ root, harness = false } = {}) {
     console.warn("[xclaw] computer watchdog:", err.message);
   }
   try {
-    // Daily stale-tmp sweep (age-gated, mission-worktree-safe) — a live host
-    // accumulated 10k+ /tmp/xclaw-* entries from suite runs before this
-    // existed. Off via ops.tmpSweep.enabled: false.
-    if (cfg.ops?.tmpSweep?.enabled !== false || cfg.ops?.maintenance?.enabled !== false) {
-      const sweepEveryMs = Math.max(3_600_000, Number(cfg.ops?.maintenance?.intervalMs) || Number(cfg.ops?.tmpSweep?.intervalMs) || 24 * 3600 * 1000);
-      const sweepTimer = setInterval(() => {
-        if (cfg.ops?.tmpSweep?.enabled !== false) {
-          import("../ops/tmp-sweeper.mjs")
-            .then((m) => m.sweepStaleTmp(cfg))
-            .then((r) => {
-              if (r.removed.length) console.log(`[xclaw:ops] tmp sweep: removed ${r.removed.length} stale entries`);
-            })
-            .catch((e) => console.warn("[xclaw:ops] tmp sweep failed:", e?.message || e));
-        }
-        // ledger compaction + append-only rotation (audit's deferred finding)
-        import("../ops/maintenance.mjs")
-          .then((m) => m.runOpsMaintenance(cfg))
-          .then((r) => {
-            if (r.skipped) return;
-            if (r.ledger?.removed?.length) console.log(`[xclaw:ops] ledger compact: removed ${r.ledger.removed.length} segments`);
-            for (const rot of r.rotated) console.log(`[xclaw:ops] rotated ${rot.path} (${rot.bytes} → ${rot.keptBytes} bytes)`);
-            for (const e of r.errors) console.warn(`[xclaw:ops] maintenance ${e.target}:`, e.error);
-          })
-          .catch((e) => console.warn("[xclaw:ops] maintenance failed:", e?.message || e));
-      }, sweepEveryMs);
-      if (sweepTimer.unref) sweepTimer.unref();
-    }
+    // Daily ops job: stale-tmp sweep (age-gated, mission-worktree-safe) plus
+    // ledger compaction and JSONL rotation. Scheduled against a persisted
+    // last-run stamp, NOT process uptime — an inline setInterval(24h) never
+    // fired on a host that redeploys daily. Off via ops.tmpSweep.enabled and
+    // ops.maintenance.enabled (both false to disarm entirely).
+    const { startOpsSchedule } = await import("../ops/scheduler.mjs");
+    startOpsSchedule(cfg);
     startChannelHealthWatchdog(cfg, channelManager, {
       // outage/recovery events reach live Control surfaces
       onEvent: (e) => {

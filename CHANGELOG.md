@@ -1,3 +1,33 @@
+## 3.283.0 (2026-08-28)
+
+- LIVE FAIL-OPEN FIX (found by observation, not by census): the daily ops
+  job — stale-tmp sweep, cost-ledger compaction, and JSONL rotation of
+  router-events / cost-ledger / cron logs — had not run on the live host
+  since 2026-08-22. The gateway armed it as a bare
+  `setInterval(job, 24h)` at boot, which only ever fires if ONE process
+  instance survives 24 uninterrupted hours; a host that redeploys daily
+  therefore performs maintenance NEVER, and silently, because nothing
+  logs a run that did not happen. Live evidence: 337 gateway boots in
+  `gateway.log` against 5 sweeps total (last 2026-08-22), 350 pm2
+  restarts, and `doctor` reporting `ops.tmp: 83671 stale xclaw tmp
+  entries`. The sweeper itself was never broken — it was simply never
+  called. New `src/ops/due.mjs` (persisted last-run stamps in
+  `ops-schedule.json`, 0o600, durable atomic write; due when never run,
+  when the interval has elapsed, or when the clock moved back) and
+  `src/ops/scheduler.mjs` (`startOpsSchedule`: overdue catch-up 60s after
+  boot, then the steady interval; each run stamped even on partial
+  failure so a broken job cannot hot-loop at every boot). A restart now
+  RESUMES the schedule instead of resetting it. The gateway's 27 inline
+  timer lines collapse to 7. Scheduling had zero test coverage before
+  this; `test/ops-schedule-restart.test.mjs` pins it, mutation-verified
+  in both directions (removing the boot catch-up and no-op'ing the stamp
+  each turn the suite RED).
+- OBSERVABILITY (the same defect's other half): `doctor` gains an
+  `ops.schedule` probe reporting how long ago the daily ops job actually
+  ran, warning past 2x the interval. The outage was invisible for six
+  days because a job that never runs logs nothing, so silence read as
+  health; overdue is now a reported state.
+
 ## 3.282.0 (2026-08-28)
 
 - SECURITY HARDENING (mutation sweep #73, RULE(o) on the provider

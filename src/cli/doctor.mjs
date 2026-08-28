@@ -763,6 +763,36 @@ export async function runDoctor(opts = {}) {
     push("ops.tmp", "warn", err.message);
   }
 
+  // Whether the daily ops job is actually RUNNING. The uptime-scheduled
+  // version stopped firing for six days and nothing said so — a job that
+  // never runs logs nothing, so silence read as health. Overdue is now a
+  // reported state, not an invisible one.
+  try {
+    const { readDueState } = await import("../ops/due.mjs");
+    const { OPS_JOB, opsIntervalMs, opsScheduleEnabled } = await import("../ops/scheduler.mjs");
+    if (!opsScheduleEnabled(cfg)) {
+      push("ops.schedule", "ok", "disabled by config");
+    } else {
+      const last = (await readDueState(cfg))[OPS_JOB];
+      const interval = opsIntervalMs(cfg);
+      if (!Number.isFinite(last)) {
+        push("ops.schedule", "ok", "never run yet (runs shortly after next gateway boot)");
+      } else {
+        const ageMs = Date.now() - last;
+        const hrs = (ageMs / 3600_000).toFixed(1);
+        push(
+          "ops.schedule",
+          ageMs > 2 * interval ? "warn" : "ok",
+          ageMs > 2 * interval
+            ? `daily ops job last ran ${hrs}h ago (interval ${(interval / 3600_000).toFixed(0)}h) — is the gateway up?`
+            : `daily ops job ran ${hrs}h ago`
+        );
+      }
+    }
+  } catch (err) {
+    push("ops.schedule", "warn", err.message);
+  }
+
   // Long-run objectives needing attention: a missed escalation DM used to
   // leave an awaiting_human mission invisible forever.
   try {
