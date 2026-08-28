@@ -47,4 +47,73 @@ describe("doctor ops.auth_refresh", () => {
     });
     assert.equal(checks[0].status, "warn");
   });
+
+  // The writer (cost-preflight-auth) sets `soft` when a refresh failed but the
+  // caller never required auth. A host running on API keys has no OAuth token,
+  // so it records every app failed-and-soft on every single preflight; reading
+  // that as a hard error means doctor reports a permanent false failure.
+  const softStatus = {
+    ok: true,
+    soft: true,
+    results: [
+      { appId: "xai", ok: false, refreshed: false, error: "no token", code: "no_token" },
+      { appId: "grok", ok: false, refreshed: false, error: "no token", code: "no_token" },
+    ],
+  };
+
+  async function probe(status, cfgExtra = {}) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-ar-soft-"));
+    try {
+      const cfg = { paths: { configDir: dir }, ...cfgExtra };
+      await recordAuthRefreshStatus(cfg, status);
+      const checks = [];
+      await pushAuthRefreshChecks(
+        (id, s, message, extra) => checks.push({ id, status: s, message, extra }),
+        cfg
+      );
+      return checks[0];
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("reports a soft refresh failure as a warning, not an error", async () => {
+    const c = await probe(softStatus);
+    assert.equal(c.id, "ops.auth_refresh");
+    assert.equal(c.status, "warn");
+    assert.equal(c.extra.soft, true);
+    assert.deepEqual(c.extra.failed, ["xai", "grok"]);
+  });
+
+  it("names the apps and the reason so a warning is actionable", async () => {
+    const c = await probe(softStatus);
+    assert.match(c.message, /xai,grok/);
+    assert.match(c.message, /no_token/);
+    assert.match(c.message, /non-fatal/);
+  });
+
+  it("escalates the same soft failure in prod", async () => {
+    const c = await probe(softStatus, { profile: "prod" });
+    assert.equal(c.status, "error");
+  });
+
+  it("still errors on a hard failure, soft flag absent", async () => {
+    const c = await probe({
+      ok: false,
+      soft: false,
+      message: "auth refresh failed before cost preflight — re-login required",
+      results: [{ appId: "xai", ok: false, refreshed: false, code: "revoked" }],
+    });
+    assert.equal(c.status, "error");
+    assert.match(c.message, /re-login required/);
+  });
+
+  it("errors on a failure the writer never marked soft", async () => {
+    const c = await probe({
+      ok: true,
+      soft: false,
+      results: [{ appId: "xai", ok: false, refreshed: false, code: "revoked" }],
+    });
+    assert.equal(c.status, "error");
+  });
 });

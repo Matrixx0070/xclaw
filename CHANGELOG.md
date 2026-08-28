@@ -1,3 +1,37 @@
+## 3.287.0 (2026-08-28)
+
+- The `ops.auth_refresh` doctor probe has never run in production. Its shim,
+  `src/cli/doctor-auth-refresh.mjs`, was `export { pushAuthRefreshChecks } from
+  "..."` followed by `export default { pushAuthRefreshChecks }` — a re-export
+  creates no local binding, so naming it again threw `ReferenceError` at module
+  evaluation. Both call sites (`doctor.mjs`, `doctor-ops-bundle.mjs`) import the
+  shim dynamically inside a `try/catch` whose handler is
+  `push("ops.auth_refresh", "warn", e.message)`, so the crash was laundered into
+  a health result. Live on the gateway it printed
+  `[WARN] ops.auth_refresh: pushAuthRefreshChecks is not defined`, twice, in a
+  wall of sixteen warnings.
+- This is a fail-open, not cosmetics: the probe's own failure branch pushes
+  `error`, and doctor's exit code counts errors. A genuine auth failure would
+  have been reported as a mild warning and exited 0.
+- Fixing the shim alone would have shipped a FALSE production error, so the
+  reader is fixed in the same release. `pushAuthRefreshChecks` escalated any
+  `failed.length` to `error` while ignoring the `soft` flag its own writer sets.
+  `cost-preflight-auth` defines `soft: !anyOk && !hardFail`, and `hardFail`
+  requires `opts.requireAuth === true` — so `soft: true` means "the refresh
+  failed, but the caller never required auth", non-fatal by construction. The
+  live status file says exactly that: `ok: true, soft: true`, both apps
+  `no_token`. A host running on API keys has no OAuth token to refresh and
+  records that on every single preflight, so the unmasked probe would have
+  reported a permanent false failure. It now warns, escalating in prod/strict
+  like the missing-status and skipped branches already do, and names the failing
+  apps and codes so the warning is actionable.
+- The existing 80 lines of auth-refresh tests could not have caught either half:
+  they import `src/tokens/auth-refresh-status.mjs` directly, which is the module
+  the broken shim re-exported and production never reached, and none of them
+  exercised a failed result at all. The regression test pins the shims
+  themselves — all 30, enumerated from disk rather than listed, so the next shim
+  added is covered without anyone remembering to add it.
+
 ## 3.286.0 (2026-08-28)
 
 - 3.285.0 closed only half of its own defect. Anchoring to the last run lets a

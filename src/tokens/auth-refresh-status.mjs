@@ -68,14 +68,24 @@ export async function pushAuthRefreshChecks(push, cfg = {}) {
   const failed = (st.results || []).filter((r) => r.ok === false);
   const refreshed = (st.results || []).filter((r) => r.refreshed);
   if (st.ok === false || failed.length) {
+    // `soft` is the writer's own verdict (cost-preflight-auth: `!anyOk &&
+    // !hardFail`): the refresh failed, but the caller never required auth, so
+    // it is not fatal. A host running on API keys has no OAuth token to
+    // refresh and reports every app failed-but-soft on every preflight —
+    // reading that as a hard error means doctor cries wolf forever. Prod still
+    // escalates, matching the missing-status and skipped branches below.
+    const codes = [...new Set(failed.map((f) => f.code).filter(Boolean))];
     push(
       "ops.auth_refresh",
-      "error",
+      st.ok === false || !st.soft || prod ? "error" : "warn",
       st.message ||
-        `auth refresh failed for ${failed.map((f) => f.appId).join(",") || "apps"}`,
+        `auth refresh failed for ${failed.map((f) => f.appId).join(",") || "apps"}` +
+          `${codes.length ? ` (${codes.join(",")})` : ""}` +
+          `${st.soft ? " — auth not required, non-fatal" : ""}`,
       {
         present: true,
         at: st.at,
+        soft: Boolean(st.soft),
         failed: failed.map((f) => f.appId),
         results: st.results,
       }
