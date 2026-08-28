@@ -519,7 +519,10 @@ export async function cancelQueueItem(cfg, id) {
 }
 
 export async function queueStats(cfg) {
-  const items = await listQueue(cfg, { limit: 500 });
+  // The whole queue, not a page of it: listQueue sorts queued first, so a
+  // display-sized limit on a 500+ queued backlog hides every non-queued
+  // record — stats saturate, sweeps no-op, and each reports a successful zero.
+  const items = await listQueue(cfg, { limit: Number.POSITIVE_INFINITY });
   const by = Object.fromEntries(QUEUE_STATUSES.map((st) => [st, 0]));
   let deadLetter = 0;
   for (const it of items) {
@@ -543,7 +546,10 @@ export async function queueStats(cfg) {
 }
 
 export async function listDeadLetter(cfg, { limit = 50 } = {}) {
-  const items = await listQueue(cfg, { limit: 500 });
+  // The whole queue, not a page of it: listQueue sorts queued first, so a
+  // display-sized limit on a 500+ queued backlog hides every non-queued
+  // record — stats saturate, sweeps no-op, and each reports a successful zero.
+  const items = await listQueue(cfg, { limit: Number.POSITIVE_INFINITY });
   return items
     .filter((it) => it.status === "failed" && (it.attempts || 0) >= (it.maxAttempts || 1))
     .slice(0, limit);
@@ -551,7 +557,10 @@ export async function listDeadLetter(cfg, { limit = 50 } = {}) {
 
 export async function retryFailedQueue(cfg) {
 
-  const items = await listQueue(cfg, { limit: 500 });
+  // The whole queue, not a page of it: listQueue sorts queued first, so a
+  // display-sized limit on a 500+ queued backlog hides every non-queued
+  // record — stats saturate, sweeps no-op, and each reports a successful zero.
+  const items = await listQueue(cfg, { limit: Number.POSITIVE_INFINITY });
   let n = 0;
   for (const it of items) {
     if (it.status === "failed") {
@@ -570,7 +579,10 @@ export async function retryFailedQueue(cfg) {
 export async function clearCompletedQueue(cfg) {
 
   const dir = await ensureDir(cfg);
-  const items = await listQueue(cfg, { limit: 500 });
+  // The whole queue, not a page of it: listQueue sorts queued first, so a
+  // display-sized limit on a 500+ queued backlog hides every non-queued
+  // record — stats saturate, sweeps no-op, and each reports a successful zero.
+  const items = await listQueue(cfg, { limit: Number.POSITIVE_INFINITY });
   let removed = 0;
   for (const it of items) {
     if (TERMINAL_QUEUE_STATUSES.includes(it.status)) {

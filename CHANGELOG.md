@@ -1,3 +1,23 @@
+## 3.334.0
+
+### Queue aggregates and sweeps saw a page of the queue, not the queue
+
+`queueStats`, `listDeadLetter`, `retryFailedQueue` and `clearCompletedQueue`
+each derived their input from `listQueue(cfg, { limit: 500 })` — the same
+display limit v3.333.0 removed from admission. listQueue sorts queued items
+FIRST, so on a queue holding 500+ queued records the page contains nothing
+else. Measured, 500 queued + 2 failed + 1 succeeded on disk: `queueStats`
+reported `total=500, failed=0` (this feeds the `xclaw_queue_jobs` Prometheus
+gauge, which therefore saturated at 500 with no signal), the dead-letter list
+was empty, retry requeued nothing and clear removed nothing — every one of
+them reporting a successful zero. All four now census the whole queue; the
+limit never saved work, since listQueue parses every record before slicing.
+
+The two remaining paged reads are correct BY the sort and stay paged:
+`processNext` (limit 100) needs only the top aged-priority queued item, which
+the sort puts in the page; the drain check (limit 20) needs only "does any
+queued item exist", and queued sorts first.
+
 ## 3.333.0
 
 ### Any queue.maxDepth above 500 silently disabled the finite buffer
