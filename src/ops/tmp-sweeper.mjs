@@ -19,6 +19,9 @@ import os from "node:os";
 // Safety comes from the age gate + mission-worktree exclusion, not the name.
 export const SWEEP_PREFIX = "xclaw-";
 
+/** Retention bound. Exported so readers grade against the writer's own number. */
+export const SWEEP_MAX_AGE_MS = 24 * 3600 * 1000;
+
 export function isSweepCandidate(name) {
   return String(name).startsWith(SWEEP_PREFIX);
 }
@@ -52,7 +55,7 @@ export async function referencedMissionPaths(cfg = {}) {
  */
 export async function sweepStaleTmp(cfg = {}, opts = {}) {
   const tmp = opts.tmpdir || os.tmpdir();
-  const maxAgeMs = Math.max(60_000, Number(opts.maxAgeMs ?? 24 * 3600 * 1000));
+  const maxAgeMs = Math.max(60_000, Number(opts.maxAgeMs ?? SWEEP_MAX_AGE_MS));
   const dryRun = opts.dryRun === true;
   const referenced = await referencedMissionPaths(cfg);
   const removed = [];
@@ -97,8 +100,3 @@ export async function sweepStaleTmp(cfg = {}, opts = {}) {
   return { removed, kept, skippedReferenced, errors, dryRun };
 }
 
-/** Count of sweepable stale entries — doctor signal, no writes. */
-export async function countStaleTmp(cfg = {}, opts = {}) {
-  const r = await sweepStaleTmp(cfg, { ...opts, dryRun: true });
-  return r.removed.length;
-}

@@ -728,16 +728,23 @@ export async function runDoctor(opts = {}) {
   } catch (err) {
     push("eval.cron", "warn", err.message);
   }
+  // Graded one full sweep cycle past the retention bound, not at it: the sweep
+  // runs daily, so a day of entries ages past 24h between any two runs and the
+  // old threshold fired on that expected state. See ./doctor-tmp.mjs.
   try {
-    const { countStaleTmp } = await import("../ops/tmp-sweeper.mjs");
-    const stale = await countStaleTmp(cfg);
-    push(
-      "ops.tmp",
-      stale > 50 ? "warn" : "ok",
-      stale > 50
-        ? `${stale} stale xclaw tmp entries (>24h) — run: xclaw sweep-tmp`
-        : `${stale} stale tmp entries`
-    );
+    const { sweepStaleTmp, SWEEP_MAX_AGE_MS } = await import("../ops/tmp-sweeper.mjs");
+    const { opsIntervalMs } = await import("../ops/scheduler.mjs");
+    const { tmpSweepProbe, tmpGradeAgeMs } = await import("./doctor-tmp.mjs");
+    const intervalMs = opsIntervalMs(cfg);
+    const sweepEnabled = cfg.ops?.tmpSweep?.enabled !== false;
+    const grade = { maxAgeMs: SWEEP_MAX_AGE_MS, intervalMs, sweepEnabled };
+    const r = await sweepStaleTmp(cfg, { dryRun: true, maxAgeMs: tmpGradeAgeMs(grade) });
+    const p = tmpSweepProbe({
+      ...grade,
+      unswept: r.removed.length,
+      total: r.removed.length + r.kept + r.skippedReferenced.length,
+    });
+    push("ops.tmp", p.status, p.message);
   } catch (err) {
     push("ops.tmp", "warn", err.message);
   }

@@ -1,3 +1,43 @@
+## 3.313.0 (2026-08-28)
+
+### Fixed — a doctor warn that read the same whether the sweeper worked or not
+
+`doctor ops.tmp` counted `/tmp/xclaw-*` entries older than the sweeper's own
+24h retention bound and warned above fifty of them. The sweeper runs once a
+day, so a full interval of entries ages past that bound between any two runs,
+by construction: the probe was grading against a bound its writer never claimed
+to hold.
+
+Measured live on this host: 24,976 entries, 5,723 of them in the 24-48h window
+— and exactly one older than 48h, a mission-referenced worktree the sweeper
+deliberately skips. The sweep had run 11.8h earlier and was working perfectly,
+and the probe called it a fault. On any host that runs the suite it had been
+warning permanently.
+
+The cost is not the false positive. It is that during the six-day sweep outage
+recorded in `src/ops/due.mjs` — 83,671 stale entries — this probe said the same
+thing it says on a healthy host. A signal that reads identically in the healthy
+and the broken state carries no information, which is why that outage was found
+by accident, weeks late, and not by the check that was watching it.
+
+Grading now starts one full sweep cycle past the retention bound, so a count is
+evidence of litter the sweep cannot explain; a sweep that is not running at all
+stays `ops.schedule`'s finding, and the manual `xclaw sweep-tmp` remedy is
+offered only when config has actually switched the sweep off — previously it
+told the operator to do by hand what the daily job was already doing.
+
+- The decision moved to a pure `src/cli/doctor-tmp.mjs`, alongside
+  `doctor-schedule.mjs` and for the same reason: probes written inline in
+  `runDoctor` cannot be pointed at a fixture, so they ship untested.
+- `SWEEP_MAX_AGE_MS` is now exported from the sweeper. The doctor had the
+  string `(>24h)` hard-coded against a constant it could not see.
+- `countStaleTmp()` is deleted: a bare count was its whole purpose and the
+  probe was its only caller.
+
+Verified: the new tests fail (2/6) when the grading age is reverted to the bare
+bound, and fail (1/6) when the grace is granted unconditionally to a disabled
+sweep. Live: `ops.tmp: 25002 xclaw tmp entries, 0 past a full sweep cycle (48h)`.
+
 ## 3.312.0 (2026-08-28)
 
 - The CI run for v3.311.0 came back red on one matrix leg only — `gate (24.15)`
