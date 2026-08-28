@@ -14,6 +14,7 @@ import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
 import { validateConfig } from "../config/validate.mjs";
 import { isHardenedProfile } from "../config/profiles.mjs";
 import { isComputerRunning } from "../computer/manager.mjs";
+import { computerHealthTarget, computerHealthRow } from "./doctor-computer-health.mjs";
 import { runSecurityAudit } from "../security/audit.mjs";
 import { auditRow } from "./doctor-audit-row.mjs";
 import { isMitmEnabled, mitmStatus, findMitmdump, mitmCaStatus } from "../browser/mitm.mjs";
@@ -616,9 +617,7 @@ export async function runDoctor(opts = {}) {
 
   // Live endpoints (optional)
   const gPort = cfg.gateway?.port || 18790;
-  const cPort = cfg.computer?.port || 4243;
   const gHost = cfg.gateway?.host || "127.0.0.1";
-  const cHost = cfg.computer?.host || "127.0.0.1";
 
   const gh = await httpGet(`http://${gHost === "0.0.0.0" ? "127.0.0.1" : gHost}:${gPort}/health`);
   if (gh.ok) push("gateway.health", "ok", `Gateway :${gPort} up`);
@@ -648,19 +647,15 @@ export async function runDoctor(opts = {}) {
     push("gateway.build", d.severity, d.message);
   }
 
-  const ch = await httpGet(`http://${cHost === "0.0.0.0" ? "127.0.0.1" : cHost}:${cPort}/health`);
-  if (ch.ok) push("computer.health", "ok", `Computer :${cPort} up`);
-  else {
-    let running = false;
-    try { running = await isComputerRunning(cfg); } catch {}
-    push(
-      "computer.health",
-      running ? "ok" : "warn",
-      running
-        ? `Computer :${cPort} up (probe)`
-        : `Computer :${cPort} not reachable — start with: xclaw gateway (${ch.error || ch.status})`
-    );
+  // One probe, through the address the computer client itself uses. The second
+  // probe this branch used to carry asked a different machine than the first.
+  const ch = await httpGet(computerHealthTarget(cfg));
+  let healthy = ch.ok;
+  if (!healthy) {
+    try { healthy = await isComputerRunning(cfg); } catch {}
   }
+  const cRow = computerHealthRow(cfg, healthy, ch.error || ch.status);
+  push("computer.health", cRow.status, cRow.message);
   try {
     const { watchdogStatus } = await import("../computer/watchdog.mjs");
     const { summarizeComputerWatchdog } = await import("../computer/watchdog-report.mjs");

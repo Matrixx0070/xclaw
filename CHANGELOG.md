@@ -1,3 +1,26 @@
+## 3.342.0
+
+### doctor graded the wrong machine healthy
+
+The `computer.health` row ran two probes in one if/else, and they asked two
+different machines. The first derived `http://${host}:${port}` inline and never
+looked at `computer.remoteUrl`; the fallback went through `isComputerRunning`,
+which routes via `computerBaseUrl` and does. On a host where the computer is
+remote, that made the row fail open: any process still listening on the local
+port — including, before 3.341.0, the stray servers the readiness gate itself
+spawned — answered the first probe, and doctor printed `Computer :4243 up`
+while the machine every computer tool call actually reaches was down.
+
+The row is now one probe, through the address the computer client itself uses,
+and it names that address instead of a bare port number. The remedy follows the
+target: telling an operator to `start with: xclaw gateway` cannot make someone
+else's machine healthy, so a remote failure points at `computer.remoteUrl`.
+
+The decision moved into `src/cli/doctor-computer-health.mjs`. `runDoctor` loads
+the real config itself, so anything written inline in it is untestable by
+construction — which is how a health check that grades the wrong host shipped in
+the first place.
+
 ## 3.341.0
 
 ### The readiness gate healed the wrong machine
