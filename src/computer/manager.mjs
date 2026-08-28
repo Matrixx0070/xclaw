@@ -7,6 +7,7 @@
  */
 import { spawn } from "node:child_process";
 import { mitmEnvFromConfig, isMitmEnabled } from "../browser/mitm.mjs";
+import { isPidAlive } from "../shared/pid-alive.mjs";
 import path from "node:path";
 import http from "node:http";
 import fs from "node:fs";
@@ -97,16 +98,6 @@ export async function waitForHealthy(cfg, { timeoutMs = 20000 } = {}) {
 export async function isComputerRunning(cfg) {
   const p = await probeHealth(cfg, 1200);
   return Boolean(p.ok);
-}
-
-function isPidAlive(pid) {
-  if (!pid || !Number.isFinite(pid)) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function readPid(cfg) {

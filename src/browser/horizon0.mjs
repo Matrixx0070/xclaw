@@ -17,6 +17,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { isPidAlive } from "../shared/pid-alive.mjs";
 
 /**
  * Build production Chromium args for XClaw computer-use.
@@ -137,15 +138,14 @@ export async function acquireDurableProfileLock(userDataDir, { pid = process.pid
       const prev = (await fsp.readFile(lockPath, "utf8")).trim();
       const prevPid = Number(prev);
       if (prevPid && !Number.isNaN(prevPid)) {
-        try {
-          process.kill(prevPid, 0);
+        // Fails CLOSED: two Chromes on one profile corrupt its disk state, so
+        // an unsignalable-but-running holder must read as held, not as dead.
+        if (isPidAlive(prevPid)) {
           return { ok: false, reason: `locked_by_pid_${prevPid}`, lockPath };
-        } catch {
-          // dead — reclaim
-          await fsp.unlink(lockPath).catch(() => {});
-          await tryCreate();
-          return { ok: true, lockPath, reclaimed: true };
         }
+        await fsp.unlink(lockPath).catch(() => {});
+        await tryCreate();
+        return { ok: true, lockPath, reclaimed: true };
       }
     } catch (inner) {
       return { ok: false, reason: inner?.message || String(inner), lockPath };

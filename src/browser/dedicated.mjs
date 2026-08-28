@@ -17,6 +17,7 @@ import path from "node:path";
 import os from "node:os";
 import http from "node:http";
 import { spawn } from "node:child_process";
+import { isPidAlive } from "../shared/pid-alive.mjs";
 
 const SINGLETON_FILES = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
 
@@ -27,14 +28,8 @@ export function parseSingletonTarget(target) {
   return { host: m[1], pid: Number(m[2]) };
 }
 
-function pidAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e?.code === "EPERM"; // exists but not ours
-  }
-}
+/** Liveness on this host; EPERM means "exists but not ours" (see pid-alive). */
+const pidAlive = isPidAlive;
 
 /**
  * @returns {{present: string[], ownerAlive: boolean|null, owner: {host,pid}|null}}

@@ -17,6 +17,7 @@
  */
 
 import { spawn, execFile } from "node:child_process";
+import { isPidAlive } from "../shared/pid-alive.mjs";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -112,16 +113,6 @@ export async function ensureMitmConfdir(cfg = null) {
   }
 
   return confdir;
-}
-
-function isPidAlive(pid) {
-  if (!pid || !Number.isFinite(pid)) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export function readMitmPid(cfg = null) {

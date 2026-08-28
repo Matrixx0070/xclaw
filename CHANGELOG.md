@@ -1,3 +1,50 @@
+## 3.291.0 (2026-08-28)
+
+- Every process-liveness check now routes through the one primitive in
+  `src/shared/pid-alive.mjs`. A fresh census found **seven** implementations of
+  "is this pid alive?" across `src/` and `bin/`, five of them written as
+  `try { process.kill(pid, 0); return true } catch { return false }`. That bare
+  catch is wrong: `kill(pid, 0)` throws `ESRCH` when the process is gone but
+  `EPERM` when it *exists and belongs to another uid*. Collapsing both into
+  "dead" fails OPEN, and four of the five guarded a lock.
+- The severe cases were the locks. `acquireGatewayLock` (`src/gateway/run-loop.mjs`)
+  reading a live holder as gone puts two gateways on one port and one state
+  directory. `acquireTelegramWriterLock` (`src/channels/telegram/webhook.mjs`)
+  doing so puts two processes on `getUpdates` for one bot token, and Telegram
+  then hands each a partial, racing view — messages duplicate or vanish, the
+  exact failure the single-writer lock exists to prevent. The Chrome profile
+  lock (`src/browser/horizon0.mjs`, whose control flow lived inside the catch)
+  and the fabric lock (`src/browser/fabric-lock.mjs`) round out the set; dual
+  Chrome on one profile corrupts its disk state.
+- The Telegram case was also a reader/writer severity mismatch. v3.289.0 gave
+  the *doctor* EPERM-correct semantics, but acquisition kept its own inline
+  copy — so the doctor would report `held by live pid=N` while the writer stole
+  that same lock. `src/cli/doctor-telegram-writer.mjs` now re-exports the shared
+  primitive instead of defining its own.
+- Two non-lock sites are corrected too: `src/computer/manager.mjs` and
+  `src/browser/mitm.mjs` supervise child processes, and `bin/xclaw.mjs`
+  `supervisor status` reported a running-but-unsignalable supervisor to the
+  operator as `alive: false`.
+- Zombies cut the other way and were the only *live-visible* behaviour change
+  here, since a single-uid deployment never produces EPERM. A defunct process
+  still answers `kill(pid, 0)` successfully, so every bare-catch copy called it
+  alive — fail-CLOSED. The canonical primitive already reads `/proc/<pid>/status`
+  for `State: Z`, so `manager.mjs` now replaces a defunct computer server
+  instead of waiting out `staleMs`, skips a pointless SIGKILL to a zombie, and
+  the wait-for-exit loops in `manager.mjs` and `mitm.mjs` exit as soon as the
+  process actually has.
+- `isPidAlive`/`isPidDefinitelyDead` gained an injectable `kill` parameter, and
+  the two lock acquirers an `opts.isAlive` seam, because EPERM cannot be
+  provoked under a single-uid deployment — as root every process is signalable.
+  `test/pid-alive-single-source.test.mjs` (18 tests) drives the semantics
+  directly, asserts both locks refuse to steal from an EPERM holder *and* leave
+  the holder's pid in the lock file, and pins the invariant at the source: no
+  file under `src/` or `bin/` may call `process.kill(pid, 0)` or define its own
+  `isPidAlive`/`pidAlive`. Both lock fixes were mutation-verified in both
+  directions.
+- Out of scope: `src/computer/xclaw-server.mjs` is the tracked vendored bundle,
+  patched wholesale per ADR 0006 and never line-edited.
+
 ## 3.290.0 (2026-08-28)
 
 - Every Telegram Bot API request now carries a client-side deadline. Node's

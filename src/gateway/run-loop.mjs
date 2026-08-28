@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { isPidAlive } from "../shared/pid-alive.mjs";
 
 const DRAIN_MS = 15_000;
 const HARD_EXIT_GRACE_MS = 2_000;
@@ -24,21 +25,20 @@ function lockPath(stateDir, port) {
   return path.join(dir, `gateway-${port || "default"}.lock`);
 }
 
-function pidAlive(pid) {
-  if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function acquireGatewayLock({ stateDir, port } = {}) {
+/**
+ * @param {object} [opts]
+ * @param {string} [opts.stateDir]
+ * @param {number|string} [opts.port]
+ * @param {(pid: number) => boolean} [opts.isAlive] seam for tests; EPERM
+ *   cannot be provoked under a single-uid deployment.
+ */
+export async function acquireGatewayLock({ stateDir, port, isAlive = isPidAlive } = {}) {
   const file = lockPath(stateDir, port);
   if (fs.existsSync(file)) {
     const prev = Number(fs.readFileSync(file, "utf8").trim());
-    if (pidAlive(prev) && prev !== process.pid) {
+    // Fails CLOSED on an ambiguous signal error: reading a live holder as gone
+    // would put two gateways on one port and one state directory.
+    if (isAlive(prev) && prev !== process.pid) {
       const err = new Error(`another xclaw gateway holds ${file} (pid ${prev})`);
       err.code = "XCLAW_GATEWAY_LOCKED";
       throw err;

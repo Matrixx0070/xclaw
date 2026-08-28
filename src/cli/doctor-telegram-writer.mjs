@@ -28,23 +28,13 @@
 export const WRITER_LOCK_STALE_MS = 120_000;
 
 /**
- * Liveness of a pid without signalling it.
- *
- * EPERM means the process exists but belongs to another user — alive. Only
- * ESRCH means gone.
- * @param {number} pid
- * @param {(pid: number, sig: number) => void} [kill]
- * @returns {boolean}
+ * Reader and writer must agree on liveness or the doctor reports "held by a
+ * live pid" while acquisition steals that same lock. Both now ask the one
+ * primitive; this re-export keeps the name callers already import.
  */
-export function isPidAlive(pid, kill = process.kill.bind(process)) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e?.code === "EPERM";
-  }
-}
+import { isPidAlive } from "../shared/pid-alive.mjs";
+
+export { isPidAlive };
 
 const secs = (ms) => `${Math.max(0, Math.round(ms / 1000))}s`;
 

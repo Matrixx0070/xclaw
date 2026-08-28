@@ -18,10 +18,25 @@ function isZombieProcess(pid) {
   }
 }
 
-export function isPidAlive(pid) {
+/**
+ * Liveness of a pid without signalling it.
+ *
+ * `kill(pid, 0)` throwing does NOT mean the process is gone. EPERM means it
+ * exists but belongs to another user — alive, and the one case a bare
+ * `catch { return false }` gets backwards. Callers that guard a lock read a
+ * false "dead" as permission to steal it, so this must fail CLOSED: only
+ * ESRCH proves absence. A zombie is the opposite case — `kill` succeeds on a
+ * process that has already exited and is only awaiting reaping — so it is
+ * checked separately rather than trusted from the signal alone.
+ *
+ * @param {number} pid
+ * @param {(pid: number, sig: number) => void} [kill] injectable for tests
+ * @returns {boolean}
+ */
+export function isPidAlive(pid, kill = process.kill.bind(process)) {
   if (!isValidPid(pid)) return false;
   try {
-    process.kill(pid, 0);
+    kill(pid, 0);
   } catch (err) {
     if (err?.code !== "EPERM") return false;
   }
@@ -29,10 +44,19 @@ export function isPidAlive(pid) {
   return true;
 }
 
-export function isPidDefinitelyDead(pid) {
+/**
+ * Strict inverse of {@link isPidAlive}: true only when the pid is provably
+ * gone. An unknown error (EPERM included) answers false, so a caller asking
+ * "may I reclaim this?" never gets a yes it has not earned.
+ *
+ * @param {number} pid
+ * @param {(pid: number, sig: number) => void} [kill] injectable for tests
+ * @returns {boolean}
+ */
+export function isPidDefinitelyDead(pid, kill = process.kill.bind(process)) {
   if (!isValidPid(pid)) return true;
   try {
-    process.kill(pid, 0);
+    kill(pid, 0);
   } catch (err) {
     return err?.code === "ESRCH";
   }

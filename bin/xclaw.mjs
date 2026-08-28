@@ -3,6 +3,7 @@
  * XClaw CLI — Phase 4
  */
 import { describeRuntime, runtimeCompatBanner } from "../src/runtime/host-compat.mjs";
+import { isPidAlive } from "../src/shared/pid-alive.mjs";
 
 let bunSqlite;
 if (process.versions.bun) {
@@ -1503,8 +1504,9 @@ Note: xAI public API uses API keys. Connected OAuth uses PKCE loopback.`);
         let pid = null, alive = false;
         try {
           pid = Number(fs.readFileSync(superPid, "utf8").trim());
-          process.kill(pid, 0);
-          alive = true;
+          // `alive` is reported to the operator, so it must not call a
+          // running-but-unsignalable supervisor dead.
+          alive = isPidAlive(pid);
         } catch {}
         console.log(JSON.stringify({ pid, alive, pidPath: superPid }));
         break;

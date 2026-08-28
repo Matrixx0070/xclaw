@@ -9,6 +9,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { isPidAlive } from "../shared/pid-alive.mjs";
 
 function fabricRoot() {
   return (
@@ -19,16 +20,6 @@ function fabricRoot() {
 
 function lockPath(name = "fabric", root = null) {
   return path.join(root || fabricRoot(), `${name}.lock`);
-}
-
-function isPidAlive(pid) {
-  if (!pid || !Number.isFinite(pid)) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function sleep(ms) {

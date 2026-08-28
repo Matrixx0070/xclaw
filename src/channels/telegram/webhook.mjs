@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import { isPidAlive } from "../../shared/pid-alive.mjs";
 
 export const TELEGRAM_SECRET_HEADER = "x-telegram-bot-api-secret-token";
 
@@ -44,11 +45,22 @@ export function verifyTelegramWebhookSecret(req, secret) {
 
 /**
  * Single-writer lock so only one process owns Telegram updates.
+ *
+ * Reclaiming this lock while its holder still runs puts two processes on
+ * `getUpdates` for one bot token, and Telegram then hands each a partial,
+ * racing view — the exact failure the lock exists to prevent. So liveness is
+ * asked of `isPidAlive`, which fails CLOSED on an ambiguous signal error (see
+ * shared/pid-alive.mjs), rather than of a bare `catch` that reads another
+ * uid's running process as gone.
+ *
  * @param {object} [opts]
  * @param {string} [opts.lockPath]
  * @param {number} [opts.staleMs]
+ * @param {(pid: number) => boolean} [opts.isAlive] seam: EPERM cannot be
+ *   provoked under a single-uid deployment, so tests inject the verdict.
  */
 export function acquireTelegramWriterLock(opts = {}) {
+  const alivep = opts.isAlive || isPidAlive;
   const lockPath =
     opts.lockPath ||
     path.join(os.homedir(), ".xclaw", "locks", "telegram-writer.lock");
@@ -71,16 +83,7 @@ export function acquireTelegramWriterLock(opts = {}) {
         /* */
       }
       const age = Date.now() - Date.parse(prev.at || 0);
-      const alive =
-        prev.pid &&
-        (() => {
-          try {
-            process.kill(prev.pid, 0);
-            return true;
-          } catch {
-            return false;
-          }
-        })();
+      const alive = alivep(prev.pid);
       if (alive && age < staleMs && prev.pid !== process.pid) {
         return {
           ok: false,
