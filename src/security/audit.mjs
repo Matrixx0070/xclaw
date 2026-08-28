@@ -19,6 +19,7 @@
  * thing in this codebase rather than three.
  */
 import { isLoopbackHost } from "../gateway/bind-guard.mjs";
+import { DM_POSTURE, isOpenDm, dmRemedy } from "../channels/dm-posture.mjs";
 
 export function runSecurityAudit(cfg = {}) {
   const findings = [];
@@ -145,15 +146,20 @@ export function runSecurityAudit(cfg = {}) {
     add("apiKey", "ok", "model API key present");
   }
 
-  // channels open dm
-  for (const ch of ["telegram", "discord"]) {
+  // Channels whose senders are gated. This enumerated ["telegram","discord"]
+  // and compared dmPolicy to the literal "open", so it was blind to Slack
+  // twice over: Slack was absent from the list, and Slack's open state is
+  // usually an ABSENT field (its default) or the "pairing" this very remedy
+  // recommends, neither of which equals "open". A prod config with
+  // slack:{enabled:true} produced no finding at all.
+  for (const ch of Object.keys(DM_POSTURE)) {
     const c = cfg.channels?.[ch];
-    if (c?.enabled && c?.dmPolicy === "open") {
+    if (c?.enabled && isOpenDm(ch, c)) {
       add(
         `channels.${ch}.dm`,
         "warn",
-        `${ch} dmPolicy=open`,
-        "Prefer pairing or allowlist"
+        `${ch} DM policy is open — any sender it can see may command the agent`,
+        dmRemedy(ch)
       );
     }
   }

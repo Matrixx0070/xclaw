@@ -3,6 +3,7 @@
  * Exit codes: 0 ok, 1 warnings only, 2 errors
  */
 import fs from "fs/promises";
+import { isOpenDm } from "../channels/dm-posture.mjs";
 import os from "os";
 import path from "path";
 import http from "node:http";
@@ -304,7 +305,10 @@ export async function runDoctor(opts = {}) {
         (name === "telegram" && (ch.allowedChatIds?.length || ch.allowFrom?.length)) ||
         (name === "discord" && ch.allowedChannelIds?.length) ||
         (name === "slack" && ch.channelIds?.length);
-      if (!hasList && (ch.dmPolicy === "open" || !ch.dmPolicy)) {
+      // Was `ch.dmPolicy === "open" || !ch.dmPolicy` — which graded slack with
+      // dmPolicy="pairing" and no channelIds as "has scoping config", though
+      // slack discards pairing and gates nobody. Ask what the channel enforces.
+      if (!hasList && isOpenDm(name, ch)) {
         push(
           "owner.allowlist." + name,
           "warn",

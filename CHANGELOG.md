@@ -1,3 +1,56 @@
+## 3.328.0
+
+### A DM security check asked what the operator wrote, not what the channel enforces
+
+`runSecurityAudit` graded DM exposure as `c?.dmPolicy === "open"` over a
+hand-written list, `["telegram","discord"]`. Three holes, all in the same
+sentence:
+
+1. **Slack was not in the list at all.**
+2. **Slack's open state is normally an absent field.** `channels/slack/index.mjs:74`
+   is `conf.dmPolicy || "open"` — it is the only channel that defaults to open
+   (telegram and discord both default `"pairing"`). So `{enabled: true}` is
+   wide open and `=== "open"` is false.
+3. **Slack discards `"pairing"` — the value the remedy recommended.** Its gate
+   (`slack/index.mjs:133`) branches on `"allowlist"` alone; the file's own
+   header says pairing "is NOT implemented for Slack (no pairing store) →
+   open". The audit's fix string, `"Prefer pairing or allowlist"`, sent a Slack
+   operator to a setting that silently does nothing.
+
+Slack's source states the stakes: "Sender authorization — the sole gate for
+Slack. Without it any sender in a monitored channel (poll) or any @mention
+(socket) commands the agent."
+
+Before-proof, the shipping audit run against synthetic `profile: "prod"`
+configs on a clean 3.327.0 tree:
+
+    slack {enabled}                        SILENT
+    slack {enabled, dmPolicy:"pairing"}    SILENT
+    slack {enabled, dmPolicy:"open"}       SILENT
+    telegram {enabled, dmPolicy:"open"}    FINDING channels.telegram.dm=warn
+
+**No live exposure.** The live host runs `profile: "lab"` with slack disabled
+and telegram on `allowlist`. The defect is the audit's blindness, not an open
+door.
+
+The fix is not a longer literal — the three channels' gates genuinely differ.
+`src/channels/dm-posture.mjs` is one table mirroring each channel's real gate
+(its default, and the policies it actually enforces) behind `isOpenDm()`, plus
+`dmRemedy()`, which never tells a Slack operator to prefer pairing and says why.
+A remedy string is a claim about the product. Both the audit and doctor's
+`channels.scope` row read the predicate, so a channel that changes policy is
+edited in one place.
+
+Doctor shared hole 3: slack with `dmPolicy: "pairing"` and no `channelIds`
+graded "slack has scoping config" = ok, while gating nobody.
+
+Not changed, reported instead: `src/config/load.mjs:138-159` prod-hardens
+telegram only, so slack in a prod profile still resolves open by default.
+Forcing it there would change what an existing deployment resolves to — an
+operator decision, not a bug fix. The audit warning is the observable fix.
+`src/channels/manage.mjs:26` likewise offers "pairing" in the UI for channels
+that discard it.
+
 ## 3.327.0
 
 ### `abandoned` was a queue status the rest of the system did not know exists
