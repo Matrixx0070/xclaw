@@ -1,3 +1,56 @@
+## 3.311.0 (2026-08-28)
+
+- v3.310.0 stopped three tests from writing into the operator's real
+  `~/.xclaw`. It did not stop the fourth. The containment it shipped was
+  per-test-file discipline — each of those tests learned to pass a `cfg` — and
+  the honest reading of that fix is that the next test to call a home-default
+  writer re-opens the hole exactly as those three did, silently, because a write
+  to your own home directory looks like nothing at all.
+
+  The claim v3.310.0 made was also narrower than it sounded. It was measured
+  against five files. A census of what the suite actually leaves at home
+  defaults found **20 paths / 11 files**, including `~/.xclaw/cron/jobs.sqlite`
+  (the live cron store) and `~/.xclaw/ops-schedule.json` — the due-stamp file
+  behind the six-day scheduling outage fixed in v3.283.0. Two of those are the
+  files a wrong value would hurt most.
+
+  What makes this a class rather than a list: 114 call sites under `src/` build
+  a path from `os.homedir()`. Auditing them one at a time produces an allowlist
+  that rots. The seam that covers all 114 at once is one environment variable —
+  on POSIX `os.homedir()` returns `$HOME` when it is set — so `npm test` now
+  runs `node --test` with `HOME` pointed at a throwaway directory
+  (`scripts/hermetic-home.mjs`, `scripts/test-hermetic.mjs`), and the same env
+  wraps the unit step of `scripts/ci-gate.mjs`. Child processes inherit it, so
+  tests that spawn `bin/xclaw.mjs` are covered too. The p2 and fire-drill steps
+  are deliberately left on the real home: they exercise a real install.
+
+  Prevention, not detection, and the difference was forced by measurement. The
+  first design was a guard that fails the run when the suite mutates the home.
+  It cannot work on the machine it matters on: mtimes for all nine home-default
+  files checked fell inside the same fifteen-minute window as a gateway restart,
+  because **the gateway writes the same paths the suite writes**. Nothing at the
+  file level can attribute a write to the suite, and a guard that fires on the
+  gateway's own traffic gets ignored within a week. A redirect needs no
+  attribution — the write cannot reach the operator, so there is nothing to
+  judge. The run prints a one-line census (`# hermetic HOME: N file(s) …`,
+  itemised under `XCLAW_TEST_HOME_VERBOSE=1`) for visibility, and deliberately
+  does not gate on it: 20 legitimately-written paths would make that gate an
+  allowlist on day one.
+
+  Proven both directions before shipping. A re-introduced leak of exactly the
+  v3.310.0 shape — `bindActionFlows` with no `cfg` — writes
+  `<HOME>/.xclaw/mitm/action-bindings.jsonl` when run bare; the identical file
+  run through the wrapper leaves **0 files** in the ambient home and reports 1
+  in the hermetic one. The new primitive's own pins were mutated too: dropping
+  the `HOME` key from `hermeticEnv` takes 3 tests RED, and flattening the
+  directory walk takes 2 RED, with the source restored byte-identically
+  (sha256-verified) after each.
+
+  Also checked while the census was open, since it bears on a standing watch:
+  the `jobs.sqlite` the suite creates contains `payload_jobs` with **0 rows**,
+  and the live store read read-only has 0 rows too. The suite creates the cron
+  schema; it has never inserted a job.
+
 ## 3.310.0 (2026-08-28)
 
 - The clue was in the operator's own home directory: `~/.xclaw/mitm/proofs/`

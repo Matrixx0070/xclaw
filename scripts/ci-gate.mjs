@@ -13,19 +13,25 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import {
+  createHermeticHome,
+  hermeticEnv,
+  removeHermeticHome,
+} from "./hermetic-home.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const live =
   process.env.XCLAW_CI_LIVE === "1" ||
   process.env.XCLAW_CI_LIVE === "true" ||
   process.argv.includes("--live");
 
-function run(label, cmd, args) {
+function run(label, cmd, args, env = process.env) {
   return new Promise((resolve) => {
     const started = Date.now();
     console.log(`\n==> ${label}`);
     const child = spawn(cmd, args, {
       cwd: root,
-      env: process.env,
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stdout.on("data", (d) => process.stdout.write(d));
@@ -49,10 +55,24 @@ function listTestFiles() {
 
 const results = [];
 
+// The unit step runs under a hermetic HOME (see scripts/hermetic-home.mjs), so
+// a test that resolves a home-default path cannot reach the operator's real
+// ~/.xclaw. Scoped to this step deliberately: the p2/fire-drill steps below
+// exercise a real install and are expected to read the actual home.
+const testHome = createHermeticHome();
 const testFiles = listTestFiles();
-results.push(
-  await run("unit tests", process.execPath, ["--test", ...testFiles])
-);
+try {
+  results.push(
+    await run(
+      "unit tests",
+      process.execPath,
+      ["--test", ...testFiles],
+      hermeticEnv(process.env, testHome)
+    )
+  );
+} finally {
+  removeHermeticHome(testHome);
+}
 // C3/C4 parity + generated-build steps removed with the generated engine
 // (S4, v3.148.0) — the gate kept invoking the deleted scripts and failed
 // every push from v3.148.0 until this fix (found via red CI on GitHub).

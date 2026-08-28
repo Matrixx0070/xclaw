@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.310.0",
+  "version": "3.311.0",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
@@ -12,7 +12,7 @@
     "computer": "node bin/xclaw.mjs computer",
     "status": "node bin/xclaw.mjs status",
     "doctor": "node bin/xclaw.mjs doctor",
-    "test": "node --test test/**/*.test.mjs",
+    "test": "node scripts/test-hermetic.mjs",
     "self-test": "node bin/xclaw.mjs self-test",
     "eval": "node bin/xclaw.mjs eval",
     "eval:mock": "node bin/xclaw.mjs eval --mock",
