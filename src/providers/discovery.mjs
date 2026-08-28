@@ -1,4 +1,5 @@
 import { fetchJsonWithRetry } from "../utils/fetch-retry.mjs";
+import { redactUrlSecrets } from "../utils/redact-url.mjs";
 /**
  * Live model discovery — Phase live-discovery.
  *
@@ -313,7 +314,9 @@ export async function fetchLiveModels(
 
     const payload = {
       at: new Date().toISOString(),
-      url: usedUrl,
+      // RULE(o): the request URL can embed the API key (google ?key=…) —
+      // never persist or surface it unredacted.
+      url: redactUrlSecrets(usedUrl),
       provider: providerId,
       models,
     };
@@ -329,7 +332,7 @@ export async function fetchLiveModels(
     return {
       ok: true,
       models: out,
-      url: usedUrl,
+      url: payload.url,
       count: out.length,
       cached: false,
       at: payload.at,
@@ -347,7 +350,7 @@ export async function fetchLiveModels(
         return {
           ok: true,
           models,
-          url: stale.url,
+          url: redactUrlSecrets(stale.url),
           count: models.length,
           cached: true,
           stale: true,
@@ -362,7 +365,7 @@ export async function fetchLiveModels(
       ok: false,
       error: err.message || String(err),
       models: [],
-      url: req.url,
+      url: redactUrlSecrets(req.url),
       provider: providerId,
     };
   }

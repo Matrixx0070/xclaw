@@ -1,3 +1,22 @@
+## 3.282.0 (2026-08-28)
+
+- SECURITY HARDENING (mutation sweep #73, RULE(o) on the provider
+  plane): model-discovery URLs can embed the API key (Google Gemini
+  `/models?key=...`) and `fetchLiveModels` surfaced that URL VERBATIM —
+  persisted into the on-disk model cache, returned to doctor's
+  `providers.liveCheck`, and served by provider routes. New
+  `src/utils/redact-url.mjs` (`redactUrlSecrets` — strips
+  key/api_key/token/access_token/secret query values and proxy
+  `user:pass@` userinfo) applied at all four egress sites: the cache
+  payload, the success return, the stale-cache read (old cache files may
+  already hold keys), and the failure return. The request itself keeps
+  the real key — redaction is egress-only, pinned end to end (a failed
+  google discovery surfaces `<redacted>`, never the key, and no cache
+  file may contain it). Mutation-verified both directions. Also corrects
+  the #61 census verdict: the google model-cache file COULD hold a
+  credential, so its 0o600 mode was load-bearing after all — now the key
+  never reaches the file at any mode.
+
 ## 3.281.0 (2026-08-27)
 
 - SECURITY HARDENING (mutation sweep #71): the Telegram bot token could
