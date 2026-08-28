@@ -1,3 +1,62 @@
+## 3.309.0 (2026-08-28)
+
+- Live-driving v3.308.0 landed on the alerter, and the probe that was meant to
+  confirm it worked showed the opposite. A trigger whose every target refused:
+
+      TRIGGER  sent=false skipped=null results=[{"channel":"telegram","ok":false,"reason":"no_telegram_token"}]
+      RETRY    sent=false skipped=cooldown
+      RESOLVE  sent=false skipped=null
+      after a FAILED trigger, lastSent = {"probe:outage":1787913791585}
+
+  Nothing was delivered, and yet the alerter recorded the incident as both
+  *sent* and *open*. Two failures follow from that one stamp, in opposite
+  directions.
+
+  `markSent()` ran after ANY delivery attempt, so a trigger nobody received
+  armed the full 30-minute cooldown and every retry inside it was skipped
+  `cooldown`. One Telegram blip at the moment a doctor check failed lost the
+  alert silently for half an hour — precisely the moment an alerter exists for.
+  The live box is exposed to exactly this: its only configured target is a
+  single Telegram chat, at the default `cooldownMs` of 1800000.
+
+  The same phantom stamp then satisfied the `not_open` gate, whose own comment
+  says *"resolving a key with no recorded send would page RESOLVED for a problem
+  nobody heard about"*. A failed trigger followed by a recovery did just that.
+
+  `lastSent` was carrying two different facts — "a cooldown is armed" and "an
+  incident is open" — and the failure path wrote the stamp only the success path
+  had any business writing. This is the v3.286.0 lesson again in a new place:
+  there, anchoring a schedule to `lastRun` could resume it but never start it,
+  and the fix was a second durable epoch kept separate. Same fix here. A
+  `lastDelivered` map is written only when a target actually accepted the
+  message, and it alone decides whether an incident is open. `lastSent` stays
+  the attempt stamp, because pacing retries is a real job and it does it well.
+
+  A failure now buys a much shorter quiet period — `retryCooldownMs`, defaulting
+  to 60s. The cooldown exists to stop an alert that landed from landing again
+  every minute; it has nothing to say about one that never landed. One duplicate
+  a minute during an outage beats a lost page.
+
+  State files written before `lastDelivered` existed are migrated rather than
+  dropped: under the old semantics those `lastSent` stamps meant "open", and
+  discarding them would leave every incident open at upgrade time unclosable
+  forever — a PagerDuty incident that never closes swallows the NEXT genuine
+  outage, the worst direction to fail in.
+
+  And the log line names the reason. `failed doctor:x` sent whoever found it at
+  3am to read a JSON state file to learn whether it was a missing token, a 5xx,
+  or a typo'd channel; the reasons were already in hand:
+
+      [xclaw:alert] failed probe:outage (telegram(no_telegram_token))
+
+- The blind spot that hid all of this was in the tests, and it is the same shape
+  as v3.308.0's: they pinned the input that cannot exhibit the bug. Every
+  "incident opened" in `alert-resolve-closes-incident.test.mjs` ran through a
+  target that always returns `ok:false`, so the suite could not tell an alert
+  that reached someone from one that reached nobody — and neither could the
+  alerter. Those tests now open incidents through a target that genuinely
+  delivers, and six more cover the failure path directly.
+
 ## 3.308.0 (2026-08-28)
 
 - Live-driving v3.307.0 the same way — running `xclaw doctor` from the repo root

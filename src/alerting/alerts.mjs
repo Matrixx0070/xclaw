@@ -10,6 +10,27 @@ import { sendPagerDutyEvent, pagerDutyDedupKey } from "./pagerduty.mjs";
 const lastSent = new Map();
 
 /**
+ * `lastSent` used to carry two different facts on one stamp: "a cooldown is
+ * armed for this key" and "an incident is open under this key". They are not
+ * the same fact, and conflating them broke the alerter in both directions when
+ * delivery failed — which is exactly when an alerter matters.
+ *
+ * `markSent()` ran after ANY delivery attempt, so a trigger whose every target
+ * errored still armed the full 30-minute cooldown. The incident was never
+ * delivered and every retry inside that window was skipped `cooldown`: one
+ * Telegram blip at the moment a doctor check failed lost the alert silently for
+ * half an hour. And the same phantom stamp satisfied the `not_open` gate below
+ * — the gate whose whole purpose is that "resolving a key with no recorded send
+ * would page RESOLVED for a problem nobody heard about". A failed trigger
+ * followed by a recovery paged RESOLVED for an incident that was never raised.
+ *
+ * So the delivered fact gets its own map. `lastSent` stays the cooldown stamp;
+ * `lastDelivered` is written only when a target actually accepted the message,
+ * and it alone decides whether an incident is open.
+ */
+const lastDelivered = new Map();
+
+/**
  * Alert state (cooldowns + the delivery history) belongs to the config dir that
  * owns the alerting settings, not to whoever's home dir the process happens to
  * run under. Resolving it from `os.homedir()` alone meant it was the ONE piece
@@ -39,13 +60,27 @@ function defaultStatePath(cfg) {
   return dir ? path.join(dir, "alert-state.json") : null;
 }
 
+function emptyState() {
+  return { lastSent: {}, lastDelivered: {}, history: [] };
+}
+
 function loadState(filePath) {
-  if (!filePath) return { lastSent: {}, history: [] };
+  if (!filePath) return emptyState();
+  let raw;
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
   } catch {
-    return { lastSent: {}, history: [] };
+    return emptyState();
   }
+  const state = { ...emptyState(), ...raw };
+  // A file written before lastDelivered existed carries opens in lastSent. Left
+  // empty, every incident already open at upgrade time would answer `not_open`
+  // and never close — and a PagerDuty incident that never closes swallows the
+  // NEXT genuine outage, which is the worst direction to fail in. The old
+  // semantics said those stamps were opens, so honour that for what is already
+  // on disk; only new stamps get the stricter meaning.
+  if (!raw.lastDelivered && raw.lastSent) state.lastDelivered = { ...raw.lastSent };
+  return state;
 }
 
 function saveState(filePath, state) {
@@ -57,6 +92,20 @@ function saveState(filePath, state) {
   } catch (err) {
     console.error("[xclaw:alert] state save", err.message);
   }
+}
+
+/**
+ * "telegram(no_telegram_token),pagerduty(http_502)" — which target refused and
+ * why. Deduped: ten identical targets failing the same way is one fact.
+ */
+export function describeFailures(results = []) {
+  const seen = new Set();
+  for (const r of results || []) {
+    if (!r || r.ok) continue;
+    const ch = r.target?.channel || r.target?.type || "target";
+    seen.add(r.reason ? `${ch}(${r.reason})` : ch);
+  }
+  return [...seen].join(",") || "no_result";
 }
 
 export function createAlerter(cfg = {}) {
@@ -90,23 +139,47 @@ export function createAlerter(cfg = {}) {
     }
   }
 
+  // A delivery that FAILED must not buy the full quiet period. The cooldown
+  // exists to stop an alert that landed from landing again every minute; it has
+  // nothing to say about one that never landed at all. Retrying a hard-down
+  // channel every minute is the most spam a failure can generate, and one
+  // duplicate a minute during an outage beats a lost page.
+  const retryCooldownMs = alertCfg.retryCooldownMs ?? Math.min(cooldownMs, 60 * 1000);
+
   const statePath = alertCfg.statePath || defaultStatePath(cfg);
   let state = loadState(statePath);
   const rank = { info: 0, warn: 1, warning: 1, error: 2, critical: 3 };
+
+  /** Did the most recent attempt on this key actually reach a target? */
+  function wasDelivered(key) {
+    const attempt = state.lastSent[key] || lastSent.get(key) || 0;
+    const delivered = state.lastDelivered[key] || lastDelivered.get(key) || 0;
+    return delivered > 0 && delivered >= attempt;
+  }
+
+  /** Is an incident open under this key — i.e. was anyone actually told? */
+  function isOpen(key) {
+    return Boolean(state.lastDelivered[key] || lastDelivered.get(key));
+  }
 
   function shouldSend(key, severity) {
     if (!enabled) return false;
     if ((rank[severity] ?? 2) < (rank[minSeverity] ?? 2)) return false;
     if (!targets.length) return false;
     const last = state.lastSent[key] || lastSent.get(key) || 0;
-    if (Date.now() - last < cooldownMs) return false;
+    const window = wasDelivered(key) ? cooldownMs : retryCooldownMs;
+    if (Date.now() - last < window) return false;
     return true;
   }
 
-  function markSent(key) {
+  function markSent(key, delivered) {
     const now = Date.now();
     lastSent.set(key, now);
     state.lastSent[key] = now;
+    if (delivered) {
+      lastDelivered.set(key, now);
+      state.lastDelivered[key] = now;
+    }
     saveState(statePath, state);
   }
 
@@ -145,8 +218,10 @@ export function createAlerter(cfg = {}) {
     // genuine outage's page. That is a fail-open on paging, not a stale row.
     // The safe gate for the bypass is "did we actually open it": resolving a key
     // with no recorded send would page RESOLVED for a problem nobody heard about.
+    // That gate has to read the DELIVERED stamp — an attempt whose every target
+    // errored opened nothing, and gating on the attempt made this comment false.
     const resolving = alert.eventAction === "resolve";
-    if (resolving && !(state.lastSent[key] || lastSent.get(key))) {
+    if (resolving && !isOpen(key)) {
       entry.skipped = "not_open";
       state.history.push(entry);
       saveState(statePath, state);
@@ -211,15 +286,22 @@ export function createAlerter(cfg = {}) {
       // suppress the next GENUINE trigger for a full cooldown — recovering from
       // an outage would blind us to the one that follows it.
       delete state.lastSent[key];
+      delete state.lastDelivered[key];
       lastSent.delete(key);
+      lastDelivered.delete(key);
     } else {
-      // Cooldown after any delivery attempt to avoid spam on repeated failures
-      markSent(key);
+      // Stamp the attempt either way — that is what paces retries — but stamp
+      // the DELIVERED fact only when a target accepted it. See lastDelivered.
+      markSent(key, entry.sent);
     }
     state.history.push(entry);
     saveState(statePath, state);
     console.log(
-      `[xclaw:alert] ${entry.sent ? "sent" : "failed"} ${resolving ? "resolve " : ""}${key}`
+      `[xclaw:alert] ${entry.sent ? "sent" : "failed"} ${resolving ? "resolve " : ""}${key}` +
+        // "failed doctor:x" alone sends whoever finds it in the log to read the
+        // JSON state file to learn whether it was a missing token, a 5xx, or a
+        // typo'd channel. The reasons are already in hand; print them.
+        (entry.sent ? "" : ` (${describeFailures(entry.results)})`)
     );
     return entry;
   }
@@ -271,10 +353,14 @@ export function createAlerter(cfg = {}) {
     return {
       enabled,
       cooldownMs,
+      retryCooldownMs,
       minSeverity,
       targets,
       statePath,
       lastSent: { ...state.lastSent },
+      // Which keys are actually OPEN, as opposed to merely attempted. Without
+      // this the two facts are indistinguishable from outside the module.
+      lastDelivered: { ...state.lastDelivered },
       recent: history(5),
     };
   }
