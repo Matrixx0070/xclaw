@@ -121,6 +121,73 @@ describe("summarizeChannelHealth consults the running gateway", () => {
   });
 });
 
+describe("a watchdog that is off INSIDE a live gateway is not idle", () => {
+  // Wiring the relay in only fixed the `running: true` half. A relayed
+  // `running: false` took the same branch as "no gateway at all", so doctor
+  // told the operator to start the gateway that had just answered it.
+  const stopped = { channelWatchdog: { running: false, disabled: false, channels: {} } };
+
+  it("does not tell the operator to start a gateway that answered", () => {
+    const s = summarizeChannelHealth({ running: false, channels: {} }, stopped);
+    assert.doesNotMatch(s.message, /start gateway/);
+    assert.equal(s.source, "gateway");
+  });
+
+  it("is an error, not ok — dead channels stay dead while it is off", () => {
+    const s = summarizeChannelHealth({ running: false, channels: {} }, stopped);
+    assert.equal(s.severity, "error");
+    assert.match(s.message, /NOT running inside a live gateway/);
+    assert.match(s.message, /will not be restarted/);
+    assert.match(s.message, /restart the gateway/);
+  });
+
+  it("calls a config opt-out what it is, and only warns about it", () => {
+    // Switched off deliberately is an operator decision, not a fault — but the
+    // consequence still has to be stated.
+    const s = summarizeChannelHealth(
+      { running: false, channels: {} },
+      { channelWatchdog: { running: false, disabled: true, channels: {} } }
+    );
+    assert.equal(s.severity, "warn");
+    assert.match(s.message, /DISABLED by config/);
+    assert.match(s.message, /channels\.healthWatchdog\.enabled/);
+    assert.doesNotMatch(s.message, /start gateway/);
+  });
+
+  it("escalates an older gateway whose boolean says false", () => {
+    const s = summarizeChannelHealth({ running: false, channels: {} }, { channelWatchdogRunning: false });
+    assert.equal(s.severity, "error");
+    assert.doesNotMatch(s.message, /start gateway/);
+  });
+
+  it("treats a gateway that relayed nothing as unknown, never as healthy", () => {
+    // The relay throws to `channelWatchdog: null` / `channelWatchdogRunning:
+    // null`. Unknown is a warn; it is not evidence the watchdog is fine.
+    const s = summarizeChannelHealth(
+      { running: false, channels: {} },
+      { channelWatchdogRunning: null, channelWatchdog: null }
+    );
+    assert.equal(s.severity, "warn");
+    assert.match(s.message, /reported no channel watchdog state/);
+    assert.doesNotMatch(s.message, /start gateway/);
+  });
+
+  it("uses gatewayUp when the gateway relays no ops block at all", () => {
+    // /health answered but /gateway/info carried no ops — liveOps is null and
+    // cannot carry the fact that the gateway is up, so the caller passes it.
+    const s = summarizeChannelHealth({ running: false, channels: {} }, null, true);
+    assert.equal(s.severity, "warn");
+    assert.doesNotMatch(s.message, /start gateway/);
+  });
+
+  it("still says start gateway when the gateway really is down", () => {
+    const s = summarizeChannelHealth({ running: false, channels: {} }, null, false);
+    assert.equal(s.severity, "ok");
+    assert.match(s.message, /idle \(start gateway to enable\)/);
+    assert.equal(s.source, "none");
+  });
+});
+
 describe("summarizeChannelHealth escalates what the watchdog already paged for", () => {
   it("warns on a poll outage relayed from the gateway", () => {
     const s = summarizeChannelHealth({ running: false, channels: {} }, {

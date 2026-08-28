@@ -21,6 +21,10 @@ let onEventRef = null;
 let startedAt = null;
 let lastTickAt = null;
 let lastError = null;
+// Whether the last start() DECLINED because config switched the watchdog off.
+// Without it, "off by operator choice" and "should be running but is not" are
+// the same `running: false` to every reader — see summarizeChannelHealth.
+let disabledByConfig = false;
 const channelState = new Map(); // name → { restarts, lastError, lastOkAt, consecutiveFail, outageSince }
 
 /**
@@ -35,7 +39,11 @@ export function startChannelHealthWatchdog(cfg, manager, opts = {}) {
     cfg.channels?.healthWatchdog?.enabled ??
     cfg.channels?.watchdog?.enabled ??
     true;
-  if (!enabled) return { ok: false, reason: "disabled" };
+  if (!enabled) {
+    disabledByConfig = true;
+    return { ok: false, reason: "disabled" };
+  }
+  disabledByConfig = false;
 
   managerRef = manager;
   cfgRef = cfg;
@@ -69,6 +77,10 @@ export function stopChannelHealthWatchdog() {
     timer = null;
   }
   managerRef = null;
+  // An explicit stop is not a config opt-out. Clearing the flag keeps the two
+  // reasons for `running: false` distinguishable; start() re-sets it when it
+  // declines. (start() calls this first, so the order matters.)
+  disabledByConfig = false;
 }
 
 function getState(name) {
@@ -320,6 +332,7 @@ export function channelHealthStatus() {
   }
   return {
     running: Boolean(timer),
+    disabled: disabledByConfig,
     startedAt,
     lastTickAt,
     lastError,

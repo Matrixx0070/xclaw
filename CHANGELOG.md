@@ -1,3 +1,48 @@
+## 3.305.0 (2026-08-28)
+
+- 3.303.0 wired `ops.channelWatchdog` into `xclaw doctor` so the out-of-process
+  CLI could finally see the gateway's channel watchdog. That fixed the
+  `running: true` half. A relayed `running: false` still fell through the same
+  branch as "no gateway at all", so a watchdog that was OFF inside a live
+  gateway printed:
+
+      [OK  ] channels.health: channel watchdog idle (start gateway to enable)
+
+  Both halves of that line were wrong. `liveOps` only exists because the gateway
+  ANSWERED `/gateway/info` — so doctor told the operator to start the gateway
+  that had just served the request the verdict was built from. And it graded the
+  condition `ok`: the watchdog is what restarts a channel whose poll loop has
+  exited and what raises `channel-outage:<name>` / `channel-circuit-open:<name>`.
+  While it is off, a dead channel stays dead and no alert is ever raised.
+
+- `summarizeChannelHealth` now separates four states instead of collapsing them:
+
+      gateway down                     -> ok    "idle (start gateway to enable)"  (unchanged)
+      gateway up, watchdog NOT running -> error "NOT running inside a live gateway"
+      gateway up, disabled by config   -> warn  names channels.healthWatchdog.enabled
+      gateway up, relayed nothing      -> warn  unknown is not healthy
+
+  The last one covers a gateway whose relay threw (`channelWatchdog: null`) or a
+  build predating the relay — previously indistinguishable from a healthy box.
+
+- The watchdog now records WHICH reason it is not running. `running: false` was
+  the same value for "the operator switched it off" and "it should be running
+  and is not", so no reader could grade them differently. `startChannelHealthWatchdog`
+  sets a `disabled` flag when config declines the start and clears it on a
+  successful start; `stopChannelHealthWatchdog` clears it, because an explicit
+  stop is not a config opt-out. `channelHealthStatus()` and the `/gateway/info`
+  projection both relay it.
+
+- `summarizeChannelHealth` takes `gatewayUp` as a third argument (defaulting to
+  `Boolean(liveOps)`, so existing callers are unchanged). A gateway can be up and
+  still relay no ops block; "the gateway is down" is the only case where "start
+  gateway" is the right advice, and only the caller knows it. The doctor passes
+  the real answer from its `/health` probe.
+
+- 8 tests. Both new decisions mutation-verified in both directions: forcing the
+  live-gateway branch off fails 6 of 7 report tests, and dropping the `disabled`
+  flag fails the watchdog test.
+
 ## 3.304.0 (2026-08-28)
 
 - Every gateway version surface answered "what version are you?" by reading

@@ -1065,7 +1065,11 @@ export async function runDoctor(opts = {}) {
     // false, so it printed "idle (start gateway to enable)" at severity ok
     // while /gateway/info reported the watchdog up — and never reached the
     // per-channel state, hiding outages and open circuits from the CLI.
-    const sum = summarizeChannelHealth(channelHealthStatus(), liveOps);
+    // `gh.ok` is passed separately from `liveOps`: a gateway can be up and
+    // still relay no ops block (older build, or the relay threw), and "the
+    // gateway is down" is the only case where "start gateway" is the right
+    // advice.
+    const sum = summarizeChannelHealth(channelHealthStatus(), liveOps, gh.ok);
     push("channels.health", sum.severity, sum.message);
     const cw = watchdogStatus();
     if (cw) {

@@ -27,6 +27,20 @@
  * pages the operator for both of those conditions (`channel-outage:<name>` and
  * `channel-circuit-open:<name>`), so "ok" here contradicted an alert the same
  * process had already sent.
+ *
+ * That fix left one state collapsed, which this module now separates. Wiring
+ * the relay in only helped when it said `running: true`; a relayed
+ * `running: false` fell through the same branch as "no gateway at all", so a
+ * watchdog switched off — or stopped — INSIDE a live gateway printed:
+ *
+ *   [OK  ] channels.health: channel watchdog idle (start gateway to enable)
+ *
+ * telling the operator to start a gateway that had just answered the request
+ * the verdict was built from, and grading the condition ok. The watchdog is
+ * what restarts a channel whose poll loop has exited; while it is off, a dead
+ * channel stays dead and no outage alert is ever raised. `liveOps` exists only
+ * because the gateway responded, so its presence is proof of the one thing the
+ * old message denied.
  */
 
 /** Channel-state fields the gateway may publish. Anything else stays private. */
@@ -56,6 +70,7 @@ export function projectChannelHealth(status) {
   }
   return {
     running: Boolean(status.running),
+    disabled: Boolean(status.disabled),
     startedAt: status.startedAt ?? null,
     lastTickAt: status.lastTickAt ?? null,
     lastError: status.lastError ?? null,
@@ -71,9 +86,13 @@ export function projectChannelHealth(status) {
  *                 the gateway — which is exactly the trap this replaces.
  * @param liveOps  the `ops` block from a reachable gateway's `/gateway/info`,
  *                 or null when the gateway is down or too old to expose one.
+ * @param gatewayUp whether the gateway answered `/health` at all. Defaults to
+ *                 "we got an ops block, so it must be up"; the CLI passes the
+ *                 real answer, which also covers a gateway that is up but
+ *                 relays no ops block.
  * @returns {{severity: "ok"|"warn"|"error", message: string, source: string}}
  */
-export function summarizeChannelHealth(local, liveOps) {
+export function summarizeChannelHealth(local, liveOps, gatewayUp = Boolean(liveOps)) {
   const inProcess = local && local.running;
   const relayed = liveOps?.channelWatchdog;
   const view = inProcess ? local : relayed?.running ? relayed : null;
@@ -85,6 +104,40 @@ export function summarizeChannelHealth(local, liveOps) {
       return {
         severity: "ok",
         message: "watchdog up (in gateway; no per-channel detail relayed)",
+        source: "gateway",
+      };
+    }
+    // Everything below used to collapse into "idle (start gateway to enable)"
+    // at severity ok. But a relayed `running: false` only exists because a
+    // gateway ANSWERED — so that told the operator to start what was already
+    // running, and called a stopped watchdog healthy. A watchdog that is not
+    // running is the reason a dead channel stays dead.
+    if (gatewayUp) {
+      const off = relayed?.running === false || liveOps?.channelWatchdogRunning === false;
+      if (off && relayed?.disabled) {
+        return {
+          severity: "warn",
+          message:
+            "channel watchdog DISABLED by config (channels.healthWatchdog.enabled) — " +
+            "dead channels will not be restarted and poll outages will not alert (in gateway)",
+          source: "gateway",
+        };
+      }
+      if (off) {
+        return {
+          severity: "error",
+          message:
+            "channel watchdog NOT running inside a live gateway — dead channels will not be " +
+            "restarted and poll outages will not alert (restart the gateway; check channels.healthWatchdog.enabled)",
+          source: "gateway",
+        };
+      }
+      // Gateway up, but it told us nothing about the watchdog: either the relay
+      // threw (ops.channelWatchdog === null) or the build predates it. Unknown
+      // is not healthy, and it is certainly not "start the gateway".
+      return {
+        severity: "warn",
+        message: "gateway is up but reported no channel watchdog state (build too old, or the relay failed)",
         source: "gateway",
       };
     }
