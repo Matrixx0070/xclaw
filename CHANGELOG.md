@@ -1,3 +1,54 @@
+## 3.325.0 (2026-08-28)
+
+### Fixed — a cancel, confirmed to the operator, silently reverted and the job re-ran
+
+`POST /queue/<id>/cancel` writes the record. `processNext` holds that same
+record in memory for the entire job — minutes — and ends with an unconditional
+`saveItem`. Anything an operator decides inside that window is overwritten by a
+run that has not looked at the disk since it started.
+
+Measured live against the running 3.324.0 gateway before a line was written
+(`q_mtd91tqe_231ef5a2`, `maxAttempts: 2`, cancel fired the instant the item
+went `running`):
+
+```
+t=   0.0  queued
+t=   0.3  running
+t=   0.3  POST /queue/.../cancel -> 200 {"status":"cancelled",
+            "error":"cancelled while running (best-effort; worker may still finish)"}
+t=   0.5  on disk: cancelled          <- the operator was told it stuck
+t=  56.0  running    attempt 2        <- reverted, and RE-RUN
+t= 143.4  failed     "structured claims empty"
+```
+
+The run's final save put the item back to `queued` (the retry branch), so the
+`finally` block's `kick` picked the cancelled job up again and spent another
+62.7s of model time on it. It ended `failed` with the operator's cancellation
+message replaced — no trace anywhere in the record that a cancel had ever
+happened. "Best-effort, the worker may still finish" is an honest promise; this
+was the opposite, a cancel undone by the thing it cancelled.
+
+Same root, second shape: `clearCompletedQueue` unlinks `cancelled` items, so
+cancel-then-clear during a run let the final save **resurrect** a record the
+operator had deleted.
+
+The fix is a re-read at the moment of writing, through one pure decision:
+
+```js
+export function settleAfterRun(next, onDisk) {
+  if (!onDisk) return null;                            // cleared mid-run
+  if (onDisk.status !== "cancelled") return next;
+  return { ...next, status: "cancelled", error: onDisk.error, ... };
+}
+```
+
+A terminal decision belongs to whoever made it. The cancelled record keeps the
+in-flight attempt's `result`, so the operator can still see what the run did
+before it was stopped; because the item is no longer `queued`, nothing re-kicks
+it. `processNext` cannot be driven from a test (`runJob` is a static import),
+so the call site is pinned by parsing the call graph; all eight shipping lines
+were mutation-verified in both directions.
+
 ## 3.324.0 (2026-08-28)
 
 ### Fixed — `xclaw queue batch`: the third writer that bypassed the owner

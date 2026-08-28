@@ -387,7 +387,8 @@ async function processNext(cfg) {
         next.finishedAt = new Date().toISOString();
       }
     }
-    await saveItem(cfg, next);
+    const settled = settleAfterRun(next, await getQueueItem(cfg, next.id));
+    if (settled) await saveItem(cfg, settled);
   } finally {
     worker.running = Math.max(0, (worker.running || 1) - 1);
     // chain if more queued and capacity
@@ -425,6 +426,27 @@ export function resumeQueue(cfg) {
   return queueStatus(cfg || worker.cfg);
 }
 
+
+/**
+ * Decide what a finishing run may write over the record another writer owns.
+ *
+ * processNext holds the item in memory for the whole job (minutes), so an
+ * operator's cancel — or a clearCompletedQueue that unlinks the cancelled
+ * record — lands on disk inside that window. Measured live on 3.324.0: a
+ * cancel confirmed at t=0.5s was overwritten by the run's final save, which
+ * put the item back to "queued" (the retry branch) and ran it AGAIN for
+ * another 63s of model time before ending "failed", with the operator's
+ * cancellation message gone. A terminal decision belongs to whoever made it.
+ *
+ * @param {object} next — what the run decided, in memory
+ * @param {object|null} onDisk — the record as it stands now (null if removed)
+ * @returns {object|null} the record to write, or null to write nothing
+ */
+export function settleAfterRun(next, onDisk) {
+  if (!onDisk) return null; // cleared mid-run: do not resurrect it
+  if (onDisk.status !== "cancelled") return next;
+  return { ...next, status: "cancelled", error: onDisk.error, finishedAt: onDisk.finishedAt || next.finishedAt };
+}
 
 export async function cancelQueueItem(cfg, id) {
   const item = await getQueueItem(cfg, id);
