@@ -767,6 +767,11 @@ export async function runDoctor(opts = {}) {
   // version stopped firing for six days and nothing said so — a job that
   // never runs logs nothing, so silence read as health. Overdue is now a
   // reported state, not an invisible one.
+  const humanMs = (ms) =>
+    ms >= 3600_000
+      ? `${(ms / 3600_000).toFixed(1).replace(/\.0$/, "")}h`
+      : `${Math.max(0, Math.round(ms / 60_000))}m`;
+
   async function reportSchedule(probe, label, name, intervalMs) {
     const { dueJobStatus } = await import("../ops/due.mjs");
     const s = await dueJobStatus(cfg, name, intervalMs);
@@ -774,13 +779,12 @@ export async function runDoctor(opts = {}) {
       push(probe, "ok", `never run yet (runs shortly after next gateway boot)`);
       return;
     }
-    const hrs = s.ageHours.toFixed(1);
     push(
       probe,
       s.overdue ? "warn" : "ok",
       s.overdue
-        ? `${label} last ran ${hrs}h ago (interval ${(intervalMs / 3600_000).toFixed(0)}h) — is the gateway up?`
-        : `${label} ran ${hrs}h ago`
+        ? `${label} last ran ${humanMs(s.ageMs)} ago (interval ${humanMs(intervalMs)}) — is the gateway up?`
+        : `${label} ran ${humanMs(s.ageMs)} ago`
     );
   }
 
@@ -792,18 +796,38 @@ export async function runDoctor(opts = {}) {
     push("ops.schedule", "warn", err.message);
   }
 
-  // Same check for the approval digest, which had the identical fail-open
-  // shape until v3.284.0. A digest that is not sent is invisible to the
-  // operator who configured it, so overdue must be a reported state.
-  try {
-    const interval = Number(cfg.security?.digestIntervalMs) || 0;
-    if (interval <= 0) push("security.digest", "ok", "disabled by config");
-    else {
-      const { DIGEST_JOB } = await import("../security/approval-digest.mjs");
-      await reportSchedule("security.digest", "approval digest", DIGEST_JOB, interval);
+  // The same check for the anchored maintenance crons, which carried the
+  // identical fail-open shape until v3.285.0. A job that does not run logs
+  // nothing: the daily eval suite last completed 2026-08-17 and was re-armed
+  // at all 339 boots since, and nothing in the tree said so. Overdue has to be
+  // a reported state or the next silent outage is found the same way — by
+  // accident, weeks late.
+  for (const p of [
+    {
+      probe: "security.digest",
+      label: "approval digest",
+      key: "cron.approvalDigest",
+      enabled: cfg.security?.digestCron !== false,
+      intervalMs:
+        Number(cfg.security?.digestEveryMs || cfg.security?.digestIntervalMs) || 5 * 60_000,
+    },
+    {
+      // Distinct from the eval.cron probe above, which reports only that the
+      // job is registered — the check that stayed green through 339 boots
+      // while the suite went eleven days without completing.
+      probe: "eval.cron.lastRun",
+      label: "eval suite",
+      key: "cron.evalSuite",
+      enabled: cfg.eval?.cron?.enabled !== false,
+      intervalMs: Number(cfg.eval?.cron?.everyMs) || 24 * 3600_000,
+    },
+  ]) {
+    try {
+      if (!p.enabled) push(p.probe, "ok", "disabled by config");
+      else await reportSchedule(p.probe, p.label, p.key, p.intervalMs);
+    } catch (err) {
+      push(p.probe, "warn", err.message);
     }
-  } catch (err) {
-    push("security.digest", "warn", err.message);
   }
 
   // Long-run objectives needing attention: a missed escalation DM used to

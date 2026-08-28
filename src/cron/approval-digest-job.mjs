@@ -54,6 +54,7 @@ export function ensureApprovalDigestCronJob(opts = {}) {
     sessionKey: opts.sessionKey || null,
     payload: { kind: "approval_digest", onlyIfPending: opts.onlyIfPending !== false },
     cfg: opts.cfg,
+    anchorKey: opts.anchorKey ?? "cron.approvalDigest",
     handler: async () => runApprovalDigestJob(opts),
   });
 }

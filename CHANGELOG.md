@@ -1,3 +1,56 @@
+## 3.285.0 (2026-08-28)
+
+- CORRECTION TO 3.284.0: that entry closed the uptime-fail-open class on the
+  strength of a census that was literal on `setInterval`, and the biggest
+  instance does not use one. The cron scheduler re-registers every
+  handler-based job at boot — `isPersistable` requires a payload, so no
+  maintenance cron is ever persisted — and `computeNextRun({kind:"every"})`
+  returns `now + everyMs`. A job therefore only reaches its first run if a
+  single process survives the whole interval. The class was not closed; it
+  was one layer down, and unlike the digest it was already live.
+- MEASURED ON THE HOST, not inferred: `gateway.log` holds 339
+  `Gateway listening` boots and 339 eval-cron registrations against 8
+  eval-cron lines. The daily eval regression suite last STARTED 2026-08-23
+  and last COMPLETED 2026-08-17 — six starts in thirteen days. Median
+  inter-boot gap over the last forty boots is 24 minutes; a daily cron needs
+  1440. Two symptoms compound: it rarely arms long enough to fire, and the
+  ~54-minute suite is usually killed mid-run when it does. `jobs.sqlite`
+  holds zero rows, confirming the non-persistence half.
+- Fix is an opt-in `anchorKey` on the scheduler itself. Anchored jobs compute
+  `nextRunAt` from a durable stamp (`stamp + everyMs`, floored 60s past boot
+  so a catch-up lands after startup rather than during it); everything else
+  keeps the current relative behavior. Opt-in is the point, not a hedge: no
+  catch-up is CORRECT for user payload jobs — a restart must not burst the
+  messages it missed while down — so only the three maintenance crons
+  (`cron.evalSuite`, `cron.doctor`, `cron.approvalDigest`) anchor. Anchoring
+  also requires a cfg: without one there is no durable home to trust, and a
+  job registered bare must not write into the running gateway's stamp file.
+- The stamp is written at ATTEMPT, not completion. Completion-stamping never
+  stamps at all here — the suite outlives the median uptime — so it would
+  relaunch a 54-minute job at every boot: a restart storm dressed as a fix.
+  At-most-once-per-interval is the guarantee a maintenance job wants; the
+  trade, stated plainly, is that an interrupted run waits out its interval.
+  A failing run stamps too, so a broken cron cannot retry forever.
+- `eval-job.mjs` passed `_cfg` where `addJob` reads `cfg`, so the eval cron
+  has always run with a null config — its events went to the default log
+  path and it could not have anchored. Fixed; `intervalMs` is now passed
+  alongside `schedule` for the same reason.
+- The digest schedule added an hour ago in 3.284.0 is REMOVED, not kept:
+  once the scheduler anchors, a parallel `setInterval` in
+  `approval-digest.mjs` is a second arming site for the same job and would
+  have produced double digests the moment `digestIntervalMs` was set. Its
+  `runDueDigest` / `startApprovalDigestSchedule` / `DIGEST_JOB` are deleted
+  (115 → 60 lines) and the gateway's duplicate call with them. One obvious
+  implementation; the cron scheduler is it.
+- `doctor` gains `eval.cron.lastRun` beside the existing `security.digest`,
+  both reading the cron anchor keys. The existing `eval.cron` probe is kept
+  and left alone precisely because it is the counter-example: it reports
+  that the job is REGISTERED, which was true at all 339 boots and green the
+  entire time the suite was not running. Registration and freshness are
+  different facts and now have different probes. Sub-hour intervals also
+  rendered as "0h" — a five-minute digest reported as zero — so ages and
+  intervals format in minutes below an hour.
+
 ## 3.284.0 (2026-08-28)
 
 - SAME FAIL-OPEN, ONE FILE OVER: a fresh literal census of every

@@ -152,6 +152,7 @@ export function ensureDoctorCronJob(opts = {}) {
     sessionKey: opts.sessionKey || null,
     payload: { kind: "doctor" },
     cfg: opts.cfg,
+    anchorKey: opts.anchorKey ?? "cron.doctor",
     handler: async () => {
       await runDoctorCheck({
         cfg: opts.cfg,

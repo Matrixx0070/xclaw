@@ -144,7 +144,12 @@ export function ensureEvalCronJob(opts = {}) {
     everyMs,
     intervalMs: everyMs, // scheduler historically read intervalMs; without this defaulted to 60s
     enabled: true,
-    _cfg: cfg,
+    // Was `_cfg`, which addJob does not read — the job ran with a null config,
+    // so its cron events went to the default log path and it could not anchor.
+    cfg,
+    // Daily against a median gateway uptime of 24 minutes: without a durable
+    // anchor this job is re-armed at every boot and effectively never runs.
+    anchorKey: "cron.evalSuite",
     handler: async () => {
       console.log(`[xclaw:eval-cron] running suite…`);
       const out = await runScheduledEval({ cfg, tag });

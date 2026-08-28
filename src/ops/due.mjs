@@ -18,6 +18,7 @@
  */
 import path from "node:path";
 import os from "node:os";
+import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { durableAtomicWriteJson } from "../utils/durable-write.mjs";
 
@@ -26,18 +27,35 @@ export function dueStatePath(cfg = {}) {
   return path.join(base, "ops-schedule.json");
 }
 
+function parseDueState(text) {
+  const raw = JSON.parse(text);
+  const out = {};
+  for (const [k, v] of Object.entries(raw?.lastRun || {})) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) out[k] = n;
+  }
+  return out;
+}
+
 /** @returns {Promise<Record<string, number>>} name → last run epoch ms */
 export async function readDueState(cfg = {}) {
   try {
-    const raw = JSON.parse(await fsp.readFile(dueStatePath(cfg), "utf8"));
-    const out = {};
-    for (const [k, v] of Object.entries(raw?.lastRun || {})) {
-      const n = Number(v);
-      if (Number.isFinite(n) && n > 0) out[k] = n;
-    }
-    return out;
+    return parseDueState(await fsp.readFile(dueStatePath(cfg), "utf8"));
   } catch {
     // absent or corrupt → treat as "never ran" (fail toward doing the work)
+    return {};
+  }
+}
+
+/**
+ * Sync twin of readDueState, for schedulers that must seed a timer while
+ * registering a job. The cron scheduler's addJob is synchronous, and making
+ * it async would ripple through every caller for no gain.
+ */
+export function readDueStateSync(cfg = {}) {
+  try {
+    return parseDueState(fs.readFileSync(dueStatePath(cfg), "utf8"));
+  } catch {
     return {};
   }
 }
@@ -114,4 +132,12 @@ export function startPeriodic({ intervalMs, bootDelayMs = 60_000, tick }) {
   };
 }
 
-export default { dueStatePath, readDueState, isDue, markRan, dueJobStatus, startPeriodic };
+export default {
+  dueStatePath,
+  readDueState,
+  readDueStateSync,
+  isDue,
+  markRan,
+  dueJobStatus,
+  startPeriodic,
+};

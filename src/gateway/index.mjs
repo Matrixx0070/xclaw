@@ -1182,14 +1182,6 @@ export async function startGateway({ root, harness = false } = {}) {
     console.warn("[xclaw] slo monitor", e.message);
   }
 
-  if (cfg.security?.digestIntervalMs) {
-    // Scheduled against a persisted last-run stamp, not process uptime: a
-    // daily digest armed as a bare interval never fires on a host that
-    // redeploys daily.
-    const { startApprovalDigestSchedule } = await import("../security/approval-digest.mjs");
-    startApprovalDigestSchedule(cfg);
-    console.log(`[xclaw] approval digest every ${cfg.security.digestIntervalMs}ms`);
-  }
   try {
     startComputerWatchdog(cfg, { root });
   } catch (err) {

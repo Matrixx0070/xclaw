@@ -8,9 +8,23 @@
  * to .bak. Handler-backed jobs (doctor/eval/heartbeat/automations) are
  * process-owned and re-registered by their owners at boot, so they are
  * deliberately NOT persisted here.
+ *
+ * That re-registration is why an interval job needs `anchorKey`. A bare
+ * {kind:"every"} schedule is relative — every boot recomputes nextRunAt from
+ * now — so a job whose interval exceeds the gateway's uptime never reaches its
+ * first run, silently, because a job that does not run logs nothing. Live
+ * evidence (2026-08-28): the daily eval suite was registered at all 339 boots
+ * in the log and started 6 times in 13 days, last completing 2026-08-17, with
+ * a median inter-boot gap of 24 minutes against a 1440-minute interval.
+ *
+ * `anchorKey` opts a job into scheduling from its durable last-attempt stamp
+ * (src/ops/due.mjs) instead of process uptime. It is opt-in because the
+ * no-catch-up rule is correct for user payload jobs — nobody wants a restart
+ * to burst the messages it missed — and wrong only for maintenance.
  */
 import { randomUUID } from "node:crypto";
 import { computeNextRun } from "./schedule.mjs";
+import { readDueStateSync, markRan } from "../ops/due.mjs";
 import {
   openCronLedger,
   absorbLegacyCronJson,
@@ -48,6 +62,33 @@ function isPersistable(job) {
   return !job.handler && job.payload != null;
 }
 
+/** Breathing room so a catch-up run lands after boot, not during it. */
+const ANCHOR_BOOT_GRACE_MS = 60_000;
+
+/**
+ * When a job should next run. Identical to computeNextRun unless the job is
+ * anchored, in which case the schedule resumes from the durable stamp: an
+ * overdue job runs shortly after boot, an up-to-date one waits out the
+ * remainder of its interval rather than restarting it.
+ *
+ * A never-run anchored job keeps the relative first run on purpose — a fresh
+ * install must not launch an hour-long suite while it is still booting.
+ */
+function anchorOf(job) {
+  // Anchoring needs a config: without one there is no durable home to trust,
+  // and a job registered bare (tests, ad-hoc callers) must not reach into the
+  // real ~/.xclaw stamp file and speak for the running gateway.
+  return job.anchorKey && job._cfg ? job.anchorKey : null;
+}
+
+function nextRunFor(job, now = Date.now()) {
+  const anchor = anchorOf(job);
+  if (!anchor || job.schedule?.kind !== "every") return computeNextRun(job.schedule, now);
+  const last = readDueStateSync(job._cfg)[anchor];
+  if (!Number.isFinite(last) || last > now) return computeNextRun(job.schedule, now);
+  return Math.max(last + Number(job.schedule.everyMs || 0), now + ANCHOR_BOOT_GRACE_MS);
+}
+
 function serializeJob(job) {
   const { handler, _cfg, _lastAnnounce, ...rest } = job;
   return rest;
@@ -81,13 +122,10 @@ export function restorePersistedJobs(cfg, recordsFromLedger) {
   const now = Date.now();
   for (const rec of records) {
     if (!rec || !rec.id || jobs.has(rec.id) || !rec.schedule) continue;
-    const job = {
-      ...rec,
-      handler: null,
-      _cfg: cfg || null,
-      // No catch-up for runs missed while down — schedule from now.
-      nextRunAt: rec.enabled !== false ? computeNextRun(rec.schedule, now) : null,
-    };
+    // No catch-up for runs missed while down — schedule from now. Anchored
+    // jobs opt out of that and resume from their stamp (see nextRunFor).
+    const job = { ...rec, handler: null, _cfg: cfg || null, nextRunAt: null };
+    job.nextRunAt = rec.enabled !== false ? nextRunFor(job, now) : null;
     if (job.schedule.kind === "at" && job.nextRunAt == null) job.enabled = false;
     jobs.set(job.id, job);
     restored += 1;
@@ -148,6 +186,12 @@ async function tick() {
 
 async function runJob(job, opts = {}) {
   job.lastRunAt = Date.now();
+  // Stamp the ATTEMPT, not the completion. A run cut short by a restart must
+  // not re-arm at the next boot: the eval suite takes ~54 minutes against a
+  // median uptime of 24, so stamping on completion would launch it at every
+  // boot forever. At-most-once-per-interval is what a maintenance job wants;
+  // the trade is that an interrupted run waits out its interval.
+  if (anchorOf(job)) await markRan(job._cfg, job.anchorKey, job.lastRunAt);
   try {
     await emit("cron:before", { id: job.id, name: job.name, job });
     if (typeof job.handler === "function") {
@@ -253,13 +297,15 @@ export function addJob(input = {}) {
     payload: input.payload || null,
     agentId: input.agentId || null,
     handler: input.handler || null,
+    anchorKey: input.anchorKey || null,
     _cfg: input.cfg || null,
-    nextRunAt: input.enabled === false ? null : computeNextRun(schedule, Date.now()),
+    nextRunAt: null,
     lastRunAt: null,
     lastStatus: null,
     lastError: null,
     createdAt: new Date().toISOString(),
   };
+  if (job.enabled) job.nextRunAt = nextRunFor(job);
   jobs.set(id, job);
   if (isPersistable(job)) persistJobs(job._cfg);
   armTimer();
