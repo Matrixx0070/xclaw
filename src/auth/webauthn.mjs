@@ -21,6 +21,9 @@ import {
   fingerprintStatus,
   verifyFingerprint,
 } from "./fingerprint-rotation.mjs";
+// A complete, tested ES256 verifier sat in this same directory with no
+// importer while the assertion path below verified no signature at all.
+import { verifyEs256Raw } from "./cose-es256-verify.mjs";
 
 function waPaths(cfg = {}) {
   const configDir =
@@ -228,8 +231,15 @@ export async function createAssertionOptions(cfg = {}) {
 }
 
 /**
- * Complete assertion (signature verification stub + counter + binding check).
- * Production should use full WebAuthn verify (COSE key + authData).
+ * Complete assertion: ES256 signature + counter + fingerprint binding.
+ *
+ * The signature check is the whole point of the ceremony and was missing: this
+ * verified the challenge, then stamped store.lastAssertAt, which is the only
+ * thing gateWithWebAuthn consults. A caller holding a credential id and the
+ * pending challenge — both printed by `auth webauthn status` and
+ * `assert-options` — could open the gate without touching an authenticator.
+ * It failed closed in the field only because registration had no invocable
+ * path either, so no credential existed to assert against.
  */
 export async function completeAssertion(cfg = {}, assertion = {}) {
   const store = await readStore(cfg);
@@ -255,11 +265,54 @@ export async function completeAssertion(cfg = {}, assertion = {}) {
     }
   }
 
-  // Counter must not go backwards (clone detection)
-  const newCounter =
-    assertion.authenticatorData?.counter ??
-    assertion.counter ??
-    cred.counter + 1;
+  // An authenticator signs authData || SHA256(clientDataJSON). Every one of
+  // these returns BEFORE the store is touched: a rejected assertion that still
+  // stamped lastAssertAt would open the gate it just refused.
+  if (!assertion.signature) {
+    return { ok: false, error: "assertion carries no signature", code: "SIGNATURE_REQUIRED" };
+  }
+  if (!assertion.authenticatorData) {
+    return { ok: false, error: "assertion carries no authenticatorData", code: "AUTHDATA_REQUIRED" };
+  }
+  if (!assertion.clientDataJSON) {
+    return { ok: false, error: "assertion carries no clientDataJSON", code: "CLIENTDATA_REQUIRED" };
+  }
+  if (!cred.publicKey) {
+    return {
+      ok: false,
+      error: "stored credential has no public key — re-register this credential",
+      code: "NO_PUBLIC_KEY",
+    };
+  }
+
+  const authData = fromB64url(assertion.authenticatorData);
+  // rpIdHash(32) | flags(1) | signCount(4)
+  if (authData.length < 37) {
+    return { ok: false, error: "authenticatorData too short", code: "AUTHDATA_INVALID" };
+  }
+  const toBeSigned = Buffer.concat([
+    authData,
+    crypto.createHash("sha256").update(fromB64url(assertion.clientDataJSON)).digest(),
+  ]);
+  let verified = false;
+  try {
+    verified = verifyEs256Raw(cred.publicKey, toBeSigned, fromB64url(assertion.signature));
+  } catch (e) {
+    return {
+      ok: false,
+      error: `assertion signature could not be verified: ${e.message}`,
+      code: "SIGNATURE_INVALID",
+    };
+  }
+  if (!verified) {
+    return { ok: false, error: "assertion signature did not verify", code: "SIGNATURE_INVALID" };
+  }
+
+  // Counter must not go backwards (clone detection). This read
+  // assertion.authenticatorData?.counter — undefined for the base64url string
+  // an authenticator actually sends — then fell back to cred.counter + 1, so
+  // clone detection was grading a number it had invented itself.
+  const newCounter = authData.readUInt32BE(33);
   if (newCounter < cred.counter) {
     return {
       ok: false,
@@ -368,15 +421,40 @@ export async function webauthnStatus(cfg = {}) {
 }
 
 export function webauthnBrowserSnippet() {
+  // Every line of this snippet used to be false: it fetched
+  // /xclaw/webauthn/register-options and /xclaw/webauthn/assert-options, which
+  // exist in no route table, and then said "send cred to completeRegistration"
+  // — a function with no invocable path. It is the operator's only instruction
+  // for running the ceremony, so it has to be a procedure that actually runs.
+  //
+  // base64url is done with replaceAll rather than regex literals on purpose: a
+  // backslash inside this template literal is an escape sequence, so a /\+/ in
+  // here reaches the operator's console as /+/ and does not run.
   return `
-// Registration
-const reg = await fetch('/xclaw/webauthn/register-options').then(r => r.json());
+// 1. In a terminal:  xclaw auth webauthn register-options > /tmp/reg.json
+// 2. Paste that JSON as \`reg\` in the browser console on your rp origin:
 const cred = await navigator.credentials.create({ publicKey: reg.publicKey });
-// send cred to completeRegistration
+const b64 = (b) => btoa(String.fromCharCode(...new Uint8Array(b)))
+  .replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+copy(JSON.stringify({
+  id: cred.id,
+  clientDataJSON: b64(cred.response.clientDataJSON),
+  publicKey: cred.response.getPublicKey
+    ? b64(cred.response.getPublicKey())   // SPKI — xclaw verifies ES256 with it
+    : null,
+}));
+// 3. Back in the terminal:  pbpaste | xclaw auth webauthn register -
 
 // Assertion (platform fingerprint / PIN)
-const asrt = await fetch('/xclaw/webauthn/assert-options').then(r => r.json());
-const assertion = await navigator.credentials.get({ publicKey: asrt.publicKey });
-// send assertion to completeAssertion
+// 1.  xclaw auth webauthn assert-options > /tmp/asrt.json
+// 2. Paste that JSON as \`asrt\`:
+const a = await navigator.credentials.get({ publicKey: asrt.publicKey });
+copy(JSON.stringify({
+  id: a.id,
+  authenticatorData: b64(a.response.authenticatorData),
+  clientDataJSON: b64(a.response.clientDataJSON),
+  signature: b64(a.response.signature),
+}));
+// 3.  pbpaste | xclaw auth webauthn assert -
 `.trim();
 }

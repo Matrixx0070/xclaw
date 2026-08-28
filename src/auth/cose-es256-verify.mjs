@@ -232,17 +232,37 @@ export function importEs256PublicKey(key) {
     }
 
     // COSE_Key hex / base64
+    let coseErr;
     try {
       const cose = decodeCoseKey(s);
       return importFromDecodedCoseKey(cose);
     } catch (e) {
-      if (e instanceof CoseKeyError) throw e;
-      throw new CoseKeyError(
-        "UNSUPPORTED_KEY",
-        "string key must be PEM, certificate, or COSE_Key hex/base64",
-        { cause: e.message }
-      );
+      coseErr = e;
     }
+
+    // SPKI DER, hex / base64 / base64url. The Buffer branch below has always
+    // accepted these bytes; the string branch did not, and an encoded string is
+    // the form they actually arrive in — navigator.credentials returns
+    // getPublicKey() as SPKI DER and every WebAuthn payload is base64url. A
+    // stored credential was therefore unverifiable by the one verifier that
+    // could verify it. Node's "base64" decoder accepts the base64url alphabet.
+    try {
+      const der = /^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0
+        ? Buffer.from(s, "hex")
+        : Buffer.from(s, "base64");
+      if (der.length) {
+        return createPublicKeySafe({ key: der, format: "der", type: "spki" }, "SPKI DER");
+      }
+    } catch {
+      /* fall through to the error below */
+    }
+
+    if (coseErr instanceof CoseKeyError) throw coseErr;
+    throw new CoseKeyError(
+      "UNSUPPORTED_KEY",
+      "string key must be PEM, certificate, SPKI DER, or COSE_Key (hex/base64/base64url)",
+      { cause: coseErr?.message }
+    );
   }
 
   // JWK

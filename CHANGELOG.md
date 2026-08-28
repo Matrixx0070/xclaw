@@ -1,3 +1,52 @@
+## 3.332.0
+
+### The WebAuthn ceremony had no second half, and the half it was missing accepted any assertion
+
+`xclaw auth webauthn` is a two-round-trip protocol and only the FIRST half of
+each round trip was invocable. `register-options` and `assert-options` issued a
+challenge; `completeRegistration` and `completeAssertion` — the halves that
+consume it — had no CLI action and no production caller at all. So on a real
+host no credential could ever be registered (`status` reported `registered: 0`
+right after `register-options`, live), and `gateWithWebAuthn`'s own remedy
+string told the operator to run `xclaw auth webauthn register`, a command that
+did not exist.
+
+`webauthnBrowserSnippet()` — the operator's only instruction for driving the
+ceremony — was false in every line. It fetched `/xclaw/webauthn/register-options`
+and `/xclaw/webauthn/assert-options`, which appear in no route table, and then
+told the operator to "send cred to completeRegistration", the function with no
+invocable path. An instruction string is a claim about the product.
+
+Wiring the missing half is only safe because the assertion is now verified.
+`completeAssertion` checked no signature: the file said "Production should use
+full WebAuthn verify (COSE key + authData)" while a complete, tested 591-line
+ES256 verifier sat two files away with zero production importers. The feature
+failed CLOSED only because nothing could register a credential to assert
+against — restore the command first and it would have become a live auth
+bypass, so verification lands first.
+
+- `completeAssertion` now verifies `authenticatorData || SHA256(clientDataJSON)`
+  against the stored public key with `verifyEs256Raw`, and every rejection
+  returns before the store is touched (a refused assertion that still stamped
+  `lastAssertAt` would open the gate it just refused).
+- The counter read `assertion.authenticatorData?.counter` — undefined for the
+  base64url string an authenticator actually sends — and fell back to
+  `cred.counter + 1`, so clone detection was grading a number it had invented
+  itself. It now reads `authData.readUInt32BE(33)`.
+- `importEs256PublicKey` rejected base64url SPKI DER, the encoding a browser
+  produces (`getPublicKey()`) and the one this module stores. Its Buffer branch
+  had always accepted those bytes; only the string branch could not. A stored
+  credential was unverifiable by the one verifier able to verify it.
+- New `xclaw auth webauthn register <file|->` and `assert <file|->` read the
+  browser payload from a file or stdin.
+
+`gateWithWebAuthn` still has no production caller and `requireAssertBeforeUse`
+defaults false, so no agent path changes behaviour; this is the operator CLI.
+
+Not covered here, and still open: `completeAssertion` does not check
+`rpIdHash`, `clientData.type`, or origin. Challenge binding covers replay; those
+are defence in depth.
+
 ## 3.331.0
 
 ### A duplicate `case` label silently deleted ~220 lines of shipped CLI

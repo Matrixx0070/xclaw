@@ -33,16 +33,48 @@ import {
 } from "../auth/fingerprint-rotation.mjs";
 import {
   createRegistrationOptions,
+  completeRegistration,
   createAssertionOptions,
+  completeAssertion,
   webauthnStatus,
   gateWithWebAuthn,
   markWebAuthnRequiredAfterRotate,
   webauthnBrowserSnippet,
 } from "../auth/webauthn.mjs";
+import { readFile } from "node:fs/promises";
 
 function flag(args, name) {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
+}
+
+/**
+ * Read a browser-produced JSON payload from a file path, or from stdin for "-".
+ *
+ * `webauthn snippet` prints JSON in the browser console; the operator has to be
+ * able to hand it back. Without this the two ceremonies had a first half and no
+ * second half: register-options / assert-options issued a challenge that no
+ * command could ever complete.
+ */
+async function readJsonPayload(arg) {
+  if (!arg) return { ok: false, error: "expected a JSON file path, or - for stdin" };
+  let text;
+  try {
+    if (arg === "-") {
+      const chunks = [];
+      for await (const c of process.stdin) chunks.push(c);
+      text = Buffer.concat(chunks).toString("utf8");
+    } else {
+      text = await readFile(arg, "utf8");
+    }
+  } catch (e) {
+    return { ok: false, error: `cannot read payload: ${e.message}` };
+  }
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch (e) {
+    return { ok: false, error: `payload is not valid JSON: ${e.message}` };
+  }
 }
 
 export async function runAuthCli(cfg, argv = []) {
@@ -150,6 +182,26 @@ export async function runAuthCli(cfg, argv = []) {
       console.log(JSON.stringify(await createRegistrationOptions(cfg), null, 2));
       return 0;
     }
+    if (action === "register") {
+      const p = await readJsonPayload(args[1]);
+      if (!p.ok) {
+        console.error(JSON.stringify({ ok: false, error: p.error }, null, 2));
+        return 1;
+      }
+      const r = await completeRegistration(cfg, p.value);
+      console.log(JSON.stringify(r, null, 2));
+      return r.ok ? 0 : 1;
+    }
+    if (action === "assert") {
+      const p = await readJsonPayload(args[1]);
+      if (!p.ok) {
+        console.error(JSON.stringify({ ok: false, error: p.error }, null, 2));
+        return 1;
+      }
+      const r = await completeAssertion(cfg, p.value);
+      console.log(JSON.stringify(r, null, 2));
+      return r.ok ? 0 : 1;
+    }
     if (action === "assert-options") {
       const r = await createAssertionOptions(cfg);
       console.log(JSON.stringify(r, null, 2));
@@ -165,7 +217,8 @@ export async function runAuthCli(cfg, argv = []) {
       return 0;
     }
     console.error(
-      "Usage: xclaw auth webauthn <status|register-options|assert-options|gate|snippet>"
+      "Usage: xclaw auth webauthn <status|register-options|register <file|->|" +
+        "assert-options|assert <file|->|gate|snippet>"
     );
     return 1;
   }
