@@ -102,10 +102,28 @@ describe("xclaw queue batch: the file's semantics reach the owner", () => {
   it("reports a refused item instead of aborting the batch", async () => {
     const { dir, f } = await file([{ goal: "one" }, { goal: "two" }]);
     const cfg = { paths: { configDir: dir }, agent: { maxTurns: 1 }, queue: { maxDepth: 1 } };
+    // The buffer is filled on disk rather than by enqueueing the first item for
+    // real. A successful enqueue kicks the worker, and 50ms later processNext
+    // moves that record out of "queued" — freeing the very slot the refusal
+    // depends on. This test used to enqueue one and expect the second to be
+    // refused, which held only while the second item arrived inside that 50ms
+    // window: under CPU load it did not (measured 5 failures in 25 runs, and
+    // deterministically admitted with a 120ms gap). Seeding means no enqueue
+    // succeeds, so nothing kicks the worker and the depth cannot move under
+    // the assertion. Both items are refused, which is the stronger proof that
+    // the batch reports a refusal instead of aborting on it: the loop reached
+    // item two after item one threw.
+    const qdir = path.join(dir, "job-queue");
+    await fs.mkdir(qdir, { recursive: true });
+    const at = new Date().toISOString();
+    await fs.writeFile(
+      path.join(qdir, "q_seed.json"),
+      JSON.stringify({ id: "q_seed", goal: "seed", status: "queued", createdAt: at, enqueuedAt: at })
+    );
     const fetchImpl = async () => { throw new Error("ECONNREFUSED"); };
     const out = await enqueueFromFile(cfg, f, { fetchImpl });
-    assert.equal(out.count, 1);
-    assert.equal(out.errors.length, 1);
-    assert.match(out.errors[0], /queue full|maxDepth/i);
+    assert.equal(out.count, 0);
+    assert.equal(out.errors.length, 2, "the batch aborted on the refusal instead of reporting it");
+    for (const e of out.errors) assert.match(e, /queue full|maxDepth/i);
   });
 });

@@ -140,17 +140,23 @@ export async function enqueueJob(cfg, item) {
 
   // Admission: finite buffer (maxDepth) + pause
   const adm = getDefaultAdmission(cfg);
+  // Captured before the await below: countQueued's fs I/O yields the event
+  // loop, and the singleton's stored bounds are rewritten by any concurrent
+  // configure (processNext does one per pick, with ITS cfg). The decision
+  // must enforce THIS cfg's bound, so it travels with the call.
+  const depthBound = maxDepth(cfg);
   adm.configure({
     concurrency: maxConcurrency(cfg),
-    maxDepth: maxDepth(cfg),
+    maxDepth: depthBound,
     maxWaitMs: maxWaitMsCfg(cfg),
   });
-  const queuedNow = (await listQueue(cfg, { limit: 500 })).filter((i) => i.status === "queued").length;
+  const queuedNow = await countQueued(cfg);
   // Pause stops the worker from *running* jobs; enqueue still admits to disk.
   const decision = adm.tryAdmit({
     queued: queuedNow,
     running: worker?.running || 0,
     paused: false,
+    maxDepth: depthBound,
   });
   if (!decision.admit) {
     const err = new Error(
@@ -221,6 +227,29 @@ export async function listQueue(cfg, { limit = 50 } = {}) {
     return pb - pa || String(a.createdAt).localeCompare(String(b.createdAt));
   });
   return items.slice(0, limit);
+}
+
+/**
+ * How many jobs are queued right now.
+ *
+ * Admission's finite buffer compares this to maxDepth, so it has to be a count
+ * of the queue and not a count of a PAGE of it. It used to be derived from
+ * listQueue(cfg, { limit: 500 }), whose limit exists to bound a display: the
+ * sort puts queued items first and the slice then caps the count at 500. An
+ * operator who raised queue.maxDepth above 500 — a legitimate setting the code
+ * accepts — therefore got an admission check that could never refuse, because
+ * the number it compared was pinned below the bound. The finite buffer, which
+ * is the entire purpose of maxDepth, was silently off.
+ *
+ * The limit never saved any work either: listQueue reads and parses every
+ * record before it slices.
+ *
+ * @param {object} cfg
+ * @returns {Promise<number>}
+ */
+export async function countQueued(cfg) {
+  const items = await listQueue(cfg, { limit: Number.POSITIVE_INFINITY });
+  return items.filter((i) => i.status === "queued").length;
 }
 
 export async function getQueueItem(cfg, id) {

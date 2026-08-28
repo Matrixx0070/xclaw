@@ -114,7 +114,17 @@ export function createAdmissionController(cfg = {}) {
       return { admit: false, reason: "paused", snapshot: snapshot(state) };
     }
     const queued = Math.max(0, Number(state.queued) || 0);
-    if (maxDepth >= 0 && queued >= maxDepth) {
+    // The bound this decision enforces is the CALLER's, read here, at decision
+    // time. The stored maxDepth is shared mutable state: enqueueJob configures
+    // it, then awaits a queue count (fs I/O — the event loop yields), and any
+    // concurrent caller that also configures this singleton — processNext
+    // does, with its own cfg's resolved defaults — rewrites the bound inside
+    // that window. Measured under CPU load: a queue at its maxDepth admitted
+    // anyway while the depth count was proven correct. A per-decision bound
+    // closes the window structurally; the stored one remains the default for
+    // callers that pass none.
+    const depthBound = state.maxDepth != null ? boundedNumber(state.maxDepth, maxDepth) : maxDepth;
+    if (depthBound >= 0 && queued >= depthBound) {
       metrics.rejectedFull += 1;
       emitAdmission("admission", { kind: "rejected_full", metrics: { ...metrics }, state });
       return { admit: false, reason: "full", snapshot: snapshot(state) };

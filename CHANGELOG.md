@@ -1,3 +1,41 @@
+## 3.333.0
+
+### Any queue.maxDepth above 500 silently disabled the finite buffer
+
+`enqueueJob` compared `maxDepth` against a queued-count derived from
+`listQueue(cfg, { limit: 500 })`. That limit exists to bound a display; the
+sort puts queued items first and the slice then caps the count at 500. An
+operator who raised `queue.maxDepth` past 500 — a setting the config accepts,
+uncapped — got an admission check whose measured depth was pinned below the
+bound, so it could never refuse. The finite buffer, the entire purpose of
+`maxDepth`, was off, and nothing reported it. The limit saved no work either:
+listQueue reads and parses every record before it slices. `countQueued()` now
+counts the queue, not a page of it.
+
+### The bound an admission decision enforced was whatever a concurrent caller had configured last
+
+`enqueueJob` configured the process-wide admission singleton, then awaited the
+queue count (fs I/O — the event loop yields), then called `tryAdmit`, which
+read the singleton's stored `maxDepth`. Inside that window any concurrent
+caller that also configures the singleton — `processNext` does, once per pick,
+with ITS cfg's resolved defaults — rewrote the bound, and the decision
+enforced the other caller's number. Measured under 12 CPU spinners: a queue
+seeded to its `maxDepth` admitted anyway in 4/20 runs while instrumentation
+proved the depth count was correct every time — the count was right, the bound
+had been widened mid-await. `tryAdmit` now takes the bound as an input of the
+decision, captured by `enqueueJob` before the await; the stored bound remains
+the default for callers that pass none.
+
+### A test that raced the worker it had started
+
+`test/batch-queue.test.mjs` enqueued one job for real and expected the second
+to be refused at `maxDepth: 1`. A successful enqueue kicks the worker, and
+50ms later `processNext` moves that record out of `queued` — freeing the very
+slot the refusal depended on (by design: `maxDepth` bounds queued items, not
+running ones). The assertion held only while item two arrived inside the 50ms
+window; under CPU load it did not. The buffer is now seeded on disk, so
+nothing kicks a worker and the depth cannot move under the assertion.
+
 ## 3.332.0
 
 ### The WebAuthn ceremony had no second half, and the half it was missing accepted any assertion
