@@ -1287,65 +1287,42 @@ export async function runDoctor(opts = {}) {
         push("telegram.transport", "ok", "long-poll (default)");
       }
 
-      // Writer lock file presence (does not prove ownership)
+      // Writer-lock ownership, which is the only Telegram runtime signal a CLI
+      // process can honestly read: the single writer takes the lock before it
+      // starts and touches it every poll iteration. Reading `running` off a
+      // channel manager built here would report a constant (see
+      // doctor-telegram-writer.mjs).
       try {
         const fs = await import("node:fs");
         const path = await import("node:path");
         const os = await import("node:os");
-        const lockPath = path.join(os.homedir(), ".xclaw", "locks", "telegram-writer.lock");
-        if (fs.existsSync(lockPath)) {
-          let age = null;
-          let pid = null;
-          try {
-            const raw = JSON.parse(fs.readFileSync(lockPath, "utf8"));
-            pid = raw.pid;
-            age = Date.now() - Date.parse(raw.at || 0);
-          } catch { /* */ }
-          push(
-            "telegram.writerLock",
-            "ok",
-            `lock present pid=${pid ?? "?"} ageMs=${age ?? "?"}`
-          );
-        } else {
-          push(
-            "telegram.writerLock",
-            "ok",
-            "no lock file (gateway not polling or lock unused)"
-          );
+        const { assessTelegramWriter } = await import("./doctor-telegram-writer.mjs");
+        const lockPath =
+          conf.writerLockPath ||
+          path.join(os.homedir(), ".xclaw", "locks", "telegram-writer.lock");
+        let present = false;
+        let raw = null;
+        let readError = null;
+        try {
+          raw = fs.readFileSync(lockPath, "utf8");
+          present = true;
+        } catch (e) {
+          if (e?.code === "ENOENT") present = false;
+          else readError = e.message || String(e);
+        }
+        for (const f of assessTelegramWriter({
+          enabled,
+          singleWriter: conf.singleWriter !== false,
+          lockPath,
+          present,
+          raw,
+          readError,
+          transport,
+        })) {
+          push(f.id, f.level, f.summary);
         }
       } catch (e) {
         push("telegram.writerLock", "warn", e.message || String(e));
-      }
-
-      // Live status if channel manager available (gateway may be down)
-      try {
-        const { createChannelManager } = await import("../channels/manager.mjs");
-        const m = createChannelManager(cfg);
-        const stList = typeof m.status === "function" ? m.status() : [];
-        const tg = Array.isArray(stList)
-          ? stList.find((c) => c.name === "telegram")
-          : stList?.telegram || null;
-        if (tg?.lastError) {
-          push(
-            "telegram.lastError",
-            "warn",
-            String(tg.lastError).slice(0, 200)
-          );
-        } else if (tg) {
-          push(
-            "telegram.runtime",
-            "ok",
-            `running=${Boolean(tg.running)} transport=${tg.transport || "?"} @${tg.username || "?"}`
-          );
-        } else {
-          push(
-            "telegram.runtime",
-            "ok",
-            "channel not started in this process (start gateway for live loop)"
-          );
-        }
-      } catch (e) {
-        push("telegram.runtime", "warn", e.message || String(e));
       }
     }
   } catch (e) {

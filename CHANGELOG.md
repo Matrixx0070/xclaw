@@ -1,3 +1,49 @@
+## 3.289.0 (2026-08-28)
+
+- `xclaw doctor` reported `[OK] telegram.writerLock: lock present` for a lock
+  whose holder had died, and `[OK] telegram.runtime: running=false …` in every
+  state including a healthy one. Both now report on the live writer.
+- `telegram.runtime` built its own `createChannelManager(cfg)` and printed that
+  manager's `running` field. `running` is `enabled && loopAlive && !stopped`,
+  and `loopAlive` is a closure-local flag set only when *that* process starts
+  the poll loop, so in a CLI process it is unconditionally false. The line read
+  identically whether Telegram was healthy, wedged, or unconfigured. That was
+  diagnosed on 2026-08-24 alongside 3.176.1 and written into the session notes
+  as a caveat — "use the gateway's /doctor route for truth" — instead of being
+  removed, so a probe already known to be meaningless kept printing `[OK]`.
+- `telegram.writerLock` read the lock, computed the holder's pid and the stamp's
+  age, then reported `ok` without judging either; its own comment said it "does
+  not prove ownership". A lock left behind by a crashed writer read as healthy.
+- Both now derive from the single-writer lock, the only Telegram runtime signal
+  a separate process can honestly read: the writer takes
+  `~/.xclaw/locks/telegram-writer.lock` before starting and touches it at the
+  top of every poll iteration, so a healthy stamp is at most one long-poll
+  (30s) old. The predicate is `acquireTelegramWriterLock`'s own — a holder whose
+  pid is gone, or a stamp older than its 120s `staleMs`, is exactly what that
+  function treats as reclaimable. Doctor warns there now instead of passing.
+- Three outages the old probes passed, each driven end-to-end through the real
+  CLI: holder pid gone (`stale lock: holder pid=… is gone`), holder alive but no
+  longer renewing (`not renewed for 601s (>= 120s) — poll loop wedged`, the
+  shape a pid check alone misses), and no lock at all while Telegram is
+  configured (`no process owns Telegram updates`). On this host, which is
+  healthy, the line is now `held by live pid=3959028 … renewed 21s ago`, and the
+  warning count is unchanged at 13.
+- Two smaller corrections rode along. The probe honours
+  `channels.telegram.writerLockPath`, so a configured lock path is no longer
+  ignored — the old probe checked the default path and reported its absence as
+  OK. And pid liveness treats `EPERM` as alive, since only `ESRCH` proves a
+  process is gone; `acquireTelegramWriterLock` still reads `EPERM` as dead,
+  left alone here because changing it changes when a lock may be stolen.
+- The decision lives in `src/cli/doctor-telegram-writer.mjs` as a pure function
+  over evidence the caller reads, because `runDoctor` calls `loadConfig()` and
+  live HTTP and cannot be driven from a unit test.
+  `test/doctor-telegram-writer.test.mjs` covers every branch and was
+  mutation-verified both ways: reporting a dead holder as `ok`, and treating
+  `EPERM` as dead, each turned it RED.
+- Deleted with it: the `createChannelManager` call in the CLI probe, which
+  constructed four channel objects to print a constant, and the
+  `telegram.lastError` branch that could only fire on a manager never started.
+
 ## 3.288.0 (2026-08-28)
 
 - `xclaw doctor` ran six of its probes two or three times per invocation and
