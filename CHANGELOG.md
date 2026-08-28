@@ -1,3 +1,49 @@
+## 3.340.0
+
+### The computer plane refused the safe action and permitted the actuating one
+
+`hooks-bridge.mjs` fronts the browser enforcement plane for the computer
+process. Three of its four entry points returned `{ ok: true, skipped: true }`
+when the hooks module could not be loaded; only `runBeforeNavigate` carried a
+fail-closed guard. Its single caller — the browser tool in
+`src/computer/xclaw-server.mjs` — checks `r.ok === false` and nothing else, so
+a skip and an approval are the same value to it.
+
+`beforeInput` is the gate that carries the A7 jsCode policy
+(`assertJsCodeAllowed`), the motor-role check (`assertMotorAllowed`) and the
+tab lease. So with the hooks plane unavailable under full enforcement, the
+substrate refused a navigation and permitted a click. Measured before the fix,
+with `XCLAW_FABRIC_ENFORCE=1` and the hooks module unresolvable:
+
+    runBeforeNavigate -> {"ok":false,"code":"HOOKS_UNAVAILABLE",...}
+    runBeforeInput    -> {"ok":true,"skipped":true}
+
+the input context carrying
+`jsCode: "document.querySelector('#confirm-transfer').click()"` — permitted,
+with the jsCode policy, the role check and the lease all silently skipped.
+
+The guard is now one predicate, `hooksEnforcementOn()`, applied to both gates.
+It also closes two narrower holes in the copy it replaces. The bridge accepted
+only `"1"`, while `hooks.mjs`'s own `fabricEnforce()` accepts `"1"` or
+`"true"` — so `XCLAW_FABRIC_ENFORCE=true` turned enforcement on inside the
+hooks module while the bridge's guard did not recognise it. And, as in
+3.339.0, the predicate read the environment only: a host hardened the
+documented way, `profile: "prod"` in the config, left every `XCLAW_*`
+variable unset and got no guard. It now asks `isHardenedProfile()`.
+
+Deliberately not changed, because the fix would have no reader:
+
+- `runAfterAction` also skips silently, but its only caller discards the
+  return inside a swallowing `try/catch`. The missing audit receipt is real;
+  the fix belongs where the receipt is consumed, not here.
+- `runBuildChromeArgs` returns argv rather than a verdict, so the H0 invariant
+  flags are absent rather than refused when hooks are missing.
+- `fabricEnforce()` in `src/browser/hooks.mjs` is the third copy of the
+  environment-only shape, but it gates the tab-lease protocol, whose
+  acquisition side is separately gated on `XCLAW_TAB_LEASE_AUTO`. Giving it a
+  profile route would refuse every browser action on a hardened host with
+  nothing to acquire leases.
+
 ## 3.339.0
 
 ### A7 enforcement asked a variable nothing ever sets

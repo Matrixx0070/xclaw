@@ -5,6 +5,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
+import { isHardenedProfile } from "../config/profiles.mjs";
 
 function candidateRoots() {
   const roots = [];
@@ -53,16 +54,44 @@ export async function loadHooks() {
   }
 }
 
+/**
+ * Is the enforcement plane meant to be live in this process?
+ *
+ * The same question hooks.mjs asks itself, asked once here so the two planes
+ * cannot drift: both env spellings it accepts, plus the profile route, because
+ * the documented way to harden a host is profile:"prod" in the config, which
+ * leaves every XCLAW_* variable unset.
+ */
+export function hooksEnforcementOn() {
+  return (
+    process.env.XCLAW_FABRIC_ENFORCE === "1" ||
+    process.env.XCLAW_FABRIC_ENFORCE === "true" ||
+    process.env.XCLAW_COMMIT_GATES === "1" ||
+    process.env.XCLAW_COMMIT_GATES === "true" ||
+    isHardenedProfile()
+  );
+}
+
+/**
+ * What a gate returns when the enforcement plane it fronts could not be loaded.
+ *
+ * Every gate here needs it: the caller checks r.ok === false and nothing else,
+ * so { ok: true, skipped: true } reads to it exactly like an approval. A gate
+ * that skips silently under enforcement permits the action it exists to judge.
+ */
+function unavailable(phase) {
+  return {
+    ok: false,
+    code: "HOOKS_UNAVAILABLE",
+    reason: "hooks module not found while enforcement is on",
+    phase,
+  };
+}
+
 export async function runBeforeNavigate(ctx) {
   const h = await loadHooks();
   if (!h?.beforeNavigate) {
-    if (process.env.XCLAW_FABRIC_ENFORCE === "1" || process.env.XCLAW_COMMIT_GATES === "1") {
-      return {
-        ok: false,
-        code: "HOOKS_UNAVAILABLE",
-        reason: "hooks module not found while enforcement is on",
-      };
-    }
+    if (hooksEnforcementOn()) return unavailable("beforeNavigate");
     return { ok: true, skipped: true };
   }
   return h.beforeNavigate(ctx);
@@ -70,7 +99,10 @@ export async function runBeforeNavigate(ctx) {
 
 export async function runBeforeInput(ctx) {
   const h = await loadHooks();
-  if (!h?.beforeInput) return { ok: true, skipped: true };
+  if (!h?.beforeInput) {
+    if (hooksEnforcementOn()) return unavailable("beforeInput");
+    return { ok: true, skipped: true };
+  }
   return h.beforeInput(ctx);
 }
 
