@@ -1,3 +1,16 @@
+## 3.296.0 (2026-08-28)
+
+- The self-deploy watcher's config reload is gated on an ACTIONABLE intent, not
+  on the intent file existing. Nothing ever deletes a resolved intent: the live
+  box has carried a `rolled_back` fire-drill intent since 2026-08-14, so the
+  3.295.0 gate would have been satisfied on every tick forever — `loadConfig()`
+  every 5s, ~17k config banners a day in the deployer log. Caught by reading
+  the live file before restarting the watcher on 3.295.0; it never shipped to
+  the live process.
+- `isActionableIntent` is now one exported predicate used by both the watcher
+  and `runDeployOnce`, which had the same rule spelled out inline. A predicate
+  duplicated between a reader and a writer is where these two drift.
+
 ## 3.295.0 (2026-08-28)
 
 - The self-deploy watcher re-reads config before it acts. `xclaw self-deploy

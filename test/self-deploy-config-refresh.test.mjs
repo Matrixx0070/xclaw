@@ -21,8 +21,10 @@
  * it a config that DOES resolve targets. A caller that never gets a newer
  * config can never trigger the repair built for it.
  *
- * Gated on an intent being present, because `loadConfig()` logs on every call
- * and this loop ticks every 5s.
+ * Gated on an ACTIONABLE intent, because `loadConfig()` logs on every call and
+ * this loop ticks every 5s. Not on the file existing: nothing ever deletes a
+ * resolved intent, and the live box has carried a `rolled_back` fire-drill one
+ * since 2026-08-14 — gating on existence reloads ~17k times a day forever.
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -30,20 +32,26 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { runDeployWatch, writeIntent } from "../src/self/deploy.mjs";
+import { isActionableIntent, runDeployWatch, writeIntent } from "../src/self/deploy.mjs";
 
 const TARGETS = [{ channel: "telegram", to: "1234" }];
 
-async function bootCfg({ intent = true } = {}) {
+async function bootCfg({ intent = "pending" } = {}) {
   const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-deploy-cfg-"));
-  const cfg = { paths: { configDir }, alerting: {} };
+  const cfg = {
+    paths: { configDir },
+    alerting: {},
+    // Belt and braces: every test injects `consume`, but if a watcher ever
+    // ignored it, the DEFAULT restartCmd is "pm2 restart xclaw-gateway" — a
+    // test must not be able to bounce the live gateway. Point it at a no-op
+    // and keep any git work inside the temp dir.
+    self: { restartCmd: "node --version", repoDir: configDir, health: { retries: 0, delayMs: 0 } },
+  };
   if (intent) {
-    // "done" is a state runDeployOnce refuses, so even an unpatched watcher
-    // that ignores the injected consumer cannot restart anything from here.
     await writeIntent(cfg, {
       v: 1,
       missionId: "m-refresh",
-      state: "done",
+      state: intent,
       attempts: 0,
       mergeCommit: "0123456789abcdef",
     });
@@ -110,7 +118,7 @@ describe("self-deploy watcher config freshness", () => {
   });
 
   test("an idle tick does not reload — loadConfig logs, and this loop ticks every 5s", async () => {
-    const boot = await bootCfg({ intent: false });
+    const boot = await bootCfg({ intent: null });
     let reloads = 0;
 
     const seen = await watchUntilConsumed(
@@ -126,5 +134,38 @@ describe("self-deploy watcher config freshness", () => {
 
     assert.equal(seen.length, 0, "consumed with no intent present");
     assert.equal(reloads, 0, "reloaded config on an idle tick");
+  });
+
+  test("a resolved intent is not work — nothing cleans the file up", async () => {
+    // The live box carried a `rolled_back` fire-drill intent for 14 days.
+    // Gating the reload on the FILE rather than on actionable state would have
+    // called loadConfig() every 5s forever — ~17k config banners a day.
+    for (const state of ["rolled_back", "healthy", "failed"]) {
+      const boot = await bootCfg({ intent: state });
+      let reloads = 0;
+
+      const seen = await watchUntilConsumed(
+        boot,
+        {
+          reload: async () => {
+            reloads += 1;
+            return boot;
+          },
+        },
+        120
+      );
+
+      assert.equal(seen.length, 0, `consumed an intent already resolved as ${state}`);
+      assert.equal(reloads, 0, `reloaded config for an intent already resolved as ${state}`);
+    }
+  });
+
+  test("isActionableIntent answers for both the watcher and the consumer", () => {
+    assert.equal(isActionableIntent({ state: "pending" }), true);
+    assert.equal(isActionableIntent({ state: "restarting" }), true);
+    for (const state of ["healthy", "rolled_back", "failed", "done", undefined]) {
+      assert.equal(isActionableIntent({ state }), false, `${state} treated as work`);
+    }
+    assert.equal(isActionableIntent(null), false);
   });
 });

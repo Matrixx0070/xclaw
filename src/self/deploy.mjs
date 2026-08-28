@@ -162,13 +162,26 @@ async function markMission(cfg, missionId, status, note) {
 }
 
 /**
+ * Is there work in this intent?
+ *
+ * A resolved intent is never deleted — the live box carried a `rolled_back`
+ * fire-drill intent for 14 days — so "a file exists" is NOT the same question
+ * as "there is a deploy to run", and anything that treats it as such does work
+ * on every tick forever. One predicate, so the watcher and the consumer cannot
+ * drift on the answer.
+ */
+export function isActionableIntent(intent) {
+  return intent?.state === "pending" || intent?.state === "restarting";
+}
+
+/**
  * Consume a pending intent: restart → health → resolve. Idempotent — call
  * from a watch loop or once. Returns the final intent (or null if nothing
  * pending).
  */
 export async function runDeployOnce(cfg) {
   const intent = await readIntent(cfg);
-  if (!intent) return null;
+  if (!isActionableIntent(intent)) return null;
   // H10: a "restarting" intent means the process (expectedly) died mid-deploy
   // before health resolution. Resume it — re-run restart→health rather than
   // stranding the mission forever. Cap attempts so a boot-crash-loop gives up.
@@ -183,8 +196,6 @@ export async function runDeployOnce(cfg) {
       return intent;
     }
     // fall through and retry (attempts increments below)
-  } else if (intent.state !== "pending") {
-    return null;
   }
 
   intent.state = "restarting";
@@ -259,7 +270,11 @@ export async function runDeployOnce(cfg) {
  * targets — which a caller that never re-reads config cannot do.
  *
  * So re-read before acting, and only then: `loadConfig()` logs on every call
- * and this loop ticks every 5s. `reload`/`consume` are injectable for tests.
+ * and this loop ticks every 5s. "Before acting" means an ACTIONABLE intent —
+ * a resolved one is never cleaned up (the live box held a `rolled_back` intent
+ * for 14 days), so gating on the file's existence would reload 17k times a day
+ * and print the config banner with each one. `reload`/`consume` are injectable
+ * for tests.
  */
 export async function runDeployWatch(cfg, { intervalMs = 5000, signal, reload, consume } = {}) {
   const reloadCfg = reload || (async () => (await import("../config/load.mjs")).loadConfig());
@@ -267,7 +282,7 @@ export async function runDeployWatch(cfg, { intervalMs = 5000, signal, reload, c
   let current = cfg;
   while (!signal?.aborted) {
     try {
-      if (await readIntent(current)) {
+      if (isActionableIntent(await readIntent(current))) {
         try {
           const fresh = await reloadCfg();
           if (fresh) current = fresh;
