@@ -20,6 +20,7 @@
  */
 import { isLoopbackHost } from "../gateway/bind-guard.mjs";
 import { DM_POSTURE, isOpenDm, dmRemedy } from "../channels/dm-posture.mjs";
+import { auditWorkspaceIsolation } from "./workspace-isolation.mjs";
 import { PROFILES, resolveProfileName, isHardenedProfile } from "../config/profiles.mjs";
 
 export function runSecurityAudit(cfg = {}) {
@@ -178,6 +179,27 @@ export function runSecurityAudit(cfg = {}) {
         "warn",
         `${ch} DM policy is open — any sender it can see may command the agent`,
         dmRemedy(ch)
+      );
+    }
+  }
+
+  // Per-chat workspace isolation. The sandbox roots itself at each chat's
+  // workspace, so it cannot see two chats pointing at ONE root — every path is
+  // then inside both and every check passes. The predicate that catches it
+  // existed, tested, with no caller: the misconfiguration that defeats the
+  // whole feature was the one nothing could report.
+  const iso = auditWorkspaceIsolation(cfg);
+  if (iso.count > 1) {
+    if (iso.ok) {
+      add("workspace.isolation", "ok", `${iso.count} chat workspaces, all distinct`);
+    } else {
+      add(
+        "workspace.isolation",
+        prod ? "error" : "warn",
+        `${iso.issues.length} overlapping chat workspace root(s): ${iso.issues
+          .map((i) => i.detail)
+          .join("; ")}`,
+        "Give each chat its own workspace root — overlapping roots read each other's files"
       );
     }
   }

@@ -107,11 +107,23 @@ export {
 
 
 /**
+ * The per-chat workspace bindings for a channel.
+ *
+ * Two key spellings are live and both resolve at runtime, so this is the only
+ * honest answer to "which chats are bound where?". Any reader that checks just
+ * one spelling reports on half the configs the runtime actually honours.
+ */
+export function chatWorkspaceMap(cfg, channel) {
+  const conf = cfg?.channels?.[channel] || {};
+  return conf.workspaceByChatId || conf.workspaces || {};
+}
+
+/**
  * Per-chat workspace binding: channels.<name>.workspaceByChatId[id]
  */
 export function workspaceForChat(cfg, channel, chatId, fallback) {
   const conf = cfg?.channels?.[channel] || {};
-  const map = conf.workspaceByChatId || conf.workspaces || {};
+  const map = chatWorkspaceMap(cfg, channel);
   const id = chatId == null ? "" : String(chatId);
   return map[id] || conf.workingDir || fallback || undefined;
 }

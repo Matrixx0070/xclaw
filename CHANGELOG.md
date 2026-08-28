@@ -1,3 +1,53 @@
+## 3.330.0
+
+### The isolation enforcer nothing called, and the one breach the sandbox cannot see
+
+`src/security/workspace-isolation.mjs` exports three functions. A census of its
+importers returned two files, both of them its own tests. Zero production
+callers. Two green test files asserted that cross-peer isolation is enforced,
+and nothing in the running system called the enforcer.
+
+The honest split of that finding:
+
+- Path isolation IS enforced. `src/agent/loop.mjs` calls
+  `guardToolPaths(cfg, workingDir, ...)`, and `workspaceForChat` supplies the
+  per-chat `workingDir`, so a chat cannot read outside its own workspace.
+  `assertIsolatedPath` and `resolvePeerWorkspace` are redundant, not missing.
+  They are left in place: a security-shaped capability is surfaced as a
+  recommendation, never deleted in passing.
+- One misconfiguration the sandbox structurally cannot catch: two chats mapped
+  to the SAME root, or one nested inside the other. The sandbox roots itself at
+  each chat's workspace, so when two chats share a root every path is inside
+  both workspaces and every check passes, by construction. The operator has
+  configured isolation and has none. `validateWorkspaceMap` is exactly the
+  predicate that detects this — written, tested, and wired to nothing.
+
+Proven before the fix, against the shipped 3.329.0 CLI on an isolated HOME
+carrying three overlapping-root misconfigurations (same root, nested root,
+alias key): `5 error(s), 18 warning(s)` — not one of them about workspaces.
+
+Two divergences were sitting on top of it:
+
+- `workspaceForChat` reads `workspaceByChatId || workspaces` — two live key
+  spellings — while the validator read only the first. A reader that checks one
+  spelling reports on half the configs the runtime honours. Both now come from
+  one `chatWorkspaceMap` in `src/channels/policy.mjs`, at the source, rather
+  than by copying the fallback chain into a second file.
+- The validator defaulted `channel = "telegram"` and had no caller to pass
+  anything else. Channels are now derived from the config's own keys, so a
+  further channel gaining the feature cannot produce a clean report while its
+  chats share a root. Pairs are compared ACROSS channels too: isolation is a
+  property of distinct peers, and peers span channels, so `telegram:111` and
+  `slack:C1` on one root is the same breach.
+
+`runSecurityAudit` now carries a `workspace.isolation` row — `warn`, `error`
+under a hardened profile, matching the local convention. Guards against three
+defect classes this codebase has already shipped once each: an absent map is
+the default posture and reports nothing (a fault is not the same as no data);
+exactly one row is emitted however many overlaps are found (two rows sharing an
+id shipped here before); and roots are compared as resolved paths, so the
+trailing slash an operator adds by habit cannot hide a breach.
+
 ## 3.329.0
 
 ### One profile name, three recognizers, and the unknown case failed open
