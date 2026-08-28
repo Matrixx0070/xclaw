@@ -1,3 +1,36 @@
+## 3.319.0 (2026-08-28)
+
+### Fixed — the tmp sweeper's failures were unreadable by construction
+
+`sweepStaleTmp` returns `{removed, kept, skippedReferenced, errors}`. Two of its
+three callers dropped the fourth field:
+
+- `reportOpsRun` printed one line, `tmp sweep: removed N stale entries`, and
+  only when N was non-zero. A sweep whose every `fs.rm` failed — a busy mount, a
+  permission change — removes nothing, so it printed nothing, which is exactly
+  what a clean host prints. Live evidence: six `[xclaw:ops]` lines in thirteen
+  days of gateway log, every one a removal count, not one error or census among
+  them. The line is now unconditional and carries the whole census (removed /
+  kept fresh / skipped referenced), and each error is warned. Absence of the
+  line now means the sweep was never armed, never that it failed quietly.
+- the doctor's `ops.tmp` row summed `removed + kept + skippedReferenced` and
+  never read `errors`. A sweep that cannot `readdir` the tmpdir returns those
+  three empty and the reason in the fourth, so the row printed `0 xclaw tmp
+  entries, 0 past a full sweep cycle` at status **ok** — an unreadable tmpdir
+  graded as a pristine host. `tmpSweepProbe` now grades errors first, because a
+  failed sweep invalidates every count under it.
+
+This is the inverse of the defect the quota rows were fixed for at 3.313.0:
+there a missing artifact was reported as a fault, here an actual fault was
+reported as health. Same root — a count taken over a denominator that was never
+measured.
+
+Testing note: the probe body lives inside `runDoctor`, which loads the real
+config and cannot be pointed at a fixture, so the decision is pure and unit
+tested while the wiring is pinned by reading the call site. All four shipping
+lines are mutation-verified: each one, reverted, kills exactly the named test
+and nothing else.
+
 ## 3.318.0 (2026-08-28)
 
 ### Fixed — the durable memory store was a directory of directories, bounded by nothing

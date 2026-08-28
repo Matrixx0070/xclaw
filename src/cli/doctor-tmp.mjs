@@ -16,6 +16,16 @@
  * the max age, where a count is evidence of litter the sweep cannot explain —
  * a sweeper that is not running at all is ops.schedule's probe to report.
  *
+ * The row also summed removed + kept + skippedReferenced and never read the
+ * sweep's fourth field, `errors`. A sweep that cannot readdir the tmpdir
+ * returns those three empty and the reason in that field, so the row printed
+ * `0 xclaw tmp entries ... ` at status ok: an unreadable tmpdir graded as a
+ * pristine host. That is the inverse of the quota rows fixed at 3.313.0 —
+ * there a missing artifact was reported as a fault, here a fault was reported
+ * as health — and it has the same root, a count taken over a denominator that
+ * was never measured. A sweep that could not look is not one that found
+ * nothing.
+ *
  * Pure on purpose: the probe body lives inside runDoctor, which loads the real
  * config and cannot be pointed at a fixture.
  */
@@ -41,6 +51,8 @@ export function tmpGradeAgeMs({ maxAgeMs, intervalMs, sweepEnabled = true }) {
  * @param {number} o.maxAgeMs the sweeper's own retention bound
  * @param {number} o.intervalMs how often the sweep actually runs
  * @param {boolean} [o.sweepEnabled] false when config switched the sweep off
+ * @param {string[]} [o.errors] sweep failures — an unreadable tmpdir, or one
+ *   rm per entry the sweep could not remove
  * @returns {{status:"ok"|"warn", message:string}}
  */
 export function tmpSweepProbe({
@@ -50,7 +62,19 @@ export function tmpSweepProbe({
   intervalMs,
   sweepEnabled = true,
   threshold = DEFAULT_TMP_THRESHOLD,
+  errors = [],
 }) {
+  // First, because a failed sweep invalidates every count below: those come
+  // back zero whether the directory was empty or unreadable, and reporting the
+  // zero would print a measurement that was never taken.
+  if (errors.length) {
+    const more = errors.length > 1 ? ` (+${errors.length - 1} more)` : "";
+    return {
+      status: "warn",
+      message: `xclaw tmp sweep could not complete: ${errors[0]}${more}`,
+    };
+  }
+
   const over = unswept > threshold;
 
   // Nothing is coming to collect these, so the manual command is the remedy

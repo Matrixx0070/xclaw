@@ -74,18 +74,30 @@ export async function runDueOps(cfg = {}, opts = {}) {
 /**
  * Log one run's outcome through the caller's logger.
  *
- * This is the ONLY path from runOpsMaintenance's result to a human — nothing
+ * This is the ONLY path from the daily pass's result to a human — nothing
  * else in the codebase reads that object. It used to print the ledger and the
  * rotations and drop everything else, so the proof-bundle (3.316.0),
  * checkpoint (3.317.0) and memory-store (3.318.0) censuses were computed once
  * a day and seen by no one. The memory sweep in particular promises that a
  * directory it cannot attribute is counted `unattributable` and left alone;
- * that promise is worth nothing unheard.
+ * that promise is worth nothing unheard. The tmp sweeper's `errors` had the
+ * same problem one field over: dropped here, dropped by the doctor row, read
+ * only by a manual CLI nobody runs.
  */
 export function reportOpsRun(result, log = console.log, warn = console.warn) {
   if (!result?.ran) return;
-  if (result.tmp?.removed?.length) {
-    log(`[xclaw:ops] tmp sweep: removed ${result.tmp.removed.length} stale entries`);
+  const tmp = result.tmp;
+  if (tmp) {
+    // Unconditional, for the same reason the maintenance censuses are: the old
+    // line printed only when something was removed, so a sweep whose every rm
+    // failed printed nothing at all — byte-identical to a clean host. Absence
+    // of this line now means the sweep was never armed, never that it failed.
+    log(
+      `[xclaw:ops] tmp sweep: removed ${tmp.removed?.length || 0}, kept ${tmp.kept || 0} fresh, ` +
+        `skipped ${tmp.skippedReferenced?.length || 0} referenced`
+    );
+    // sweepStaleTmp's fourth field had no reader anywhere on this path.
+    for (const e of tmp.errors || []) warn("[xclaw:ops] tmp sweep:", e);
   }
   const m = result.maintenance;
   if (m && !m.skipped) {

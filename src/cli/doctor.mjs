@@ -743,6 +743,7 @@ export async function runDoctor(opts = {}) {
       ...grade,
       unswept: r.removed.length,
       total: r.removed.length + r.kept + r.skippedReferenced.length,
+      errors: r.errors,
     });
     push("ops.tmp", p.status, p.message);
   } catch (err) {
