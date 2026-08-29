@@ -1,3 +1,44 @@
+## 3.347.0
+
+### a malformed seat budget did not fail closed — it removed the cap
+
+`resolveSeat` resolved six numbers with bare `??` and no validation, and
+`checkSeatBudget` multiplies them into a cap: `dailyUsd * hardPct`. Any
+non-numeric value anywhere in that product makes the cap `NaN`, and
+`projected > NaN` is false for every spend forever. Measured against the real
+module, a seat $100 over a $1 budget:
+
+| seat config | resolved hard cap | $100 spend |
+| --- | --- | --- |
+| sane baseline | `1` | DENY |
+| `defaultDailyUsd: "five"` | `NaN` | **ALLOW** |
+| `hardPct: "one"` | `NaN` | **warn only, never denied** |
+| `hardPct: 0` (deny everything) | `1` | strictest value discarded |
+| `softPct: 1.5` | soft above hard | mid-band **ALLOW**, no warning |
+
+The third row is the worst shape: the soft warning still fires, so the seat
+looks enforced while the deny never happens.
+
+The ordering defect needs no malformed value at all. The hard cap is tested
+before the soft one, so a soft percentage at or above the hard one makes the
+warning band unreachable — and an operator who tightens `hardPct` to `0.5`
+leaves the default `softPct` of `0.8` above it. Tightening the cap is what
+removes the warning that precedes it, and the seat jumps from allowed to
+denied with nothing in between.
+
+Fixed in `resolveSeat`: every number resolves through a finite-checked
+candidate list (an explicit `null` still means unset, as `??` had it), and the
+soft percentage is pulled below the hard one when it is not already. Zero stays
+zero on both — `hardPct: 0` means deny everything and `softPct: 0` means warn
+from the first cent; both are the strictest value, not an absent one.
+
+Because `resolveSeat` now guarantees finite numbers, the consumer's
+`(seat.hardPct || 1)` and `(seat.softPct || 0.8)` fallbacks are dead and are
+removed — they were exactly what threw a strictest `0` away.
+
+Seats are off in live config (`seats` is unset), so this ships as a guard on a
+wired preflight path (`src/tokens/dual-preflight.mjs`), not as a live repair.
+
 ## 3.346.0
 
 ### tightening the budget switched off the budget's own savings mode

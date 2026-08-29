@@ -30,6 +30,15 @@ export function peerKey(peer) {
   return `${ch}:${id}`;
 }
 
+function num(fallback, ...candidates) {
+  for (const v of candidates) {
+    if (v == null) continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
 /**
  * Resolve seat config for a peer.
  */
@@ -38,15 +47,26 @@ export function resolveSeat(cfg, peer) {
   const key = peerKey(peer);
   const byPeer = s.byPeer || {};
   const overrides = byPeer[key] || byPeer[peer?.id] || {};
+  // Every one of these is multiplied into a cap: `dailyUsd * hardPct`. A value
+  // that is not a number makes the cap NaN, and `projected > NaN` is false for
+  // every spend — so a malformed seat budget does not fail closed, it removes
+  // the cap. And because the hard cap is tested BEFORE the soft one, a soft
+  // percentage at or above the hard one makes the warning unreachable: an
+  // operator who tightens `hardPct` to 0.5 leaves the default `softPct` of 0.8
+  // above it and the seat jumps from allowed to denied with no warning first.
+  // Zero stays zero on both — the strictest value is a value, not an absent one.
+  const hard = num(1.0, overrides.hardPct, s.hardPct);
+  const softRaw = Math.max(0, num(0.8, overrides.softPct, s.softPct));
+  const soft = softRaw < hard ? softRaw : Math.min(0.8, hard * 0.8);
   return {
     id: overrides.id || key,
     peerKey: key,
     label: overrides.label || key,
     enabled: overrides.enabled !== false,
-    dailyUsd: overrides.dailyUsd ?? s.defaultDailyUsd ?? 2,
-    dailyTokens: overrides.dailyTokens ?? s.defaultDailyTokens ?? 500_000,
-    softPct: overrides.softPct ?? s.softPct ?? 0.8,
-    hardPct: overrides.hardPct ?? s.hardPct ?? 1.0,
+    dailyUsd: num(2, overrides.dailyUsd, s.defaultDailyUsd),
+    dailyTokens: num(500_000, overrides.dailyTokens, s.defaultDailyTokens),
+    softPct: soft,
+    hardPct: hard,
     paused: Boolean(overrides.paused),
   };
 }
@@ -105,10 +125,10 @@ export async function checkSeatBudget(cfg, peer, { estimateUsd = 0, estimateToke
   const projectedUsd = (row.spentUsd || 0) + (estimateUsd || 0);
   const projectedTok = (row.tokens || 0) + (estimateTokens || 0);
 
-  const hardUsd = seat.dailyUsd * (seat.hardPct || 1);
-  const softUsd = seat.dailyUsd * (seat.softPct || 0.8);
-  const hardTok = seat.dailyTokens * (seat.hardPct || 1);
-  const softTok = seat.dailyTokens * (seat.softPct || 0.8);
+  const hardUsd = seat.dailyUsd * seat.hardPct;
+  const softUsd = seat.dailyUsd * seat.softPct;
+  const hardTok = seat.dailyTokens * seat.hardPct;
+  const softTok = seat.dailyTokens * seat.softPct;
 
   if (projectedUsd > hardUsd || projectedTok > hardTok) {
     row.denies = (row.denies || 0) + 1;
