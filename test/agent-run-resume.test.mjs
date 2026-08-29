@@ -1,0 +1,222 @@
+import { describe, it, before } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { saveAgentRun, loadAgentRun } from "../src/agent/run-store.mjs";
+import {
+  isResumableAgentRun,
+  goalFromAgentRun,
+  reconcileInterruptedAgentRuns,
+  resumeAgentRunAsObjective,
+  reconcileAndResumeAgentRuns,
+  listResumableAgentRuns,
+} from "../src/agent/run-resume.mjs";
+import { loadObjective } from "../src/agent/objective-store.mjs";
+
+describe("isResumableAgentRun", () => {
+  it("resumes crash-mid-loop and turn-cap cutoffs", () => {
+    assert.equal(isResumableAgentRun({ status: "active", stopReason: "segment" }), true);
+    assert.equal(isResumableAgentRun({ status: "interrupted", stopReason: "segment" }), true);
+    assert.equal(isResumableAgentRun({ status: "maxTurns", stopReason: "maxTurns" }), true);
+    assert.equal(isResumableAgentRun({ status: "active" }), true);
+  });
+
+  it("does not resume kill, approval, budget, or natural completion", () => {
+    assert.equal(isResumableAgentRun({ status: "completed", stopReason: "natural" }), false);
+    assert.equal(isResumableAgentRun({ status: "aborted", stopReason: "aborted" }), false);
+    assert.equal(isResumableAgentRun({ status: "approval", stopReason: "approval" }), false);
+    assert.equal(isResumableAgentRun({ status: "budget", stopReason: "budget" }), false);
+    assert.equal(isResumableAgentRun({ status: "policy", stopReason: "policy" }), false);
+    assert.equal(isResumableAgentRun({ status: "guard", stopReason: "guard" }), false);
+    assert.equal(isResumableAgentRun({ status: "resumed", stopReason: "maxTurns" }), false);
+  });
+
+  it("does not resume a snapshot already promoted", () => {
+    assert.equal(
+      isResumableAgentRun({
+        status: "interrupted",
+        stopReason: "maxTurns",
+        resumedAt: "2026-08-29T00:00:00.000Z",
+        objectiveId: "obj_x",
+      }),
+      false
+    );
+  });
+
+  it("does not resume stale snapshots past maxAgeMs", () => {
+    const old = {
+      status: "active",
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    };
+    assert.equal(isResumableAgentRun(old, { now: Date.parse("2026-08-29"), maxAgeMs: 48 * 3600 * 1000 }), false);
+    assert.equal(
+      isResumableAgentRun(
+        { status: "active", updatedAt: new Date().toISOString() },
+        { maxAgeMs: 48 * 3600 * 1000 }
+      ),
+      true
+    );
+  });
+});
+
+describe("goalFromAgentRun", () => {
+  it("prefers meta.goal over transcript notices", () => {
+    assert.equal(
+      goalFromAgentRun({
+        meta: { goal: "write the report" },
+        messages: [{ role: "user", content: "[XClaw notice] Turn checkpoint" }],
+      }),
+      "write the report"
+    );
+  });
+
+  it("skips runtime notices when picking a user message", () => {
+    assert.equal(
+      goalFromAgentRun({
+        messages: [
+          { role: "user", content: "build the feature" },
+          { role: "user", content: "[XClaw notice] Turn checkpoint (3/12 turns used)." },
+        ],
+      }),
+      "build the feature"
+    );
+  });
+
+  it("returns empty when nothing usable exists", () => {
+    assert.equal(goalFromAgentRun({ messages: [{ role: "user", content: "[XClaw notice] x" }] }), "");
+    assert.equal(goalFromAgentRun({}), "");
+  });
+});
+
+describe("reconcile + resume agent-runs", () => {
+  let cfg;
+  let wd;
+  before(async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-run-resume-"));
+    wd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-run-wd-"));
+    cfg = { paths: { configDir: dir } };
+  });
+
+  it("stamps active snapshots interrupted", async () => {
+    await saveAgentRun(cfg, {
+      sessionId: "crash_active",
+      workingDir: wd,
+      status: "active",
+      stopReason: "segment",
+      turns: 4,
+      meta: { goal: "finish the patch" },
+    });
+    const ids = await reconcileInterruptedAgentRuns(cfg);
+    assert.ok(ids.includes("crash_active"));
+    const loaded = await loadAgentRun(cfg, "crash_active");
+    assert.equal(loaded.run.status, "interrupted");
+    assert.equal(loaded.run.stopReason, "segment");
+  });
+
+  it("promotes an interrupted cutoff into an objective and is idempotent", async () => {
+    await saveAgentRun(cfg, {
+      sessionId: "cap_hit",
+      workingDir: wd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+      turns: 12,
+      meta: { goal: "analyse the whole repo" },
+      messages: [{ role: "assistant", content: "Partial analysis so far." }],
+      toolTrace: [{ artifacts: [{ type: "file", ref: "/tmp/notes.md" }] }],
+    });
+    const started = [];
+    const first = await resumeAgentRunAsObjective(cfg, (await loadAgentRun(cfg, "cap_hit")).run, {
+      start: async (obj) => {
+        started.push(obj.id);
+      },
+    });
+    assert.equal(first.ok, true);
+    assert.ok(first.objectiveId);
+    assert.equal(started.length, 1);
+    const obj = await loadObjective(cfg, first.objectiveId);
+    assert.equal(obj.objective, "analyse the whole repo");
+    assert.ok(obj.progress.some((p) => /Recovered after process restart/.test(p)));
+    assert.ok(obj.inspected.files.includes("/tmp/notes.md"));
+    assert.ok(obj.inFlightSegment);
+
+    const stamped = await loadAgentRun(cfg, "cap_hit");
+    assert.equal(stamped.run.status, "resumed");
+    assert.equal(stamped.run.objectiveId, first.objectiveId);
+
+    const second = await resumeAgentRunAsObjective(cfg, stamped.run, {
+      start: async () => {
+        throw new Error("must not start twice");
+      },
+    });
+    assert.equal(second.ok, false);
+    assert.equal(second.reason, "not_resumable");
+  });
+
+  it("does not resume an aborted kill", async () => {
+    await saveAgentRun(cfg, {
+      sessionId: "killed",
+      workingDir: wd,
+      status: "aborted",
+      stopReason: "aborted",
+      meta: { goal: "do not continue this" },
+    });
+    const started = [];
+    const out = await resumeAgentRunAsObjective(cfg, (await loadAgentRun(cfg, "killed")).run, {
+      start: async (obj) => started.push(obj.id),
+    });
+    assert.equal(out.ok, false);
+    assert.equal(started.length, 0);
+  });
+
+  it("reconcileAndResume honors autoResume:false and the max cap", async () => {
+    await saveAgentRun(cfg, {
+      sessionId: "cap_a",
+      workingDir: wd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+      meta: { goal: "one" },
+    });
+    await saveAgentRun(cfg, {
+      sessionId: "cap_b",
+      workingDir: wd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+      meta: { goal: "two" },
+    });
+    const off = await reconcileAndResumeAgentRuns(
+      { ...cfg, agent: { autoResume: false } },
+      { start: async () => {} }
+    );
+    assert.equal(off.skipped, "autoResume_false");
+    assert.equal(off.resumed.length, 0);
+
+    const started = [];
+    const on = await reconcileAndResumeAgentRuns(
+      { ...cfg, agent: { autoResumeMax: 1 } },
+      {
+        start: async (obj) => started.push(obj.id),
+      }
+    );
+    assert.equal(on.resumed.length, 1);
+    assert.equal(started.length, 1);
+    const still = await listResumableAgentRuns(cfg);
+    assert.ok(still.length >= 1, "the uncapped leftover stays resumable");
+  });
+
+  it("skips a snapshot with no recoverable goal", async () => {
+    await saveAgentRun(cfg, {
+      sessionId: "empty_goal",
+      workingDir: wd,
+      status: "active",
+      messages: [{ role: "user", content: "[XClaw notice] Turn checkpoint" }],
+    });
+    const out = await resumeAgentRunAsObjective(cfg, (await loadAgentRun(cfg, "empty_goal")).run, {
+      start: async () => {
+        throw new Error("no start without a goal");
+      },
+    });
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, "no_goal");
+  });
+});

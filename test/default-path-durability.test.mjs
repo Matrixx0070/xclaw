@@ -45,4 +45,11 @@ describe("default-path durability wiring", () => {
       /if \(options\.sessionId \|\| options\.persistRun\)/
     );
   });
+
+  it("gateway boot auto-resumes interrupted agent-runs through the objective orchestrator", () => {
+    const src = read("src/gateway/index.mjs");
+    assert.match(src, /reconcileAndResumeAgentRuns/);
+    assert.match(src, /resumeObjectiveDetached/);
+    assert.match(src, /agent-runs/);
+  });
 });

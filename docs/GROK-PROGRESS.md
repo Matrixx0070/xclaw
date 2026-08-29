@@ -711,3 +711,20 @@ err / 8 warn. Did not run the full 876-file suite this slice.
 UNVERIFIED: live `xclaw agent` turn-cap → mission on a real model;
 gateway boot auto-resume of agent-runs (objectives already auto-resume);
 full npm test.
+
+## 2026-08-29 — 3.377.0 crashed runs resume as objectives
+
+STATUS: green
+DISCOVERED: snapshots wrote (3.376) but gateway boot never read them.
+Objectives auto-resumed; agent-runs did not. A kill -9 left durable
+state that nothing continued.
+BUILT: `src/agent/run-resume.mjs` — classify resumable (active /
+maxTurns / segment; NOT aborted/approval/budget/completed), stamp
+interrupted, promote into existing objective orchestrator with
+in-flight "verify before rewrite", idempotent resumedAt/objectiveId.
+Cap 3, age 48h, `agent.autoResume:false` opt-out. Wired in gateway
+boot next to objective auto-resume.
+RAN: 28 persist/resume tests + 35 with objective/loop suites, all
+pass. Defaults parse (`autoResume true 3`).
+UNVERIFIED: live kill -9 of a real agent then gateway restart on
+this host; full npm test; false-completion on default chat (next).

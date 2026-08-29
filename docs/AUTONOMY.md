@@ -136,6 +136,13 @@ durable objective on channels, webchat, and the CLI (CLI awaits the
 mission so the process does not exit mid-work). Disable with
 `objectives.autoPromote: false`.
 
+Gateway boot auto-resumes unfinished **agent-run snapshots** the same
+way it already resumes interrupted objectives: `active` / `maxTurns`
+runs are promoted into an objective with an in-flight warning so the
+next segment verifies disk before rewriting. Kill, approval, and budget
+stops stay put. Cap: `agent.autoResumeMax` (default 3). Age: 48h.
+Opt out: `agent.autoResume: false`.
+
 
 ## Telegram channel
 

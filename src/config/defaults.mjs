@@ -145,6 +145,15 @@ export const DEFAULT_CONFIG = {
   },
   maxTurns: 15,
     /**
+     * Boot: promote interrupted agent-run snapshots (crash mid-loop or
+     * turn-cap cutoff) into the objective orchestrator. Kill/approval/
+     * budget stops stay put. Opt out: agent.autoResume:false.
+     */
+    autoResume: true,
+    autoResumeMax: 3,
+    autoResumeMaxAgeMs: 172800000, // 48h — stale TUI sessions stay idle
+
+    /**
      * Tool-loop detection (OpenClaw-ported).
      * Env: XCLAW_LOOP_GUARD=off | XCLAW_LOOP_GUARD_GLOBAL=60 | _CRITICAL | _WARNING
      * Profiles adjust thresholds (lab higher, prod tighter).

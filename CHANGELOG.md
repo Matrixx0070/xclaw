@@ -1,3 +1,23 @@
+## 3.377.0
+
+### A crashed run is a mission, not a tombstone
+
+v3.376.0 made default-path runs actually write `~/.xclaw/agent-runs/`.
+Gateway boot already auto-resumed interrupted *objectives* and marked
+interrupted *missions* resumable. Agent-run snapshots were a museum:
+a `kill -9` left durable state that nothing ever continued.
+
+Boot now stamps `active` snapshots `interrupted` and promotes a
+bounded number (default 3, 48h max age) into the existing objective
+orchestrator. The recovered mission is seeded with the prior goal,
+inspected files, and an in-flight warning so the next segment
+*verifies* disk instead of blindly rewriting. A snapshot already
+promoted is not promoted again.
+
+Kill (`aborted`), pending approval, budget, policy, and natural
+completion stay put — a human "stop" is not an invitation to restart.
+Opt out: `agent.autoResume: false`.
+
 ## 3.376.0
 
 ### Default agent surfaces persist and continue

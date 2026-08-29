@@ -1103,6 +1103,32 @@ export async function startGateway({ root, harness = false } = {}) {
         }
       })
       .catch(() => {});
+    // Agent-run snapshots (Feature 2): a crash used to leave ~/.xclaw/agent-runs
+    // as a museum. Objectives already auto-resume; this promotes unfinished
+    // default-path runs (active / maxTurns) into that same orchestrator.
+    // Kill, approval, and budget stops stay put. Opt out: agent.autoResume:false.
+    import("../agent/run-resume.mjs")
+      .then(async (rr) => {
+        const { resumeObjectiveDetached } = await import("./routes/objectives.mjs");
+        const out = await rr.reconcileAndResumeAgentRuns(cfg, {
+          start: (obj) => resumeObjectiveDetached(cfg, obj),
+        });
+        if (out.touched?.length) {
+          console.log(
+            `[xclaw:agent-runs] marked ${out.touched.length} interrupted run(s): ${out.touched.join(", ")}`
+          );
+        }
+        if (out.resumed?.length) {
+          console.log(
+            `[xclaw:agent-runs] auto-resumed ${out.resumed.length} as objective(s): ${out.resumed.map((r) => r.objectiveId).join(", ")}`
+          );
+        } else if (out.skipped) {
+          console.log(`[xclaw:agent-runs] auto-resume skipped (${out.skipped})`);
+        }
+      })
+      .catch((e) => {
+        console.warn("[xclaw:agent-runs] auto-resume:", e?.message || e);
+      });
   } catch (e) {
     console.warn("[xclaw] subagent persistence:", e.message);
   }

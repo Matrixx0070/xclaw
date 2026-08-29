@@ -74,6 +74,11 @@ export async function saveAgentRun(cfg, snapshot) {
     stopReason: snapshot.stopReason || null,
     truncated: Boolean(snapshot.truncated),
     meta: snapshot.meta || {},
+    // v3.377: boot resume stamps these so a second restart does not
+    // promote the same snapshot twice (idempotent recovery).
+    resumedAt: snapshot.resumedAt || null,
+    objectiveId: snapshot.objectiveId || null,
+    stopRequested: Boolean(snapshot.stopRequested),
   };
   // Cap serialized size roughly
   let text = JSON.stringify(body, null, 2);
@@ -158,9 +163,11 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
         sessionId: loaded.run.sessionId,
         updatedAt: loaded.run.updatedAt,
         status: loaded.run.status,
+        stopReason: loaded.run.stopReason || null,
         turns: loaded.run.turns,
         model: loaded.run.model,
         messageCount: (loaded.run.messages || []).length,
+        objectiveId: loaded.run.objectiveId || null,
       });
     } else {
       out.push({ sessionId: id, error: loaded.code });

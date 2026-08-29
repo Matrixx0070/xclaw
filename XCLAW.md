@@ -20,6 +20,7 @@
 - **Spawn:** approved bash runs the **frozen** command (`-c`, not login `-lc`) when a plan is bound.
 - **OS sandbox:** `XCLAW_OS_SANDBOX=auto|bwrap|off` — bubblewrap when installed **and** usable (some CI hosts block uid maps).
 - **Kill:** `node bin/xclaw.mjs stop-all` · `sessions-active`.
+- **Resume:** gateway boot auto-resumes unfinished agent-run snapshots as objectives (kill/approval/budget stay put). `agent.autoResume:false` to opt out.
 - **Prod:** set `XCLAW_GATEWAY_TOKEN`; do not run exposed gateway with lab auto-approve.
 
 ## MCP (agent-loop native)
