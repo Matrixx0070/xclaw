@@ -19,7 +19,6 @@
  *  - Model routing per phase via cfg.missions.models {plan, execute, repair}.
  */
 import path from "node:path";
-import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { runAgentLoop } from "../agent/loop.mjs";
 import {
@@ -37,6 +36,7 @@ import { createApprovalGate } from "../security/approvals.mjs";
 import { getSharedLedger } from "../ops/ledger.mjs";
 import { runSwarmFanOut, resumeSwarmRun, normalizeTaskGraph } from "../agents/swarm-run.mjs";
 import { spawnSubagent } from "../agents/spawn.mjs";
+import { sh, shArgs } from "./run-cmd.mjs";
 import {
   newMission,
   saveMission,
@@ -46,26 +46,6 @@ import {
 } from "./store.mjs";
 
 const running = new Map(); // id -> {promise, abort}
-
-function sh(cmd, cwd, timeoutMs = 300_000) {
-  return new Promise((resolve) => {
-    const child = spawn("bash", ["-c", cmd], { cwd });
-    let out = "";
-    const timer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch {}
-    }, timeoutMs);
-    child.stdout?.on("data", (d) => (out += d));
-    child.stderr?.on("data", (d) => (out += d));
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({ code: code ?? 1, output: out.slice(-20_000) });
-    });
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      resolve({ code: 1, output: String(e.message) });
-    });
-  });
-}
 
 /** Detect the project's own verification commands (or use configured ones). */
 export async function detectVerifyCommands(dir, configured) {
@@ -572,27 +552,6 @@ async function snapshotWorktree(mission, phase) {
     ],
     dir
   );
-}
-
-/** argv-style runner (no shell quoting hazards) for snapshot git plumbing. */
-function shArgs(cmd, args, cwd, timeoutMs = 30_000) {
-  return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd });
-    let output = "";
-    const timer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch {}
-    }, timeoutMs);
-    child.stdout?.on("data", (d) => (output += d));
-    child.stderr?.on("data", (d) => (output += d));
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({ code: code ?? 1, output });
-    });
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      resolve({ code: 1, output: e.message });
-    });
-  });
 }
 
 async function runVerification(cfg, mission) {

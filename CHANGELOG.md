@@ -1,3 +1,57 @@
+## 3.364.0
+
+### A verify timeout that could not reach the process holding the pipe
+
+`sh()` in `src/missions/engine.mjs` took a `timeoutMs` (300s by default) and
+armed a `setTimeout` that called `child.kill("SIGKILL")`. The kill could not
+work. `spawn` without `detached: true` leaves the child in the PARENT's process
+group, so the signal reached only the direct `bash` pid — and for any command
+that backgrounds work, that pid has already exited. The resulting `ESRCH` went
+into a bare `catch {}`. The promise then kept waiting, because it settles on
+`'close'`, which fires only after BOTH stdio streams reach EOF, and the
+surviving grandchild still holds the write end of that pipe.
+
+Measured against the shipped bodies, extracted verbatim:
+
+| command | timeout | resolved after |
+|---|---|---|
+| `sleep 5 & echo hi` | 200ms | **5006ms** |
+| grandchild that never exits | any | **never** |
+
+This is the verification path. `npm test --silent` is auto-detected for any node
+repo with a `test` script (`engine.mjs:79`), and on this repo `npm test` runs
+`scripts/test-hermetic.mjs` with `stdio: "inherit"`, so the whole `node --test`
+tree writes into `sh()`'s pipe. There is no outer bound to catch it:
+`bailIfAborted` is checked at phase boundaries only, and `sh` takes no abort
+signal — a wedged verify holds its `running` map entry until the process is
+restarted.
+
+`shArgs` carried the same defect, byte-identically.
+
+### Fixed
+
+Both twins are gone from `engine.mjs` and now live in a new primitive,
+`src/missions/run-cmd.mjs`, over one shared `runProcess()`:
+
+- **`detached: true` + `process.kill(-child.pid, "SIGKILL")`** — signal the
+  GROUP, so the kill reaches the grandchildren that hold the pipe. This is the
+  fix `src/computer/modules/bash-tool.mjs:26-42,213-220` already made on the
+  other plane, for the same reason.
+- **Output is bounded at accumulation, not at resolve.** `out.slice(-20_000)`
+  ran once, at the end; a command that printed for an hour held every byte in
+  memory first. The final value is unchanged.
+- **A killed command now says so.** It used to resolve `{code: 1, output:
+  <partial>}` — indistinguishable from a genuine test failure, so the repair
+  loop worked against a truncated log with nothing marking the cut. Output now
+  carries `[xclaw] command timed out after Nms and was killed`.
+
+The now-dead `import { spawn } from "node:child_process"` was removed from
+`engine.mjs`.
+
+Tradeoff, already accepted by `bash-tool`: `detached` removes the child from the
+parent's process group, so it no longer dies with a parent Ctrl-C. The timeout
+is what stops it now — which is the point.
+
 ## 3.363.0
 
 ### The mandatory verify floor was a default an operator could delete
