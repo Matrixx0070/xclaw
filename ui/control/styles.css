@@ -83,7 +83,9 @@ body {
   backdrop-filter: blur(8px);
 }
 .view-title { margin: 0; font-size: 16px; flex: 1; }
-.top-actions { display: flex; gap: 8px; }
+.top-actions { display: flex; gap: 8px; align-items: center; }
+/* When the visible view's data was last loaded — quiet until you need it. */
+.refresh-stamp { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
 .icon-btn {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
   border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: 14px;

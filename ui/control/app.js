@@ -38,7 +38,14 @@ function kvHtml(rows) {
 }
 
 async function getJSON(url, opts) {
-  const r = await fetch(url, opts);
+  let r;
+  try {
+    r = await fetch(url, opts);
+  } catch (e) {
+    // A bare "Failed to fetch" in a card names neither the endpoint nor the
+    // cause; with two dozen cards on the page it is undebuggable.
+    throw new Error(`${url}: ${e.message || "network error"}`);
+  }
   const text = await r.text();
   let body;
   try {
@@ -46,7 +53,7 @@ async function getJSON(url, opts) {
   } catch {
     body = { raw: text };
   }
-  if (!r.ok) throw new Error(body.error || r.statusText || String(r.status));
+  if (!r.ok) throw new Error(`${url}: ${body.error || r.statusText || String(r.status)}`);
   return body;
 }
 

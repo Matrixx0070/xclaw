@@ -1,3 +1,42 @@
+## 3.370.0
+
+### The operator console goes live
+
+Found by using the console the way it is actually deployed: a pm2-managed
+app window that stays open for days. Every card fetched its data exactly
+once, at page load. After 30 hours open, the Overview reported
+`Version 3.294.0` against a gateway running 3.368.0, Health & Ops showed a
+dashboard stamped 30 hours earlier, and Approvals displayed a stuck
+`Failed to fetch` from some hour-old hiccup. A monitoring surface whose
+numbers are silently 30 hours old is worse than none — it reads as
+current and lies.
+
+The refresh wiring already existed: every card has a Refresh button bound
+to its loader, and the topbar button runs `refreshAll()`. The new
+`ui/control/auto-refresh.mjs` adds no second loader registry (two lists of
+one decision drift — the lesson `ui-routes.mjs` documents). It re-fires
+the visible view's own Refresh buttons plus `refreshAll()`:
+
+- on view switch (navigating to a page now loads that page's data),
+- on window focus / visibility return,
+- on a 30s tick while the window is visible — never while hidden.
+
+The fire/hold decision lives in an exported `createRefreshGate` so node
+tests pin it: nav and manual fires are always honored, focus/interval
+fires collapse into a 5s floor (a focus event rides every nav click), and
+a hidden window fires nothing. The topbar gains an `as of HH:MM:SS` stamp
+naming the moment the visible data was loaded.
+
+Also: `getJSON` failures now name the endpoint. A bare `Failed to fetch`
+in one of two dozen cards names neither the URL nor the cause; the same
+error now reads `/approvals/pending: Failed to fetch`.
+
+Unpinned by unit test (browser-only wiring, no DOM rig in the suite): the
+event listeners and button re-fire loop in `auto-refresh.mjs`'s wiring
+block. Live-driven instead via CDP against the running gateway — view
+switches load fresh data, the stamp ticks, and a post-restart Overview
+shows the running version without a manual refresh.
+
 ## 3.369.0
 
 ### One log line turned a green nightly check into a false alarm
