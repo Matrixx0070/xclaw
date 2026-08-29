@@ -1,3 +1,45 @@
+## 3.373.0
+
+### A verdict has to have been read, not merely parsed
+
+The nightly live-e2e job grades itself on two facts: the child's exit
+code, and whether a report was recovered from its stdout. The second is
+one boolean, `parsed`, and it is the only thing standing between
+`gradeLiveE2e` and inventing a pass — exit 1 is the producer's "warnings
+only" code, and `if (parsed && code === 1)` returns
+`{ok: true, reason: "warnings"}`. So `parsed` had to mean "a verdict was
+read". It meant "some JSON object was found".
+
+Two ways in, both measured on fixtures:
+
+The whole-stream fast path accepted any object. The producer's
+dependencies write structured logs to the same stream — `manager.mjs`
+logs when the computer starts, reuses or exits. One line of
+`{"level":"info","msg":"computer exited","code":0}` and nothing else
+parses as the whole stream, so `parsed` was true with no report in hand;
+with exit 1 the run graded `ok:true reason:warnings` having produced
+zero checks.
+
+The salvage path was worse, because it fires exactly when the producer
+died mid-write. A truncated pretty-printed report fails the whole-file
+parse, the line-anchored scan then recovers the last *complete nested
+element* — one entry of `results` — and last-candidate-wins returned it
+as the report. Measured on a report cut at its middle check, the
+accepted "report" was `{"id":"live.jscode_block","status":"fail"}`: a
+failing check, read as the verdict, and the run still graded ok.
+
+Both now go through one contract: an object is a candidate verdict only
+if it carries the field the grader consults, `typeof j.ok === "boolean"`.
+Report-shaped objects (`ok` plus a `results` array) still win over
+merely-verdict-carrying ones, so a real report can never lose to a
+trailing blob. Nothing else changes: a run that emitted no verdict now
+reaches `reason: "unparseable"`, which is a hard not-ok, which is what a
+run that produced no checks deserves.
+
+Three tests, each failing before the change: the ambient log line, the
+truncated report, and the end-to-end shape — a producer that logs and
+exits 1 without reporting must not grade as warnings.
+
 ## 3.372.0
 
 ### The TUI names the doors it points at

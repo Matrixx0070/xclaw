@@ -130,16 +130,31 @@ function looksLikeReport(j) {
 }
 
 /**
+ * The minimum an object must carry to be read as a verdict at all: the one
+ * field the grader consults. Anything without it -- an ambient structured log
+ * line from a dependency, a single `results` element recovered out of a
+ * half-written report -- is not a report, and accepting it hands
+ * gradeLiveE2e a `parsed: true`, which is the only thing standing between it
+ * and inventing a pass for a run that produced no verdict.
+ */
+function carriesVerdict(j) {
+  return !!j && typeof j === "object" && !Array.isArray(j) && typeof j.ok === "boolean";
+}
+
+/**
  * The best candidate: a report-shaped object if any, else the last object
- * recovered. Position alone was the old rule, and it let any later object --
- * a debug dump from a dependency -- overwrite the verdict.
+ * that at least carries a verdict. Position alone was the old rule, and it
+ * let any later object -- a debug dump from a dependency, or one element of
+ * the report being written when the producer died -- become the verdict.
  */
 function pickReport(candidates) {
   for (let i = candidates.length - 1; i >= 0; i--) {
     if (looksLikeReport(candidates[i])) return { report: candidates[i], parsed: true };
   }
-  const last = candidates[candidates.length - 1];
-  return last ? { report: last, parsed: true } : { report: null, parsed: false };
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    if (carriesVerdict(candidates[i])) return { report: candidates[i], parsed: true };
+  }
+  return { report: null, parsed: false };
 }
 
 /**
@@ -149,7 +164,7 @@ function pickReport(candidates) {
 export function extractJsonReport(text) {
   if (typeof text !== "string" || !text) return { report: null, parsed: false };
   const whole = tryParse(text);
-  if (whole.parsed) return whole;
+  if (whole.parsed && carriesVerdict(whole.report)) return whole;
   // Well-formed JSON that is not a report object (an array, null, a number)
   // is a producer that answered the wrong question, not a report buried in
   // noise. Salvaging an element out of it would invent a verdict, so stop

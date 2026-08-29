@@ -236,3 +236,61 @@ test("a report read off stdout still grades, for a producer without the flag", (
   assert.equal(r.parsed, true);
   assert.equal(r.report.ok, true);
 });
+
+test("an ambient JSON log line is not mistaken for a report", () => {
+  // The producer's dependencies emit structured logs. One JSON object on
+  // stdout satisfied the whole-stream parse, and `parsed: true` is the only
+  // thing standing between the grader and a fabricated verdict: with exit 1
+  // (warnings) the run then graded ok=true having run zero checks.
+  const r = extractJsonReport('{"level":"info","msg":"computer exited","code":0}');
+  assert.equal(r.parsed, false, "a log line was accepted as the verdict");
+  assert.equal(r.report, null);
+});
+
+test("a truncated report is not salvaged from its own results elements", () => {
+  // A producer killed mid-write leaves a prefix of the pretty-printed report.
+  // The whole-file parse fails, the line-anchored scan then recovers the last
+  // COMPLETE nested element -- a single check -- and the old fallback returned
+  // it as the report. The element accepted here is itself status "fail", and
+  // the run still graded ok=true.
+  const rep = {
+    ok: true,
+    exitCode: 0,
+    fails: 0,
+    warns: 0,
+    results: [
+      { id: "live.a", status: "pass" },
+      { id: "live.jscode_block", status: "fail" },
+      { id: "live.b", status: "pass" },
+    ],
+    at: new Date().toISOString(),
+  };
+  const text = JSON.stringify(rep, null, 2);
+  const idx = text.indexOf('"live.jscode_block"');
+  const cut = text.slice(0, text.indexOf("}", idx) + 1);
+  assert.ok(cut.length < text.length, "fixture must actually be truncated");
+  const r = extractJsonReport(cut);
+  assert.equal(r.parsed, false, `salvaged ${JSON.stringify(r.report)} out of a half-written report`);
+  assert.equal(r.report, null);
+});
+
+test("a producer that logs but never reports does not grade as warnings", async () => {
+  // End to end: exit 1 is the producer's "warnings only" code, and the soft
+  // pass for it is gated on `parsed`. One ambient JSON line was enough to set
+  // that flag, so a run that emitted no report at all scored a soft green.
+  const dir = tmpRoot("ambientlog");
+  try {
+    producer(
+      dir,
+      [
+        'console.log(JSON.stringify({ level: "info", msg: "computer exited", code: 0 }));',
+        "process.exitCode = 1;",
+      ].join("\n") + "\n"
+    );
+    const r = await run(dir);
+    assert.equal(r.ok, false, "a run with no report graded green");
+    assert.equal(r.reason, "unparseable");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
