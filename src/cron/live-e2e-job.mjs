@@ -5,6 +5,7 @@
  * optionally alerts on failure.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,7 @@ import {
   CODE_SPAWN_ERROR,
   CODE_TIMEOUT,
 } from "./live-e2e-grade.mjs";
+import { extractJsonReport } from "./live-e2e-report.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "../..");
@@ -195,27 +197,36 @@ export async function runLiveE2eCheck(opts = {}) {
   const cfg = opts.cfg || {};
   const stamp = new Date().toISOString();
 
-  const result = await runLiveE2e(root, opts.args || [], {
-    exe: opts.exe,
-    timeoutMs: opts.timeoutMs,
-    graceMs: opts.graceMs,
-  });
+  // Ask the producer for the report out of band. stdout is shared with every
+  // other console.log in that process, so it is evidence, not a data channel.
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-live-e2e-"));
+  const reportPath = path.join(outDir, "report.json");
+  let result;
   let report = null;
   let parsed = false;
   try {
-    const j = JSON.parse(result.out);
-    // JSON.parse("null") yields null, and JSON.parse("3") a number; either
-    // would make the .ok read below throw or lie.
-    if (j && typeof j === "object") {
-      report = j;
-      parsed = true;
+    result = await runLiveE2e(root, ["--json-out", reportPath, ...(opts.args || [])], {
+      exe: opts.exe,
+      timeoutMs: opts.timeoutMs,
+      graceMs: opts.graceMs,
+    });
+    let fromFile = "";
+    try {
+      fromFile = fs.readFileSync(reportPath, "utf8");
+    } catch {
+      /* an older or crashed producer wrote no file; fall back to stdout */
     }
-  } catch {
-    /* handled by the fallback below */
+    ({ report, parsed } = extractJsonReport(fromFile));
+    if (!parsed) ({ report, parsed } = extractJsonReport(result.out));
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
   }
   if (!parsed) {
+    // No report was read, so there is no verdict to carry -- only evidence.
+    // ok:false here is not a failure claim; gradeLiveE2e refuses to pass an
+    // unparsed run whatever this says.
     report = {
-      ok: result.code === 0,
+      ok: false,
       exitCode: result.code,
       raw: (result.out + result.err).slice(-4000),
     };
@@ -226,20 +237,20 @@ export async function runLiveE2eCheck(opts = {}) {
 
   const sig = result.signal ? ` signal=${result.signal}` : "";
   const header = `\n===== live-e2e ${stamp} ok=${ok} exit=${result.code}${sig} reason=${reason} =====\n`;
-  const body =
-    typeof report === "object"
-      ? JSON.stringify(
-          {
-            ok,
-            exitCode: result.code,
-            fails: report.fails,
-            warns: report.warns,
-            results: (report.results || []).filter((r) => r.status !== "ok"),
-          },
-          null,
-          2
-        )
-      : String(report);
+  const body = JSON.stringify(
+    {
+      ok,
+      exitCode: result.code,
+      fails: report.fails,
+      warns: report.warns,
+      results: (report.results || []).filter((r) => r.status !== "ok"),
+      // When the report could not be read, the tail of the child's output is
+      // the only evidence there is. It was collected and then dropped here.
+      ...(parsed ? {} : { raw: report.raw }),
+    },
+    null,
+    2
+  );
   appendLog(logPath, header + body + "\n" + (result.err || "").slice(-1500));
 
   let notify = null;
@@ -250,6 +261,7 @@ export async function runLiveE2eCheck(opts = {}) {
         ...(typeof report === "object" && report ? report : {}),
         exitCode: result.code,
         code: result.code,
+        reason,
         logPath,
         at: stamp,
         root,

@@ -378,6 +378,10 @@ export function createAlerter(cfg = {}) {
       title: "Live enforcement e2e failed",
       body: [
         `exit=${exitCode}`,
+        // Why the run was graded a failure. Without it an unreadable report
+        // alerts as a bare "exit=1", which reads as a check that ran and
+        // failed rather than one whose verdict was never recovered.
+        report.reason ? `reason=${report.reason}` : null,
         fails != null ? `fails=${fails}` : null,
         failedIds.length ? `failed: ${failedIds.join(", ")}` : null,
         report.at ? `at=${report.at}` : null,
@@ -385,7 +389,7 @@ export function createAlerter(cfg = {}) {
       ]
         .filter(Boolean)
         .join("\n"),
-      meta: { exitCode, fails, failedIds, root: report.root },
+      meta: { exitCode, fails, failedIds, reason: report.reason, root: report.root },
     });
   }
 

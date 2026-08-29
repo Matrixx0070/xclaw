@@ -1,3 +1,99 @@
+## 3.369.0
+
+### One log line turned a green nightly check into a false alarm
+
+`runLiveE2eCheck` ran `JSON.parse` over the **entire stdout** of the child it
+spawned. That child is a whole node process, and the report is not the only
+thing in it that writes to stdout: `src/config/load.mjs:35,37` prints a
+first-run banner on its first call, and `src/computer/manager.mjs` prints at
+`:182,185,193,220,256,271,311` — `:271` from an async exit handler, so it can
+land *after* the report. Any one of those lines makes the parse throw.
+
+Measured against the shipped code, same producer, same report, one injected
+log line apart:
+
+```
+noise=0 -> ok=true  code=1 reason=ok
+noise=1 -> ok=false code=1 reason=unparseable
+```
+
+and in the log the owner would have been paged with:
+
+```
+===== live-e2e ... ok=false exit=1 reason=unparseable =====
+{ "ok": false, "exitCode": 1, "results": [] }
+```
+
+An empty `results` array: not one failing check, because there was no failing
+check. The run was green. This host never fired it — the first-run banner is
+dormant once `~/.xclaw` exists — but a fresh container or CI host prints two
+lines before the first check even starts.
+
+**stdout is evidence, not a data channel.** The producer now takes
+`--json-out <path>` and writes the report to a file; the parent asks for it
+there and only falls back to the stream. Reading a file cannot be polluted by
+a `console.log` in the same process.
+
+**The fallback got a scanner instead of a parse.** `extractJsonReport`
+(`src/cron/live-e2e-report.mjs`) tries the whole stream first, and if that
+fails scans for balanced `{…}` spans — string- and escape-aware, so a `"}"`
+inside a JSON string does not close a span — taking the *last* one, since
+leading noise (banners) and trailing noise (the computer's async exit line)
+both occur and the report is the last thing the producer writes. Output that
+is valid JSON of the wrong shape (an array, `null`, a number) is refused
+rather than salvaged: an element pulled out of `[{...}]` would be a verdict
+this process invented.
+
+**Two fail-open holes closed on the way through.** The grade was
+`reportOk !== false`, so a report whose `ok` field was missing entirely —
+`undefined` is not `false` — passed, and so did the fabricated fallback the
+parent invents when it reads nothing at all. A pass now requires a report this
+process actually read *and* an explicit `ok === true`. The fabricated fallback
+no longer claims `ok: code === 0` either; it claims nothing.
+
+**The evidence stopped being thrown away.** When the report cannot be read,
+the tail of the child's output is the only thing that explains why. It was
+collected into `raw` and then dropped before the log write. It now reaches
+both the log body and the alert.
+
+**Shape decides which object is the report, not position.** Last-one-wins was
+chosen because the report is the last thing the producer writes, and nothing
+enforced that: any later object — a debug dump from a dependency — silently
+became the verdict, so a failing report could be overwritten by a stray
+`{"ok":true}` and grade green with no alarm. `looksLikeReport` now requires the
+producer's own shape (a boolean `ok` and an array `results`,
+`scripts/live-enforcement-e2e.mjs:283-291`); position only breaks ties among
+report-shaped candidates.
+
+**One stray quote no longer hides the report.** A single scan over the whole
+stream carries its in-string flag across every ambient line ahead of the
+report, so one log line with an odd number of unescaped `"` — an error message
+rendering a raw quote — leaves the scanner believing it is inside a string
+forever and the report's braces are never counted: back to `unparseable`, the
+exact false alarm this module exists to stop. Candidate objects are now found
+at line-anchored `{` (the shape `console.log(JSON.stringify(...))` writes) and
+each is scanned with **fresh** string state. The whole-stream scan is kept as a
+last tier, so a report sharing a line with other output is still recovered.
+
+**The alert says why it fired.** `alertLiveE2eFailure` rendered `exit=1` and a
+log path and nothing else, which reads as a check that ran and failed rather
+than one whose verdict was never recovered. `reason=` now travels into both the
+alert body and its `meta`.
+
+14 tests in `test/live-e2e-report.test.mjs`, driving fixture producers end to
+end: a report between two banner lines, a report followed by one, a green exit
+with nothing readable (must not pass), an array on stdout, the file sink
+winning over a decoy on stdout, the evidence tail surviving into the log, a
+trailing blob failing to outrank the real report, a stray quote failing to hide
+it, and the alert carrying its reason.
+
+Honest gap: the real producer's `--json-out` file write is exercised only by
+the live drive. Every unit fixture is its own producer and writes its own file,
+so deleting `fs.writeFileSync(jsonOutPath, …)` from
+`scripts/live-enforcement-e2e.mjs` leaves the suite green — verified by
+mutation. The parent's *use* of the file, and its fallback to stdout, are both
+pinned.
+
 ## 3.368.0
 
 ### The nightly check could kill the daemon, or hang it forever

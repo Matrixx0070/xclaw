@@ -59,6 +59,26 @@ function tmpRoot(name) {
   return dir;
 }
 
+test("a pass requires a report that was actually read", () => {
+  // reportOk is fabricated by the caller when the child produced nothing
+  // readable. `reportOk !== false` let that fabrication grade the run: a
+  // producer that exits 0 having emitted nothing scored the same as one that
+  // ran every check.
+  assert.deepEqual(gradeLiveE2e({ code: 0, reportOk: true, parsed: false }), {
+    ok: false,
+    hardFail: false,
+    reason: "unparseable",
+  });
+  // A real report whose shape drifted -- no `ok` field at all -- is also not
+  // a pass. undefined is not false, so the old rule waved it through.
+  assert.deepEqual(gradeLiveE2e({ code: 0, reportOk: undefined, parsed: true }), {
+    ok: false,
+    hardFail: false,
+    reason: "report-fail",
+  });
+  assert.equal(gradeLiveE2e({ code: 0, reportOk: true, parsed: true }).ok, true);
+});
+
 test("a missing live-enforcement-e2e.mjs is reported, not passed", async () => {
   const root = tmpRoot("missing");
   try {

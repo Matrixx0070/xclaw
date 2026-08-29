@@ -12,6 +12,7 @@
  * Usage:
  *   XCLAW_ROOT=/path/to/xclaw node scripts/live-enforcement-e2e.mjs
  *   node scripts/live-enforcement-e2e.mjs --json
+ *   node scripts/live-enforcement-e2e.mjs --json-out report.json
  *   node scripts/live-enforcement-e2e.mjs --no-start   # don't spawn computer
  *   node scripts/live-enforcement-e2e.mjs --keep        # leave computer running
  *
@@ -29,6 +30,14 @@ process.env.XCLAW_ROOT = ROOT;
 const jsonOut = process.argv.includes("--json");
 const noStart = process.argv.includes("--no-start");
 const keep = process.argv.includes("--keep");
+// A file sink for the report. stdout is shared with anything else in the
+// process that logs (config banners, the computer manager), so a caller that
+// needs the report as data asks for it out of band rather than parsing the
+// stream.
+const jsonOutPath = (() => {
+  const i = process.argv.indexOf("--json-out");
+  return i >= 0 ? process.argv[i + 1] || null : null;
+})();
 
 const results = [];
 function ok(id, message, detail) {
@@ -258,10 +267,6 @@ async function main() {
 }
 
 async function finish(extra = {}) {
-  const fails = results.filter((r) => r.status === "fail").length;
-  const warns = results.filter((r) => r.status === "warn").length;
-  const exitCode = fails ? 2 : warns ? 1 : 0;
-
   if (extra.startedByUs && !keep && extra.stopComputer && extra.cfg) {
     try {
       await extra.stopComputer(extra.cfg);
@@ -275,22 +280,26 @@ async function finish(extra = {}) {
   const warns2 = results.filter((r) => r.status === "warn").length;
   const code = fails2 ? 2 : warns2 ? 1 : 0;
 
+  const report = {
+    ok: fails2 === 0,
+    exitCode: code,
+    fails: fails2,
+    warns: warns2,
+    root: ROOT,
+    results,
+    at: new Date().toISOString(),
+  };
+
+  if (jsonOutPath) {
+    try {
+      fs.writeFileSync(jsonOutPath, JSON.stringify(report, null, 2));
+    } catch (e) {
+      console.error(`[live-e2e] could not write ${jsonOutPath}: ${e.message}`);
+    }
+  }
+
   if (jsonOut) {
-    console.log(
-      JSON.stringify(
-        {
-          ok: fails2 === 0,
-          exitCode: code,
-          fails: fails2,
-          warns: warns2,
-          root: ROOT,
-          results,
-          at: new Date().toISOString(),
-        },
-        null,
-        2
-      )
-    );
+    console.log(JSON.stringify(report, null, 2));
   } else {
     console.log("XClaw LIVE enforcement e2e\n");
     console.log(`ROOT=${ROOT}`);

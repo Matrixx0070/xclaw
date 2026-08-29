@@ -63,7 +63,11 @@ export function gradeLiveE2e({ code, reportOk, parsed = false, strict = false })
   if (hardFail) {
     return { ok: false, hardFail: true, reason: SUBSTITUTED_REASON[code] || "hard-fail" };
   }
-  if (reportOk !== false) return { ok: true, hardFail: false, reason: "ok" };
+  // A pass has to come from a report this process actually read. `reportOk`
+  // is fabricated when the child produced nothing readable, and a fabricated
+  // pass is how a producer that exits 0 without running a single check scores
+  // the same as one that ran them all.
+  if (parsed && reportOk === true) return { ok: true, hardFail: false, reason: "ok" };
   // exit 1 = warnings only → soft ok for cadence, but only when the report
   // saying so was actually read off the child rather than invented here.
   if (parsed && code === 1) return { ok: true, hardFail: false, reason: "warnings" };
