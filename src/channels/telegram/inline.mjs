@@ -68,7 +68,7 @@ export function parseCallbackData(data) {
   return null;
 }
 
-const TIER_LABEL = {
+export const TIER_LABEL = {
   critical: "\u{1F6D1} CRITICAL",
   high: "\u26A0\uFE0F HIGH",
   risky: "\u26A0\uFE0F RISKY",

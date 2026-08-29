@@ -7,6 +7,7 @@
  * per-message usage. Zero dependencies.
  */
 import { renderMarkdown, escapeHtml } from "./markdown.mjs";
+import { approvalCardFromEvent, riskChip } from "./risk-tier.mjs";
 
 // Same-origin gateway calls carry the operator token when one is set
 // (localStorage.xclaw_token). Strict URL-origin resolution — naive prefix
@@ -226,7 +227,7 @@ function approvalSummary(args) {
 
 const approvalCards = new Map();
 
-function addApprovalCard(ctx, { pendingId, name, args, timedOut }) {
+function addApprovalCard(ctx, { pendingId, name, args, timedOut, riskTier }) {
   const existing = pendingId && approvalCards.get(pendingId);
   if (existing) {
     if (timedOut) {
@@ -244,8 +245,12 @@ function addApprovalCard(ctx, { pendingId, name, args, timedOut }) {
   }
   const card = el("div", "apr");
   const cmd = approvalSummary(args);
+  // The tier is the only part of the assessment that ships — see risk-tier.mjs.
+  const chip = riskChip({ riskTier });
   card.innerHTML =
-    `<div class="apr-title">Approval required — <code>${escapeHtml(name)}</code></div>` +
+    `<div class="apr-title">Approval required — <code>${escapeHtml(name)}</code>` +
+    (chip ? `<span class="apr-risk apr-risk-${chip.severity}">${escapeHtml(chip.label)}</span>` : "") +
+    `</div>` +
     `<div class="apr-cmd">${escapeHtml(String(cmd))}</div>` +
     `<div class="apr-actions">` +
     `<button class="apr-btn apr-allow">Allow</button>` +
@@ -485,12 +490,7 @@ async function sendMessage(raw) {
       }
       if (type === "security" && phase === "approval_required") {
         setThinking(ctx, "Waiting for your approval…");
-        addApprovalCard(ctx, {
-          pendingId: data.pendingId,
-          name: data.name,
-          args: data.args,
-          timedOut: data.timedOut,
-        });
+        addApprovalCard(ctx, approvalCardFromEvent(data));
         return;
       }
       if (type === "security" && (phase === "approved" || phase === "plan_revalidated")) {

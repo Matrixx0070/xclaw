@@ -1,3 +1,15 @@
+## 3.353.0
+
+### Fixed
+- **The same risk tier was missing from the other surface an operator approves from.** 3.352.0 put the A2 tier on the Telegram prompt; the webchat approval card had the identical two-layer drop, and a literal grep proved it — `grep -n "risk" ui/webchat/app.js` returned **nothing at all**. The SSE handler hand-narrowed the `approval_required` event to `{pendingId, name, args, timedOut}`, and `addApprovalCard`'s template had no tier slot to render into even if the field had survived. A workspace-escaping `file_write` and a read-only `get_issue` produced the same card.
+- The gateway was not the culprit and was ruled out before any fix: `src/gateway/index.mjs` forwards the event verbatim (`produce(e.type || "message", e)`) and `event-types.mjs` is a frozen vocabulary, not a field filter. `riskTier` reached the browser; the UI threw it away.
+- The narrowing is now a pure `approvalCardFromEvent` in a new `ui/webchat/risk-tier.mjs`, and the card carries a severity chip (`CRITICAL` / `RISKY` / `SAFE`) in its title row. Both producer shapes normalise in one helper. An unassessed action renders **no chip** rather than a fabricated `SAFE`, and a tier the UI has never seen renders under its own name with a neutral severity instead of being silently mapped onto a known one.
+- Only the tier ships, for the reason recorded in 3.352.0: `assessRisk`'s reasons are filesystem-shaped and fabricated for third-party tools, and mixed-accuracy text in a security prompt is worse than absent text.
+
+### Notes
+- No shared module is reachable from both surfaces — the browser loads `ui/` statically and cannot import `src/`, and importing `ui/` from server code inverts the dependency direction into the bundle. The tier vocabulary is therefore necessarily duplicated, which is exactly the condition that let the two surfaces disagree in the first place. `test/webchat-approval-risk-tier.test.mjs` pins them against each other (`TIER_LABEL` is now exported for that purpose) and additionally asserts the stylesheet has a rule for every severity the chip can emit — a chip with no CSS is a chip nobody sees, the same defect one layer down.
+- The handler runs only inside a live SSE stream in a browser, so the call site is pinned at the source, following `test/risk-readonly-precision.test.mjs`: the pin requires the carrier call and **bans the `name: data.name` literal any revert must reintroduce**. A pure function pinned is not its call site pinned.
+
 ## 3.352.0
 
 ### Fixed
