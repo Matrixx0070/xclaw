@@ -1,3 +1,44 @@
+## 3.358.0
+
+- The approval gate decided by NAME, and its list was a hand-typed subset of the
+  tools the host actually serves. Under `approvalPolicy: "risky"` — the default,
+  set by both the `prod` profile and the `supervised` autonomy overlay — the
+  decision function's last line is `requireApproval.has(name)`. Omission means
+  AUTO-RUN. `xclaw_file_edit` and `xclaw_computer_act` are served by the computer
+  server, are named in this codebase's own mutator set (`FORCE_SERIAL` in
+  `src/agent/tool-concurrency.mjs`), and appeared on no approval list anywhere.
+  So on a prod host — `autoApprove: false`, the profile whose whole purpose is
+  that mutations get asked about — an agent could rewrite any workspace file and
+  drive the desktop mouse and keyboard with no human ever prompted, while the
+  identical file change through `xclaw_file_write` pended.
+- The decisive comparison: `xclaw_browser_tab` and `xclaw_computer_act` assess to
+  the SAME risk tier (`risky`) and are both served live. One pended and one did
+  not, decided purely by whether someone had typed the name into a list.
+- Measured against `FORCE_SERIAL`, 14 of 20 mutating names auto-ran in prod.
+  Of the 20 only 5 are served on any host today, so the real behaviour delta is
+  exactly two tools; the other names are added as the existing lists already
+  carry unserved aliases — a list whose omissions auto-run should not depend on
+  which aliases a future host happens to register.
+- This is the same class fixed once before, for one branch only. The comment
+  above the failing line records it: *"Before this rule, the 'risky' policy only
+  matched the requireApproval list (bash/file_write names), so EVERY MCP tool
+  auto-ran unapproved (2026-08-13 audit)."* The MCP branch was patched; the
+  locally-served and computer-server branches were left open.
+- Fixed on all three surfaces that decide it: `TOOL_RISK` in
+  `src/security/policy-matrix.mjs` (which the supervised overlay is derived
+  from), the `prod` profile's `requireApproval`, and the no-profile default list
+  — the last of which was narrower still, lacking even `browser_tab`.
+- A tier-derived or impact-derived general rule was measured and rejected rather
+  than assumed: the tier rule would newly pend 12 of 52 tools including
+  `web_search`, `browser_screenshot` and `browser_observe` — pure reads that
+  v3.351.0 deliberately loosened — and the impact rule 27 of 52. Both lists stay
+  hand-typed because they legitimately differ in intent; the new invariant test
+  is what keeps them complete, failing if either drifts from `FORCE_SERIAL`.
+- Report-only, unfixed: `FORCE_SERIAL` names `xclaw_spawn_subagent` while the
+  served local tool is `xclaw_spawn_agent`; and `matrixDecision` in
+  `policy-matrix.mjs` answers this same question in the opposite direction
+  (fail-CLOSED on an unknown name) with zero production callers and zero tests.
+
 ## 3.357.0
 
 - The shipped `act` and `browse` tool packs promised a capability that does not

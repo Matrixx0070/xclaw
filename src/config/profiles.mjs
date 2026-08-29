@@ -83,13 +83,32 @@ export const PROFILES = {
       spawnEnforce: "check",
       // Tool spawns see only a base env allowlist (+security.envAllow)
       bashEnv: "allowlist",
+      // Every tool this codebase declares mutating (FORCE_SERIAL in
+      // src/agent/tool-concurrency.mjs). The list is enumerated, and under
+      // approvalPolicy "risky" an omission means AUTO-RUN — so a served tool
+      // nobody typed here ran unasked. test/mutating-tools-approval.test.mjs
+      // fails if this list and that set drift apart again.
       requireApproval: [
         "xclaw_bash",
         "bash",
+        "shell",
+        "exec",
+        "xclaw_exec",
+        "run_terminal",
         "xclaw_file_write",
         "file_write",
+        "write_file",
+        "xclaw_file_edit",
+        "file_edit",
+        "edit_file",
         "xclaw_browser_tab",
         "browser_tab",
+        "xclaw_computer_act",
+        "computer_act",
+        "xclaw_spawn_subagent",
+        "xclaw_swarm_run",
+        "xclaw_swarm_merge_approve",
+        "xclaw_swarm_merge_reject",
       ],
       safeAuto: [
         "xclaw_file_read",

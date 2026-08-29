@@ -557,7 +557,30 @@ export const DEFAULT_CONFIG = {
     /** R3: /link codes only in DMs */
     linkDmOnly: true,
     allowedTools: [],
-    requireApproval: ["xclaw_bash", "bash", "xclaw_file_write"],
+    // Reached when a config sets autoApprove:false without a profile. Kept in
+    // step with the prod profile's list by test/mutating-tools-approval.test.mjs.
+    requireApproval: [
+      "xclaw_bash",
+      "bash",
+      "shell",
+      "exec",
+      "xclaw_exec",
+      "run_terminal",
+      "xclaw_file_write",
+      "file_write",
+      "write_file",
+      "xclaw_file_edit",
+      "file_edit",
+      "edit_file",
+      "xclaw_browser_tab",
+      "browser_tab",
+      "xclaw_computer_act",
+      "computer_act",
+      "xclaw_spawn_subagent",
+      "xclaw_swarm_run",
+      "xclaw_swarm_merge_approve",
+      "xclaw_swarm_merge_reject",
+    ],
     /** Phase 7.4: safer default — set true only in trusted envs */
     bindSystemRunPlan: true,
     autoApprove: true,  // low-setup; prod profile sets false

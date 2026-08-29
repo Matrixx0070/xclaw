@@ -11,9 +11,27 @@ export const TOOL_RISK = {
   xclaw_file_write: "write",
   file_write: "write",
   write_file: "write",
+  // Editing a file in place is a write. Three other modules already say so —
+  // FORCE_SERIAL serializes it, assessRisk tiers its impact "write", the
+  // sandbox's read-only check matches /edit/ — and only this matrix, the one
+  // the approval lists are built from, left it out.
+  xclaw_file_edit: "write",
+  file_edit: "write",
+  edit_file: "write",
   xclaw_bash: "exec",
   bash: "exec",
   shell: "exec",
+  exec: "exec",
+  xclaw_exec: "exec",
+  run_terminal: "exec",
+  // Driving the desktop: clicks and keystrokes land wherever focus is.
+  xclaw_computer_act: "exec",
+  computer_act: "exec",
+  // A sub-agent or a merged swarm branch acts under its own steam.
+  xclaw_spawn_subagent: "exec",
+  xclaw_swarm_run: "exec",
+  xclaw_swarm_merge_approve: "exec",
+  xclaw_swarm_merge_reject: "exec",
   xclaw_browser_tab: "network",
   glob: "safe",
   grep: "safe",
