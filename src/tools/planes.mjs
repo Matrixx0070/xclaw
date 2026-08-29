@@ -167,7 +167,7 @@ export function getConcurrencyClass(name) {
   // downstream cannot enumerate them. Anchor to the operation instead, and let
   // anything unrecognised keep the serial default it already has.
   const op = n.split("__").pop();
-  if (/^(get|list|read|search|fetch|describe|show|query|find|lookup|view|check|probe)_/.test(op)) {
+  if (/^(get|list|read|search|fetch|describe|show|query|find|lookup)_/.test(op)) {
     return "parallel-safe";
   }
   // A trailing noun (`fabric_status`, `web_fetch`) reads as read-only only

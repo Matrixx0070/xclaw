@@ -115,3 +115,13 @@ describe("a third-party name earns parallelism at the verb, not at the suffix", 
     }
   });
 });
+
+describe("the fix must not widen parallelism for local tools", () => {
+  it("leaves the local media/video viewers serial", () => {
+    // `view_x_video` shells out to ffmpeg and writes frames. Closing a fail-open
+    // on third-party names is no reason to start running it concurrently, so
+    // the read-verb list carries only verbs the MCP surface actually needs.
+    assert.equal(isParallelSafeTool("view_image"), false);
+    assert.equal(isParallelSafeTool("view_x_video"), false);
+  });
+});
