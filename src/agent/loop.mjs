@@ -50,7 +50,7 @@ import { incCanaryUngrounded } from "./canary-metrics.mjs";
 import { stampCostBlock } from "./cost-receipt.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
 import { checkLoopCostBudget, checkJobCostBudget } from "../tokens/loop-cost-check.mjs";
-import { saveAgentRun } from "./run-store.mjs";
+import { saveAgentRun, resolveRunPersistId } from "./run-store.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
   appendTranscript,
@@ -196,6 +196,17 @@ export async function runAgentLoop(options) {
     transcriptId ||
     options.sessionId ||
     `agent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  // Stable across segment checkpoints AND the final snapshot. Generating
+  // inside each saveAgentRun call used to split one run across two files
+  // when persistRun was true without a caller-supplied id.
+  const persistResolved = resolveRunPersistId(options);
+  const persistSessionId =
+    persistResolved === null
+      ? null
+      : persistResolved ||
+        options.sessionId ||
+        options.runId ||
+        `run_${Date.now().toString(36)}`;
   const registered = registerSession(sessionKey, {
     label: String(userMessage || "").slice(0, 80) || sessionKey,
   });
@@ -928,10 +939,9 @@ export async function runAgentLoop(options) {
       if (preflight.segment) {
         onEvent(preflight.segment.event);
         try {
-          if (options.sessionId || options.persistRun) {
+          if (persistSessionId) {
             await saveAgentRun(cfg, {
-              sessionId:
-                options.sessionId || options.runId || `run_${Date.now().toString(36)}`,
+              sessionId: persistSessionId,
               workingDir: options.workingDir || process.cwd(),
               model: provider?.model || cfg.agent?.model,
               streamId: options.streamId || null,
@@ -2129,9 +2139,9 @@ export async function runAgentLoop(options) {
 
   // Feature 2 — durable snapshot for resume
   try {
-    if (options.sessionId || options.persistRun) {
+    if (persistSessionId) {
       await saveAgentRun(cfg, {
-        sessionId: options.sessionId || options.runId || `run_${Date.now().toString(36)}`,
+        sessionId: persistSessionId,
         workingDir: options.workingDir || process.cwd(),
         model: provider?.model || cfg.agent?.model,
         streamId: options.streamId || null,

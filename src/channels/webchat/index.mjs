@@ -194,6 +194,7 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
         cfg,
         channel: "webchat",
         chatSessionId: session.id,
+        persistRun: true,
         workingDir: session.workingDir || process.cwd(),
         signal,
         onEvent: (e) => {
@@ -204,6 +205,50 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
     }
 
     if (signal?.aborted) throw new Error("aborted");
+
+    // Same auto-promote as processInbound: a turn-cap cutoff is an execution
+    // constraint, not completion. Webchat had routeObjective but never
+    // promoted a truncated turn, so Control/webchat could still ask
+    // "should I continue?" after ~maxTurns while Telegram would not.
+    let promoted = null;
+    if (mode !== "job" && cfg.objectives?.enabled !== false) {
+      try {
+        const { autoPromoteIfNeeded, formatPromotedReply } = await import("../runtime.mjs");
+        const { replyWithAgent } = await import("../base.mjs");
+        const promo = await autoPromoteIfNeeded({
+          text: message.trim(),
+          inbound: {
+            channel: "webchat",
+            chatId: session.id,
+            userId: session.userId || session.id,
+            identity: `webchat:${session.id}`,
+          },
+          cfg,
+          workingDir: session.workingDir,
+          replyWithAgent,
+          onEvent,
+          notify: async (t) => {
+            session.messages.push({
+              id: randomUUID(),
+              role: "assistant",
+              content: String(t),
+              at: Date.now(),
+            });
+            session.updatedAt = Date.now();
+          },
+          turnResult: result,
+        });
+        if (promo) {
+          promoted = promo;
+          result = {
+            ...result,
+            text: formatPromotedReply(result.text, promo.id),
+          };
+        }
+      } catch (err) {
+        onEvent?.({ type: "objective", phase: "promote_error", message: String(err?.message || err) });
+      }
+    }
 
     const assistantMsg = {
       id: randomUUID(),
@@ -216,6 +261,7 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
       job: jobMeta,
       suggestions: result.suggestions || [],
       turnState: result.turnState || null,
+      objective: promoted ? { id: promoted.id, promoted: true } : undefined,
       at: Date.now(),
     };
     session.messages.push(assistantMsg);
@@ -234,6 +280,8 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
       job: jobMeta,
       suggestions: result.suggestions || [],
       turnState: result.turnState || null,
+      stopReason: result.stopReason || null,
+      objective: promoted ? { id: promoted.id, promoted: true } : undefined,
       events,
     };
   } catch (err) {

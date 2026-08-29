@@ -691,3 +691,23 @@ order updated (Providers, Channels between Security and Computer). No secrets.
 RAN: suite 1311/0 · LIVE doctor: 0 err 8 warn — Providers 4/12 all resolve +
 imageGen ready, Channels 2/5 (telegram bot @xxclaw_bot reachable), pm2
 xclaw-gateway online.
+
+## 2026-08-29 — 3.376.0 default agent surfaces persist and continue
+
+STATUS: green
+DISCOVERED: Feature 2 (durable `~/.xclaw/agent-runs/` snapshots) and
+objective auto-promote were live on Telegram `processInbound` but dead on
+the path operators type into. The loop persisted only on `sessionId` /
+`persistRun`; CLI, TUI, POST /agent/run, and `runAgent` pass
+`chatSessionId`. CLI also called `runAgentLoop` directly (skipped A0
+claims gate) and exited at the turn cap.
+BUILT: `resolveRunPersistId` (chatSessionId counts; persistRun:false
+opt-out; persist id resolved once per run). CLI → `runAgent` + persist +
+in-process auto-promote (`awaitRun`). Webchat auto-promotes the same
+helper. Stream results include `stopReason`.
+RAN: 147 related tests pass (agent/objective/channel/claims + new
+persist-id, default-path-durability, auto-promote predicate). Doctor 0
+err / 8 warn. Did not run the full 876-file suite this slice.
+UNVERIFIED: live `xclaw agent` turn-cap → mission on a real model;
+gateway boot auto-resume of agent-runs (objectives already auto-resume);
+full npm test.

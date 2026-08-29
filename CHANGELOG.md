@@ -1,37 +1,32 @@
-## 3.375.0
+## 3.376.0
 
-### A "no" binds the effect, not the call
+### Default agent surfaces persist and continue
 
-Live-observed on :10: an operator denied a risky `xclaw_bash` write of
-`tmp-live/deny-probe.txt`; the model pivoted to `xclaw_file_write` of
-the same path, which tiers `low` (in-workspace write), and under the
-live `autoApproveMaxTier: "low"` the denied effect auto-ran seconds
-after the human said no. `needsApproval` grades every call
-statelessly, and a deny resolved to nothing but a message, so nothing
-connected the two calls.
+The durable run snapshot (`~/.xclaw/agent-runs/`) and objective
+auto-promote existed, but the path operators actually type into —
+`xclaw agent`, the TUI (`POST /agent/run/stream`), `POST /agent/run`,
+webchat — never reached them.
 
-A human deny now records the denied effect — the call's resolved path
-operands — in an in-memory, TTL-bounded store (the `/trust` window's
-mirror). A later call whose own operands intersect a live taint is
-escalated (tier only ever raises, floor `risky`) and **always pends**,
-with the reason in the prompt: `denial-taint: matches effect denied
-Ns ago (<path>)`. Only a human can reverse a human deny: a taint
-match outranks `bypassApprovals`, durable allow-always pins, and
-`approvalSlaAction: "approve"` (a taint-forced ask fails closed on
-SLA timeout). Authorize and decide may run on different gate
-instances after a SIGHUP reload, so the store is process-shared, not
-instance-local.
+The loop keyed persist on `sessionId` / `persistRun`. Every default
+surface passes the conversation id as `chatSessionId`. Snapshots were
+a store with no writers. A restart could not resume work that the
+docs said was snapshotted.
 
-Scope, deliberately: only **human** denies taint (SLA timeouts and
-policy denies do not); matching is by resolved path, so a pathless
-denial (pure egress) protects nothing; a gateway restart clears
-taints. Config (`security.denialTaint`): `enabled` (default true),
-`ttlMs` (default 900000; `0` expires immediately — the escape hatch),
-`max` (default 50, FIFO). Observability:
-`createApprovalGate(...).listDenialTaints()`.
+`xclaw agent` also called `runAgentLoop` directly, skipping the A0
+claims gate, and exited at the turn cap instead of promoting into a
+durable objective the way Telegram already did. Webchat had
+`/objective` routing but not the maxTurns auto-promote, so Control
+could still ask "should I continue?" after a truncated turn.
 
-23 tests, including the live pivot, the pin-outrank, the SLA fail-
-closed, the shared-store rebuild, and the opt-out.
+A `chatSessionId` now persists (opt out with `persistRun: false`).
+The persist id is resolved once per run so a segment checkpoint and
+the final snapshot share a file. CLI goes through `runAgent`,
+persists, and on `stopReason === "maxTurns"` continues in-process as
+a mission (`awaitRun: true` so the process does not exit out from
+under the continuation). Webchat auto-promotes the same way
+processInbound already did. Stream results include `stopReason`.
+
+Kill-switch, approvals, sandbox, and egress are unchanged.
 
 ## 3.375.0
 

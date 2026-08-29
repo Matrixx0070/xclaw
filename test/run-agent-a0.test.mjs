@@ -48,4 +48,12 @@ describe("A0 channel-invariant runAgent", () => {
     const n = normalizeAgentRequest({ goal: "x", sessionId: "abc" });
     assert.equal(n.chatSessionId, "abc");
   });
+
+  it("forwards persistRun so the loop can snapshot default-path runs", () => {
+    const on = normalizeAgentRequest({ goal: "x", persistRun: true, chatSessionId: "s" });
+    assert.equal(on.persistRun, true);
+    assert.equal(on.chatSessionId, "s");
+    const off = normalizeAgentRequest({ goal: "x", persistRun: false });
+    assert.equal(off.persistRun, false);
+  });
 });

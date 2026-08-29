@@ -286,40 +286,32 @@ export async function processInbound(inbound, opts = {}) {
   // live failure where the agent then asked "should I continue?". Promote it
   // into a durable objective and keep going; the user sees one continuous
   // mission. Requires a channel notify sender for the detached updates.
-  if (
-    objectivesEnabled &&
-    opts.notify &&
-    result.stopReason === "maxTurns" &&
-    cfg.objectives?.autoPromote !== false
-  ) {
-    try {
-      const promo = await promoteTurnToObjective({
-        text,
-        inbound,
-        cfg,
-        workingDir,
-        replyWithAgent,
-        onEvent,
-        notify: opts.notify,
-        turnResult: result,
-      });
-      if (promo) {
-        return {
-          handled: true,
-          via: "objective_promoted",
-          reply:
-            `${result.text || ""}\n\n🎯 I hit this segment's execution budget mid-task — continuing autonomously as mission \`${promo.id}\`. ` +
-            `I'll report progress here; /objective status any time.`,
-          identity: result.identity || inbound.identity,
-          vaultUserId: result.vaultUserId,
-          userId: inbound.userId,
-          turns: result.turns,
-          suggestions: [],
-        };
-      }
-    } catch (err) {
-      onEvent?.({ type: "objective", phase: "promote_error", message: String(err?.message || err) });
+  try {
+    const promo = await autoPromoteIfNeeded({
+      text,
+      inbound,
+      cfg,
+      workingDir,
+      replyWithAgent,
+      onEvent,
+      notify: opts.notify,
+      turnResult: result,
+    });
+    if (promo) {
+      return {
+        handled: true,
+        via: "objective_promoted",
+        reply: formatPromotedReply(result.text, promo.id),
+        identity: result.identity || inbound.identity,
+        vaultUserId: result.vaultUserId,
+        userId: inbound.userId,
+        turns: result.turns,
+        suggestions: [],
+        objectiveId: promo.id,
+      };
     }
+  } catch (err) {
+    onEvent?.({ type: "objective", phase: "promote_error", message: String(err?.message || err) });
   }
 
   return {
@@ -391,7 +383,7 @@ function startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, noti
       /* notify best-effort */
     }
   };
-  import("../agent/objective.mjs")
+  return import("../agent/objective.mjs")
     .then(({ runObjective }) =>
       runObjective(cfg, {
         ...runOpts,
@@ -407,6 +399,7 @@ function startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, noti
     .catch((err) => {
       onEvent?.({ type: "objective", phase: "run_error", message: String(err?.message || err) });
       notifyFn(`⚠️ Mission runtime error: ${String(err?.message || err).slice(0, 300)}`).catch(() => {});
+      return { status: "error", error: String(err?.message || err) };
     });
 }
 
@@ -535,7 +528,41 @@ export function deriveObjectiveText(text, turnResult = {}) {
   return `Continue the in-progress task (user approved with "${t}"): ${firstLine.slice(0, 400)}`;
 }
 
-async function promoteTurnToObjective({ text, inbound, cfg, workingDir, replyWithAgent, onEvent, notify, turnResult }) {
+export function shouldAutoPromoteTurn(cfg, turnResult, notify) {
+  return Boolean(
+    cfg?.objectives?.enabled !== false &&
+      cfg?.objectives?.autoPromote !== false &&
+      notify &&
+      turnResult?.stopReason === "maxTurns"
+  );
+}
+
+export function formatPromotedReply(text, id) {
+  return (
+    `${text || ""}\n\n🎯 I hit this segment's execution budget mid-task — continuing autonomously as mission \`${id}\`. ` +
+    `I'll report progress here; /objective status any time.`
+  );
+}
+
+/**
+ * Promote a turn-cap cutoff into a durable objective. Shared by processInbound
+ * (Telegram/Discord/Slack/email), webchat, and the CLI one-shot path.
+ *
+ * `awaitRun: true` (CLI) waits for the mission to settle so the process does
+ * not exit out from under the continuation. Channel notify senders leave it
+ * detached — they stay alive as the gateway.
+ */
+export async function promoteTurnToObjective({
+  text,
+  inbound,
+  cfg,
+  workingDir,
+  replyWithAgent,
+  onEvent,
+  notify,
+  turnResult,
+  awaitRun = false,
+}) {
   const store = await import("../agent/objective-store.mjs");
   const existing = await store.findActiveObjective(cfg, {
     sessionKey: inbound.identity,
@@ -564,6 +591,23 @@ async function promoteTurnToObjective({ text, inbound, cfg, workingDir, replyWit
     inspected: { files: files.slice(0, 100) },
   });
   await store.saveObjective(cfg, obj);
-  startDetachedObjective({ cfg, workingDir, replyWithAgent, onEvent, notify, inbound, runOpts: { resumeId: obj.id } });
+  const run = startDetachedObjective({
+    cfg,
+    workingDir,
+    replyWithAgent,
+    onEvent,
+    notify,
+    inbound,
+    runOpts: { resumeId: obj.id },
+  });
+  if (awaitRun) {
+    const result = await run;
+    return { id: obj.id, result };
+  }
   return { id: obj.id };
+}
+
+export async function autoPromoteIfNeeded(opts) {
+  if (!shouldAutoPromoteTurn(opts.cfg, opts.turnResult, opts.notify)) return null;
+  return promoteTurnToObjective(opts);
 }

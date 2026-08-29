@@ -32,7 +32,7 @@
 
 ## Commands
 
-- One-shot: `node bin/xclaw.mjs agent "goal"`
+- One-shot: `node bin/xclaw.mjs agent "goal"` (persists under `--session`; a turn-cap cutoff continues as a durable `/objective`)
 - Doctor: `node bin/xclaw.mjs doctor`
 - Memory preview: `node bin/xclaw.mjs memory show`
 - Computer build: `npm run build:computer`

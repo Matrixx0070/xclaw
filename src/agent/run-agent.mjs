@@ -85,6 +85,7 @@ export function normalizeAgentRequest(req = {}) {
     continuation: req.continuation,
     // Inbound-channel context (spec §16.3): gates the `react` tool.
     channelContext: req.channelContext || null,
+    persistRun: req.persistRun,
   };
 }
 
@@ -122,6 +123,8 @@ export async function runAgent(req = {}) {
       channel: opts.channel,
       chatId: opts.chatId,
       chatSessionId: opts.chatSessionId,
+      sessionId: opts.chatSessionId || undefined,
+      persistRun: opts.persistRun,
       ...(opts.history !== undefined ? { history: opts.history } : {}),
       ...(opts.rescuePrompt ? { rescuePrompt: opts.rescuePrompt } : {}),
       ...(opts.channelContext ? { channelContext: opts.channelContext } : {}),

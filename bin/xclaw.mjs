@@ -1797,7 +1797,7 @@ Enable with seats.enabled: true in config`);
       }
       const { loadConfig } = await import("../src/config/load.mjs");
       const { isComputerRunning, startComputer } = await import("../src/computer/manager.mjs");
-      const { runAgentLoop } = await import("../src/agent/loop.mjs");
+      const { runAgent } = await import("../src/agent/run-agent.mjs");
       const cfg = await loadConfig();
       if (!(await isComputerRunning(cfg))) {
         console.log("[xclaw] Starting Computer…");
@@ -1810,25 +1810,62 @@ Enable with seats.enabled: true in config`);
         sessionId = `cli-${Date.now().toString(36)}`;
       }
       if (sessionId) console.log(`[xclaw] session: ${sessionId}`);
-      const result = await runAgentLoop({
-        userMessage: message,
+      const onEvent = (e) => {
+        if (e.type === "tool" && e.phase === "start") {
+          console.log(`  → tool ${e.name}`, JSON.stringify(e.args || {}).slice(0, 100));
+        } else if (e.type === "tool" && e.phase === "end") {
+          console.log(`  ← ${e.preview?.slice(0, 120) || "ok"}`);
+        } else if (e.type === "guard") {
+          console.log(`  ! guard [${e.level}] ${e.message}`);
+        } else if (e.type === "lifecycle" && e.phase === "start") {
+          console.log("  … running");
+        } else if (e.type === "cache" && e.phase === "turn_hit_rate") {
+          console.log(`  · cache hit ${e.cacheHitRatePct}% (cached=${e.cachedTokens}/${e.promptTokens})`);
+        } else if (e.type === "objective") {
+          console.log(`  · mission ${e.phase || ""} ${e.id || ""}`.trim());
+        }
+      };
+      let result = await runAgent({
+        goal: message,
         cfg,
+        channel: "cli",
         chatSessionId: sessionId || null,
-        onEvent: (e) => {
-          if (e.type === "tool" && e.phase === "start") {
-            console.log(`  → tool ${e.name}`, JSON.stringify(e.args || {}).slice(0, 100));
-          } else if (e.type === "tool" && e.phase === "end") {
-            console.log(`  ← ${e.preview?.slice(0, 120) || "ok"}`);
-          } else if (e.type === "guard") {
-            console.log(`  ! guard [${e.level}] ${e.message}`);
-          } else if (e.type === "lifecycle" && e.phase === "start") {
-            console.log("  … running");
-          } else if (e.type === "cache" && e.phase === "turn_hit_rate") {
-            console.log(`  · cache hit ${e.cacheHitRatePct}% (cached=${e.cachedTokens}/${e.promptTokens})`);
-          }
-        },
+        persistRun: true,
+        onEvent,
       });
       console.log("\n---\n" + result.text);
+      // A0: CLI used to call runAgentLoop directly, skipping the claims gate
+      // AND never persisting (it passed chatSessionId, which the loop ignored).
+      // A turn-cap cutoff is not completion — continue as a durable objective
+      // in-process so `xclaw agent "long goal"` does not exit mid-work.
+      if (result.stopReason === "maxTurns") {
+        const { autoPromoteIfNeeded } = await import("../src/channels/runtime.mjs");
+        const { replyWithAgent } = await import("../src/channels/base.mjs");
+        const promo = await autoPromoteIfNeeded({
+          text: message,
+          inbound: {
+            channel: "cli",
+            chatId: sessionId || "cli",
+            userId: "cli",
+            identity: `cli:${sessionId || "cli"}`,
+          },
+          cfg,
+          workingDir: process.cwd(),
+          replyWithAgent,
+          onEvent,
+          notify: async (t) => {
+            console.log("\n[mission] " + String(t));
+          },
+          turnResult: result,
+          awaitRun: true,
+        });
+        if (promo) {
+          console.log(`\n[xclaw] continued as mission ${promo.id} (${promo.result?.status || "running"})`);
+          const final = promo.result?.objective?.finalAnswer;
+          if (final) console.log("\n---\n" + final);
+          result = { ...result, stopReason: promo.result?.status || result.stopReason, turns: result.turns };
+        }
+      }
       const u = result.usage;
       let usageLine = "";
       if (u?.hasRealUsage) {
@@ -1837,7 +1874,7 @@ Enable with seats.enabled: true in config`);
       } else if (u?.estimatedPromptTokens != null) {
         usageLine = ` · ~promptTokens=${u.estimatedPromptTokens} (${u.mode})`;
       }
-      console.log(`\n[${result.turns} turns, model=${result.model}${usageLine}]`);
+      console.log(`\n[${result.turns} turns, model=${result.model}${usageLine}${result.stopReason ? " · " + result.stopReason : ""}]`);
       break;
     }
     case "soak": {

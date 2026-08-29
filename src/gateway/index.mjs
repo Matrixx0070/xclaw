@@ -373,12 +373,15 @@ async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} })
       return;
     }
 
+    const streamSessionId =
+      body?.sessionId || body?.chatSessionId || body?.conversationId || null;
     const result = await runAgentLoop({
       userMessage: message,
       cfg,
       workingDir: workingDir || process.cwd(),
       signal: controller.signal,
-      chatSessionId: body?.sessionId || body?.chatSessionId || body?.conversationId || null,
+      chatSessionId: streamSessionId,
+      persistRun: streamSessionId ? true : undefined,
       history: Array.isArray(body?.history)
         ? body.history
         : Array.isArray(body?.messages)
@@ -407,6 +410,7 @@ async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} })
         toolTrace: result.toolTrace,
         usage: result.usage,
         sessionId: result.sessionId,
+        stopReason: result.stopReason || null,
         suggestions: result.suggestions || [],
         streamId: resume.streamId,
       });

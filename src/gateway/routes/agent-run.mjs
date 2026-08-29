@@ -33,11 +33,14 @@ export async function tryHandleAgentRunRoute({
     }
     const events = [];
     try {
+      const runSessionId =
+        body.sessionId || body.chatSessionId || body.conversationId || null;
       const result = await runAgentLoop({
         userMessage: message,
         cfg,
         workingDir: body.workingDir || process.cwd(),
-        chatSessionId: body.sessionId || body.chatSessionId || body.conversationId || null,
+        chatSessionId: runSessionId,
+        persistRun: runSessionId ? true : undefined,
         history: Array.isArray(body.history)
           ? body.history
           : Array.isArray(body.messages)

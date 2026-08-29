@@ -10,6 +10,28 @@ import os from "node:os";
 
 export const RUN_STORE_VERSION = 1;
 
+/**
+ * Which id, if any, a loop should persist a durable snapshot under.
+ *
+ * Feature 2 was documented against `sessionId` / `persistRun`, but every
+ * default surface (CLI `xclaw agent`, TUI, POST /agent/run, `runAgent`)
+ * passes the conversation id as `chatSessionId`. Treating only `sessionId`
+ * as the persist key made the snapshot store a dead feature on the path
+ * operators actually use.
+ *
+ * Returns:
+ *   string — persist under this id
+ *   ""     — persist, caller must generate a stable id once per run
+ *   null   — do not persist (`persistRun: false` or no identity)
+ */
+export function resolveRunPersistId(options = {}) {
+  if (options.persistRun === false) return null;
+  const named =
+    options.sessionId || options.runId || options.chatSessionId || null;
+  if (named) return String(named);
+  return options.persistRun ? "" : null;
+}
+
 export function runsDir(cfg = {}) {
   const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
   return path.join(base, "agent-runs");
@@ -163,4 +185,5 @@ export default {
   deleteAgentRun,
   runsDir,
   RUN_STORE_VERSION,
+  resolveRunPersistId,
 };

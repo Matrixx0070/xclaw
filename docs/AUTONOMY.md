@@ -126,7 +126,15 @@ xclaw runs show <sessionId>
 
 `GET /agent-runs?id=` · Codes: `SESSION_NOT_FOUND` | `SESSION_CORRUPT` | `SESSION_UNSUPPORTED_VERSION` | `SESSION_WORKDIR_MISSING`
 
-Pass `sessionId` / `persistRun` into the agent loop to write snapshots after a run.
+Pass `sessionId`, `chatSessionId`, or `persistRun` into the agent loop
+to write snapshots after a run. Default surfaces (`xclaw agent`, TUI,
+`POST /agent/run`, webchat) persist automatically under the conversation
+id. Opt out with `persistRun: false`.
+
+A turn-cap cutoff (`stopReason === "maxTurns"`) auto-promotes into a
+durable objective on channels, webchat, and the CLI (CLI awaits the
+mission so the process does not exit mid-work). Disable with
+`objectives.autoPromote: false`.
 
 
 ## Telegram channel

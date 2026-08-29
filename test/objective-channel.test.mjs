@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { processInbound, normalizeInbound } from "../src/channels/runtime.mjs";
+import {
+  processInbound,
+  normalizeInbound,
+  shouldAutoPromoteTurn,
+  autoPromoteIfNeeded,
+} from "../src/channels/runtime.mjs";
 import { loadObjective, listObjectives, saveObjective } from "../src/agent/objective-store.mjs";
 import { STATE_FENCE } from "../src/agent/objective.mjs";
 
@@ -59,6 +64,40 @@ async function waitForObjective(cfg, ms = 5000) {
   }
   throw new Error("objective never created");
 }
+
+describe("shouldAutoPromoteTurn", () => {
+  it("promotes only a maxTurns cutoff when notify exists and objectives are on", () => {
+    const cfg = { objectives: {} };
+    const notify = async () => {};
+    assert.equal(shouldAutoPromoteTurn(cfg, { stopReason: "maxTurns" }, notify), true);
+    assert.equal(shouldAutoPromoteTurn(cfg, { stopReason: "natural" }, notify), false);
+    assert.equal(shouldAutoPromoteTurn(cfg, { stopReason: "maxTurns" }, null), false);
+    assert.equal(
+      shouldAutoPromoteTurn({ objectives: { enabled: false } }, { stopReason: "maxTurns" }, notify),
+      false
+    );
+    assert.equal(
+      shouldAutoPromoteTurn({ objectives: { autoPromote: false } }, { stopReason: "maxTurns" }, notify),
+      false
+    );
+  });
+
+  it("autoPromoteIfNeeded is a no-op when the predicate is false", async () => {
+    const cfg = await cfgTmp();
+    const out = await autoPromoteIfNeeded({
+      cfg,
+      turnResult: { stopReason: "natural", text: "done", toolTrace: [] },
+      notify: async () => {},
+      inbound: inboundBase,
+      text: "x",
+      replyWithAgent: async () => {
+        throw new Error("must not promote a natural stop");
+      },
+    });
+    assert.equal(out, null);
+    await cleanup(cfg);
+  });
+});
 
 describe("objective channel routing", () => {
   it("/objective <goal> starts a detached mission that runs segments to done", async () => {
