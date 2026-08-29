@@ -176,6 +176,24 @@ describe("tui formatting", () => {
     assert.ok(!out[0].startsWith("  "), "first line is not indented");
     assert.ok(out[1].startsWith("  "), "continuations are indented");
   });
+
+  it("sliceCells skips SGR so wrap does not tear sequences or spend cells on them", () => {
+    const red = "[31m";
+    const reset = "[0m";
+    const painted = `${red}HELLO WORLD${reset}`;
+    // 11 visible cells. A 5-cell budget must cut after HELLO, keeping the
+    // opening SGR intact — the pre-fix walker counted each SGR byte as a cell
+    // and could split `ESC[31m` across rows.
+    const parts = sliceCells(painted, 5);
+    assert.equal(visibleWidth(parts[0]), 5);
+    assert.equal(visibleWidth(parts[1]), 5);
+    assert.ok(parts[0].startsWith(red), parts[0]);
+    assert.equal(parts.map((p) => p.replace(/\[[0-9;]*m/g, "")).join(""), "HELLO WORLD");
+    for (const p of parts) {
+      assert.doesNotMatch(p, /\[[0-9;]*$/);
+    }
+    assert.deepEqual(sliceCells("HELLO WORLD", 5), ["HELLO", " WORL", "D"]);
+  });
 });
 
 const ESC = "\u001b";

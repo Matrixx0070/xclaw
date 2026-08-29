@@ -60,38 +60,46 @@ async function getJSON(url, opts) {
 async function loadStatus() {
   // /gateway/info is the sanitized status endpoint (the old /status route
   // was dropped in a refactor and this card sat on "not found" ever since).
-  const s = await getJSON("/gateway/info");
-  const computer = s.computer || {};
-  const running = Boolean(computer.healthy);
-  const gw = s.gateway || {};
-  $("statusKv").innerHTML = kvHtml([
-    ["Host", `${gw.host || "—"}:${gw.port || "—"}`],
-    ["Provider", s.agent?.provider || "—"],
-    ["Model", s.agent?.model || "—"],
-    ["Auth", gw.tokenSet ? (gw.authStrict ? "token · strict" : "token") : "open", gw.tokenSet ? "good" : "warn"],
-    ["Computer", running ? "running" : "stopped", running ? "good" : "warn"],
-    ["Version", s.version || s.name || "XClaw"],
-  ]);
-  $("computerKv").innerHTML = kvHtml([
-    ["Running", running ? "yes" : "no", running ? "good" : "warn"],
-    ["Host", computer.host ?? "—"],
-    ["Port", computer.port ?? "—"],
-  ]);
-  const ch = s.channels || {};
-  const messaging = Array.isArray(ch.messaging) ? ch.messaging : [];
-  const chanState = (name) => messaging.find((m) => m.name === name);
-  const chanRows = [
-    ["WebChat", ch.webchat?.enabled !== false ? "on" : "off", "good"],
-    ...["telegram", "discord", "slack", "email"].map((n) => {
-      const st = chanState(n);
-      const on = Boolean(st?.enabled);
-      const label = n[0].toUpperCase() + n.slice(1);
-      return [label, on ? "on" : "off", on ? "good" : ""];
-    }),
-  ];
-  $("channelsKv").innerHTML = kvHtml(chanRows);
-  $("footMeta").textContent = new Date().toLocaleString();
-  return s;
+  try {
+    const s = await getJSON("/gateway/info");
+    const computer = s.computer || {};
+    const running = Boolean(computer.healthy);
+    const gw = s.gateway || {};
+    $("statusKv").innerHTML = kvHtml([
+      ["Host", `${gw.host || "—"}:${gw.port || "—"}`],
+      ["Provider", s.agent?.provider || "—"],
+      ["Model", s.agent?.model || "—"],
+      ["Auth", gw.tokenSet ? (gw.authStrict ? "token · strict" : "token") : "open", gw.tokenSet ? "good" : "warn"],
+      ["Computer", running ? "running" : "stopped", running ? "good" : "warn"],
+      ["Version", s.version || s.name || "XClaw"],
+    ]);
+    $("computerKv").innerHTML = kvHtml([
+      ["Running", running ? "yes" : "no", running ? "good" : "warn"],
+      ["Host", computer.host ?? "—"],
+      ["Port", computer.port ?? "—"],
+    ]);
+    const ch = s.channels || {};
+    const messaging = Array.isArray(ch.messaging) ? ch.messaging : [];
+    const chanState = (name) => messaging.find((m) => m.name === name);
+    const chanRows = [
+      ["WebChat", ch.webchat?.enabled !== false ? "on" : "off", "good"],
+      ...["telegram", "discord", "slack", "email"].map((n) => {
+        const st = chanState(n);
+        const on = Boolean(st?.enabled);
+        const label = n[0].toUpperCase() + n.slice(1);
+        return [label, on ? "on" : "off", on ? "good" : ""];
+      }),
+    ];
+    $("channelsKv").innerHTML = kvHtml(chanRows);
+    $("footMeta").textContent = new Date().toLocaleString();
+    return s;
+  } catch (e) {
+    const msg = String(e.message || e);
+    $("statusKv").innerHTML = kvHtml([["Error", msg, "warn"]]);
+    $("computerKv").innerHTML = kvHtml([["Error", "stale — refresh failed", "warn"]]);
+    $("channelsKv").innerHTML = kvHtml([["Error", "stale — refresh failed", "warn"]]);
+    throw e;
+  }
 }
 
 async function loadConfigEviction() {
@@ -224,9 +232,22 @@ async function loadSessions() {
   }
 }
 
+let refreshAllInflight = null;
 async function refreshAll() {
-  await Promise.all([loadStatus(), loadConfigEviction(), loadCost(), loadSessions(), loadPairing(), loadCronLogs()]);
+  if (refreshAllInflight) return refreshAllInflight;
+  refreshAllInflight = Promise.all([
+    loadStatus(),
+    loadConfigEviction(),
+    loadCost(),
+    loadSessions(),
+    loadPairing(),
+    loadCronLogs(),
+  ]).finally(() => {
+    refreshAllInflight = null;
+  });
+  return refreshAllInflight;
 }
+window.refreshAll = refreshAll;
 
 $("btnRefresh").onclick = () => refreshAll().catch(console.error);
 
@@ -577,22 +598,30 @@ async function loadPairing() {
     tbody.innerHTML = rows.join("") || `<tr><td colspan="5" class="muted">No entries</td></tr>`;
     tbody.querySelectorAll(".pair-apr").forEach((btn) => {
       btn.onclick = async () => {
-        await getJSON("/pairing/approve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ channel: ch, code: btn.dataset.code }),
-        });
-        await loadPairing();
+        try {
+          await getJSON("/pairing/approve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ channel: ch, code: btn.dataset.code }),
+          });
+          await loadPairing();
+        } catch (e) {
+          tbody.innerHTML = `<tr><td colspan="5" class="muted">${e.message}</td></tr>`;
+        }
       };
     });
     tbody.querySelectorAll(".pair-rev").forEach((btn) => {
       btn.onclick = async () => {
-        await getJSON("/pairing/revoke", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ channel: ch, senderId: btn.dataset.id }),
-        });
-        await loadPairing();
+        try {
+          await getJSON("/pairing/revoke", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ channel: ch, senderId: btn.dataset.id }),
+          });
+          await loadPairing();
+        } catch (e) {
+          tbody.innerHTML = `<tr><td colspan="5" class="muted">${e.message}</td></tr>`;
+        }
       };
     });
   } catch (err) {
@@ -607,13 +636,18 @@ $("btnPairApprove") && ($("btnPairApprove").onclick = async () => {
   const ch = $("pairChannel").value;
   const code = $("pairCode").value.trim();
   if (!code) return;
-  await getJSON("/pairing/approve", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ channel: ch, code }),
-  });
-  $("pairCode").value = "";
-  await loadPairing();
+  try {
+    await getJSON("/pairing/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel: ch, code }),
+    });
+    $("pairCode").value = "";
+    await loadPairing();
+  } catch (e) {
+    const tbody = $("pairTable")?.querySelector("tbody");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="muted">${e.message}</td></tr>`;
+  }
 });
 
 loadPairing().catch(() => {});
@@ -698,6 +732,7 @@ async function runJobFromUi() {
       null,
       2
     );
+    await loadJobHistory();
   } catch (err) {
     $("jobMeta").textContent = "error";
     $("jobOut").textContent = String(err.message || err);
@@ -722,8 +757,7 @@ async function loadJobHistory() {
         <td class="${j.pass ? "good" : "warn"}">${j.status || "—"}</td>
         <td>${j.turns ?? "—"}</td>
         <td title="${(j.goal || "").replace(/"/g, "&quot;")}">${(j.goal || "").slice(0, 60)}</td>`;
-      tr.style.cursor = "pointer";
-      tr.onclick = async () => {
+      bindRowOpen(tr, async () => {
         try {
           const full = await getJSON("/jobs/" + encodeURIComponent(j.id));
           $("jobOut").textContent = JSON.stringify(full, null, 2);
@@ -731,7 +765,7 @@ async function loadJobHistory() {
         } catch (e) {
           $("jobOut").textContent = String(e.message || e);
         }
-      };
+      });
       tbody.appendChild(tr);
     }
   } catch (e) {
@@ -815,15 +849,14 @@ async function loadQueue() {
         <td title="${(q.goal || "").replace(/"/g, "&quot;")}">${(q.goal || "").slice(0, 60)}</td>
         <td style="font-size:0.7rem">${waitMsLabel(q)}</td>
         <td style="font-size:0.7rem">${(q.createdAt || "").replace("T", " ").slice(0, 19)}</td>`;
-      tr.style.cursor = "pointer";
-      tr.onclick = async () => {
+      bindRowOpen(tr, async () => {
         try {
           const full = await getJSON("/queue/" + encodeURIComponent(q.id));
           $("queueOut").textContent = JSON.stringify(full, null, 2);
         } catch (e) {
           $("queueOut").textContent = String(e.message || e);
         }
-      };
+      });
       tbody.appendChild(tr);
     }
     // worker line in queueOut header if empty-ish
@@ -1195,6 +1228,20 @@ function showEmptyRow(tbody, message) {
   if (!tbody || tbody.children.length) return;
   const cols = tbody.closest("table")?.querySelectorAll("thead th").length || 4;
   tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${esc(message)}</td></tr>`;
+}
+
+/** Make a click-to-open table row keyboard-reachable (Enter/Space). */
+function bindRowOpen(tr, onOpen) {
+  tr.setAttribute("tabindex", "0");
+  tr.setAttribute("role", "button");
+  tr.style.cursor = "pointer";
+  tr.addEventListener("click", onOpen);
+  tr.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onOpen(e);
+    }
+  });
 }
 
 async function loadApprovals() {
@@ -1674,8 +1721,8 @@ function provRenderRow(row) {
       const cls = pr.expired ? "pill warn" : "pill on";
       const pref = pr.orderIndex === 0 ? " ★" : "";
       const exp = pr.expired ? " · expired" : "";
-      return `<span class="${cls} prov-cred" data-profile="${esc(pr.id)}"
-        title="${esc(pr.id)} — click to prefer">${kind}${exp}${pref}<span class="prov-cred-del" data-profile="${esc(pr.id)}" title="remove ${esc(pr.id)}">×</span></span>`;
+      return `<span class="prov-cred-wrap"><button type="button" class="${cls} prov-cred" data-profile="${esc(pr.id)}"
+        title="${esc(pr.id)} — click to prefer" aria-label="prefer ${esc(pr.id)}">${kind}${exp}${pref}</button><button type="button" class="prov-cred-del" data-profile="${esc(pr.id)}" title="remove ${esc(pr.id)}" aria-label="remove ${esc(pr.id)}">×</button></span>`;
     })
     .join(" ");
   const envBadge = row.hasEnvKey
@@ -1766,9 +1813,9 @@ function provWireRows() {
   document.querySelectorAll("#provTable tr[data-prov]").forEach((tr) => {
     const id = tr.getAttribute("data-prov");
     // Wrap a handler so it disables the row, surfaces errors, and refreshes.
-    const guard = (fn) => async () => {
+    const guard = (fn) => async (ev) => {
       provBusy(tr, true);
-      try { await fn(); } catch (e) { provSetStatus(String(e.message || e), true); }
+      try { await fn(ev); } catch (e) { provSetStatus(String(e.message || e), true); }
       finally { provBusy(tr, false); }
     };
 
@@ -1857,16 +1904,20 @@ function provWireRows() {
     }));
 
     tr.querySelectorAll(".prov-cred").forEach((badge) => {
-      // Click the badge body → prefer this credential. Click its × → remove it.
-      badge.addEventListener("click", guard(async (ev) => {
+      badge.addEventListener("click", guard(async () => {
         const profileId = badge.getAttribute("data-profile");
-        if (ev && ev.target && ev.target.classList.contains("prov-cred-del")) {
-          await provCall("/providers/manage/key", "DELETE", { provider: id, profileId });
-          provSetStatus(`${id}: removed ${profileId}`);
-        } else {
-          await provCall("/providers/manage/prefer", "POST", { provider: id, profileId });
-          provSetStatus(`${id}: preferring ${profileId}`);
-        }
+        await provCall("/providers/manage/prefer", "POST", { provider: id, profileId });
+        provSetStatus(`${id}: preferring ${profileId}`);
+        await loadProviders();
+      }));
+    });
+    tr.querySelectorAll(".prov-cred-del").forEach((btn) => {
+      btn.addEventListener("click", guard(async (ev) => {
+        ev.stopPropagation();
+        const profileId = btn.getAttribute("data-profile");
+        if (!confirm(`Remove stored credential ${profileId}?`)) return;
+        await provCall("/providers/manage/key", "DELETE", { provider: id, profileId });
+        provSetStatus(`${id}: removed ${profileId}`);
         await loadProviders();
       }));
     });
@@ -2315,7 +2366,7 @@ async function ulLoadLogs() {
     )
     .join("") || `<tr><td colspan="8" class="muted">no requests</td></tr>`;
   tbody.querySelectorAll(".ul-log-row").forEach((tr) =>
-    tr.addEventListener("click", async () => {
+    bindRowOpen(tr, async () => {
       try {
         const d = await getJSON(`/logs/run?id=${encodeURIComponent(tr.dataset.run)}`);
         $("ulDetailTitle").textContent = `${d.entry.provider} · ${d.entry.model} · ${new Date(d.entry.at).toLocaleString()}`;
@@ -2825,10 +2876,10 @@ async function loadMcpTools() {
       </tr>`)
       .join("") || `<tr><td colspan="2" class="muted">No MCP tools — add servers under <code>mcp.servers</code> in xclaw.json, then reload config.</td></tr>`;
     tbody.querySelectorAll(".mcp-row").forEach((tr) => {
-      tr.onclick = () => {
+      bindRowOpen(tr, () => {
         $("mcpToolName").value = tr.dataset.name;
         $("mcpOut").textContent = "→ " + tr.dataset.name + " loaded — fill arguments and Call";
-      };
+      });
     });
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="2" class="muted">${esc(e.message || e)}</td></tr>`;
@@ -3315,6 +3366,7 @@ $("btnMwAdd")?.addEventListener("click", async () => {
     $("mwStatus").textContent = String(e.message || e).slice(0, 50);
   }
 });
+$("btnMwRefresh")?.addEventListener("click", () => loadWorkers().catch(() => {}));
 if (document.getElementById("cardMissionWorkers")) loadWorkers();
 
 // ── Point & Prompt: pick an element from the running app, launch a pinned mission
@@ -3444,7 +3496,11 @@ if ($("msnTable")) {
   loadObjectivesCard().catch(() => {});
   // live refresh straight from mission WS events + a slow safety poll
   setInterval(() => {
-    if (location.hash.includes("missions")) { loadMissions().catch(() => {}); loadObjectivesCard().catch(() => {}); }
+    if (location.hash.includes("missions")) {
+      loadMissions().catch(() => {});
+      loadObjectivesCard().catch(() => {});
+      loadWorkers().catch(() => {});
+    }
   }, 10_000);
 }
 
@@ -3583,10 +3639,10 @@ async function loadMemoryFilesUi() {
       </tr>`)
       .join("") || `<tr><td colspan="3" class="muted">No memory files found for the gateway working dir.</td></tr>`;
     tbody.querySelectorAll(".mem-row").forEach((tr) => {
-      tr.onclick = () => {
+      bindRowOpen(tr, () => {
         const f = files[Number(tr.dataset.i)];
         $("memOut").textContent = f?.body || f?.preview || "(empty)";
-      };
+      });
     });
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="3" class="muted">${esc(e.message || e)}</td></tr>`;
@@ -3701,13 +3757,13 @@ async function loadLedger() {
         `<td><span class="pill">${esc(ev.kind || "—")}</span></td>` +
         `<td style="font-size:0.75rem;">${esc(ev.actor || "—")}</td>` +
         `<td style="font-size:0.75rem;">${esc(ledgerSummary(ev))}</td>`;
-      tr.onclick = () => {
+      bindRowOpen(tr, () => {
         const out = $("ledgerOut");
         if (out) {
           out.classList.remove("placeholder");
           out.textContent = JSON.stringify(ev, null, 2);
         }
-      };
+      });
       tbody.appendChild(tr);
     }
   } catch (e) {

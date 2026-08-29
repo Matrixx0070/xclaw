@@ -14,6 +14,20 @@ describe("webchat suggestions surface", () => {
     assert.match(js, /\/channel\/webchat\/suggestions\/feedback/);
   });
 
+  it("composer Enter ignores IME composition", () => {
+    const js = fs.readFileSync(path.join(root, "ui/webchat/app.js"), "utf8");
+    assert.match(js, /e\.isComposing \|\| e\.keyCode === 229/);
+  });
+
+  it("speak button plays returned audio before reporting success", () => {
+    const js = fs.readFileSync(path.join(root, "ui/webchat/app.js"), "utf8");
+    assert.match(js, /audioBase64/);
+    assert.match(js, /new Audio\(/);
+    assert.match(js, /TTS: no audio returned/);
+    const voice = fs.readFileSync(path.join(root, "src/gateway/routes/voice.mjs"), "utf8");
+    assert.match(voice, /out\.audioBase64 = buf\.toString\("base64"\)/);
+  });
+
   it("styles include chip-row", () => {
     const css = fs.readFileSync(path.join(root, "ui/webchat/styles.css"), "utf8");
     assert.match(css, /\.chip-row/);

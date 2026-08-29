@@ -402,7 +402,7 @@ export function visibleWidth(text) {
   return cells;
 }
 
-/** Split plain text into segments of at most `w` terminal cells. */
+/** Split text into segments of at most `w` terminal cells, skipping SGR. */
 export function sliceCells(text, w) {
   const s = String(text);
   const out = [];
@@ -410,10 +410,18 @@ export function sliceCells(text, w) {
   let cells = 0;
   let i = 0;
   while (i < s.length) {
+    if (s[i] === ESC) {
+      const m = s.slice(i + 1).match(/^\[[0-9;]*m/);
+      if (m) {
+        cur += s[i] + m[0];
+        i += 1 + m[0].length;
+        continue;
+      }
+    }
     const cp = s.codePointAt(i);
     const ch = String.fromCodePoint(cp);
     const cw = charWidth(cp);
-    if (cells + cw > w) {
+    if (cells + cw > w && cur) {
       out.push(cur);
       cur = "";
       cells = 0;

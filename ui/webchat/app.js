@@ -674,6 +674,7 @@ function autoSize() {
 }
 input.addEventListener("input", autoSize);
 input.addEventListener("keydown", (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
@@ -732,7 +733,10 @@ function showAuthOverlay() {
     }
   };
   ov.querySelector("#xa-save").addEventListener("click", submit);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === "Enter") submit();
+  });
   input.focus();
 }
 {
@@ -805,6 +809,22 @@ function showAuthOverlay() {
           setVoiceStatus("TTS: " + (j.error || j.reason || "failed"));
           return;
         }
+        if (!j.audioBase64) {
+          setVoiceStatus("TTS: no audio returned");
+          return;
+        }
+        const bin = atob(j.audioBase64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: j.mime || "audio/wav" });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.onended = () => URL.revokeObjectURL(url);
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          setVoiceStatus("TTS: playback failed");
+        };
+        await audio.play();
         setVoiceStatus("TTS " + (j.provider || "ok"));
       } catch (e) {
         setVoiceStatus("TTS error: " + e.message);

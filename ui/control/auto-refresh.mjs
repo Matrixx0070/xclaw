@@ -52,17 +52,24 @@ if (typeof document !== "undefined" && typeof window !== "undefined") {
   const gate = createRefreshGate();
   const stampEl = () => document.getElementById("lastRefreshAt");
 
-  const stamp = () => {
+  const stamp = (ok) => {
     const el = stampEl();
-    if (el) el.textContent = `as of ${new Date().toLocaleTimeString()}`;
+    if (!el) return;
+    const t = new Date().toLocaleTimeString();
+    el.textContent = ok ? `as of ${t}` : `as of ${t} — refresh failed`;
+    el.classList.toggle("warn", !ok);
   };
 
   const fireActive = (trigger) => {
     if (!gate.shouldFire(trigger, { hidden: document.hidden })) return;
     // The topbar basics (gateway/status/cost/sessions) live in refreshAll,
-    // outside any card button. On a manual press app.js already runs it.
-    if (trigger !== "manual" && typeof window.refreshAll === "function") {
-      window.refreshAll().catch(() => {});
+    // outside any card button. app.js also binds btnRefresh → refreshAll;
+    // refreshAll coalesces in-flight calls so a manual click does not
+    // double-fetch. Stamp only after that promise settles — a failed
+    // refresh must not look like a successful one.
+    const pending = [];
+    if (typeof window.refreshAll === "function") {
+      pending.push(window.refreshAll());
     }
     const view = document.querySelector(".view.active");
     if (view) {
@@ -70,7 +77,14 @@ if (typeof document !== "undefined" && typeof window !== "undefined") {
         if (b.id !== "btnRefresh" && b.textContent.trim() === REFRESH_LABEL) b.click();
       }
     }
-    stamp();
+    if (!pending.length) {
+      stamp(true);
+      return;
+    }
+    Promise.all(pending).then(
+      () => stamp(true),
+      () => stamp(false)
+    );
   };
 
   window.addEventListener("hashchange", () => fireActive("nav"));
@@ -80,5 +94,5 @@ if (typeof document !== "undefined" && typeof window !== "undefined") {
   });
   document.getElementById("btnRefresh")?.addEventListener("click", () => fireActive("manual"));
   setInterval(() => fireActive("interval"), 30_000);
-  stamp(); // boot load just happened; say so
+  stamp(true); // boot load just happened; say so
 }

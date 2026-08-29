@@ -25,7 +25,19 @@ export async function tryHandleVoiceRoute({ p, method, req, res, cfg, json, read
     const { localSpeak } = await import("../../voice/providers/local.mjs");
     const text = String(body.text || body.message || "").slice(0, 500);
     const out = await localSpeak(text, cfg);
-    // Return path only (local); WebUI can fetch file if shared
+    // Embed the wav so the WebUI can play it. The path is a server tmp file
+    // the browser cannot fetch; returning it and claiming success was the bug.
+    if (out.ok && out.path) {
+      try {
+        const fsp = await import("node:fs/promises");
+        const buf = await fsp.readFile(out.path);
+        out.audioBase64 = buf.toString("base64");
+        out.mime = "audio/wav";
+        await fsp.unlink(out.path).catch(() => {});
+      } catch {
+        /* leave path-only; the client must not report success without audio */
+      }
+    }
     json(res, out.ok ? 200 : 503, out);
     return true;
   }

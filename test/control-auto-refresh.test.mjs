@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createRefreshGate, REFRESH_LABEL } from "../ui/control/auto-refresh.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // The module is imported under node — the browser wiring must be inert here
 // (no document), or this import itself would have thrown.
@@ -58,4 +63,34 @@ test("control auto-refresh gate", async (t) => {
   await t.test("the wiring re-fires buttons by the exact label the pages use", () => {
     assert.equal(REFRESH_LABEL, "Refresh");
   });
+});
+
+test("control auto-refresh wiring pins", () => {
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const wiring = fs.readFileSync(path.join(root, "ui/control/auto-refresh.mjs"), "utf8");
+
+  // Usage, job history, and remote workers must use the exact label the
+  // auto-refresh module re-clicks — any other text is silently excluded.
+  assert.match(html, /id="ulRefresh">Refresh</);
+  assert.match(html, /id="btnJobHistory">Refresh</);
+  assert.match(html, /id="btnMwRefresh">Refresh</);
+
+  // Stamp waits on refreshAll settling, including a failed fetch.
+  assert.match(wiring, /refresh failed/);
+  assert.match(wiring, /typeof window\.refreshAll === "function"/);
+  assert.match(wiring, /stamp\(false\)/);
+  assert.match(app, /window\.refreshAll = refreshAll/);
+  assert.match(app, /stale — refresh failed/);
+
+  // Pairing Approve/Revoke surface the error instead of swallowing it.
+  assert.match(app, /pairTable[\s\S]{0,200}e\.message/);
+
+  // Keyboard can open detail rows; credential pills are real buttons;
+  // the busy-guard forwards the event so × delete can stopPropagation.
+  assert.match(app, /function bindRowOpen/);
+  assert.match(app, /e\.key === "Enter" \|\| e\.key === " "/);
+  assert.match(app, /button type="button" class="\$\{cls\} prov-cred"/);
+  assert.match(app, /class="prov-cred-del"/);
+  assert.match(app, /const guard = \(fn\) => async \(ev\) =>/);
 });

@@ -1,3 +1,43 @@
+## 3.374.0
+
+### The operator console, TUI wrap, and webchat speak what they claim
+
+Live-driven on display :10 against the Control app window (`:9224`) and
+the `xtui` TUI. Eight confirmed HIGH edges from that drive, each pinned:
+
+The usage dashboard button said `↻`, job history said `Refresh history`,
+and remote workers had no Refresh at all — auto-refresh re-clicks only
+the exact label `"Refresh"`, so those cards stayed at page-load forever.
+They are now `"Refresh"`; workers also poll on the missions 10s tick.
+
+The topbar stamp wrote `as of t` the instant a refresh was *requested*.
+A failed `refreshAll` still looked fresh. `window.refreshAll` is now
+assigned (and coalesces in-flight calls); the stamp waits on that
+promise and writes `as of t — refresh failed` plus `.warn` on reject.
+`loadStatus` paints Error rows into the Overview kvs and rethrows so
+the promise actually rejects. Pairing Approve/Revoke catch into the
+table instead of swallowing.
+
+`sliceCells` counted every SGR byte as a cell, so wrap tore `ESC[31m`
+across rows and spent 11–16 cells early. It now skips SGR the same way
+`visibleWidth` / `fitToWidth` already did. Pin: a 5-cell budget on a
+painted `HELLO WORLD` keeps sequences intact and still wraps plain
+ASCII.
+
+Webchat Speak posted `/api/voice/speak` and reported success on a
+server tmp path the browser cannot fetch. The route now embeds
+`audioBase64` + `audio/wav` and unlinks the tmp; the client decodes,
+plays, and only then says `TTS <provider>`. Missing audio is
+`TTS: no audio returned`. Composer Enter during IME composition
+(`isComposing` / `keyCode === 229`) no longer sends.
+
+Job / queue / log / MCP / memory / ledger rows were click-only `<tr>`s.
+`bindRowOpen` gives them `tabindex=0` `role=button` and Enter/Space.
+Provider credential pills were `<span>`s whose × delete was unreachable
+because `guard = (fn) => async () =>` dropped the event — every click
+posted prefer. They are `<button>`s; `guard` forwards `ev`; delete
+`stopPropagation`s and confirms.
+
 ## 3.373.0
 
 ### A verdict has to have been read, not merely parsed
