@@ -1,3 +1,42 @@
+## 3.346.0
+
+### tightening the budget switched off the budget's own savings mode
+
+`limits()` in the cost governor resolves `dailyHardUsd` carefully — two
+candidate ceilings (`cost.dailyHardUsd` and `autonomy.maxUsdPerDay`), both
+filtered through `Number.isFinite`, stricter wins. `dailySoftUsd` sat on the
+very next line with a bare `??`: no numeric validation, and no relationship at
+all to the cap it is supposed to sit below.
+
+That is not a missed warning. The soft cap is the default `economyAtUsd` — the
+lower edge of the governor's economy band, the band that reroutes to cheaper
+models specifically to avoid ever reaching the hard cap — and `bandFor` tests
+`halt` first. A soft cap at or above the hard cap therefore makes the economy
+band **unreachable**: spending goes straight from `normal` to `halt`, with no
+downshift and no intermediate band alert.
+
+No malformed config is needed to get there. An operator who tightens
+`autonomy.maxUsdPerDay` to $3 pulls the hard cap to $3 while the configured
+soft cap stays at $5 — so *tightening the budget* is what removes the
+cost-saving machinery. Measured against the real module before the fix:
+
+    defaults                        soft=5  hard=15  ->  normal ... economy ... halt
+    autonomy tightened to $3        soft=5  hard=3   ->  normal, then halt at $4. no economy band
+    soft cap "five"                 soft=NaN         ->  normal at every spend, to $20 and past it
+    soft cap -1                     soft=-1          ->  economy from $0, forever
+
+The soft cap is now taken only when it is a number strictly below the hard cap,
+and otherwise falls back to the derivation the file already had
+(`min(5, hard/2)`). A soft cap of `0` is kept as `0` — economy from the first
+cent is the strictest legitimate setting, not an absent one. `perJobUsd` had
+the identical shape one line down (`projected > NaN` is false for every job
+forever) and is now validated the same way, falling through to
+`agent.maxUsdPerJob` and then to `1`.
+
+Live config is well-formed today (soft $25 / hard $60, no autonomy cap), so
+this ships as a guard rather than a behaviour change — one `autonomy` edit
+below $25 is all that separated it from firing.
+
 ## 3.345.0
 
 ### a lock nobody could look at

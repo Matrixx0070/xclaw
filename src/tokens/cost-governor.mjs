@@ -74,13 +74,28 @@ function limits(cfg) {
     (v) => v != null && Number.isFinite(Number(v))
   );
   const dailyHard = caps.length ? Math.min(...caps.map(Number)) : 15;
+  // The soft cap is the default `economyAtUsd` — the lower edge of the economy
+  // band — and `bandFor` tests halt FIRST. So a soft cap that is not a number,
+  // or that sits at or above the hard cap, does not merely warn late: it makes
+  // the economy band unreachable and spending jumps normal -> halt with no
+  // downshift. That is reachable without any malformed config: tightening
+  // `autonomy.maxUsdPerDay` below the configured soft cap does it. Zero stays
+  // zero — the strictest value is a value, not an absent one.
+  const derivedSoft = Number.isFinite(dailyHard) ? Math.min(5, dailyHard * 0.5) : 5;
+  const softRaw = g.dailySoftUsd == null ? null : Number(g.dailySoftUsd);
   const dailySoft =
-    g.dailySoftUsd ??
-    (Number.isFinite(dailyHard) ? Math.min(5, dailyHard * 0.5) : 5);
+    softRaw != null && softRaw < dailyHard
+      ? Math.max(0, softRaw)
+      : derivedSoft;
+  // Same shape one line down: an unvalidated per-job cap makes every
+  // `projected > lim.perJobUsd` comparison false, so no job is ever capped.
+  const perJobCandidates = [g.perJobUsd, cfg?.agent?.maxUsdPerJob].filter(
+    (v) => v != null && Number.isFinite(Number(v))
+  );
   return {
     dailySoftUsd: dailySoft,
     dailyHardUsd: dailyHard,
-    perJobUsd: g.perJobUsd ?? cfg?.agent?.maxUsdPerJob ?? 1,
+    perJobUsd: perJobCandidates.length ? Number(perJobCandidates[0]) : 1,
     pauseQueueOnHard: g.pauseQueueOnHard !== false,
     strict: g.strict === true || cfg?.cost?.strict === true,
   };
