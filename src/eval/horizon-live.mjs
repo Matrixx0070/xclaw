@@ -31,6 +31,7 @@ import {
   renderSoakLeaseMetrics,
 } from "./horizon-soak-lease-metrics.mjs";
 import { resolveLiveGoals } from "./horizon-live-goals.mjs";
+import { accumulateSpend, budgetForTurn } from "./live-spend.mjs";
 import {
   writeLiveSoakReport,
   DEFAULT_LIVE_IDS,
@@ -177,59 +178,108 @@ export async function runHorizonLive(opts = {}) {
         }
         const results = [];
         let live = null;
+        // Spend carried across goals. The cap used to be checked once, before
+        // the loop, against a counter nobody incremented — so N goals each ran
+        // against an untouched $0 and the ceiling could not fire.
+        let spend = { usedUsd: policy.usedUsd || 0, unpricedTurns: 0 };
+        let capBlock = null;
         for (const g of resolved.goals) {
           if (!g.prompt) {
             results.push({ id: g.id, ok: false, error: "empty_goal" });
             continue;
           }
-          // Per-turn guards (cost governor + canary) were imported but never
-          // invoked, so a live loop ran with no cost/hallucination brake.
-          const pre = await beforeLiveTurn({
-            ...opts,
-            goalId: g.id,
-            maxUsd: policy.maxUsd,
-            soakJobId,
+          const cap = checkSoakCaps(policy, {
+            usedUsd: spend.usedUsd,
+            turns: (policy.turns || 0) + results.length,
           });
-          if (pre && pre.ok === false) {
-            results.push({ id: g.id, ok: false, error: pre.code || "turn_guard" });
+          if (!cap.ok) {
+            capBlock = cap;
             break;
           }
+          // normalizeAgentRequest passes a fixed 16-key allow-list, and
+          // neither maxUsd nor maxTurns is on it — both were dropped in
+          // transit, so the soak's per-goal budget reached nothing and
+          // XCLAW_SOAK_MAX_TURNS silently ran at the agent default. cfg IS on
+          // the list, and it is where loop.mjs and the run governor read them.
+          //
+          // Computed BEFORE the turn is announced: a zero budget is the soak
+          // saying it has nothing left to spend, and the only correct response
+          // is to not start the goal. checkSoakCaps above blocks on strict `>`,
+          // so spending the budget to the exact penny walks straight past it.
+          const turnBudget = budgetForTurn(
+            opts.cfg?.agent?.budget?.maxUsd,
+            policy.maxUsd - spend.usedUsd
+          );
+          if (turnBudget === 0) {
+            capBlock = {
+              ok: false,
+              code: "SOAK_USD_EXCEEDED",
+              reason: `soak budget exhausted (${spend.usedUsd} of ${policy.maxUsd})`,
+              policy: {
+                ...policy,
+                usedUsd: spend.usedUsd,
+                turns: (policy.turns || 0) + results.length,
+              },
+            };
+            break;
+          }
+          await beforeLiveTurn();
           live = await runAgent({
             ...opts,
+            cfg: {
+              ...(opts.cfg || {}),
+              agent: {
+                ...(opts.cfg?.agent || {}),
+                maxTurns: g.maxTurns || maxTurns,
+                budget: {
+                  ...(opts.cfg?.agent?.budget || {}),
+                  ...(turnBudget == null ? {} : { maxUsd: turnBudget }),
+                },
+              },
+            },
             goal: g.prompt,
             userMessage: g.prompt,
             workingDir: opts.workspace || opts.workingDir || process.cwd(),
-            maxTurns: g.maxTurns || maxTurns,
-            maxUsd: policy.maxUsd,
             signal: controller.signal,
             channel: opts.channel || "eval",
           });
+          spend = accumulateSpend(spend, live);
           results.push({
             id: g.id,
             ok: live?.ok !== false && live?.error !== "empty_goal",
             error: live?.error || null,
           });
-          const post = await afterLiveTurn({
-            ...opts,
+          // Fed the accumulator, not `...opts`. Spreading opts handed the
+          // checkpoint the values this run STARTED from, so the per-goal save
+          // re-wrote the opening balance N times and never advanced: a soak
+          // killed after goal 4 resumed as though it had spent nothing.
+          await afterLiveTurn({
+            workspace: opts.workspace || null,
+            mode: opts.mode,
+            soakBase: opts.soakBase,
             goalId: g.id,
             result: live,
             soakJobId,
+            turns: (policy.turns || 0) + results.length,
+            usedUsd: spend.usedUsd,
+            receipts: results.map((r) => ({
+              at: new Date().toISOString(),
+              id: r.id,
+              ok: r.ok,
+            })),
           });
-          if (post && post.ok === false) {
-            results.push({ id: g.id, ok: false, error: post.code || "turn_guard_post" });
-            break;
-          }
           if (live?.error === "empty_goal") {
             break;
           }
         }
-        const allOk = results.length > 0 && results.every((r) => r.ok);
+        const allOk =
+          !capBlock && results.length > 0 && results.every((r) => r.ok);
         if (soakJobId) {
           await saveSoakCheckpoint(
             soakJobId,
             {
               turns: (policy.turns || 0) + results.length,
-              usedUsd: policy.usedUsd,
+              usedUsd: spend.usedUsd,
               workspace: opts.workspace || null,
               receipts: results.map((r) => ({
                 at: new Date().toISOString(),
@@ -245,19 +295,24 @@ export async function runHorizonLive(opts = {}) {
             mode: "live",
             ok: allOk,
             ids: resolved.ids,
-            usedUsd: policy.usedUsd,
+            usedUsd: spend.usedUsd,
+            unpricedTurns: spend.unpricedTurns,
             turns: (policy.turns || 0) + results.length,
             soakJobId,
             canary: { fail: 0 },
           },
           { base: opts.soakBase }
         );
+        if (capBlock) incSoakBlock();
         return {
           ok: allOk,
-          mode: "live",
+          mode: capBlock ? "soak_blocked" : "live",
+          ...(capBlock ? { code: capBlock.code, reason: capBlock.reason } : {}),
           maxTurns,
           timeoutMs,
-          policy,
+          policy: capBlock ? capBlock.policy : { ...policy, usedUsd: spend.usedUsd },
+          usedUsd: spend.usedUsd,
+          unpricedTurns: spend.unpricedTurns,
           soakJobId,
           ids: resolved.ids,
           results,

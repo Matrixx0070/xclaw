@@ -34,7 +34,12 @@ describe("horizon live", () => {
         assert.ok(signal);
         return { ok: true };
       },
-      maxTurns: 3,
+      // The soak ceiling counts GOALS, and the default suite has five. It used
+      // to be checked against a counter nobody incremented, so a 3 here ran all
+      // five anyway; now it blocks at the fourth. Raised so this case still
+      // exercises the unblocked path it was written for — the ceiling itself is
+      // pinned in horizon-live-spend.test.mjs.
+      maxTurns: 10,
       timeoutMs: 5000,
     });
     assert.equal(r.mode, "live");

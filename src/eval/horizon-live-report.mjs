@@ -44,11 +44,47 @@ export function buildLiveSoakReport(partial = {}) {
     ids,
     ok: partial.ok !== false,
     usedUsd: Number(partial.usedUsd ?? 0),
+    // The operator-facing artefact dropped this: a fixed object literal with no
+    // spread silently discarded the field passed to it, so a report of five
+    // un-priced turns filed itself as "$0.00" with nothing saying nobody
+    // measured. usedUsd without unpricedTurns is a number with no error bar.
+    unpricedTurns: Number(partial.unpricedTurns ?? 0),
     turns: Number(partial.turns ?? 0),
     soakJobId: partial.soakJobId || null,
     canary: partial.canary || { fail: 0 },
     scorecard: partial.scorecard || { ok: null },
     at: new Date().toISOString(),
+  };
+}
+
+/**
+ * The report fields a CLI should write for a finished run.
+ *
+ * This lived inline in horizon-cli.mjs, inside the `--live --confirm-live`
+ * branch — a branch no test can enter without an API key and a real provider
+ * call, so every line of it was unreachable by the suite. It got them wrong:
+ * it wrote the run's STARTING turn count (0 on a fresh run) over the truthful
+ * report the runner had already written, and hardcoded a clean canary.
+ *
+ * The runner's own return is the authority; the checkpoint policy is only the
+ * fallback for the paths that return before the runner writes anything
+ * (soak_blocked, lease_denied, live_error). Extracted so the decision is
+ * testable apart from the I/O it used to be buried in.
+ *
+ * @param {object} r result from runHorizonLive
+ * @param {{ids?: string[], soakJobId?: string|null}} extra
+ */
+export function liveReportFromRun(r = {}, extra = {}) {
+  return {
+    mode: r.mode || "live",
+    ok: r.ok !== false,
+    ids: extra.ids,
+    usedUsd: r.usedUsd ?? r.policy?.usedUsd ?? 0,
+    unpricedTurns: r.unpricedTurns ?? r.liveReport?.unpricedTurns ?? 0,
+    turns: r.liveReport?.turns ?? r.policy?.turns ?? 0,
+    soakJobId: extra.soakJobId ?? null,
+    canary: r.canary || r.liveReport?.canary || { fail: 0 },
+    scorecard: r.scorecard || { ok: null },
   };
 }
 
@@ -74,6 +110,7 @@ export async function readLiveSoakReport(opts = {}) {
 
 export default {
   DEFAULT_LIVE_IDS,
+  liveReportFromRun,
   writeLiveSoakReport,
   readLiveSoakReport,
   buildLiveSoakReport,

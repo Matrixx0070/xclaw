@@ -26,56 +26,37 @@ export function noteLastLiveRun(info) {
   return state.last;
 }
 
-export async function beforeLiveTurn(ctx = {}) {
+/**
+ * Pre-turn gate for one live soak goal.
+ *
+ * This used to hold three guards, each reached through a dynamic import and a
+ * `a.x || a.default?.x || a.y` chain of names that no target module exports:
+ * `checkCost`/`evaluate` on cost-governor.mjs (real export: createCostGovernor),
+ * `requireReceipt` on high-risk-receipt.mjs (real export: guardHighRiskReceipt),
+ * `checkCanary` on hallucination-canary.mjs (real export: runHallucinationCanary).
+ * A missing property on a namespace object is `undefined`, not an error, so the
+ * `typeof fn === "function"` test simply skipped — and because the imports
+ * themselves succeeded, the surrounding catch never fired and never pushed its
+ * `skipped: true` breadcrumb either. The function returned `{ok:true, guards:[]}`,
+ * which reads exactly like "every guard ran and passed".
+ *
+ * They are gone rather than repaired, because each one duplicated enforcement
+ * that already runs a layer down, on every turn of every channel:
+ *   - cost: the soak's own aggregate ceiling is now checked per goal in
+ *     horizon-live.mjs (checkSoakCaps against accumulated spend), and the
+ *     per-run brake is createCostGovernor at loop.mjs:856, fed each turn.
+ *   - receipt: guardHighRiskReceipt runs per TOOL CALL at loop.mjs:1483, which
+ *     is strictly stronger than a per-turn check that has no tool name to test.
+ *   - canary: runHallucinationCanary runs per run at loop.mjs:2164, with the
+ *     soft-recovery path in canary-recover.mjs.
+ * Re-adding any of them here should mean adding something those cannot see.
+ */
+export async function beforeLiveTurn() {
   incLiveTurn();
-  const guards = [];
-
-  try {
-    const cg = await import("../agent/cost-governor.mjs");
-    const check = cg.checkCost || cg.default?.checkCost || cg.evaluate;
-    if (typeof check === "function") {
-      const r = await check(ctx);
-      guards.push({
-        name: "cost",
-        ...(r && typeof r === "object" ? r : { ok: r !== false }),
-      });
-      if (r && r.ok === false)
-        return { ok: false, code: r.code || "COST_GOVERNOR", guards };
-    }
-  } catch {
-    guards.push({ name: "cost", ok: true, skipped: true });
-  }
-
-  try {
-    const rec = await import("../agent/high-risk-receipt.mjs");
-    const fn = rec.requireReceipt || rec.default?.requireReceipt;
-    if (typeof fn === "function" && ctx.highRisk) {
-      const r = await fn(ctx);
-      guards.push({
-        name: "receipt",
-        ...(r && typeof r === "object" ? r : { ok: r !== false }),
-      });
-      if (r && r.ok === false)
-        return { ok: false, code: r.code || "RECEIPT_REQUIRED", guards };
-    }
-  } catch {
-    guards.push({ name: "receipt", ok: true, skipped: true });
-  }
-
-  return { ok: true, guards };
+  return { ok: true, guards: [] };
 }
 
 export async function afterLiveTurn(ctx = {}) {
-  try {
-    const can = await import("../agent/hallucination-canary.mjs");
-    const fn = can.checkCanary || can.default?.checkCanary;
-    if (typeof fn === "function") {
-      const r = await fn(ctx);
-      if (r && r.ok === false) return { ok: false, code: r.code || "CANARY", r };
-    }
-  } catch {
-    /* optional */
-  }
   if (ctx.soakJobId) {
     await saveSoakCheckpoint(
       ctx.soakJobId,

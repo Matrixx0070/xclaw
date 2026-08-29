@@ -1,3 +1,64 @@
+## 3.362.0
+
+- The live horizon soak's dollar cap was compared, on every goal of every run,
+  against a counter that nothing incremented. `policy.usedUsd` was assigned once
+  from the checkpoint and read four times; `usedUsd > maxUsd` was `0 > 2`
+  forever. Five goals ran to completion against a ceiling that could not fire,
+  and the run filed a report saying `$0.00` — which is what a cap looks like
+  when it is working, and also what it looks like when it is absent.
+
+  Pulling that thread found seven more on the same path, each of which alone
+  would have kept the cap decorative:
+
+  - **The caps never reached the agent.** `normalizeAgentRequest`
+    (`src/agent/run-agent.mjs`) forwards a fixed 16-key allow-list, and neither
+    `maxUsd` nor `maxTurns` is on it. Both were dropped in transit. `cfg` IS on
+    it, and `cfg` is where `loop.mjs` and `createCostGovernor` actually read
+    them, so the soak now routes its per-goal budget through `cfg.agent`.
+  - **Three guards that never ran.** `beforeLiveTurn` reached a cost check, a
+    receipt check and a canary through property names no target module exports
+    (`checkCost`, `requireReceipt`, `checkCanary`; the real exports are
+    `createCostGovernor`, `guardHighRiskReceipt`, `runHallucinationCanary`). A
+    missing property is `undefined`, not an error, so each one silently skipped
+    and the function returned `{ok:true, guards:[]}` — indistinguishable from
+    "all three passed". Deleted rather than repaired: every one of them
+    duplicates enforcement that already runs a layer down, per turn and per tool
+    call, on `loop.mjs:856/1483/2164`.
+  - **`Number(null)` is `0`, and `0` is finite.** `turnCostUsd` coerced before
+    testing, so `{hasCost:true, costUsd:null}` — the provider saying it priced
+    nothing — returned a *measured* $0.00, contradicting the module's own doc
+    comment. It now tests the raw value with `Number.isFinite`, matching
+    `objective.mjs:83`.
+  - **Exhaustion is a bound of zero, not an absent bound.** `budgetForTurn`
+    dropped a non-positive remainder from its candidate list, so a soak that had
+    spent its budget to the exact penny produced `null` — which the caller
+    spreads as no `maxUsd` key at all, and `cost-governor.mjs:31` only blocks
+    when `maxUsd > 0`. The one state where the brake matters most released it.
+  - **The accumulator was not durable.** `afterLiveTurn` was fed `{...opts}`, so
+    each per-goal checkpoint re-wrote the values the run STARTED from. The file
+    never zeroed; it simply never advanced, and a soak killed after goal four
+    resumed as though it had spent nothing.
+  - **The honesty channel was dropped at the last hop.** `buildLiveSoakReport`
+    is a fixed object literal with no spread, so `unpricedTurns` never reached
+    the durable operator artefact. `usedUsd` without it is a number with no
+    error bar.
+  - **The CLI then overwrote the truthful report** with the run's *starting*
+    turn count and a hardcoded clean canary. That decision lived inside the
+    `--live --confirm-live` branch — unreachable by any test without an API key
+    and a real provider call — so it is now extracted as `liveReportFromRun`
+    and graded directly, the same remedy applied to the cron doctor probes.
+
+  Twenty-eight mutations, every shipping line killed in both directions.
+
+  Report-only, not changed here: `policy.maxTurns` is both the soak's goal-count
+  ceiling and the agent's per-run turn cap, which `loop.mjs:244` then multiplies
+  by four — 5 goals x 8 x 4 is 160 turns while the cap reads "5 of 8". Clamping
+  would break the nightly long-horizon leg. `horizon-cli.mjs` never passes
+  `cfg`, so the `Math.min` against an operator budget is exercised only by
+  injected-cfg tests, never in production. A budget stop now exits 1, which is
+  indistinguishable from goal failure. An injected `runAgent` bypasses
+  `loop.mjs` and every guard beneath it.
+
 ## 3.361.0
 
 - A self mission could edit the guard that was supposed to stop it, and the
