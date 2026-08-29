@@ -155,13 +155,28 @@ export function validateConfig(cfg) {
   // Retry / jitter
   const retry = cfg.retry || cfg.agent?.retry;
   if (retry) {
-    if (retry.retries != null && (retry.retries < 0 || retry.retries > 20)) {
+    // Each of these is a RANGE check written with relational operators, and
+    // every comparison against a non-number is false — so `retries < 0 ||
+    // retries > 20` cannot reject "two". The asymmetry is the danger: the
+    // guard rejects 99 (harmless, 100 attempts) and -1 (harmless, clamped to
+    // one attempt) while certifying "two" as valid, and "two" is the one value
+    // that removes the retry entirely — `attempt <= NaN` is false on the first
+    // pass, so the call is never made and a bare `undefined` is thrown. Check
+    // that it is a number BEFORE asking where in the range it sits.
+    const notANumber = (v) => v != null && !Number.isFinite(Number(v));
+    if (notANumber(retry.retries)) {
+      errors.push(`retry.retries must be a number (got ${JSON.stringify(retry.retries)})`);
+    } else if (retry.retries != null && (retry.retries < 0 || retry.retries > 20)) {
       errors.push("retry.retries must be 0–20");
     }
-    if (retry.baseMs != null && retry.baseMs < 0) {
+    if (notANumber(retry.baseMs)) {
+      errors.push(`retry.baseMs must be a number (got ${JSON.stringify(retry.baseMs)})`);
+    } else if (retry.baseMs != null && retry.baseMs < 0) {
       errors.push("retry.baseMs must be >= 0");
     }
-    if (retry.maxDelayMs != null && retry.baseMs != null && retry.maxDelayMs < retry.baseMs) {
+    if (notANumber(retry.maxDelayMs)) {
+      errors.push(`retry.maxDelayMs must be a number (got ${JSON.stringify(retry.maxDelayMs)})`);
+    } else if (retry.maxDelayMs != null && retry.baseMs != null && retry.maxDelayMs < retry.baseMs) {
       errors.push("retry.maxDelayMs must be >= retry.baseMs");
     }
     if (retry.strategy != null) {

@@ -42,6 +42,26 @@ export function resolveJitterStrategy(name) {
 }
 
 /**
+ * Coerce to a finite number, falling back when the value is absent or is not a
+ * number at all. Every knob below is multiplied or compared into a delay, and
+ * NaN survives both operations: `Math.min(NaN, x)` is NaN, and `NaN <= 0` is
+ * false — so the guard that skips a zero delay does not fire, and setTimeout
+ * coerces the NaN to 0. A malformed setting therefore does not lengthen or
+ * shorten the backoff; it removes it, exactly when the thing being retried is a
+ * 429 or an overload. Same for the attempt count: `attempt <= NaN` is false on
+ * the first pass, so the call would never be made at all.
+ *
+ * @param {any} value
+ * @param {number} fallback
+ * @returns {number}
+ */
+function finite(value, fallback) {
+  if (value == null) return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/**
  * Pure delay computation for a single attempt (no Retry-After).
  * Useful for tests and docs.
  *
@@ -54,12 +74,12 @@ export function resolveJitterStrategy(name) {
  * @param {() => number} [opts.random]
  */
 export function computeJitterDelay(strategy, attempt, opts = {}) {
-  const baseMs = Math.max(1, opts.baseMs ?? 200);
-  const maxDelayMs = Math.max(baseMs, opts.maxDelayMs ?? 30_000);
+  const baseMs = Math.max(1, finite(opts.baseMs, 200));
+  const maxDelayMs = Math.max(baseMs, finite(opts.maxDelayMs, 30_000));
   const random = opts.random ?? Math.random;
   const a = Math.max(0, attempt | 0);
   const exp = Math.min(maxDelayMs, baseMs * 2 ** a);
-  const prev = opts.prevDelayMs ?? baseMs;
+  const prev = finite(opts.prevDelayMs, baseMs);
   const resolved = resolveJitterStrategy(strategy);
 
   let d;
@@ -153,11 +173,15 @@ export function getRetryAfterMs(err, nowMs = Date.now()) {
  * @param {number} [opts.retryAfterJitterRatio=0.1] extra U(0, ratio*hint) on Retry-After
  */
 export function createBackoff(opts = {}) {
-  const baseMs = Math.max(1, opts.baseMs ?? 200);
-  const maxDelayMs = Math.max(baseMs, opts.maxDelayMs ?? 30_000);
+  const baseMs = Math.max(1, finite(opts.baseMs, 200));
+  const maxDelayMs = Math.max(baseMs, finite(opts.maxDelayMs, 30_000));
   const strategy = resolveJitterStrategy(opts.strategy ?? "full");
   const random = opts.random ?? Math.random;
   const respectRetryAfter = opts.respectRetryAfter !== false;
+  // Not routed through finite(): a NaN ratio makes `retryAfterJitterRatio > 0`
+  // false, which skips the jitter and returns the server hint untouched. That
+  // is already the safe outcome, so a fallback here would change behaviour
+  // without fixing anything.
   const retryAfterJitterRatio = Math.max(0, opts.retryAfterJitterRatio ?? 0.1);
 
   let prevDelay = baseMs;
@@ -326,7 +350,7 @@ export function isTransientError(err) {
  * @returns {Promise<T>}
  */
 export async function withBackoff(fn, opts = {}) {
-  const retries = Math.max(0, opts.retries ?? 3);
+  const retries = Math.max(0, finite(opts.retries, 3));
   const shouldRetry = opts.shouldRetry ?? isTransientError;
   const backoff = createBackoff({
     baseMs: opts.baseMs,

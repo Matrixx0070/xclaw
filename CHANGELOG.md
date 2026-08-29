@@ -1,3 +1,13 @@
+## 3.348.0
+
+### Fixed
+- **Retry config: a range guard built from relational operators certified the one value that removes the retry.** `validateConfig`'s retry block tested `retry.retries < 0 || retry.retries > 20`. Both comparisons are false for a non-number, so `retries: "two"` was **accepted as valid** — while `99` (harmless: 100 attempts) and `-1` (harmless: clamped to one attempt) were rejected. The guard rejected the benign values and certified the catastrophic one. `withBackoff` then computed `Math.max(0, "two")` = NaN and looped `attempt <= NaN`, which is false on the first pass: the wrapped call was **never made even once**, and the function threw a bare `undefined` instead of an Error, so every downstream `catch (e) { e.message }` read nothing. The retry block now checks that a value is a finite number before asking where in the range it sits.
+- **A malformed `baseMs`/`maxDelayMs` deleted the backoff instead of changing it.** Every computed delay became NaN, and `createBackoff`'s `if (ms <= 0) return` guard does not fire for NaN, so the timer was armed with NaN — which `setTimeout` coerces to 0. Measured wall time for a "backed-off" sleep: 1 ms. The protection removed is rate-limit backoff, and the trigger for a retry is precisely a 429 or an overload. Every numeric knob in `src/utils/backoff.mjs` now falls back to its default when it is not a finite number: `retries`, `baseMs`, `maxDelayMs`, and `prevDelayMs`, on both the jitter path and the Retry-After path (which clamps with `createBackoff`'s own cap and never reaches `computeJitterDelay`).
+
+### Notes
+- `retryAfterJitterRatio` is deliberately **not** routed through the fallback: a NaN ratio makes `retryAfterJitterRatio > 0` false, which skips the jitter and returns the server's hint untouched — already the safe outcome. A fallback there would change behaviour without fixing anything, so the line was removed rather than kept as untestable defence.
+- Not extracted into a shared numeric-coercion helper with `src/seats/manager.mjs`'s `num()`: two call sites is not yet a pattern, and a new cross-module dependency edge for a four-line function costs more complexity than it removes.
+
 ## 3.347.0
 
 ### a malformed seat budget did not fail closed — it removed the cap
