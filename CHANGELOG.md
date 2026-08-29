@@ -1,3 +1,30 @@
+## 3.372.0
+
+### The TUI names the doors it points at
+
+Found by sitting in the TUI as a user. The banner warns "3 MCP servers
+need authentication · /mcp"; running `/mcp` printed the same three rows
+with "needs authentication" — and stopped. A dead end: both real pathways
+(`xclaw mcp login <name>` and the Control MCP page with its per-server
+OAuth login buttons) already existed, and nothing named either. The list
+rendering moved into an exported `renderMcpServers` (pinned by tests,
+same extraction pattern as the other pure TUI renderers): when any server
+lacks credentials it now appends the two pathways, with the real Control
+URL derived from the gateway base; when all are connected or none are
+configured, it stays quiet.
+
+Also from the approval drive: `formatToolCall` sliced its preview at 68
+chars with no marker, so an approval prompt showed
+`xclaw_bash(… > tmp-live/x 2>/dev/nu)` — a silent cut that reads as the
+whole command, inviting approval of what was not shown. Truncation now
+lands a `…` marker; exactly-68 stays untouched. Pinned both ways in
+tests.
+
+Live-driven before ship: `/mcp` in the real TUI against the running
+gateway shows both pathway lines; the approval prompt drive (approve,
+deny, deny-pivot) that surfaced the ellipsis gap is preserved at
+~/.xclaw/xtui-deny-pivot-transcript-2026-08-29.txt.
+
 ## 3.371.0
 
 ### A process's enforcement posture, graded from outside that process

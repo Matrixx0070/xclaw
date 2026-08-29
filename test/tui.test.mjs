@@ -18,6 +18,7 @@ import {
   overlayFlags,
   cycleOverlay,
   overlayLabel,
+  renderMcpServers,
 } from "../src/cli/tui.mjs";
 
 const UP = {
@@ -154,6 +155,13 @@ describe("tui formatting", () => {
     assert.equal(formatToolCall("xclaw_bash", { command: "whoami" }), "xclaw_bash(whoami)");
     assert.equal(formatToolCall("xclaw_file_read", { path: "/etc/hosts" }), "xclaw_file_read(/etc/hosts)");
     assert.equal(formatToolCall("mystery", {}), "mystery()");
+    // A truncated preview must say so — an approval prompt showing a silent
+    // cut invites approving a command that was not fully shown.
+    const long = "echo " + "x".repeat(80);
+    const cut = formatToolCall("xclaw_bash", { command: long });
+    assert.ok(cut.endsWith("…)"), `expected ellipsis marker, got ${cut}`);
+    assert.equal(cut.length, "xclaw_bash(".length + 68 + 1);
+    assert.equal(formatToolCall("xclaw_bash", { command: "x".repeat(68) }), `xclaw_bash(${"x".repeat(68)})`);
   });
 
   it("collapses whitespace and truncates long arguments", () => {
@@ -446,5 +454,40 @@ describe("tui welcome + overlay", () => {
     assert.deepEqual(overlayFlags("auto"), { forceHuman: false, ignoreBypass: true });
     assert.deepEqual(overlayFlags("bypass"), { forceHuman: false, ignoreBypass: false });
     assert.match(overlayLabel("bypass"), /bypass permissions on/);
+  });
+});
+
+describe("renderMcpServers", () => {
+  const base = "http://127.0.0.1:18790";
+
+  it("names both auth pathways when a server needs credentials — the list alone is a dead end", () => {
+    const lines = renderMcpServers(
+      [
+        { name: "github", connected: false },
+        { name: "deepwiki", connected: false, error: "401 unauthorized" },
+      ],
+      { base, colour: false },
+    );
+    const text = lines.join("\n");
+    assert.match(text, /github\s+needs authentication/);
+    assert.match(text, /deepwiki\s+401 unauthorized/);
+    assert.match(text, /xclaw mcp login <name>/);
+    assert.ok(text.includes(`${base}/control/#/mcp`), "hint must carry the real Control URL");
+  });
+
+  it("stays quiet when every server is connected — no hint to authenticate what already is", () => {
+    const lines = renderMcpServers(
+      [{ name: "github", connected: true, toolCount: 7 }],
+      { base, colour: false },
+    );
+    const text = lines.join("\n");
+    assert.match(text, /github\s+7 tools/);
+    assert.doesNotMatch(text, /mcp login|control\/#\/mcp/);
+  });
+
+  it("says none configured for an empty list, without pathways", () => {
+    const text = renderMcpServers([], { base, colour: false }).join("\n");
+    assert.match(text, /none configured/);
+    assert.doesNotMatch(text, /mcp login/);
   });
 });

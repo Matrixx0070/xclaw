@@ -204,11 +204,45 @@ export function renderTuiFrame(snap = {}, opts = {}) {
   return lines.join("\n");
 }
 
+/**
+ * `/mcp` — the server list, and when any server still needs credentials,
+ * the two ways to actually provide them. The bare list was a dead end: the
+ * TUI said "needs authentication" and stopped, while `xclaw mcp login` and
+ * the Control MCP page both already existed — nothing named either.
+ */
+export function renderMcpServers(servers = [], { base = "", colour = true } = {}) {
+  const p = (t, c) => paint(t, c, colour);
+  const dim = (t) => p(t, C.grey);
+  const lines = [p("MCP servers", C.accent)];
+  if (!servers.length) {
+    lines.push(dim("  none configured"));
+    return lines;
+  }
+  let needAuth = 0;
+  for (const s of servers) {
+    const mark = s.connected ? p(DOT_ON, C.green) : p(DOT_OFF, C.yellow);
+    const extra = s.connected
+      ? dim(`${s.toolCount ?? 0} tools`)
+      : p(s.error || "needs authentication", C.yellow);
+    if (!s.connected) needAuth += 1;
+    lines.push(`  ${mark} ${s.name}  ${extra}`);
+  }
+  if (needAuth > 0) {
+    lines.push("");
+    lines.push(dim("  authenticate with  xclaw mcp login <name>"));
+    lines.push(dim(`  or the Control MCP page  ${base}/control/#/mcp`));
+  }
+  return lines;
+}
+
 /** Compact one-line summary of a tool call. */
 export function formatToolCall(name, args = {}) {
   const a = args || {};
   const primary = a.command ?? a.path ?? a.file_path ?? a.url ?? a.query ?? a.goal ?? null;
-  const inner = primary == null ? "" : String(primary).replace(/\s+/g, " ").slice(0, 68);
+  const flat = primary == null ? "" : String(primary).replace(/\s+/g, " ");
+  // A cut with no marker reads as the whole command — an approval prompt
+  // showing "… > tmp-live/x 2>/dev/nu" invites approving what was not shown.
+  const inner = flat.length > 68 ? `${flat.slice(0, 67)}…` : flat;
   return `${name}(${inner})`;
 }
 
@@ -1429,20 +1463,8 @@ async function chatLoop(cfg, opts) {
     }
     if (cmd === "/mcp") {
       const st = await getJson(`${base}/mcp/status`, token);
-      const servers = st.body?.servers || [];
       push("");
-      push(acc("MCP servers"));
-      if (!servers.length) {
-        push(dim("  none configured"));
-        return;
-      }
-      for (const s of servers) {
-        const mark = s.connected ? p(DOT_ON, C.green) : p(DOT_OFF, C.yellow);
-        const extra = s.connected
-          ? dim(`${s.toolCount ?? 0} tools`)
-          : p(s.error || "needs authentication", C.yellow);
-        push(`  ${mark} ${s.name}  ${extra}`);
-      }
+      for (const l of renderMcpServers(st.body?.servers || [], { base, colour })) push(l);
       return;
     }
     if (cmd === "/model") {
