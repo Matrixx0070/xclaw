@@ -160,7 +160,21 @@ export function getConcurrencyClass(name) {
   const n = String(name || "").toLowerCase();
   if (PARALLEL_SAFE.has(n)) return "parallel-safe";
   if (PARALLEL_SAFE.has(n.replace(/^xclaw_/, ""))) return "parallel-safe";
-  if (/_read$|^read_|list_|search|ocr|fetch|info|status|probe/.test(n)) {
+  // A read-only intent lives in the LEADING VERB, not in a substring. Matching
+  // `status` anywhere certifies `delete_status_update` as parallel-safe, and
+  // these names are not ours to vet: MCP tools arrive as `mcp__<server>__<tool>`
+  // with both halves supplied by a third party, so the force-serial denylist
+  // downstream cannot enumerate them. Anchor to the operation instead, and let
+  // anything unrecognised keep the serial default it already has.
+  const op = n.split("__").pop();
+  if (/^(get|list|read|search|fetch|describe|show|query|find|lookup|view|check|probe)_/.test(op)) {
+    return "parallel-safe";
+  }
+  // A trailing noun (`fabric_status`, `web_fetch`) reads as read-only only
+  // because these are OUR names and we vet them. Applying it to a third-party
+  // name reopens the same hole one position over — `update_status` ends in
+  // `status` too — so an mcp__ name has to earn its parallelism at the verb.
+  if (!n.startsWith("mcp__") && /(^|_)(ocr|status|info|probe|search|fetch|read)$/.test(op)) {
     return "parallel-safe";
   }
   return "serial";
