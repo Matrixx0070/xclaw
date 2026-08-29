@@ -116,9 +116,41 @@ function maxWaitMsCfg(cfg) {
  * flags and ran as a plain batch job. Retry/wait ceilings are deliberately NOT
  * accepted from a request — those stay config-owned.
  *
+ * The other half of that contract is WITHHELD_REQUEST_FIELDS: a field this
+ * function drops on purpose is not a bug, but a caller has no way to tell the
+ * two apart from a 202. Naming the withheld fields — and why — is what lets the
+ * route say so and keeps docs/QUEUE.md from advertising them again.
+ *
  * @param {object} body
  * @returns {object} an item for enqueueJob
  */
+/**
+ * Fields enqueueJob honours that a REQUEST may not set, each with the reason.
+ *
+ * Anyone holding the gateway token can POST /queue, so these are levers, not
+ * conveniences: `maxWaitMs: 10**9` is a job that is never abandoned, and
+ * `maxAttempts: 99` is ninety-nine runs of it. They stay config-owned
+ * (queue.maxWaitMs, docs/ADMISSION_CONTROL.md).
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+export const WITHHELD_REQUEST_FIELDS = Object.freeze({
+  maxAttempts: "retry budget is config-owned (queue.maxAttempts)",
+  maxWaitMs: "admission wait is config-owned (queue.maxWaitMs)",
+  priorityClass: "alias read internally — send `class` instead",
+});
+
+/**
+ * Which withheld fields a body actually tried to set, so the caller hears about
+ * the ones they sent and nothing else.
+ *
+ * @param {object} body
+ * @returns {string[]}
+ */
+export function withheldRequestFields(body = {}) {
+  return Object.keys(WITHHELD_REQUEST_FIELDS).filter((k) => body?.[k] !== undefined);
+}
+
 export function pickEnqueueRequest(body = {}) {
   return {
     goal: body.goal || body.message,

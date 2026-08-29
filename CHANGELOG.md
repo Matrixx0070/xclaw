@@ -1,3 +1,36 @@
+## 3.360.0
+
+- `POST /queue` refused three fields and never said so. `pickEnqueueRequest`
+  withholds `maxAttempts` and `maxWaitMs` from a request body on purpose —
+  anyone holding the gateway token could otherwise ask for 99 retries, or a
+  `maxWaitMs` of 10**9 that is never abandoned — and drops `priorityClass`
+  because it is an internal alias of `class`. That boundary is correct. What was
+  wrong is that nothing said so where a caller looks: `docs/QUEUE.md:27`
+  advertised `maxAttempts?` in the POST body, and the route answered 202 with a
+  job id and no mention that the field had gone. Measured at HEAD (e89aadc), a
+  request posting exactly the documented body:
+
+      asked   maxAttempts=5 maxWaitMs=999000
+      stored  maxAttempts=1 maxWaitMs=300000   HTTP 202, signal to caller: NONE
+
+  So an operator followed the shipped docs, asked for five attempts, and got a
+  job that dead-letters on its first failure with nothing anywhere to explain
+  why. The refusal now names itself: `WITHHELD_REQUEST_FIELDS` holds each field
+  with its reason, the 202 carries a `withheld: [{field, reason}]` array when —
+  and only when — the caller actually sent one, and the docs list the fields the
+  route accepts instead of one it does not.
+- The knowledge had been living as an absence. Nothing in `queue.mjs` named the
+  withheld fields; the reasoning existed only in prose inside two test files, so
+  the docs could drift back without contradicting anything. A drift test now
+  partitions every `item.<key>` that `enqueueJob` and `resolvePriority` read into
+  forwarded or withheld-with-a-reason, with nothing left over, and grades the
+  docs' own POST row against that map — the same principle as v3.359.0 grading
+  approvals against `ROLE_TOOL_PACKS` rather than another hand-typed list. A
+  future field can now be neither silently dropped nor silently promoted to
+  caller-settable.
+- 6/6 shipping lines mutation-caught, restores sha256-identical; before-state
+  proven in a detached HEAD worktree, not with the fix in the tree.
+
 ## 3.359.0
 
 - v3.358.0 fixed the approval denylist for the two tools it found and left the

@@ -140,12 +140,20 @@ export async function tryHandleEvalQueueRoute({
   }
   if (p === "/queue" && method === "POST") {
     const body = await readBody(req).catch(() => ({}));
-    const { enqueueJob, startQueueWorker, pickEnqueueRequest } = await import(
-      "../../jobs/queue.mjs"
-    );
+    const { enqueueJob, startQueueWorker, pickEnqueueRequest, withheldRequestFields, WITHHELD_REQUEST_FIELDS } =
+      await import("../../jobs/queue.mjs");
     startQueueWorker(cfg);
     const item = await enqueueJob(cfg, pickEnqueueRequest(body));
-    json(res, 202, item);
+    // A 202 carrying only the stored record reads the same whether the request
+    // was honoured in full or trimmed, so a caller asking for a config-owned
+    // ceiling got a job id and no hint their field was dropped. Say so.
+    const withheld = withheldRequestFields(body);
+    json(res, 202, {
+      ...item,
+      ...(withheld.length
+        ? { withheld: withheld.map((field) => ({ field, reason: WITHHELD_REQUEST_FIELDS[field] })) }
+        : {}),
+    });
     return true;
   }
   if (p.startsWith("/queue/") && method === "GET") {
