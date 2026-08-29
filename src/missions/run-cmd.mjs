@@ -7,7 +7,8 @@
  * `spawn` without `detached` puts the child in the parent's process group, so
  * `child.kill("SIGKILL")` signals only the direct `bash` pid. For anything that
  * backgrounds work — `npm test`, a dev server, `cmd &` — that pid has already
- * exited, the kill throws ESRCH into a bare catch, and the promise keeps
+ * exited, and `child.kill` on a dead pid is a silent no-op — Node swallows ESRCH
+ * and returns false, so nothing throws and nothing logs. The promise keeps
  * waiting: it settles on `'close'`, which fires only after BOTH stdio streams
  * reach EOF, and the surviving grandchild is holding the write end of that
  * pipe. Measured on the shipped code: `sh("sleep 5 & echo hi", dir, 1000)`
@@ -25,6 +26,7 @@
  * reaches the grandchildren that hold the pipe.
  */
 import { spawn } from "node:child_process";
+import { buildToolEnv } from "../security/env-policy.mjs";
 
 /** Tail kept for shell output; a verify log can be megabytes. */
 export const SH_MAX_OUTPUT = 20_000;
@@ -53,16 +55,25 @@ function killGroup(child) {
  *
  * @param {string} exe
  * @param {string[]} argv
- * @param {{cwd?: string, timeoutMs?: number, maxOutput?: number}} opts
+ * @param {{cwd?: string, timeoutMs?: number, maxOutput?: number, cfg?: object}} opts
  *   maxOutput 0 keeps everything; otherwise only the last N chars are retained.
+ *   cfg supplies the env policy; omitting it is the safe default, not the unsafe one.
  * @returns {Promise<{code: number, output: string}>}
  */
 export function runProcess(exe, argv, opts = {}) {
-  const { cwd, timeoutMs = 300_000, maxOutput = 0 } = opts;
+  const { cwd, timeoutMs = 300_000, maxOutput = 0, cfg } = opts;
+  // Every agent-driven shell in xclaw runs through buildToolEnv; mission
+  // verification did not, so a verify command — chosen by the model via the
+  // worktree's package.json, by the operator via cfg.self.verifyCommands, or by
+  // any caller of POST /missions — ran with the gateway's entire process.env:
+  // provider keys, the gateway token, everything the daemon was started with.
+  // Applied here rather than at each call site so a future caller inherits it
+  // without having to remember; with no cfg the policy is strip-secrets.
+  const { env } = buildToolEnv(cfg || {});
   return new Promise((resolve) => {
     // detached: true → own process group, so the timeout below reaches
     // grandchildren. Without it the timeout is decorative.
-    const child = spawn(exe, argv, { cwd, detached: true });
+    const child = spawn(exe, argv, { cwd, detached: true, env });
     let out = "";
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -94,13 +105,13 @@ export function runProcess(exe, argv, opts = {}) {
 }
 
 /** Shell runner for detected/configured verification commands. */
-export function sh(cmd, cwd, timeoutMs = 300_000) {
-  return runProcess("bash", ["-c", cmd], { cwd, timeoutMs, maxOutput: SH_MAX_OUTPUT });
+export function sh(cmd, cwd, timeoutMs = 300_000, cfg = null) {
+  return runProcess("bash", ["-c", cmd], { cwd, timeoutMs, maxOutput: SH_MAX_OUTPUT, cfg });
 }
 
 /** argv-style runner (no shell quoting hazards) for snapshot git plumbing. */
-export function shArgs(cmd, args, cwd, timeoutMs = 30_000) {
-  return runProcess(cmd, args, { cwd, timeoutMs });
+export function shArgs(cmd, args, cwd, timeoutMs = 30_000, cfg = null) {
+  return runProcess(cmd, args, { cwd, timeoutMs, cfg });
 }
 
 export default { runProcess, sh, shArgs, SH_MAX_OUTPUT };

@@ -272,7 +272,7 @@ async function runMissionTournament(cfg, mission, { onEvent, signal, spawnSeam }
     let pass = commands.length > 0;
     const outputs = [];
     for (const cmd of commands) {
-      const r = await sh(cmd, dir);
+      const r = await sh(cmd, dir, 300_000, cfg);
       outputs.push({ cmd, exitCode: r.code });
       if (r.code !== 0) {
         pass = false;
@@ -571,12 +571,12 @@ async function runVerification(cfg, mission) {
     try {
       await fs.access(path.join(dir, "node_modules"));
     } catch {
-      await sh("npm install --no-audit --no-fund --silent", dir, 300_000);
+      await sh("npm install --no-audit --no-fund --silent", dir, 300_000, cfg);
     }
   } catch {}
   const results = [];
   for (const cmd of commands) {
-    const r = await sh(cmd, dir);
+    const r = await sh(cmd, dir, 300_000, cfg);
     results.push({ cmd, pass: r.code === 0, exitCode: r.code, output: r.output.slice(-6000) });
     if (r.code !== 0) break; // fail fast — the failure is the repair input
   }

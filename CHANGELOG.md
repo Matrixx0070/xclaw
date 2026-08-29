@@ -1,3 +1,71 @@
+## 3.365.0
+
+### Mission verification ran with the gateway's entire environment
+
+Every agent-driven shell in xclaw is scrubbed before it runs. `xclaw_bash`
+builds its environment through `buildToolEnv` (`src/security/env-policy.mjs`)
+and then runs under bwrap confined to the worktree. Mission *verification* did
+neither: `sh()` handed `spawn` no `env` at all, so the child inherited the
+gateway daemon's full `process.env` — every provider key, the gateway token,
+anything the operator exported when they started it.
+
+`grep -rn "env:" src/missions/` returned **zero hits**. Nothing under
+`src/missions/` had ever imported the env policy.
+
+That matters because a verify command is not a constant. Three writers reach it,
+none of which is a trusted operator typing at a prompt:
+
+- **the model**, indirectly and by default — it owns `package.json` inside the
+  worktree, `detectVerifyCommands` (`engine.mjs:51`) reads `scripts.test` from
+  it, and `engine.mjs:574` runs `npm install` first, which executes lifecycle
+  scripts.
+- **the operator**, via `cfg.self.verifyCommands`.
+- **any caller of `POST /missions`** — `src/gateway/routes/missions.mjs:70`
+  validates the array's *shape* and nothing else.
+
+So the least-trusted string in the mission pipeline ran in the most-privileged
+environment in the process.
+
+### Fixed
+
+The policy is applied in the primitive, `runProcess` in
+`src/missions/run-cmd.mjs`, rather than at each call site:
+
+```js
+const { env } = buildToolEnv(cfg || {});
+const child = spawn(exe, argv, { cwd, detached: true, env });
+```
+
+With no `cfg`, `buildToolEnv({})` yields `strip-secrets` — the safe mode is what
+you get by forgetting, not by remembering, and a future caller of `runProcess`
+inherits the scrubbing without having to know it exists. `cfg` is threaded from
+`runVerification` and `runMissionTournament` into all three `sh()` call sites,
+so `security.bashEnv` / `envAllow` / `envDeny` now govern verification the same
+way they govern the agent's own shell. Git snapshot plumbing (`snapshotWorktree`)
+stays on the default policy — it has no legitimate use for a credential.
+
+Measured before shipping, on a throwaway node project and a scratch git repo,
+11 commands × 3 policy modes (33 real subprocess runs): `npm install`,
+`npm test`, `npm run lint`, `npm run build`, and the engine's git plumbing
+(`add -A`, `diff --cached --quiet`, `commit`, `status`, `worktree list`,
+`stash list`, `rev-parse`) all exit identically to the unfiltered baseline in
+`strip-secrets`, `allowlist` (the prod profile's mode, `profiles.mjs:85`) and
+`inherit`. The mission engine never runs a git remote operation, so
+`SSH_AUTH_SOCK` being dropped under `allowlist` is structurally irrelevant.
+
+**Not fixed here, deliberately:** verify commands still run as root, outside
+bwrap. Wrapping them in `wrapSpawnWithOsSandbox` changes what `npm install` and
+`npm test` can reach and needs its own slice with a live drive.
+
+### Also
+
+The docblock at `run-cmd.mjs:10` claimed the failed kill "throws ESRCH into a
+bare catch". It does not. `child.kill()` on a dead pid is a silent no-op — Node
+swallows ESRCH and returns `false`, so nothing throws and nothing logs. (What
+*does* throw ESRCH is `process.kill(-pid, ...)` when the child has no process
+group of its own, which is the proof that the group-kill fix requires
+`detached`.) The hang was identical either way; the sentence was wrong.
+
 ## 3.364.0
 
 ### A verify timeout that could not reach the process holding the pipe
