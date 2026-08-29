@@ -1,3 +1,29 @@
+## 3.343.0
+
+### the gateway answered for the wrong machine
+
+3.342.0 fixed one health check whose two branches probed two different
+machines. The same shape survived in seven more places: every surface that
+NAMES the computer built `http://${cfg.computer.host}:${cfg.computer.port}`
+inline and so dropped `computer.remoteUrl`, while the verdict printed beside it
+came from `isComputerRunning`, which honours it. `GET /health` returned a
+remote-aware verdict next to a local-derived identity in one object —
+`{"computer":"down","computerUrl":"http://127.0.0.1:35503"}` — naming two
+different machines in the same breath.
+
+`GET /computer/health` was worse, because it does not only report: it FETCHES
+the inline address and returns that machine's body verbatim as the answer.
+Driven against a gateway configured with a dead remote and any listener on the
+local port, it replied `200 {"ok":true,...}` — a stranger's health, presented
+as the computer's, with nothing in the response to reveal the substitution.
+
+All seven now ask `computerBaseUrl`, the helper the computer client already
+uses: `/health`, `/gateway/info` (which gains a `url` field naming the address
+its `healthy` verdict came from), `/computer/health`, the gateway doctor row,
+the Control UI dashboard, the boot banner, and `xclaw status`. The
+`/computer/health` 502 now names its `upstream`, matching the contract
+`computer-proxy` already had, so a failure says which machine was unreachable.
+
 ## 3.342.0
 
 ### doctor graded the wrong machine healthy

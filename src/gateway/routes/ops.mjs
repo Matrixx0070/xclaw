@@ -8,7 +8,7 @@
  *   *    /health · /gateway/health · /gateway/info · /info
  *   *    /computer/health · GET /channels/status · * /gateway
  */
-import { isComputerRunning } from "../../computer/manager.mjs";
+import { computerBaseUrl, isComputerRunning } from "../../computer/manager.mjs";
 import { clientErrorStatus } from "../../shared/http-error.mjs";
 
 /**
@@ -117,7 +117,7 @@ export async function tryHandleOpsRoute({
       version: XCLAW_VERSION,
       phase: XCLAW_PHASE,
       computer: computerOk ? "up" : "down",
-      computerUrl: `http://${cfg.computer.host}:${cfg.computer.port}`,
+      computerUrl: computerBaseUrl(cfg),
       webchat: webchatEnabled,
       sse: true,
       stop,
@@ -145,6 +145,9 @@ export async function tryHandleOpsRoute({
       computer: {
         host: cfg.computer.host,
         port: cfg.computer.port,
+        // The address `healthy` was actually taken from. host/port alone name
+        // the local machine even when the verdict came from a remote one.
+        url: computerBaseUrl(cfg),
         healthy: await isComputerRunning(cfg),
       },
       agent: {
@@ -224,12 +227,15 @@ export async function tryHandleOpsRoute({
 
   if (p === "/computer/health") {
     try {
-      const u = `http://${cfg.computer.host}:${cfg.computer.port}/health`;
+      // This route does not merely report the address — it FETCHES it and
+      // returns that machine's body verbatim. Derived inline it answered with
+      // a local squatter's health while the configured computer was remote.
+      const u = `${computerBaseUrl(cfg)}/health`;
       const r = await fetch(u);
       const body = await r.json();
       json(res, r.status, body);
     } catch (e) {
-      json(res, 502, { error: "computer unreachable", detail: e.message });
+      json(res, 502, { error: "computer unreachable", upstream: `${computerBaseUrl(cfg)}/health`, detail: e.message });
     }
     return true;
   }

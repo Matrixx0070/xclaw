@@ -3,7 +3,7 @@
  */
 import http from "http";
 import { loadConfig } from "../config/load.mjs";
-import { getComputerStatus, computerProbeHost } from "../computer/manager.mjs";
+import { getComputerStatus, computerBaseUrl } from "../computer/manager.mjs";
 import { listActiveSessions } from "../agent/session-control.mjs";
 
 function getJson(url) {
@@ -36,7 +36,7 @@ export async function printStatus(opts = {}) {
   const json = Boolean(opts.json);
   const cfg = await loadConfig();
   const gwUrl = `http://${cfg.gateway.host}:${cfg.gateway.port}`;
-  const compUrl = `http://${computerProbeHost(cfg)}:${cfg.computer.port}`;
+  const compUrl = computerBaseUrl(cfg);
 
   const gw = await getJson(`${gwUrl}/health`);
   const cst = await getComputerStatus(cfg);

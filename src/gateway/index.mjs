@@ -45,6 +45,7 @@ import {
   startComputer,
   isComputerRunning,
   stopComputer,
+  computerBaseUrl,
 } from "../computer/manager.mjs";
 import { startComputerWatchdog, stopComputerWatchdog } from "../computer/watchdog.mjs";
 import { proxyComputerRequest, isComputerProxyEnabled } from "./computer-proxy.mjs";
@@ -1632,7 +1633,7 @@ export async function startGateway({ root, harness = false } = {}) {
     authorize: (req) => gatewayAuth.authorizeWebSocket(req),
   });
   console.log(`[xclaw] Voice WS: ${proto === "https" ? "wss" : "ws"}://${cfg.gateway.host}:${cfg.gateway.port}${voiceWs.path}`);
-  console.log(`[xclaw] Computer at http://${cfg.computer.host}:${cfg.computer.port}`);
+  console.log(`[xclaw] Computer at ${computerBaseUrl(cfg)}`);
   if (webchatEnabled) {
     console.log(`[xclaw] WebChat UI: http://${cfg.gateway.host}:${cfg.gateway.port}/chat/`);
   }

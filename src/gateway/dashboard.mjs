@@ -1,7 +1,7 @@
 /**
  * Single snapshot for Control UI / ops.
  */
-import { isComputerRunning } from "../computer/manager.mjs";
+import { computerBaseUrl, isComputerRunning } from "../computer/manager.mjs";
 import { queueStats } from "../jobs/queue.mjs";
 import { listJobs } from "../jobs/history.mjs";
 import { listEvalHistory } from "../eval/history.mjs";
@@ -59,7 +59,7 @@ export async function buildDashboard(cfg) {
     uptime: uptimeInfo(),
     profile: cfg.profile || "dev",
     profiles: listProfiles(),
-    computer: { up: computerUp, url: `http://${cfg.computer?.host}:${cfg.computer?.port}`, watchdog },
+    computer: { up: computerUp, url: computerBaseUrl(cfg), watchdog },
     gateway: { host: cfg.gateway?.host, port: cfg.gateway?.port },
     queue: qstats,
     recentJobs,

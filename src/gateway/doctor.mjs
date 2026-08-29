@@ -15,6 +15,7 @@ import { wsClientCount } from "./ws-hub.mjs";
 import { evictionBufferMetrics, evictionListenerCount } from "./eviction-events.mjs";
 import { streamRegistryStats } from "./stream-resume.mjs";
 import { runningVersion } from "./build-version.mjs";
+import { computerBaseUrl } from "../computer/manager.mjs";
 
 /**
  * @returns {Promise<object>}
@@ -31,7 +32,7 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
     const computerOk = await isComputerRunning(cfg);
     push("computer", computerOk, {
       summary: computerOk ? "reachable" : "down",
-      url: `http://${cfg.computer?.host}:${cfg.computer?.port}`,
+      url: computerBaseUrl(cfg),
       hint: computerOk
         ? null
         : "Start with: node bin/xclaw.mjs computer",
