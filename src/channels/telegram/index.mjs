@@ -29,6 +29,7 @@ import {
   approvalInlineKeyboard,
   parseCallbackData,
   formatPendingApprovalText,
+  approvalItemFromEvent,
 } from "./inline.mjs";
 import { getSharedApprovalGate } from "../../security/approvals.mjs";
 import {
@@ -840,11 +841,9 @@ export function createTelegramChannel(cfg) {
             // restate/timedOut re-emissions are state updates on an
             // already-prompted pending — never a fresh ask
             if (isNewApprovalAsk(e) && !e.timedOut) {
-              notifyOwnerApproval({
-                id: e.pendingId,
-                tool: e.name,
-                args: e.args,
-              }).catch(() => {});
+              // Narrowing by hand here is what dropped the risk tier: the
+              // event carries it, the prompt never showed it.
+              notifyOwnerApproval(approvalItemFromEvent(e)).catch(() => {});
             }
           } else if (e.type === "security" && e.phase === "denied") {
             recordTelegramDeny(e.reason || "security");

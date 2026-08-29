@@ -1,3 +1,16 @@
+## 3.352.0
+
+### Fixed
+- **The approval prompt never told the operator how dangerous the action was.** The whole A2 risk system exists to compute a tier: it runs on every authorize, stores the tier on the pending record, returns it from `listPending()`, and emits it on the `approval_required` event as `riskTier`. The TUI renders it and even gates its one-key Allow on `riskTier !== "critical"`. Telegram — the channel the operator actually approves from — rendered nothing. A workspace-escaping `file_write` (critical) and a Linear read (safe) produced **byte-identical prompts apart from the tool name**.
+- It was dropped twice over, which is why reading either layer alone made it look present. The handler rebuilt the event as `{id, tool, args}` by hand — narrower than what it was handed, the same capability-dropped-in-transit shape as the queue allow-list in 3.323.0 — and `formatPendingApprovalText` had no slot for a tier even when one arrived.
+- The narrowing is now a pure exported `approvalItemFromEvent`, and the prompt leads with the tier: `Risk: 🛑 CRITICAL` / `⚠️ RISKY` / `SAFE`. Both producer shapes normalise in one helper (`listPending()`'s nested `item.risk.tier` and the event's flat `item.riskTier`), so a third caller cannot invent a third shape, and an unassessed action renders no tier rather than claiming one.
+
+### Notes
+- Approval fatigue is the mechanism this closes: an operator was asked for 52 inline approvals in 30 minutes during a single audit session (3.125.0). An unlabelled prompt asked at that rate is an Allow-everything prompt — the severity has to be **on** the prompt for the tap to carry information.
+- The risk **reasons** are deliberately still not rendered. They are filesystem-shaped and are fabricated for third-party tools that touch no file: `mcp__linear__create_issue` reports `"writes outside workspace (home)"` and `recovery: "git"` for an API call git cannot revert. Mixed-accuracy text in a security prompt is worse than absent text. The tier itself is correct, so only the tier ships; the reasons' falseness is tracked separately.
+- The call site sits inside `handleUpdate`'s `onEvent` callback, reachable only by running a real agent loop, so it is pinned at source — both the exact call form and a ban on the hand-built `id: e.pendingId` literal any revert must reintroduce.
+- Report-only, found in the same census: the gateway's MCP client and routes ignore `cfg.mcp.enabled`, which is read at exactly one place (`src/agent/mcp-tools.mjs`). Not shipped as a fix — those routes are operator-token-authenticated and the knob appears in no doc and no validator, so there is no proven operator harm.
+
 ## 3.351.0
 
 ### Fixed
