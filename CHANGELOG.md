@@ -10,6 +10,60 @@
 - `READ_RE` itself is deliberately **not** anchored. Anchoring would be correct in general, but no local name is currently mis-classified by it, and the `mcp__` rule removes third-party names from that code path entirely — so anchoring would be a behaviour change with regression risk and no defect behind it.
 - **This widens auto-approval for 14 third-party read tools** (`risky` → `safe`), which previously pended. They are genuine reads and `safe` is what every other reader in the system gets, but the effect is a real loosening: private Linear/GitHub workspace data now reaches the model without a human gate, the same way `grep` and `file_read` do locally.
 
+## 3.350.0
+
+### Fixed
+- Keeps the v3.349.0 concurrency fix from widening local parallelism.
+
+  The verb alternation shipped in v3.349.0 carried three verbs the MCP surface never needed. `view` reclassified two of our own tools — `view_image` and `view_x_video` (which spawns ffmpeg and writes frames) — from serial to parallel-safe. A change whose purpose is to stop uncontrolled names from being certified parallel-safe should not hand that certificate to a local tool that shells out.
+
+  Trimmed to the verbs in use, and pinned by test: all 45 local tools now classify byte-identically to pre-v3.349.0, while the live MCP surface keeps 38 of 62 parallel with zero mutators among them.
+
+  Suite 4564/4564. CI 4/4 (gate 22.22 + 24.15).
+
+## 3.349.0
+
+### Fixed
+- `tool-concurrency.mjs` opens by stating its invariant — "Mutating / exec /
+browser tools stay serial" — and enforces it with a FORCE_SERIAL denylist over a
+fail-closed default. The default is right. `getConcurrencyClass` then re-opened
+it:
+
+      if (/_read$|^read_|list_|search|ocr|fetch|info|status|probe/.test(n))
+
+  Two alternatives are anchored (`_read$`, `^read_`); five are bare substrings.
+`status` matches anywhere, so `delete_status_update` was certified parallel-safe.
+
+  That is latent for names we own and live for names we do not. MCP tools join the
+loop as `mcp__<server>__<tool>` with both halves supplied by a third party, so
+the denylist is guarding an open namespace it can never enumerate. Against the
+live config (deepwiki, github, linear) discovery returns 62 tools; before this
+change 23 were parallel and every one of them qualified by substring alone,
+including a real delete and a real write on the workspace. `partitionToolCalls`
+put them in ONE concurrent batch:
+
+      batches: 1
+    PARALLEL save_status_update + delete_status_update + list_issues
+
+  Classify on the leading verb of the final `__` segment instead — a read-only
+intent is expressed by the verb, not by a word appearing somewhere in the name.
+The trailing-noun rule that keeps `fabric_status` and `web_fetch` parallel is
+restricted to names we own, because `update_status` ends the same way; a third
+party earns parallelism at the verb or not at all.
+
+  Both partitioners are fixed by this: `planes.partitionByConcurrency` calls
+`getConcurrencyClass` directly and never sees FORCE_SERIAL, so a fix placed in
+`isParallelSafeTool` would have repaired only one of the two.
+
+  Parallelism is not reduced. The live 62 go from 23 parallel to 38 — the old
+substring list never matched `get_document` or `get_issue`, so real getters were
+running serially while two mutators ran concurrently.
+
+  Suite 4563/4563.
+
+  Generated with [XClaw](https://x.ai/)
+Co-Authored-By: XClaw <noreply@xclaw.local>
+
 ## 3.348.0
 
 ### Fixed
