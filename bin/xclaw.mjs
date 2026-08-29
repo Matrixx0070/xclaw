@@ -223,32 +223,39 @@ async function main() {
       const path = await import("node:path");
       const { fileURLToPath } = await import("node:url");
       const root = process.env.XCLAW_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-      const { runLiveE2eCheck } = await import("../src/cron/live-e2e-job.mjs");
+      const { runLiveE2eCheck, liveE2eCronOptionsFromConfig } = await import(
+        "../src/cron/live-e2e-job.mjs"
+      );
       const { loadConfig } = await import("../src/config/load.mjs");
       const cfg = await loadConfig({ strict: false });
-      const r = await runLiveE2eCheck({ cfg, root, strict: args.includes("--strict") });
+      const { timeoutMs, graceMs } = liveE2eCronOptionsFromConfig(cfg);
+      const r = await runLiveE2eCheck({
+        cfg,
+        root,
+        strict: args.includes("--strict"),
+        timeoutMs,
+        graceMs,
+      });
       process.exitCode = r.ok ? 0 : 2;
       break;
     }
 
     case "live-e2e-schedule": {
       const { loadConfig } = await import("../src/config/load.mjs");
-      const { ensureLiveE2eCronJob } = await import("../src/cron/live-e2e-job.mjs");
+      const { ensureLiveE2eCronJob, liveE2eCronOptionsFromConfig } = await import(
+        "../src/cron/live-e2e-job.mjs"
+      );
       const { start: startCron, stop: stopCron, listJobs } = await import("../src/cron/scheduler.mjs");
       const path = await import("node:path");
       const { fileURLToPath } = await import("node:url");
       const root = process.env.XCLAW_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
       const cfg = await loadConfig({ strict: false });
-      const everyMs = Number(args[1]) || cfg.liveE2e?.cron?.everyMs || 86_400_000;
+      const cronOpts = liveE2eCronOptionsFromConfig(cfg, { everyMsArg: args[1] });
+      const everyMs = cronOpts.everyMs;
       startCron(cfg);
       installCronShutdown(stopCron);
-      const job = ensureLiveE2eCronJob({
-        cfg,
-        root,
-        everyMs,
-        delivery: cfg.liveE2e?.cron?.delivery || null,
-        strict: cfg.liveE2e?.cron?.strict === true,
-      });
+      // Spread, so a key added to the mapper cannot be dropped in transit.
+      const job = ensureLiveE2eCronJob({ cfg, root, ...cronOpts });
       console.log(JSON.stringify({
         id: job.id,
         everyMs,

@@ -135,12 +135,16 @@ Config (optional in `xclaw.json`):
     "enabled": true,
     "everyMs": 86400000,
     "strict": false,
+    "timeoutMs": 600000,
     "delivery": { "channel": "telegram", "to": "YOUR_CHAT_ID" }
   }
 }
 ```
 
 - Log: `~/.xclaw/live-e2e-cron.log`
+- `timeoutMs` (default 600000) bounds one pass; the child is SIGTERM'd, then
+  SIGKILL'd after `graceMs` (default 2000), and the run is reported as a hard
+  failure with `reason=timeout`. Without it a wedged check hangs the job forever
 - Exit 1 (warnings) = soft pass unless `XCLAW_LIVE_E2E_STRICT=1` or `strict: true`
 - Exit 2 = hard fail + alert when delivery configured
 

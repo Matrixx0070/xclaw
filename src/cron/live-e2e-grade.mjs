@@ -34,6 +34,22 @@
  */
 export const CODE_SIGNAL = 4;
 
+/** Exit code substituted when the child never started (spawn emitted 'error'). */
+export const CODE_SPAWN_ERROR = 5;
+
+/** Exit code substituted when the child was killed for exceeding its budget. */
+export const CODE_TIMEOUT = 6;
+
+/**
+ * Why a substituted code was substituted. Every entry must be a hard failure
+ * under the rule below, i.e. >= 3.
+ */
+const SUBSTITUTED_REASON = {
+  [CODE_SIGNAL]: "signal",
+  [CODE_SPAWN_ERROR]: "spawn-error",
+  [CODE_TIMEOUT]: "timeout",
+};
+
 /**
  * @param {{code: number, reportOk?: boolean, parsed?: boolean, strict?: boolean}} input
  *   code     exit code, with CODE_SIGNAL substituted for signal death
@@ -45,7 +61,7 @@ export const CODE_SIGNAL = 4;
 export function gradeLiveE2e({ code, reportOk, parsed = false, strict = false }) {
   const hardFail = strict ? code !== 0 : code === 2 || code > 2;
   if (hardFail) {
-    return { ok: false, hardFail: true, reason: code === CODE_SIGNAL ? "signal" : "hard-fail" };
+    return { ok: false, hardFail: true, reason: SUBSTITUTED_REASON[code] || "hard-fail" };
   }
   if (reportOk !== false) return { ok: true, hardFail: false, reason: "ok" };
   // exit 1 = warnings only → soft ok for cadence, but only when the report
@@ -54,4 +70,4 @@ export function gradeLiveE2e({ code, reportOk, parsed = false, strict = false })
   return { ok: false, hardFail: false, reason: parsed ? "report-fail" : "unparseable" };
 }
 
-export default { gradeLiveE2e, CODE_SIGNAL };
+export default { gradeLiveE2e, CODE_SIGNAL, CODE_SPAWN_ERROR, CODE_TIMEOUT };

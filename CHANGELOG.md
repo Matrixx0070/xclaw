@@ -1,3 +1,76 @@
+## 3.368.0
+
+### The nightly check could kill the daemon, or hang it forever
+
+`runLiveE2eCheck` spawned `scripts/live-enforcement-e2e.mjs` with no `'error'`
+listener and no time limit. Both halves were measured against the shipped code
+before this was written.
+
+**No `'error'` listener.** `spawn` reports a nonexistent `cwd` asynchronously,
+as an `'error'` event on the child — and the error names the *executable*, not
+the directory, which is why it reads as impossible:
+
+```
+Error: spawn /usr/bin/node ENOENT
+  errno: -2, syscall: 'spawn /usr/bin/node', path: '/usr/bin/node'
+```
+
+An unhandled `'error'` throws. The repo's only `uncaughtException` handlers are
+in `src/cli/tui.mjs`, so inside the gateway that ends the process. The root is
+`opts.root || process.env.XCLAW_ROOT || PACKAGE_ROOT`, so a stale `XCLAW_ROOT`
+is enough to reach it. The promise also never settled, so a caller awaiting the
+verdict waited forever. Now a `try/catch` around the spawn and a `child.on
+("error")` both settle `CODE_SPAWN_ERROR`.
+
+**No timeout.** Measured against a fixture whose check body is
+`setInterval(() => {}, 1000)`: `RESULT HUNG after 5009 ms`. A live check that
+wedges — a browser that never answers, a socket that never closes — held the
+cron slot open with no upper bound. Now bounded by `timeoutMs` (default
+600000), SIGTERM to the process group, then SIGKILL after `graceMs`, settling
+`CODE_TIMEOUT`. The verdict resolves from the grace timer rather than from
+`'close'`, because a surviving grandchild holding the pipes open can stop
+`'close'` from ever arriving.
+
+**The order mattered.** The listener outranks the timeout: shipping the timeout
+first would have traded a loud multi-job hang for a silent green log line.
+
+The substitute codes are 4/5/6 and the test pins them `>= 3`. The producer owns
+0/1/2 (`code = fails ? 2 : warns ? 1 : 0`), and a negative sentinel would land
+in the non-strict grader's soft-pass band — which is production's default — so
+a "clearly invalid" `-1` would have reported the timeout as a pass.
+
+### Ride-along: the run budget is configurable, and junk cannot disable it
+
+`liveE2eCronOptionsFromConfig` now maps `timeoutMs`/`graceMs`, and
+`bin/xclaw.mjs` spreads the mapper's result instead of hand-copying keys — the
+same shape that lost `enabled` in transit before. `resolveRunBudget` is
+exported and tested because `??` is not the guard this needs: `Number("abc")`
+is `NaN`, which `??` passes through, and `NaN` then fails the `timeoutMs > 0`
+test at the call site, leaving the child unbounded again. `Number.isFinite`
+catches it. `0` still disables the timer deliberately, as an escape hatch.
+
+### What this release does NOT do
+
+- **The 600000 ms default is derived, not measured.** Nobody has timed a real
+  live-enforcement run on this host. If a legitimate run exceeds ten minutes,
+  this converts a slow pass into a reported timeout.
+- **The group kill deliberately does not reach the computer server.**
+  `src/computer/manager.mjs` spawns it `detached` with `unref()`, so it calls
+  `setsid()` and leads its own process group; `process.kill(-childPid)` cannot
+  touch it. That is intended — the run passes `--keep`, so the server is meant
+  to outlive even a successful pass. No line here may claim otherwise.
+- **The `bin/xclaw.mjs` spread is not covered by a test**, and neither is the
+  `resolveRunBudget` *call site* (the function itself is pinned). Mutation-
+  checked: re-inlining `??` at the call site leaves the suite green. The only
+  input that separates the two is junk, which resolves to the ten-minute
+  default — a test asserting it would have to hang for ten minutes and would
+  leak the fixture's child. Recorded rather than papered over with a fake pin.
+- **Report parsing is untouched and still wrong on a cold host.** The child
+  starts a computer server in-process and `manager.mjs` logs to stdout before
+  the JSON report is printed, so `JSON.parse` on whole stdout throws, `parsed`
+  goes false, and a warnings-only run (exit 1) is graded `unparseable`. That is
+  a defect in already-shipped code and is the next slice, not this one.
+
 ## 3.367.0
 
 ### A check that reported green having run zero checks
