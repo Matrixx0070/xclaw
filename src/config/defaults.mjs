@@ -577,6 +577,7 @@ export const DEFAULT_CONFIG = {
       "xclaw_computer_act",
       "computer_act",
       "xclaw_spawn_subagent",
+      "xclaw_spawn_agent",
       "xclaw_swarm_run",
       "xclaw_swarm_merge_approve",
       "xclaw_swarm_merge_reject",

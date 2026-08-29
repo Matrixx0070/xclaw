@@ -27,8 +27,12 @@ export const TOOL_RISK = {
   // Driving the desktop: clicks and keystrokes land wherever focus is.
   xclaw_computer_act: "exec",
   computer_act: "exec",
-  // A sub-agent or a merged swarm branch acts under its own steam.
+  // A sub-agent or a merged swarm branch acts under its own steam. Both spawn
+  // names are served — the loop offers xclaw_spawn_subagent, the local registry
+  // offers xclaw_spawn_agent — and only the second one is in any shipped tool
+  // pack, so classifying just the first protected the unreachable twin.
   xclaw_spawn_subagent: "exec",
+  xclaw_spawn_agent: "exec",
   xclaw_swarm_run: "exec",
   xclaw_swarm_merge_approve: "exec",
   xclaw_swarm_merge_reject: "exec",

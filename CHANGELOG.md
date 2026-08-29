@@ -1,3 +1,33 @@
+## 3.359.0
+
+- v3.358.0 fixed the approval denylist for the two tools it found and left the
+  hole open for a third — the one that was actually reachable. `FORCE_SERIAL`
+  was the source of truth that audit graded against, and it is a hand-typed list
+  too. It names `xclaw_spawn_subagent`; it has never named `xclaw_spawn_agent`.
+  Both are served, and they are the same capability under two names: the loop
+  offers `xclaw_spawn_subagent` (`createSpawnTool`, `src/agents/spawn.mjs`), the
+  local registry offers `xclaw_spawn_agent` (`createSpawnTools`, wired at
+  `src/tools/registry.mjs:14`), and either one hands a slice of work to a child
+  agent that then runs tools of its own. They assess to the same risk tier.
+  Under prod the first pended and the second auto-ran — and the twin that was
+  protected is the one **no shipped tool pack grants**, while the twin that ran
+  unasked sits in both the `act` and `browse` packs. The protection landed on
+  the unreachable name.
+- `xclaw_spawn_agent` is now classified on all three deciding surfaces:
+  `TOOL_RISK` in `src/security/policy-matrix.mjs` (which also fixes the
+  supervised overlay, derived from that table), the prod `requireApproval` list,
+  and the narrower no-profile default. It is deliberately NOT added to
+  `FORCE_SERIAL`: that list controls concurrency, not approval, and serialising
+  delegation would defeat the parallelism the tool exists to provide.
+- The new invariant does not grade against `FORCE_SERIAL`. A hand-typed list
+  cannot be the guard against hand-typed lists being incomplete — that is
+  exactly how this survived the previous audit. It grades against
+  `ROLE_TOOL_PACKS`, the shipped packs: whatever a pack grants IS offered to the
+  model, so a pack cannot silently omit a served tool. Every pack-granted name
+  must now pend, be in `safeAuto`, or appear in an explicit acknowledged-auto
+  list in the test. Adding a tool to a pack without deciding which of the three
+  it is now fails the suite instead of shipping.
+
 ## 3.358.0
 
 - The approval gate decided by NAME, and its list was a hand-typed subset of the
