@@ -70,7 +70,11 @@ export const ROLE_TOOL_PACKS = Object.freeze({
     "xclaw_bash", "bash",
     "xclaw_file_read", "file_read",
     "xclaw_file_write", "file_write",
-    "xclaw_file_list", "list_dir",
+    // Enumeration is `glob`. The packs used to name `xclaw_file_list`/`list_dir`,
+    // which exist in neither the local registry nor the computer server, so the
+    // filter dropped them and the pack silently shipped without any way to list
+    // a directory except shelling out through bash.
+    "glob",
     "xclaw_skill",
     // delegation: without this the agent has no way to run independent slices
     // concurrently, and was observed claiming parallelism it never achieved
@@ -82,7 +86,11 @@ export const ROLE_TOOL_PACKS = Object.freeze({
     "xclaw_bash", "bash",
     "xclaw_file_read", "file_read",
     "xclaw_file_write", "file_write",
-    "xclaw_file_list", "list_dir",
+    // Enumeration is `glob`. The packs used to name `xclaw_file_list`/`list_dir`,
+    // which exist in neither the local registry nor the computer server, so the
+    // filter dropped them and the pack silently shipped without any way to list
+    // a directory except shelling out through bash.
+    "glob",
     "web_search", "xclaw_web_search",
     "xclaw_browser_tab", "browser_tab",
     "xclaw_skill",

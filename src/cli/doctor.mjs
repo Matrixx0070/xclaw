@@ -13,7 +13,7 @@ const DOCTOR_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 import { loadConfig, getConfigPath, getConfigDir } from "../config/load.mjs";
 import { validateConfig } from "../config/validate.mjs";
 import { isHardenedProfile } from "../config/profiles.mjs";
-import { isComputerRunning } from "../computer/manager.mjs";
+import { isComputerRunning, computerBaseUrl } from "../computer/manager.mjs";
 import { computerHealthTarget, computerHealthRow } from "./doctor-computer-health.mjs";
 import { runSecurityAudit } from "../security/audit.mjs";
 import { auditRow } from "./doctor-audit-row.mjs";
@@ -656,6 +656,37 @@ export async function runDoctor(opts = {}) {
   }
   const cRow = computerHealthRow(cfg, healthy, ch.error || ch.status);
   push("computer.health", cRow.status, cRow.message);
+
+  // The effective tool allowlist decides what the agent can do at all. An entry
+  // naming a tool that does not exist is dropped by compileToolFilter without a
+  // word on any surface — `missingAllowedTools` reported it only as an
+  // onEvent({type:"tools"}) frame, which nothing renders. This is that reader.
+  try {
+    const { resolveRoleToolPack } = await import("../providers/role-router.mjs");
+    const { summarizeToolPack } = await import("./doctor-tool-pack.mjs");
+    const patterns = cfg.agent?.allowTools ?? resolveRoleToolPack(cfg);
+    let availableNames = [];
+    let computerReachable = healthy;
+    if (patterns) {
+      const { createAllLocalTools, localToolNames } = await import("../tools/registry.mjs");
+      availableNames = localToolNames(createAllLocalTools({ cfg, workingDir: process.cwd() }));
+      const tl = await httpGet(`${computerBaseUrl(cfg)}/tools`);
+      let computerNames = null;
+      if (tl.ok && tl.data) {
+        try {
+          const parsed = JSON.parse(tl.data);
+          const arr = Array.isArray(parsed) ? parsed : parsed?.tools;
+          if (Array.isArray(arr)) computerNames = arr.map((t) => t?.name).filter(Boolean);
+        } catch { /* not json */ }
+      }
+      if (computerNames) availableNames = [...availableNames, ...computerNames];
+      else computerReachable = false;
+    }
+    const tRow = summarizeToolPack({ patterns, availableNames, computerReachable });
+    push("tools.allowlist", tRow.severity, tRow.message);
+  } catch (err) {
+    push("tools.allowlist", "warn", `tool allowlist not checked: ${err.message}`);
+  }
   try {
     const { watchdogStatus } = await import("../computer/watchdog.mjs");
     const { summarizeComputerWatchdog } = await import("../computer/watchdog-report.mjs");

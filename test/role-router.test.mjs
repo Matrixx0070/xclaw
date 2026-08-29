@@ -1,5 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import os from "node:os";
+import { compileToolFilter } from "../src/agent/tool-filter.mjs";
+import { createAllLocalTools, localToolNames } from "../src/tools/registry.mjs";
 import {
   resolveRoleMap,
   resolveRolePolicy,
@@ -119,4 +122,33 @@ describe("role effort and tool packs", () => {
   it("full pack means no filter", () => {
     assert.equal(resolveRoleToolPack({ agent: { toolPack: "full" } }), null);
   });
+
+  // The packs promised directory listing via `xclaw_file_list`/`list_dir`.
+  // Neither name exists: not in the local registry, not among the tools the
+  // computer server serves. `compileToolFilter` drops an entry that names no
+  // tool without a word, so every run under these packs lost the capability
+  // its own allowlist advertised. `glob` is the enumeration tool that is
+  // actually built, so the pack must keep it or the promise is empty again.
+  for (const packName of ["act", "browse"]) {
+    it(`${packName} pack keeps a directory-enumeration tool that exists`, () => {
+      const local = localToolNames(
+        createAllLocalTools({ cfg: {}, workingDir: os.tmpdir() })
+      );
+      assert.ok(local.includes("glob"), "glob must be a real local tool");
+      const filter = compileToolFilter(resolveRoleToolPack({ agent: { toolPack: packName } }));
+      assert.equal(filter.match("glob"), true);
+    });
+
+    it(`${packName} pack names no tool that does not exist locally`, () => {
+      // Graded against the local registry only, and only for entries whose
+      // capability is local: computer-plane names cannot be resolved here.
+      const local = localToolNames(
+        createAllLocalTools({ cfg: {}, workingDir: os.tmpdir() })
+      );
+      const pack = resolveRoleToolPack({ agent: { toolPack: packName } });
+      const phantom = ["xclaw_file_list", "list_dir"].filter((n) => pack.includes(n));
+      assert.deepEqual(phantom, [], `pack still names non-existent tools: ${phantom}`);
+      assert.ok(local.length > 0);
+    });
+  }
 });

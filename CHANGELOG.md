@@ -1,3 +1,34 @@
+## 3.357.0
+
+- The shipped `act` and `browse` tool packs promised a capability that does not
+  exist. Both named `xclaw_file_list` and `list_dir`; neither is in the local
+  registry (45 tools) nor among the tools the computer server actually serves
+  (7). `compileToolFilter` drops an allowlist entry that matches no tool without
+  a word, so every run under those packs — which is every run on a `lab`-profile
+  host, where `profiles.mjs` pins `toolPack: "act"` — had no way to list a
+  directory at all except by shelling out through `xclaw_bash`. The packs now
+  name `glob`, the enumeration tool that is genuinely built.
+- The warning for exactly this condition existed and had no reader.
+  `missingAllowedTools` computed `["xclaw_file_list","list_dir"]` correctly on
+  every single run, and `loop.mjs` emitted it as `onEvent({type:"tools",
+  phase:"allow_missing"})`. No operator surface renders that type: not
+  `voiceClientEvent`, not any channel, not a log line — the string has never
+  appeared in this host's pm2 logs. `AGENT_EVENT_TYPES` does not even list
+  `"tools"`, and has no consumers. The remedy for a silent drop was itself
+  silent.
+- `xclaw doctor` now carries a `tools.allowlist` row: it resolves the run's
+  effective allowlist (`agent.allowTools`, else the resolved role pack) against
+  the local registry unioned with the computer server's live `/tools`, and names
+  every entry that resolves to nothing. Live output before the pack fix, on this
+  host: `11 allowed but 2 name no tool on this host: xclaw_file_list, list_dir`.
+- The row reports `unverified` rather than a wall of false gaps when the tool
+  inventory could not be built. Most pack entries are computer-plane names, so
+  grading them against a list that could not contain them would report every one
+  as missing — the opposite of the truth.
+- The decision is a pure module (`src/cli/doctor-tool-pack.mjs`) because the
+  probe's caller loads the real config and cannot be pointed at a fixture, so
+  the branches that matter would otherwise ship untested.
+
 ## 3.356.0
 
 - `web_fetch`: the advertised `max_chars` bound is now applied to what comes off
