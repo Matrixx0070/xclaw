@@ -30,7 +30,9 @@ composition of existing guards, no new enforcement layer:
   tightening must never be able to loosen — before v3.361.0 it replaced the
   built-ins, so an operator who added one path silently dropped all six others.
 - **Verification floor**: `npm run release-gate:quick` is appended to the
-  mission's verify commands (`self.verifyCommands` overrides).
+  mission's verify commands. `self.verifyCommands` **adds** to it; like
+  `denyPaths`, it cannot shorten it — an operator list that verified nothing
+  would still force-merge to main.
 - **Risk**: worktree autonomy stays risk-bounded (A2); `riskContext.selfTarget`
   marks the assessment.
 
@@ -63,6 +65,6 @@ Every phase lands in the operational ledger (`kind:"deploy"`). The brake:
     "health": { "retries": 10, "delayMs": 3000 },
     "requireMergeApproval": false,
     "denyPaths": null,   // extra denies; added to the built-ins, never replacing them
-    "verifyCommands": null
+    "verifyCommands": null   // extra verify commands; added to the floor, never replacing it
 } }
 ```

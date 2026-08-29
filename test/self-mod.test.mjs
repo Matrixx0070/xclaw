@@ -288,6 +288,32 @@ describe("self edit-surface covers its own enforcement chain", () => {
     }
   });
 
+  it("adds an operator's verifyCommands to the floor instead of replacing it", () => {
+    const own = selfVerifyCommands({ self: { verifyCommands: ["npm run mine"] } });
+    assert.ok(own.includes("npm run mine"), "dropped the operator's command");
+    assert.ok(
+      own.includes("npm run release-gate:quick"),
+      "an operator's own verify list deleted the mandatory floor"
+    );
+  });
+
+  it("keeps the floor for an empty list and for non-array values", () => {
+    // [] is truthy in JS, so `||` handed it straight through and the mission
+    // ran with no floor at all.
+    assert.deepEqual(selfVerifyCommands({ self: { verifyCommands: [] } }), [
+      "npm run release-gate:quick",
+    ]);
+    // A string spread into 7 single-character commands; an object threw into
+    // engine.mjs's swallowing catch, leaving profile "self" set and the floor
+    // never applied.
+    assert.deepEqual(selfVerifyCommands({ self: { verifyCommands: "npm run x" } }), [
+      "npm run release-gate:quick",
+    ]);
+    assert.deepEqual(selfVerifyCommands({ self: { verifyCommands: { a: 1 } } }), [
+      "npm run release-gate:quick",
+    ]);
+  });
+
   it("adds an operator's denyPaths to the built-ins instead of replacing them", () => {
     const mcfg = applySelfOverlay({}, { self: { denyPaths: ["docs/"] } });
     assert.ok(mcfg.self.denyPaths.includes("docs/"), "dropped the operator's entry");

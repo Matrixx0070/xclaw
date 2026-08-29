@@ -186,8 +186,27 @@ export function applySelfOverlay(mcfg, cfg = {}) {
   };
 }
 
-/** Mandatory verification floor for self missions. */
+/** The verify command a self mission may never run without. */
+export const SELF_VERIFY_FLOOR = ["npm run release-gate:quick"];
+
+/**
+ * Mandatory verification floor for self missions.
+ *
+ * Same defect the deny list carried until v3.361.0, in the same file, twenty
+ * lines down: `||` made the floor a DEFAULT rather than a floor, so any
+ * operator value replaced it. `verifyCommands: ["true"]` left a self mission
+ * verifying nothing — and because engine.mjs forces `autoMerge` unless
+ * `self.requireMergeApproval` is set, verify-green force-merges to main and
+ * deploys. A mandatory floor an operator can delete is not mandatory.
+ *
+ * The Array.isArray guard is not defensive padding: a string spread into one
+ * command per character, and an object threw inside engine.mjs's best-effort
+ * catch AFTER `mission.profile = "self"` was set — self profile on, floor
+ * never applied, nothing logged.
+ */
 export function selfVerifyCommands(cfg = {}) {
-  const floor = cfg.self?.verifyCommands || ["npm run release-gate:quick"];
-  return floor;
+  const extra = cfg.self?.verifyCommands;
+  return Array.isArray(extra) && extra.length
+    ? [...new Set([...SELF_VERIFY_FLOOR, ...extra])]
+    : SELF_VERIFY_FLOOR;
 }

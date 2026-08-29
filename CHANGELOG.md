@@ -1,3 +1,49 @@
+## 3.363.0
+
+### The mandatory verify floor was a default an operator could delete
+
+`selfVerifyCommands` carried a JSDoc reading "Mandatory verification floor for
+self missions" over a body that was `cfg.self?.verifyCommands || [floor]` — a
+DEFAULT, not a floor. Every operator value replaced it:
+
+| `self.verifyCommands` | floor present |
+|---|---|
+| absent | yes |
+| `[]` (truthy in JS) | **no** |
+| `["true"]` | **no** — verify passes having proven nothing |
+| `["npm run mine"]` | **no** |
+| `"npm run x"` (string) | **no** — spread into 7 one-character commands |
+| `{}` (object) | **no** — spread throws |
+
+This is the same defect the deny list carried until v3.361.0, in the same file,
+twenty lines up, with the same `||`. That fix did not reach this line.
+
+It matters because of what sits downstream. `engine.mjs` sets
+`mission.autoMerge = cfg.self?.requireMergeApproval === true ? false : true` on
+the very next line — so a self mission whose verify list is `["true"]` runs a
+command that proves nothing, reports green, force-merges to `main`, and
+triggers the pm2 deploy. The floor is the only thing between an autonomous edit
+and production.
+
+The object case fails worse than it looks: `mission.profile = "self"` is
+assigned BEFORE the throw, and engine.mjs's `catch {}` is silent — so the self
+profile stays on while the floor line never executes and `autoMerge` is never
+assigned, with nothing logged.
+
+`self.verifyCommands` now ADDS to `SELF_VERIFY_FLOOR`, mirroring `denyPaths`,
+and a non-array degrades to the floor instead of spreading or throwing. The
+floor is hoisted to a named export so `guard-surface.mjs:135` — which derives
+WHICH FILES the floor protects from this same function — re-widens with it,
+single-sourced rather than a second list. `docs/SELF_MODIFICATION.md` said
+"overrides"; it now says "adds", matching the `denyPaths` paragraph four lines
+above it.
+
+Five mutations, every shipping line killed in both directions.
+
+Not fixed, reported: the live host sets no `self.verifyCommands`, so the bad
+path was never taken here — but it also sets no `self.requireMergeApproval`,
+so every other precondition for the blast radius is live.
+
 ## 3.362.0
 
 - The live horizon soak's dollar cap was compared, on every goal of every run,
