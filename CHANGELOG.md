@@ -1,3 +1,15 @@
+## 3.351.0
+
+### Fixed
+- **The security tiering read third-party tool names as substrings, and tiered 15 reads above 2 mutations.** `assessRisk` picks a tool's impact family with four unanchored regexes over the tool NAME. That is sound for xclaw's own 45 tools, whose names it chose; it is not sound for the 62 tools the MCP servers supply, whose names it does not — and the agent loop wires those in unconditionally, with no `mcp.enabled` gate. `impact: "read"` is the ONLY route to the `safe` tier, so a name that wins READ by accident is auto-approved with no human and no record. On the live surface two real Linear mutations did exactly that: `resolve_diff_thread` matched READ because **"thread" contains "read"**, and `save_status_update` matched READ on `status` while `save` is absent from `WRITE_RE`. Driven through the real approval gate under the live posture (`autoApprove`, `autoApproveMaxTier: "low"`), `save_status_update` returned `approved: true, mode: "auto", awaitingHuman: false` — a write to a live workspace, no human — while the sibling `delete_status_update` correctly pended.
+- **The same accident ran the other way, and louder.** Linear names every mutation `save_*` and every reader `get_*`, and `get` appears in no family regex at all — so fifteen pure readers (`get_issue`, `get_document`, `get_workspace`, `get_me`, …) matched nothing, hit the fail-closed `impact = "exec"` default, and tiered `risky`. The classifier was not lenient, it was **inverted**: it pended 15 reads and auto-approved 2 mutations.
+- A read certificate for a name xclaw did not choose is now **earned at the leading verb** of the operation (`get|list|read|search|fetch|describe|show|query|find|lookup`), never by a substring sitting anywhere in the name. Anything else keeps the existing fail-closed `exec` default, so an unrecognised third-party verb stays conservative by construction rather than by enumeration. Live surface after the fix: 38 safe / 17 risky / 7 critical, and **every one of the 38 is a genuine reader** — zero mutations remain auto-approvable.
+
+### Notes
+- xclaw's own tool names are untouched: the leading-verb rule is gated on the `mcp__` prefix because several of xclaw's readers put the verb LAST (`x_keyword_search`, `mitm_status`) and a uniform rule would have reclassified them. All 45 local tools classify byte-identically before and after (verified by census, drift 0).
+- `READ_RE` itself is deliberately **not** anchored. Anchoring would be correct in general, but no local name is currently mis-classified by it, and the `mcp__` rule removes third-party names from that code path entirely — so anchoring would be a behaviour change with regression risk and no defect behind it.
+- **This widens auto-approval for 14 third-party read tools** (`risky` → `safe`), which previously pended. They are genuine reads and `safe` is what every other reader in the system gets, but the effect is a real loosening: private Linear/GitHub workspace data now reaches the model without a human gate, the same way `grep` and `file_read` do locally.
+
 ## 3.348.0
 
 ### Fixed

@@ -33,6 +33,22 @@ const WRITE_RE = /write|edit|append|create|delete|remove|move|copy|mkdir/i;
 const EXEC_RE = /bash|shell|exec|terminal|run|spawn|python|jupyter|kernel/i;
 const EGRESS_RE = /web_|fetch|http|browser|navigate|download|upload|api/i;
 
+// Every family regex above is an unanchored substring match. That is sound for
+// xclaw's own 45 tool names, which it chose, and unsound for the third-party
+// names an MCP server supplies, which it did not: "thread" contains "read",
+// and `impact: "read"` is the ONLY route to the `safe` tier. So a read
+// certificate for a name we did not choose has to be EARNED at the leading
+// verb of the operation; anything else keeps the fail-closed `exec` default.
+// This runs both ways on the live surface — Linear names every mutation
+// `save_*` and every reader `get_*`, and `get` appears in no family regex at
+// all, so the substring rule tiered 15 pure reads ABOVE 2 real mutations.
+const MCP_READ_VERB_RE = /^(get|list|read|search|fetch|describe|show|query|find|lookup)_/;
+
+function isReadFamilyName(name) {
+  if (name.startsWith("mcp__")) return MCP_READ_VERB_RE.test(name.split("__").pop());
+  return READ_RE.test(name);
+}
+
 // Irreversible command facts — each entry is (pattern, reason). Patterns run
 // against a NORMALIZED command (quotes/backslashes stripped, whitespace
 // collapsed) so quoting/spacing tricks don't evade them.
@@ -339,7 +355,7 @@ export function assessRisk({ tool, args = {}, workingDir, cfg = {}, context = {}
   if (EXEC_RE.test(name)) impact = "exec";
   else if (WRITE_RE.test(name)) impact = "write";
   else if (EGRESS_RE.test(name)) impact = "egress";
-  else if (READ_RE.test(name)) impact = "read";
+  else if (isReadFamilyName(name)) impact = "read";
   else impact = "exec"; // unknown tools: assume the worst reasonable
 
   const cmdRaw = impact === "exec" ? commandText(args) : "";
