@@ -285,7 +285,7 @@ export const STRICT_PATH_ARG_KEYS = [
   "dest", "destination", "outputPath",
 ];
 
-function extractPaths(args = {}) {
+export function extractPaths(args = {}) {
   const out = [];
   for (const k of PATH_ARG_KEYS) {
     if (typeof args[k] === "string" && args[k]) out.push(args[k]);
@@ -293,7 +293,7 @@ function extractPaths(args = {}) {
   return out;
 }
 
-function commandText(args = {}) {
+export function commandText(args = {}) {
   // `code` covers exec tools that take source text (python_session) — their
   // payload gets the same danger-fact scan (credential paths, system paths)
   // as a shell command.

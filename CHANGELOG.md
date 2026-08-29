@@ -1,3 +1,73 @@
+## 3.375.0
+
+### A "no" binds the effect, not the call
+
+Live-observed on :10: an operator denied a risky `xclaw_bash` write of
+`tmp-live/deny-probe.txt`; the model pivoted to `xclaw_file_write` of
+the same path, which tiers `low` (in-workspace write), and under the
+live `autoApproveMaxTier: "low"` the denied effect auto-ran seconds
+after the human said no. `needsApproval` grades every call
+statelessly, and a deny resolved to nothing but a message, so nothing
+connected the two calls.
+
+A human deny now records the denied effect — the call's resolved path
+operands — in an in-memory, TTL-bounded store (the `/trust` window's
+mirror). A later call whose own operands intersect a live taint is
+escalated (tier only ever raises, floor `risky`) and **always pends**,
+with the reason in the prompt: `denial-taint: matches effect denied
+Ns ago (<path>)`. Only a human can reverse a human deny: a taint
+match outranks `bypassApprovals`, durable allow-always pins, and
+`approvalSlaAction: "approve"` (a taint-forced ask fails closed on
+SLA timeout). Authorize and decide may run on different gate
+instances after a SIGHUP reload, so the store is process-shared, not
+instance-local.
+
+Scope, deliberately: only **human** denies taint (SLA timeouts and
+policy denies do not); matching is by resolved path, so a pathless
+denial (pure egress) protects nothing; a gateway restart clears
+taints. Config (`security.denialTaint`): `enabled` (default true),
+`ttlMs` (default 900000; `0` expires immediately — the escape hatch),
+`max` (default 50, FIFO). Observability:
+`createApprovalGate(...).listDenialTaints()`.
+
+23 tests, including the live pivot, the pin-outrank, the SLA fail-
+closed, the shared-store rebuild, and the opt-out.
+
+## 3.375.0
+
+### A "no" binds the effect, not the call
+
+Live-observed on :10: an operator denied a risky `xclaw_bash` write of
+`tmp-live/deny-probe.txt`; the model pivoted to `xclaw_file_write` of
+the same path, which tiers `low` (in-workspace write), and under the
+live `autoApproveMaxTier: "low"` the denied effect auto-ran seconds
+after the human said no. `needsApproval` grades every call
+statelessly, and a deny resolved to nothing but a message, so nothing
+connected the two calls.
+
+A human deny now records the denied effect — the call's resolved path
+operands — in an in-memory, TTL-bounded store (the `/trust` window's
+mirror). A later call whose own operands intersect a live taint is
+escalated (tier only ever raises, floor `risky`) and **always pends**,
+with the reason in the prompt: `denial-taint: matches effect denied
+Ns ago (<path>)`. Only a human can reverse a human deny: a taint
+match outranks `bypassApprovals`, durable allow-always pins, and
+`approvalSlaAction: "approve"` (a taint-forced ask fails closed on
+SLA timeout). Authorize and decide may run on different gate
+instances after a SIGHUP reload, so the store is process-shared, not
+instance-local.
+
+Scope, deliberately: only **human** denies taint (SLA timeouts and
+policy denies do not); matching is by resolved path, so a pathless
+denial (pure egress) protects nothing; a gateway restart clears
+taints. Config (`security.denialTaint`): `enabled` (default true),
+`ttlMs` (default 900000; `0` expires immediately — the escape hatch),
+`max` (default 50, FIFO). Observability:
+`createApprovalGate(...).listDenialTaints()`.
+
+23 tests, including the live pivot, the pin-outrank, the SLA fail-
+closed, the shared-store rebuild, and the opt-out.
+
 ## 3.374.0
 
 ### The operator console, TUI wrap, and webchat speak what they claim

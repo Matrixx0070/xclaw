@@ -15,6 +15,11 @@ import {
 import { commandMatchesExecAllowlist } from "./exec-allowlist-pattern.mjs";
 import { getSharedLedger } from "../ops/ledger.mjs";
 import { assessRisk, tierRank } from "./risk.mjs";
+import {
+  createDenialTaints,
+  taintPathCandidates,
+  applyDenialTaint,
+} from "./denial-taint.mjs";
 import { matchDecision, addDecision } from "./decisions.mjs";
 import {
   buildSystemRunPlan,
@@ -25,6 +30,19 @@ import {
 import { authorizeQuotaPreflight } from "./authorize-quota.mjs";
 
 const pending = new Map(); // id -> { tool, args, plan, resolve, at, deadline }
+/**
+ * Process-shared denial-taint store, module-level for the same reason
+ * `pending` is: the live gateway runs authorize and decide on DIFFERENT gate
+ * instances (the approvals route captures the boot gate; a SIGHUP security
+ * reload rebuilds the loop's shared gate), so an instance-local store would
+ * record denies where no authorize ever reads them — the protection silently
+ * dead until restart (review probe, 2026-08-29). First enabled gate's
+ * ttlMs/max govern the process; a config edit to them lands on restart.
+ */
+let sharedTaintStore = null;
+export function resetSharedDenialTaints() {
+  sharedTaintStore = null;
+}
 let slaTimer = null;
 let sharedGate = null;
 let sharedGateSecurityKey = null;
@@ -226,6 +244,22 @@ export function createApprovalGate(cfg = {}) {
    */
   let trustWindow = null; // { maxTier, expiresAt, by }
 
+  /**
+   * Denial taint — the trust window's mirror (see denial-taint.mjs). An
+   * operator deny records the denied effect; a later call matching it is
+   * escalated and re-asked, whatever the tier config says. In-memory,
+   * TTL-bounded, restart-clears. security.denialTaint.enabled=false is the
+   * explicit opt-out; junk ttlMs/max fall back to safe defaults inside the
+   * store.
+   */
+  const denialTaints =
+    security.denialTaint?.enabled === false
+      ? null
+      : (sharedTaintStore ||= createDenialTaints({
+          ttlMs: Number(security.denialTaint?.ttlMs),
+          max: Number(security.denialTaint?.max),
+        }));
+
   function setTrustWindow({ maxTier = "risky", ttlMs, by = "operator" } = {}) {
     const ttl = Math.min(Math.max(Number(ttlMs) || 0, 60_000), 4 * 3600_000); // 1min..4h
     const tier = tierRank(maxTier) >= tierRank("risky") ? "risky" : maxTier; // hard ceiling
@@ -388,21 +422,46 @@ export function createApprovalGate(cfg = {}) {
     }
     // A2: deterministic risk assessment for every action. Never throws —
     // assessment failure degrades to null (pre-A2 behavior), not to a block.
+    // riskWorkingDir: the RUN's workspace (session dir / mission worktree),
+    // passed by the loop. Without it, non-exec tools fell back to the
+    // gateway's planRoot and every path scoped against the wrong root (live
+    // blind spot: home writes scored "workspace"). Hoisted so the denial
+    // taint below resolves candidates against the SAME root the risk
+    // assessment used — two resolutions would be the divergent-duplicate
+    // shape.
+    const riskWd = riskWorkingDir || args?.cwd || args?.workingDir || planRoot;
     let risk = null;
     try {
       risk = assessRisk({
         tool: name,
         args,
-        // riskWorkingDir: the RUN's workspace (session dir / mission
-        // worktree), passed by the loop. Without it, non-exec tools fell back
-        // to the gateway's planRoot and every path scoped against the wrong
-        // root (live blind spot: home writes scored "workspace").
-        workingDir: riskWorkingDir || args?.cwd || args?.workingDir || planRoot,
+        workingDir: riskWd,
         cfg,
         context: security.riskContext || {},
       });
     } catch {
       risk = null;
+    }
+
+    // Denial taint: a human "no" binds the effect, not the call. A call whose
+    // path candidates intersect a live taint is escalated (never lowered) and
+    // ALWAYS re-asked — only a human can reverse a human deny, so a taint
+    // match outranks every auto path below, bypassApprovals included (the
+    // same precedence hook-forced asks already have). Candidates are kept on
+    // the pending entry so a deny records exactly what was assessed.
+    let taintMatch = null;
+    let taintPaths = [];
+    if (denialTaints) {
+      try {
+        taintPaths = taintPathCandidates(args, riskWd);
+        const t = applyDenialTaint(risk, taintPaths, denialTaints);
+        if (t.matched) {
+          taintMatch = t.matched;
+          risk = t.risk;
+        }
+      } catch {
+        /* taint must never break authorization */
+      }
     }
 
     if (risk?.tier === "critical" && criticalOverride === "deny" && !autoApprove) {
@@ -422,7 +481,7 @@ export function createApprovalGate(cfg = {}) {
 
     // forceHuman: a pre_tool_use hook returned decision:"ask" — escalate to a
     // human even when policy would auto-approve.
-    if (!forceHuman && !needsApproval(name, risk, { ignoreBypass })) {
+    if (!forceHuman && !taintMatch && !needsApproval(name, risk, { ignoreBypass })) {
       // Auto path: still optionally bind a plan for downstream audit, but do not block.
       let plan = null;
       if (bindSystemRunPlan && isExecTool(name)) {
@@ -467,8 +526,17 @@ export function createApprovalGate(cfg = {}) {
     // A2 pinned decisions: a durable "allow-always" covering this exact plan
     // (fingerprint pin) at or below its recorded tier. TOCTOU revalidation
     // still runs downstream — the pin approves the PLAN, not the tool name.
+    //
+    // A live denial taint outranks pins: both are human decisions, but the
+    // deny is the more recent word, and non-exec fingerprints are file-blind
+    // (argv/exe/files all empty), so one old allow-always on ANY file_write
+    // in a cwd would otherwise auto-run every later file_write there —
+    // review probe: the denied pivot returned mode:"pinned" with the fresh
+    // denial named in its own risk.reasons.
     try {
-      const pin = await matchDecision(cfg, { tool: name, plan, tier: risk?.tier });
+      const pin = taintMatch
+        ? null
+        : await matchDecision(cfg, { tool: name, plan, tier: risk?.tier });
       if (pin) {
         journalDecision(cfg, {
           tool: name,
@@ -502,14 +570,21 @@ export function createApprovalGate(cfg = {}) {
         tool: name,
         args,
         plan,
-        // why a human is being asked: "policy" (requireApproval list) vs
-        // "hook" (a pre_tool_use hook returned decision:"ask")
-        origin: forceHuman ? "hook" : "policy",
+        // why a human is being asked: "policy" (requireApproval list),
+        // "hook" (a pre_tool_use hook returned decision:"ask"), or
+        // "denial-taint" (matches an effect a human recently denied)
+        origin: forceHuman ? "hook" : taintMatch ? "denial-taint" : "policy",
         risk,
+        // What a deny should taint: the resolved path candidates of THIS
+        // call, computed once above — decide() records them verbatim.
+        taintPaths,
         at: new Date().toISOString(),
         atMs: Date.now(),
         deadline: Date.now() + slaMs,
-        slaAction,
+        // A taint-forced ask fails closed on SLA timeout whatever the global
+        // action says: approvalSlaAction "approve" would otherwise reverse a
+        // human deny with no human — the exact thing the taint forbids.
+        slaAction: taintMatch ? "deny" : slaAction,
         resolve,
         timeoutHandle: null,
       };
@@ -610,6 +685,21 @@ export function createApprovalGate(cfg = {}) {
       risk: item.risk || undefined,
       allowAlways: opts.allowAlways === true || undefined,
     });
+    // A human deny taints the denied EFFECT (the call's resolved path
+    // candidates), so a pivot to the same effect through a cheaper tool is
+    // escalated and re-asked instead of auto-running. Human denies only:
+    // SLA timeouts and policy denies are not an operator saying no.
+    if (!approved && denialTaints) {
+      try {
+        denialTaints.record({
+          tool: item.tool,
+          tier: item.risk?.tier,
+          paths: item.taintPaths || [],
+        });
+      } catch {
+        /* taint must never break a decision */
+      }
+    }
     // A2 durable allow-always: persist a pin so this exact plan (or, with
     // wide:true, this exe+argv0) auto-approves next time — fire-and-forget,
     // the current decision never waits on disk.
@@ -714,6 +804,8 @@ export function createApprovalGate(cfg = {}) {
     setTrustWindow,
     clearTrustWindow,
     activeTrustWindow,
+    /** Live denied-effect taints (observability; [] when disabled). */
+    listDenialTaints: () => (denialTaints ? denialTaints.list() : []),
   };
 }
 
@@ -746,8 +838,9 @@ export function getSharedApprovalGate(cfg = {}) {
   return sharedGate;
 }
 
-/** Reset shared gate (tests / config reload). */
+/** Reset shared gate (tests / config reload). Clears denial taints too. */
 export function resetSharedApprovalGate(cfg = {}) {
+  resetSharedDenialTaints();
   sharedGate = createApprovalGate(cfg);
   sharedGateSecurityKey = JSON.stringify(cfg?.security || {});
   return sharedGate;

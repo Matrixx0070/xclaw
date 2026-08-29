@@ -2,6 +2,10 @@
 
 ## Decision order (`needsApproval`)
 
+0. A live **denial taint** (the call matches an effect a human recently
+   denied) → **always ask**, whatever every setting below says — including
+   `bypassApprovals`. Only a human can reverse a human deny. See
+   "Denial taint" below.
 1. `security.bypassApprovals === true` → **never ask, except critical**
 2. `security.autoApprove === true` → **never ask, except critical**
 3. **Critical always asks** — no setting below this line overrides it
@@ -86,3 +90,21 @@ recovery}` → tier `safe|low|risky|critical` (table overridable via
 - Pending entries and `approval_required` events carry `risk`
   (tier/factors/reasons); every resolution (human/SLA/timeout/pinned) is
   journaled to the operational ledger.
+
+## Denial taint (a "no" binds the effect, not the call)
+
+A human deny records the denied effect — the call's resolved path operands —
+in an in-memory, TTL-bounded store (the `/trust` window's mirror). A later
+call whose own operands intersect a live taint is escalated (tier only ever
+raises, floor `risky`) and **always pends**, with the reason in the prompt:
+`denial-taint: matches effect denied Ns ago (<path>)`. This closes the
+live-observed pivot where a denied risky `xclaw_bash` write auto-ran seconds
+later as a low-tier `xclaw_file_write` of the same file under
+`autoApproveMaxTier: "low"`.
+
+Scope, deliberately: only **human** denies taint (SLA timeouts and policy
+denies do not); matching is by resolved path, so a pathless denial (pure
+egress) protects nothing; a gateway restart clears taints. Config
+(`security.denialTaint`): `enabled` (default true), `ttlMs` (default 900000;
+`0` expires immediately — the escape hatch), `max` (default 50, FIFO).
+Observability: `createApprovalGate(...).listDenialTaints()`.
