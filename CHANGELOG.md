@@ -1,3 +1,30 @@
+## 3.345.0
+
+### a lock nobody could look at
+
+`reserveUsd` takes a file lease on the swarm ledger before it commits a
+reservation (`acquireLease`, opt-in via `tokens.ledgerLease`). If the holder
+dies mid-reserve the lease file survives until its 30s TTL expires, and every
+other process asking for a reservation in that window gets
+`SWARM_LEDGER_LEASE_HELD`.
+
+`readLease` is the only function that can say who holds it and whether it has
+expired. Its sole consumer in the entire repository was
+`src/cli/doctor-swarm-ledger.mjs` — a module no production file imported. So
+the two rows it pushes had never been emitted: a live `xclaw doctor` printed
+134 rows and neither `cost.swarmLedger` nor `cost.swarmLedgerLease` was among
+them. `/health` carries the ledger snapshot but not the lease, so the lock was
+invisible on every surface xclaw has.
+
+Wired into `doctor-ops-bundle.mjs`, doctor's single owner for these inserts.
+Doctor now reports the day's spend against the cap, and the lease's owner and
+expiry — `warn` + `EXPIRED` when a lease outlived its holder.
+
+The regression test also pins what the bundle must NOT do: no row id may appear
+twice. `doctor.mjs` carries a standing warning that re-invoking a probe there
+printed every verdict two or three times and inflated the warning count doctor
+exits on. Wiring one probe in two owners is exactly that bug.
+
 ## 3.344.0
 
 ### a spend cap of zero meant a spend cap of fifty

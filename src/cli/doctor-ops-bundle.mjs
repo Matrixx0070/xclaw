@@ -85,6 +85,18 @@ export async function pushDoctorOpsBundle(push, cfg = {}, opts = {}) {
     push("ops.quota_escalate", "warn", e.message || String(e));
   }
 
+  // The lease this reports is taken on the LIVE hot path (`reserveUsd` ->
+  // acquireLease); `readLease` is the only way to see who holds it, and until
+  // this line existed its sole consumer was a module nothing imported. A lease
+  // stranded by a crashed gateway denies every cross-process reserve with
+  // SWARM_LEDGER_LEASE_HELD and no surface anywhere said so.
+  try {
+    const { pushSwarmLedgerChecks } = await import("./doctor-swarm-ledger.mjs");
+    pushSwarmLedgerChecks(push, cfg);
+  } catch (e) {
+    push("cost.swarmLedger", "warn", e.message || String(e));
+  }
+
   try {
     const { pushSmokeCompareChecks } = await import("./doctor-smoke-compare.mjs");
     pushSmokeCompareChecks(push, opts.root || process.cwd());
