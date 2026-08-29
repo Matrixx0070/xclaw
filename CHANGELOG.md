@@ -1,3 +1,55 @@
+## 3.361.0
+
+- A self mission could edit the guard that was supposed to stop it, and the
+  hardening knob for that guard un-hardened the host. Two defects, one surface.
+
+  `SELF_DENY_PATHS` (`src/self/profile.mjs`) named the *policy* — `src/security/`,
+  `src/self/` — but not the machinery that enforces it. `src/hooks/manager.mjs`
+  ranks this hook's verdict against every other hook, `src/agent/loop.mjs` is the
+  only consumer that acts on a `deny`, and `src/missions/engine.mjs` installs the
+  hook in the first place. All three were editable by the mission they police.
+  So was the verify floor: `package.json` (the map `npm run` resolves through)
+  and `scripts/` (the runners the floor executes). The amplifier is
+  `engine.mjs:706`, which force-sets `mission.autoMerge = true` for self missions
+  unless `cfg.self.requireMergeApproval === true` — unset on this host — so
+  `engine.mjs:1064` merges as soon as verify reports green. A mission that could
+  edit the gate could report green.
+
+  Second, `applySelfOverlay` read `cfg.self?.denyPaths || SELF_DENY_PATHS`: pure
+  replacement. An operator adding one path to *harden* the host dropped all six
+  built-in denies and un-hardened it instead. It is now additive and de-duped.
+
+  The fix does not stop at ten hand-typed entries, because a hand-typed list
+  cannot be the guard against hand-typed lists (class 43). New
+  `src/self/guard-surface.mjs` derives the surface from the repository itself:
+  `enforcementChainFiles` scans `src/` and `bin/` for the identifiers the guard
+  needs to work (`SELF_DENY_PATHS`, `isDeniedPath`, `editSurfaceGuard`,
+  `registerEditSurfaceHook`, `applySelfOverlay`, `DECISION_RANK`,
+  `decision === "deny"`), and `verifyFloorFiles` resolves `selfVerifyCommands`
+  through `package.json`'s script map, following `npm run` indirection. The
+  suite fails when either derivation names a file the deny list omits, so adding
+  a guard module without denying it is now a red test rather than a silent hole.
+
+  Measured at HEAD (e89aadc), the derivation reported the defect directly:
+
+  ```
+  enforcement: src/agent/loop.mjs, src/hooks/manager.mjs, src/missions/engine.mjs
+  verify:      package.json, scripts/release-gate.mjs
+  ```
+
+  A derivation that finds nothing satisfies "uncovered is empty" exactly as well
+  as a correct one, so the tests grade behaviour, not emptiness: fixture repos
+  pin *where* the scan looks (a marker in `bin/` is found, the 17MB computer
+  bundle is skipped, an unmarked module is not flagged) and *what* the floor
+  resolves (two-level `npm run` indirection), a data-driven loop re-opens each
+  of three real holes and asserts the report names it, and each marker is graded
+  against the repo's own files so a rename that silently narrows the scan fails
+  the suite. 25/25 mutants caught across both files, restores sha256-identical.
+
+  Not fixed, stated rather than papered over: `test/` cannot be denied (a self
+  mission legitimately adds tests), and the floor walks the entry runners, not
+  every module they later import.
+
 ## 3.360.0
 
 - `POST /queue` refused three fields and never said so. `pickEnqueueRequest`

@@ -15,11 +15,29 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-/** Paths the agent may NEVER edit in a self mission (repo-relative prefixes). */
+/**
+ * Paths the agent may NEVER edit in a self mission (repo-relative prefixes).
+ *
+ * The list used to name only the *policy* — the modules that decide what is
+ * allowed. That left the machinery enforcing the policy editable: a self
+ * mission could rewrite the hook manager that ranks this guard's verdict, or
+ * the loop that acts on it, and the NEXT self mission would run with no
+ * boundary at all. It also left the verify floor editable, which matters more
+ * than it looks: missions/engine.mjs force-sets autoMerge unless the operator
+ * sets self.requireMergeApproval, so on a default host the floor is the only
+ * thing between an autonomous edit and main.
+ *
+ * A hand-typed list cannot be its own guard, so this one is graded against
+ * sets derived from the repository — see src/self/guard-surface.mjs.
+ */
 export const SELF_DENY_PATHS = [
   "src/security/",
   "src/self/",
-  "scripts/gateway-supervisor.mjs",
+  "src/hooks/manager.mjs", // ranks this guard's verdict against other hooks
+  "src/agent/loop.mjs", // the only consumer that acts on a "deny"
+  "src/missions/engine.mjs", // installs the guard and decides autoMerge
+  "scripts/", // the verify floor's runners (subsumes gateway-supervisor.mjs)
+  "package.json", // the script map `npm run` resolves the floor through
   "bin/",
   ".git/",
   ".github/workflows/",
@@ -148,7 +166,13 @@ export function registerEditSurfaceHook(manager, denyPaths = SELF_DENY_PATHS, re
 
 /** Apply the self overlay to a mission-scoped cfg. */
 export function applySelfOverlay(mcfg, cfg = {}) {
-  const denyPaths = cfg.self?.denyPaths || SELF_DENY_PATHS;
+  // Additive, not a replacement: `||` meant an operator who added one path to
+  // harden the host silently dropped all six built-in denies and un-hardened
+  // it instead. A knob for tightening must never be able to loosen.
+  const extra = cfg.self?.denyPaths;
+  const denyPaths = Array.isArray(extra) && extra.length
+    ? [...new Set([...SELF_DENY_PATHS, ...extra])]
+    : SELF_DENY_PATHS;
   return {
     ...mcfg,
     security: {

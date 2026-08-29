@@ -3,6 +3,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "path";
 import os from "os";
+import { fileURLToPath } from "node:url";
+import {
+  uncoveredGuardSurface,
+  enforcementChainFiles,
+  verifyFloorFiles,
+  GUARD_MARKERS,
+} from "../src/self/guard-surface.mjs";
 import {
   detectSelfTarget,
   editSurfaceGuard,
@@ -167,5 +174,126 @@ describe("A4 deploy protocol", () => {
     const out = await runDeployOnce(cfg2);
     srv.close();
     assert.equal(out.state, "healthy");
+  });
+});
+
+describe("self edit-surface covers its own enforcement chain", () => {
+  // Resolved from this file, not from cwd: the suite runs hermetically.
+  const repoDir = fileURLToPath(new URL("..", import.meta.url));
+  let fixture;
+
+  before(async () => {
+    // A miniature repo whose guard modules sit in places the real one does not
+    // use, so the scan is graded on where it LOOKS, not on the real layout.
+    fixture = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-surface-"));
+    await fs.writeFile(
+      path.join(fixture, "package.json"),
+      JSON.stringify({ scripts: { floor: "npm run inner", inner: "node scripts/inner.mjs" } })
+    );
+    for (const [rel, body] of [
+      ["bin/cli.mjs", "const x = DECISION_RANK;\n"],
+      ["src/computer/xclaw-server.mjs", "const x = DECISION_RANK;\n"],
+      ["src/plain.mjs", "export const nothing = 1;\n"],
+    ]) {
+      await fs.mkdir(path.join(fixture, path.dirname(rel)), { recursive: true });
+      await fs.writeFile(path.join(fixture, rel), body);
+    }
+  });
+  after(async () => {
+    await fs.rm(fixture, { recursive: true, force: true });
+  });
+
+  it("denies every module the edit guard depends on", async () => {
+    const { enforcement } = await uncoveredGuardSurface({ repoDir });
+    assert.deepEqual(
+      enforcement,
+      [],
+      `edit guard reachable from a self mission: ${enforcement.join(", ")}`
+    );
+  });
+
+  it("denies the verify floor a self mission merges through", async () => {
+    // On a host without cfg.self.requireMergeApproval, missions/engine.mjs
+    // force-sets autoMerge — so a floor the mission can rewrite is a floor it
+    // can pass by lowering.
+    const { verify } = await uncoveredGuardSurface({ repoDir });
+    assert.deepEqual(
+      verify,
+      [],
+      `verify floor writable by a self mission: ${verify.join(", ")}`
+    );
+  });
+
+  it("finds every module that decides or enforces the verdict", async () => {
+    const files = await enforcementChainFiles(repoDir);
+    // One per role, so dropping any single marker fails here rather than
+    // shrinking the guarded set in silence.
+    for (const rel of [
+      "src/self/profile.mjs", // owns the list
+      "src/hooks/manager.mjs", // ranks the verdict
+      "src/agent/loop.mjs", // acts on a deny
+      "src/missions/engine.mjs", // installs the guard
+    ]) {
+      assert.ok(files.includes(rel), `enforcement chain missed ${rel}`);
+    }
+  });
+
+  it("scans both executable roots and skips the generated bundle", async () => {
+    const files = await enforcementChainFiles(fixture);
+    assert.ok(files.includes("bin/cli.mjs"), "bin/ is not being scanned");
+    assert.ok(
+      !files.includes("src/computer/xclaw-server.mjs"),
+      "scanned the vendored build artifact"
+    );
+    assert.ok(!files.includes("src/plain.mjs"), "flagged a file with no marker");
+  });
+
+  it("carries no idle marker: each one still names something real", async () => {
+    // A marker is a bet that some identifier denotes guard participation. Rename
+    // the identifier and the bet silently stops paying — the scan narrows and
+    // nothing says so. Graded against the repo's own files, never against a
+    // fixture built from the marker itself, which would grade nothing.
+    const files = (await enforcementChainFiles(repoDir)).filter(
+      (f) => f !== "src/self/guard-surface.mjs" // where the markers are declared
+    );
+    const sources = await Promise.all(
+      files.map((f) => fs.readFile(path.join(repoDir, f), "utf8"))
+    );
+    for (const marker of GUARD_MARKERS) {
+      assert.ok(
+        sources.some((src) => src.includes(marker)),
+        `marker ${marker} matches no module — renamed away, and the scan narrowed silently`
+      );
+    }
+  });
+
+  it("follows npm-script indirection to the file the floor actually runs", async () => {
+    const files = await verifyFloorFiles(fixture, { self: { verifyCommands: ["npm run floor"] } });
+    assert.ok(files.includes("scripts/inner.mjs"), "stopped at the first script name");
+    assert.ok(files.includes("package.json"), "the script map itself is part of the floor");
+  });
+
+  it("reports an omission rather than passing vacuously", async () => {
+    for (const [hole, expected] of [
+      ["src/hooks/manager.mjs", "enforcement"],
+      ["scripts/", "verify"],
+      ["package.json", "verify"],
+    ]) {
+      const holed = SELF_DENY_PATHS.filter((p) => p !== hole);
+      const out = await uncoveredGuardSurface({ repoDir, denyPaths: holed });
+      assert.ok(
+        out[expected].length > 0,
+        `removing ${hole} left ${expected} empty — the check grades nothing`
+      );
+    }
+  });
+
+  it("adds an operator's denyPaths to the built-ins instead of replacing them", () => {
+    const mcfg = applySelfOverlay({}, { self: { denyPaths: ["docs/"] } });
+    assert.ok(mcfg.self.denyPaths.includes("docs/"), "dropped the operator's entry");
+    assert.ok(
+      mcfg.self.denyPaths.includes("src/security/"),
+      "one added path disabled every built-in deny"
+    );
   });
 });
