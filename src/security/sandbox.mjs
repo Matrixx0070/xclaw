@@ -49,6 +49,67 @@ export function resolveSandboxPath(policy, userPath) {
   return norm;
 }
 
+/**
+ * Compile one deny pattern to a RegExp. Supports the glob subset the shipped
+ * default uses: `**` crosses separators, `*` and `?` do not. A trailing `/**`
+ * also covers the directory itself — denying `secrets/**` while leaving
+ * `secrets` reachable would be a hole in the rule the operator wrote.
+ */
+function globToRegExp(pattern) {
+  let p = String(pattern || "");
+  let tail = "";
+  if (p.endsWith("/**")) {
+    p = p.slice(0, -3);
+    tail = "(?:/.*)?";
+  }
+  let re = "";
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i];
+    if (c === "*" && p[i + 1] === "*") {
+      i++;
+      if (p[i + 1] === "/") {
+        i++;
+        re += "(?:.*/)?";
+      } else {
+        re += ".*";
+      }
+    } else if (c === "*") {
+      re += "[^/]*";
+    } else if (c === "?") {
+      re += "[^/]";
+    } else {
+      re += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  return new RegExp("^" + re + tail + "$");
+}
+
+/**
+ * Return the deny pattern that covers `absPath`, or null.
+ *
+ * Checked against both the absolute path and its workspace-relative form, so
+ * `**\/.env` and `.git/objects/**` both mean what an operator expects. Callers
+ * apply this AFTER resolution: allowPaths widens the boundary, denyPatterns
+ * cuts holes in whatever boundary resulted, so an allowlisted root can never
+ * carry a denied path through.
+ */
+export function matchesDenyPattern(policy, absPath) {
+  // A single pattern written as a bare string is the obvious config slip; read
+  // it as a one-entry list rather than iterating its characters (each of which
+  // would compile to a pattern of its own) or dropping the rule on the floor.
+  const raw = policy?.denyPatterns;
+  const patterns = typeof raw === "string" ? [raw] : Array.isArray(raw) ? raw : [];
+  const posix = (v) => String(v).split(path.sep).join("/");
+  const candidates = [posix(absPath)];
+  const rel = path.relative(policy.workspace, absPath);
+  if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) candidates.push(posix(rel));
+  for (const pattern of patterns) {
+    const re = globToRegExp(pattern);
+    if (candidates.some((c) => re.test(c))) return pattern;
+  }
+  return null;
+}
+
 export function assertWritable(policy, absPath) {
   if (policy.readOnly) {
     throw new Error("sandbox: workspace is read-only");
@@ -69,6 +130,12 @@ export function guardToolPaths(cfg, workspace, toolName, args = {}) {
     for (const k of keys) {
       if (next[k] != null && typeof next[k] === "string") {
         const resolved = resolveSandboxPath(policy, next[k]);
+        // Deny beats allow, and applies to reads as well as writes: a deny
+        // list exists to keep named files out of the agent's hands entirely.
+        const denied = matchesDenyPattern(policy, resolved);
+        if (denied) {
+          throw new Error(`sandbox: path denied by pattern ${denied}: ${next[k]}`);
+        }
         if (/write|edit|delete|rm|mv|bash|shell/i.test(toolName)) {
           assertWritable(policy, resolved);
         }

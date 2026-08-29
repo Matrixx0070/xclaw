@@ -1,3 +1,32 @@
+## 3.355.0
+
+- Sandbox: `sandbox.denyPatterns` is now enforced. `getSandboxPolicy` has always
+  computed it — defaulted to `["**/.git/objects/**"]` — and a fresh literal grep
+  across `src/ bin/ test/ docs/` found exactly ONE occurrence: the line that
+  creates it. Nothing read it. Its two siblings in the same policy object,
+  `allowPaths` and `readOnly`, are both enforced, so the field read as a working
+  control while denying nothing. An operator writing
+  `denyPatterns: ["**/.env", "**/id_rsa"]` got silent full access to precisely
+  the files they enumerated, and the shipped default never protected the git
+  object store it names.
+- `matchesDenyPattern()` is applied in `guardToolPaths` AFTER resolution, so deny
+  beats allow: `allowPaths` widens the boundary, `denyPatterns` cuts holes in
+  whatever boundary resulted, and an allowlisted root can never carry a denied
+  path through. It applies to reads as well as writes — a deny list exists to
+  keep named files out of the agent's hands entirely, not merely to prevent
+  corruption. Throwing keeps it inside the existing try/catch, so a denial
+  returns `{ok:false, error}` and the loop emits `sandbox_denied` with no
+  call-site change.
+- The glob subset is the one the shipped default uses: `**` crosses separators,
+  `*` and `?` do not, a trailing `/**` also covers the directory itself, regex
+  metacharacters are literal, and the match is anchored at both ends. A path
+  outside the workspace is judged by its absolute form only — `../allowed/x` is
+  not a stable name for a file, it changes the moment the workspace moves. A
+  `denyPatterns` written as a bare string reads as one pattern rather than being
+  iterated character by character; a wrong-shaped value is ignored, not thrown.
+- 24 tests. 17 mutations, every one caught in both directions with
+  sha256-identical restores.
+
 ## 3.354.0
 
 - Voice: a turn that pends for approval now tells the caller. `voice-ws.mjs`'s
