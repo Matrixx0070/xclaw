@@ -1,3 +1,52 @@
+## 3.367.0
+
+### A check that reported green having run zero checks
+
+`runLiveE2eCheck` graded the live enforcement suite with three interleaved
+expressions and no test around any of them. Two fail-opens lived in there.
+
+**A signal-killed suite scored as a warnings pass.** The child's exit was read
+as `code ?? 1`. Node delivers `code === null, signal === "SIGKILL"` when a
+process dies on a signal, so `??` turned an OOM kill into a 1 — and 1 is
+exactly the code the grader's non-strict mode treats as "warnings only, soft
+ok". A suite killed halfway through reported the same verdict as one that
+finished with warnings.
+
+**A missing script reported ok.** The soft-pass override was
+`report.ok !== false || code === 1`, and the `code === 1` half applied even
+when stdout could not be parsed at all. Measured: `node` on a nonexistent path
+exits 1 with empty stdout, the parse fails, the fallback fabricates
+`{ ok: false }`, and the override flips it back to a pass —
+`report.ok=false hardFail=false ok=true`. Move or rename
+`scripts/live-enforcement-e2e.mjs` and the check goes green forever.
+
+The two defects compose: the override only ever fires for a report this
+process invented, because the producer decides both signals from one variable
+(`live-enforcement-e2e.mjs:276` — `code = fails ? 2 : warns ? 1 : 0` alongside
+`ok: fails === 0`), so a real report with `ok:false` always carries exit 2. The
+one case the rescue could reach was the one case it must not.
+
+The verdict is now a pure module, `src/cron/live-e2e-grade.mjs`, graded on
+three inputs: the exit code with `CODE_SIGNAL` (4, outside the producer's
+0/1/2 range) substituted for signal death, the report's `ok`, and whether
+stdout actually yielded a report object. It returns a `reason` — `signal`,
+`unparseable`, `report-fail`, `warnings`, `ok` — which now appears in the log
+header and the console line, so a failure says which kind it was.
+
+Reachable today through the one-shot `xclaw live-e2e` CLI, which sets
+`process.exitCode = r.ok ? 0 : 2`: before this, that command exited 0 when its
+child was killed and 0 when the script was missing. No `live-e2e-schedule`
+daemon runs on this host, so the cron path was latent.
+
+A third latent crash went with it: `JSON.parse("null")` succeeds and yields
+`null`, and the old code read `.ok` straight off it, throwing a TypeError that
+rejects the cron handler instead of reporting a verdict. The parse now requires
+a non-null object.
+
+Not in this release: the same spawn has no timeout, no `detached`, and no
+`'error'` listener. That is a separate slice — landing it first would have
+traded a loud hang for a silent green line.
+
 ## 3.366.0
 
 ### The deploy watcher carried its own copy of the timeout that cannot fire

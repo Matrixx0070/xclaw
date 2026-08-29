@@ -12,6 +12,7 @@ import { addJob, listJobs, cancelJob } from "./scheduler.mjs";
 import { deliverToChannel } from "./channel-deliver.mjs";
 import { getSharedAlerter } from "../alerting/alerts.mjs";
 import { cronLogPath } from "./logs.mjs";
+import { gradeLiveE2e, CODE_SIGNAL } from "./live-e2e-grade.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "../..");
@@ -54,8 +55,11 @@ function runLiveE2e(root, extraArgs = []) {
     child.stderr.on("data", (d) => {
       err += d;
     });
-    child.on("close", (code) => {
-      resolve({ code: code ?? 1, out, err });
+    // A child that dies on a signal reports code === null. Coalescing that to
+    // 1 made an OOM kill indistinguishable from a warnings-only pass; see
+    // live-e2e-grade.mjs. CODE_SIGNAL is outside the producer's 0/1/2 range.
+    child.on("close", (code, signal) => {
+      resolve({ code: code == null ? CODE_SIGNAL : code, signal: signal || null, out, err });
     });
   });
 }
@@ -71,9 +75,19 @@ export async function runLiveE2eCheck(opts = {}) {
 
   const result = await runLiveE2e(root, opts.args || []);
   let report = null;
+  let parsed = false;
   try {
-    report = JSON.parse(result.out);
+    const j = JSON.parse(result.out);
+    // JSON.parse("null") yields null, and JSON.parse("3") a number; either
+    // would make the .ok read below throw or lie.
+    if (j && typeof j === "object") {
+      report = j;
+      parsed = true;
+    }
   } catch {
+    /* handled by the fallback below */
+  }
+  if (!parsed) {
     report = {
       ok: result.code === 0,
       exitCode: result.code,
@@ -81,12 +95,11 @@ export async function runLiveE2eCheck(opts = {}) {
     };
   }
 
-  // exit 1 = warnings only → treat as soft ok for cadence unless strict
   const strict = opts.strict || process.env.XCLAW_LIVE_E2E_STRICT === "1";
-  const hardFail = strict ? result.code !== 0 : result.code === 2 || result.code > 2;
-  const ok = !hardFail && (report.ok !== false || result.code === 1);
+  const { ok, reason } = gradeLiveE2e({ code: result.code, reportOk: report.ok, parsed, strict });
 
-  const header = `\n===== live-e2e ${stamp} ok=${ok} exit=${result.code} =====\n`;
+  const sig = result.signal ? ` signal=${result.signal}` : "";
+  const header = `\n===== live-e2e ${stamp} ok=${ok} exit=${result.code}${sig} reason=${reason} =====\n`;
   const body =
     typeof report === "object"
       ? JSON.stringify(
@@ -132,9 +145,9 @@ export async function runLiveE2eCheck(opts = {}) {
   }
 
   console.log(
-    `[xclaw:live-e2e-cron] ok=${ok} exit=${result.code} log=${logPath}`
+    `[xclaw:live-e2e-cron] ok=${ok} exit=${result.code} reason=${reason} log=${logPath}`
   );
-  return { ok, code: result.code, report, logPath, notify };
+  return { ok, code: result.code, reason, report, logPath, notify };
 }
 
 /**
