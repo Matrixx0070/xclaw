@@ -1,3 +1,74 @@
+## 3.371.0
+
+### A process's enforcement posture, graded from outside that process
+
+`scripts/live-enforcement-e2e.mjs` is the nightly proof that the browser
+enforcement plane actually refuses things. Run against this host it reported:
+
+```
+fail live.commit_gate   expected block, got success-like result
+fail live.jscode_block  jsCode click should be blocked
+```
+
+Both gates were fine. The probe was wrong, in two independent ways.
+
+**The levers were set on the wrong process.** The script exported
+`XCLAW_COMMIT_GATES` / `XCLAW_FABRIC_ENFORCE` / `XCLAW_JSCODE_MODE` into its
+own environment and relied on `startComputer` spreading them into a child.
+But that call sits behind `if (!healthy && ...)` — no child is spawned when a
+computer is already up, which is the normal production case. Measured on the
+live server (pid 611836): `/proc/<pid>/environ` carried none of the three.
+The script armed nothing, then graded the unarmed plane as broken.
+
+**Nothing could have caught it.** `hooksStatus()` reads `process.env` of
+whoever calls it, and every caller — doctor, the e2e scripts, the tests —
+printed its own environment as if it described the computer server.
+`grep -c hooksStatus src/computer/xclaw-server.mjs` → 0. The one process that
+knows its posture was the one process nobody asked.
+
+So `/health` now reports it: `hooksEnforcementPosture()` in the hooks bridge
+(loaded inside the server, by absolute path, with the same environment the
+hooks themselves read) returns the levers, the resolved jsCode mode, whether
+the hooks module actually loads, and the reporting pid. Absent on failure
+rather than guessed — a reader must be able to tell "not reported" from
+"not armed".
+
+The probe now reads that posture first and grades each gate against it:
+armed and not blocked is a **fail**; not armed is a **skip**, not a pass and
+not a fail. Downgrading the two checks to `warn` was the obvious-looking fix
+and is the wrong one — exit 1 makes `gradeLiveE2e` return `warnings`, a soft
+pass, converting a false alarm into a muted security check.
+
+**Second defect, same run.** The grader had no arm for an upstream transport
+error. The real text was
+`[xclaw-ssrf] SSRF_BLOCKED: DNS resolution failed for shop.example:
+getaddrinfo ENOTFOUND shop.example` — `/not found/i` wants a space,
+`ENOTFOUND` has none — so it matched nothing and landed in `fail` with a
+factually wrong message. Classification moved into
+`src/computer/enforcement-probe.mjs`, a pure module, because an inline
+predicate inside a script that spawns a browser is untestable by
+construction. A bare `isError` no longer counts as a block: an error with no
+recognisable gate code does not prove a gate ran.
+
+Live proof, same rebuilt bundle, two runs:
+
+```
+unarmed  {"enforcing":false,"jscodeMode":"allow","pid":2600218}  -> 1 fail naming the unmet levers
+armed    {"enforcing":true, "jscodeMode":"read", "pid":2601928}  -> both gates blocked
+                                        (ROLE_NO_NAVIGATE, JSCODE_MOTOR_PATTERN)
+```
+
+The gates were never broken.
+
+Two coverage holes found by mutation while pinning this, both closed:
+`hooksModule` was `Boolean(resolveHooksModulePath())`, which cannot be false
+on any checkout (the resolver falls back to cwd and to its own `../..`) — a
+constant printed as an observation; it now reports whether the module
+actually loads. And the arm order in `classifyGateOutcome` **is** the
+module's contract — a gate code must outrank a transport word, or a real
+observed block is graded "could not test" — and swapping the two arms left
+the suite green.
+
 ## 3.370.0
 
 ### The operator console goes live

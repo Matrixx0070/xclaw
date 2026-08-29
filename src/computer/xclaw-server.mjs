@@ -395562,6 +395562,25 @@ async function thinHealthPayload() {
       payload.browser = { running: false, endpoint: null, managed: false, pid: null, external: false };
     }
   }
+  // A6: report the enforcement posture THIS process is running under. Same
+  // class of bug as the browser block above, one plane over: every posture
+  // reader called hooksStatus() in its own process and printed the answer as
+  // if it described this server. It never did. scripts/live-enforcement-e2e.mjs
+  // set XCLAW_COMMIT_GATES/XCLAW_FABRIC_ENFORCE/XCLAW_JSCODE_MODE on itself and
+  // relied on startComputer spreading them into a child it only spawns when no
+  // computer is already up -- so against a live host the gates were simply off,
+  // and the probe reported them broken ("expected block, got success-like
+  // result"). Nothing outside this process could see otherwise, and nothing
+  // asked. The bridge is the right source because manager.mjs already points
+  // XCLAW_HOOKS_BRIDGE at it by absolute path, so it is loaded in here with the
+  // same environment the hooks themselves read. Absent on failure rather than
+  // guessed: a reader must be able to tell "not reported" from "not armed".
+  try {
+    const hb = await loadNativeMergeModule("src/computer/hooks-bridge.mjs");
+    payload.enforcement = await hb.hooksEnforcementPosture();
+  } catch (e) {
+    payload.enforcementError = String(e?.message || e);
+  }
   return payload;
 }
 // A6: thin-server merge — thin exposed a session-free one-shot call at POST

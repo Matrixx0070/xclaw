@@ -49,6 +49,13 @@ function warn(id, message, detail) {
 function fail(id, message, detail) {
   results.push({ id, status: "fail", message, detail });
 }
+// A check that was not run because its precondition could not be met. Distinct
+// from warn: a skipped gate is not a weak signal about enforcement, it is no
+// signal at all, and counting it as either a pass or a warning is how this
+// script came to report gates it had never armed.
+function skip(id, message, detail) {
+  results.push({ id, status: "skip", message, detail });
+}
 
 function mod(rel) {
   return pathToFileURL(path.join(ROOT, rel)).href;
@@ -75,7 +82,11 @@ function toolErrorText(result) {
 }
 
 async function main() {
-  // Enforcement env for this process + child computer inherits via startComputer
+  // Enforcement env for this process, which a computer THIS SCRIPT STARTS
+  // inherits through startComputer. It does not reach a computer that was
+  // already running -- the common case on a live host, where the block below
+  // skips the spawn entirely. That is why the posture is read back off the
+  // server further down rather than assumed from these assignments.
   process.env.XCLAW_COMMIT_GATES = process.env.XCLAW_COMMIT_GATES || "1";
   process.env.XCLAW_FABRIC_ENFORCE = process.env.XCLAW_FABRIC_ENFORCE || "1";
   process.env.XCLAW_JSCODE_MODE = process.env.XCLAW_JSCODE_MODE || "read";
@@ -125,6 +136,72 @@ async function main() {
     return finish();
   }
 
+  // --- enforcement posture, read off the server rather than assumed ---
+  const { GATES, classifyGateOutcome, unmetPosture, describePosture } = await import(
+    mod("src/computer/enforcement-probe.mjs")
+  );
+  let posture = null;
+  let postureReported = false;
+  try {
+    const status = await getComputerStatus(cfg);
+    const body = status?.health?.body;
+    if (body?.enforcement) {
+      posture = body.enforcement;
+      postureReported = true;
+    } else if (body?.enforcementError) {
+      warn("live.posture", `computer could not report its posture: ${body.enforcementError}`);
+    } else {
+      warn("live.posture", "computer reports no enforcement posture (older build)");
+    }
+  } catch (e) {
+    warn("live.posture", `could not read the computer's posture: ${e.message || String(e)}`);
+  }
+  if (postureReported) {
+    const unprovable = [];
+    for (const [id, g] of Object.entries(GATES)) {
+      const u = unmetPosture(g.requires, posture);
+      if (u) unprovable.push(`${id} — ${u}`);
+    }
+    if (unprovable.length) {
+      // One true failure instead of one per gate: the gates are not broken,
+      // they were never switched on in the process being probed.
+      fail(
+        "live.posture",
+        `enforcement is not armed in computer pid ${posture.pid ?? "?"}; ${unprovable.length} gate(s) unprovable`,
+        `${describePosture(posture)} | ${unprovable.join(" | ")}`
+      );
+    } else {
+      ok("live.posture", describePosture(posture));
+    }
+  }
+
+  /** The gate to drive for `id`, or null when this computer cannot prove it. */
+  function armedGate(id) {
+    const gate = GATES[id];
+    if (!postureReported) {
+      skip(id, "computer posture unknown, so a result here would prove nothing");
+      return null;
+    }
+    const unmet = unmetPosture(gate.requires, posture);
+    if (unmet) {
+      skip(id, `not provable on this computer: ${unmet}`);
+      return null;
+    }
+    return gate;
+  }
+
+  /** Record one gate outcome. `gate` must have come from armedGate. */
+  function gradeGate(id, gate, text, isError) {
+    const outcome = classifyGateOutcome({ text, isError, gate });
+    const d = String(text).slice(0, 300);
+    if (outcome === "blocked") ok(id, "blocked by the enforcement plane", d);
+    else if (outcome === "transport-error")
+      warn(id, "request failed before it could reach the gate", d);
+    else if (outcome === "chrome-unavailable") warn(id, "browser unavailable; gate not exercised", d);
+    else if (outcome === "error") warn(id, "errored with no gate code — cannot tell whether the gate ran", d);
+    else fail(id, "reached the target with the gate armed and was not blocked", d);
+  }
+
   const client = createComputerClient(cfg);
   let sessionId = null;
 
@@ -156,47 +233,35 @@ async function main() {
   }
 
   // --- 1) Commit gate: checkout must fail without approval ---
-  try {
-    const r = await client.callTool(sessionId, "xclaw_browser_tab", {
-      url: "https://shop.example/checkout",
-      waitTime: 0.1,
-    });
-    const text = toolErrorText(r);
-    if (
-      /COMMIT_GATE|xclaw-hooks|beforeNavigate|HOOKS_UNAVAILABLE/i.test(text) ||
-      r?.isError
-    ) {
-      ok("live.commit_gate", "checkout blocked on computer path", text.slice(0, 200));
-    } else if (text.includes("Chrome") || text.includes("chrome") || /not found/i.test(text)) {
-      // Gate may not have run if chrome failed first — still note
-      warn("live.commit_gate", "chrome issue before/with gate", text.slice(0, 240));
-    } else {
-      fail("live.commit_gate", "expected block, got success-like result", text.slice(0, 300));
+  {
+    const gate = armedGate("live.commit_gate");
+    if (gate) {
+      try {
+        const r = await client.callTool(sessionId, "xclaw_browser_tab", {
+          url: "https://shop.example/checkout",
+          waitTime: 0.1,
+        });
+        gradeGate("live.commit_gate", gate, toolErrorText(r), Boolean(r?.isError));
+      } catch (e) {
+        gradeGate("live.commit_gate", gate, e.message || String(e), true);
+      }
     }
-  } catch (e) {
-    const msg = e.message || String(e);
-    if (/COMMIT_GATE|xclaw-hooks/i.test(msg)) ok("live.commit_gate", "blocked via throw", msg);
-    else warn("live.commit_gate", msg);
   }
 
   // --- 2) jsCode motor pattern denied under fabric ---
-  try {
-    const r = await client.callTool(sessionId, "xclaw_browser_tab", {
-      jsCode: "document.body.click()",
-      waitTime: 0.05,
-    });
-    const text = toolErrorText(r);
-    if (/JSCODE_MOTOR|xclaw-hooks|beforeInput/i.test(text) || r?.isError) {
-      ok("live.jscode_block", "motor-like jsCode blocked", text.slice(0, 200));
-    } else if (/Chrome|chrome|not found/i.test(text)) {
-      warn("live.jscode_block", "chrome unavailable; cannot fully prove", text.slice(0, 200));
-    } else {
-      fail("live.jscode_block", "jsCode click should be blocked", text.slice(0, 300));
+  {
+    const gate = armedGate("live.jscode_block");
+    if (gate) {
+      try {
+        const r = await client.callTool(sessionId, "xclaw_browser_tab", {
+          jsCode: "document.body.click()",
+          waitTime: 0.05,
+        });
+        gradeGate("live.jscode_block", gate, toolErrorText(r), Boolean(r?.isError));
+      } catch (e) {
+        gradeGate("live.jscode_block", gate, e.message || String(e), true);
+      }
     }
-  } catch (e) {
-    const msg = e.message || String(e);
-    if (/JSCODE|xclaw-hooks/i.test(msg)) ok("live.jscode_block", msg);
-    else warn("live.jscode_block", msg);
   }
 
   // --- 3) Read-only jsCode should not be blocked by policy (chrome may still fail) ---
@@ -278,6 +343,7 @@ async function finish(extra = {}) {
 
   const fails2 = results.filter((r) => r.status === "fail").length;
   const warns2 = results.filter((r) => r.status === "warn").length;
+  const skips2 = results.filter((r) => r.status === "skip").length;
   const code = fails2 ? 2 : warns2 ? 1 : 0;
 
   const report = {
@@ -285,6 +351,7 @@ async function finish(extra = {}) {
     exitCode: code,
     fails: fails2,
     warns: warns2,
+    skips: skips2,
     root: ROOT,
     results,
     at: new Date().toISOString(),
@@ -307,10 +374,16 @@ async function finish(extra = {}) {
       `COMMIT_GATES=${process.env.XCLAW_COMMIT_GATES} FABRIC_ENFORCE=${process.env.XCLAW_FABRIC_ENFORCE}\n`
     );
     for (const r of results) {
-      const tag = r.status === "ok" ? "OK  " : r.status === "warn" ? "WARN" : "FAIL";
+      // Every status needs its own arm here: the previous renderer mapped
+      // anything it did not recognise to FAIL, so a new status would have been
+      // printed as a failure that the exit code disagreed with.
+      const tag =
+        r.status === "ok" ? "OK  " : r.status === "warn" ? "WARN" : r.status === "skip" ? "SKIP" : "FAIL";
       console.log(`  [${tag}] ${r.id}: ${r.message}`);
     }
-    console.log(`\nSummary: ${fails2} fail(s), ${warns2} warning(s) — exit ${code}`);
+    console.log(
+      `\nSummary: ${fails2} fail(s), ${warns2} warning(s), ${skips2} skipped — exit ${code}`
+    );
   }
   process.exitCode = code;
 }

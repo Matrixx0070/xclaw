@@ -21,6 +21,10 @@ const ENV_KEYS = [
   "XCLAW_PROFILE",
   "XCLAW_HOOKS_PATH",
   "XCLAW_ROOT",
+  // The jsCode policy is part of the posture the bridge now reports, and it
+  // reads its own levers -- leaving either set leaks between cases.
+  "XCLAW_JSCODE_MODE",
+  "XCLAW_ENFORCEMENT_STRICT",
 ];
 
 let seq = 0;
@@ -164,4 +168,138 @@ test("an unrelated env value does not turn enforcement on", async () => {
   const b = await freshBridge([], { XCLAW_FABRIC_ENFORCE: "0" });
   assert.equal(b.hooksEnforcementOn(), false);
   assert.deepEqual(await b.runBeforeInput(INPUT_CTX), { ok: true, skipped: true });
+});
+
+// --- posture reporting ------------------------------------------------------
+//
+// Nothing outside the computer server process could observe its enforcement
+// posture, and nothing asked. hooksStatus() exists but reads the env of
+// whichever process calls it, so the CLI and the live-e2e probe were both
+// reporting their OWN posture as if it were the server's. Measured on this
+// host: the running server's /proc/<pid>/environ carried none of the
+// enforcement variables the probe had set on itself, and the probe reported
+// the gates broken rather than unarmed.
+
+test("the posture reports every lever a caller needs to grade a gate result", async () => {
+  const b = await freshBridge([]);
+  const p = await b.hooksEnforcementPosture();
+  for (const k of [
+    "enforcing",
+    "fabricEnforce",
+    "commitGates",
+    "hardenedProfile",
+    "jscodeMode",
+    "hooksModule",
+    "pid",
+  ]) {
+    assert.ok(k in p, `posture drops ${k}`);
+  }
+  // The pid is what makes the posture attributable: a reader can tell the
+  // server answered rather than the process doing the asking.
+  assert.equal(p.pid, process.pid);
+});
+
+test("hooksModule reports whether the hooks actually load, not whether a file exists", async () => {
+  // The first version of this field was Boolean(resolveHooksModulePath()), and
+  // a mutation to a bare `true` left the suite green -- because the resolver
+  // falls back to process.cwd() and to this file's own ../.., both of which are
+  // the package root, both of which contain src/browser/hooks.mjs. The field
+  // could not be false in any reachable configuration: a constant printed as an
+  // observation, which is the exact defect this slice exists to close.
+  // loadHooks() returning null IS the fail-closed condition -- unresolvable
+  // path OR a module that throws on import -- so that is what the posture
+  // reports.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-bridge-broken-"));
+  const broken = path.join(dir, "throws-hooks.mjs");
+  fs.writeFileSync(broken, "throw new Error('boom');\n");
+  try {
+    for (const k of ENV_KEYS) delete process.env[k];
+    setActiveProfile(null);
+    process.env.XCLAW_HOOKS_PATH = broken;
+    const b = await import(`../src/computer/hooks-bridge.mjs?broken=${++seq}`);
+    const p = await b.hooksEnforcementPosture();
+    assert.equal(p.hooksModule, false);
+  } finally {
+    restoreEnv();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("posture.enforcing agrees with hooksEnforcementOn on every route", async () => {
+  const b = await freshBridge([]);
+  const agree = async (label) =>
+    assert.equal((await b.hooksEnforcementPosture()).enforcing, b.hooksEnforcementOn(), label);
+  await agree("bare");
+  for (const [k, v] of [
+    ["XCLAW_FABRIC_ENFORCE", "1"],
+    ["XCLAW_FABRIC_ENFORCE", "true"],
+    ["XCLAW_COMMIT_GATES", "1"],
+    ["XCLAW_COMMIT_GATES", "true"],
+  ]) {
+    process.env[k] = v;
+    await agree(`${k}=${v}`);
+    assert.equal((await b.hooksEnforcementPosture()).enforcing, true, `${k}=${v} must enforce`);
+    delete process.env[k];
+  }
+  setActiveProfile("prod");
+  await agree("prod profile");
+  assert.equal((await b.hooksEnforcementPosture()).enforcing, true);
+  setActiveProfile("dev");
+  await agree("dev profile");
+  assert.equal((await b.hooksEnforcementPosture()).enforcing, false);
+});
+
+test("each lever is reported separately, not collapsed into enforcing", async () => {
+  // "enforcement is off" without naming the switch is not actionable, and the
+  // two switches have different owners: env on a spawned computer, profile in
+  // the config file.
+  const b = await freshBridge([]);
+  process.env.XCLAW_COMMIT_GATES = "1";
+  let p = await b.hooksEnforcementPosture();
+  assert.deepEqual(
+    { c: p.commitGates, f: p.fabricEnforce, h: p.hardenedProfile },
+    { c: true, f: false, h: false }
+  );
+  delete process.env.XCLAW_COMMIT_GATES;
+  process.env.XCLAW_FABRIC_ENFORCE = "true";
+  p = await b.hooksEnforcementPosture();
+  assert.deepEqual(
+    { c: p.commitGates, f: p.fabricEnforce, h: p.hardenedProfile },
+    { c: false, f: true, h: false }
+  );
+  delete process.env.XCLAW_FABRIC_ENFORCE;
+  setActiveProfile("prod");
+  p = await b.hooksEnforcementPosture();
+  assert.deepEqual(
+    { c: p.commitGates, f: p.fabricEnforce, h: p.hardenedProfile },
+    { c: false, f: false, h: true }
+  );
+});
+
+test("jscodeMode is reported as its own lever, not derived from enforcing", async () => {
+  // jscodeMode() honours XCLAW_ENFORCEMENT_STRICT, which hooksEnforcementOn()
+  // does not, and XCLAW_JSCODE_MODE overrides both. A posture that derived one
+  // from the other would report a gate armed while it returns "allow" before
+  // examining a single motor pattern.
+  const b = await freshBridge([]);
+  assert.equal((await b.hooksEnforcementPosture()).jscodeMode, "allow");
+
+  process.env.XCLAW_COMMIT_GATES = "1";
+  const armedButAllow = await b.hooksEnforcementPosture();
+  assert.equal(armedButAllow.enforcing, true);
+  assert.equal(armedButAllow.jscodeMode, "allow", "commitGates alone does not arm jsCode");
+  delete process.env.XCLAW_COMMIT_GATES;
+
+  process.env.XCLAW_JSCODE_MODE = "deny";
+  assert.equal((await b.hooksEnforcementPosture()).jscodeMode, "deny");
+  assert.equal((await b.hooksEnforcementPosture()).enforcing, false, "jsCode mode does not arm the gates");
+  delete process.env.XCLAW_JSCODE_MODE;
+
+  process.env.XCLAW_ENFORCEMENT_STRICT = "1";
+  assert.equal((await b.hooksEnforcementPosture()).jscodeMode, "read");
+  assert.equal(
+    (await b.hooksEnforcementPosture()).enforcing,
+    false,
+    "XCLAW_ENFORCEMENT_STRICT is a jsCode lever only -- the two predicates genuinely differ"
+  );
 });
