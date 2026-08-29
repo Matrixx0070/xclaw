@@ -1,3 +1,31 @@
+## 3.356.0
+
+- `web_fetch`: the advertised `max_chars` bound is now applied to what comes off
+  the wire, not only to what is returned. It was applied after `await
+  res.text()` — by which point the entire response body was already resident in
+  the gateway process. The parameter was real and did truncate the output; it
+  bounded the *intake* not at all.
+- The sibling call site proves the mechanism was already understood:
+  `src/computer/modules/browser-tab-tool.mjs` passes `maxBytes: 2_000_000` to the
+  same `safeFetch` helper. `web_fetch` passed none, and `requestPinned`'s
+  `maxBytes = 0` default means unbounded — so both omission and an explicit `0`
+  fall through to no limit at all.
+- The model chooses the URL, so this was a model-reachable memory-exhaustion
+  path against the gateway. Measured against the real tool before the fix: a
+  `max_chars: 100` request drained **200 MiB** and took RSS from 58 to 683 MiB
+  in 305 ms. After: **3.0 MiB** drained, RSS 58 to 60 MiB, 9 ms — with a
+  byte-identical 113-character answer, so the bound costs nothing in output.
+- `webFetchIntakeCap()` scales the byte budget with the requested character
+  budget (markup makes the source larger than the text pulled from it), keeps a
+  256 KiB floor so a small `max_chars` still fetches a real page, and is
+  self-bounding: it clamps against `MAX_OUTPUT_CHARS` internally rather than
+  trusting the caller's clamp.
+- Known remaining hole, not closed here: `safeFetch` with `ssrf.mode: "off"`
+  returns bare `fetch()`, which ignores `maxBytes` and `timeoutMs` entirely.
+  Routing that path through `requestPinned` would change redirect behavior
+  (native `fetch` follows redirects; `requestPinned` returns the 3xx), so it is
+  reported rather than silently changed. The shipped default is `block`.
+
 ## 3.355.0
 
 - Sandbox: `sandbox.denyPatterns` is now enforced. `getSandboxPolicy` has always

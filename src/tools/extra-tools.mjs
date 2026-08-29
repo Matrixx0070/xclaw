@@ -215,6 +215,24 @@ export function createGrepTool({ workingDir }) {
   };
 }
 
+/** Hard ceiling on what web_fetch will return, in characters. */
+const MAX_OUTPUT_CHARS = 200_000;
+
+/**
+ * Bytes web_fetch is willing to pull off the wire for a `max_chars` answer.
+ *
+ * The output cap alone bounds nothing: it is applied after `res.text()`, by
+ * which point the whole body is already resident. Markup and entities make the
+ * source larger than the text extracted from it, so the budget is a multiple
+ * of the answer — with a floor so a small `max_chars` still fetches a real
+ * page, and self-bounded so no caller can widen it without limit.
+ */
+export function webFetchIntakeCap(maxChars) {
+  const n = Number(maxChars);
+  const chars = Number.isFinite(n) && n > 0 ? Math.min(n, MAX_OUTPUT_CHARS) : 50_000;
+  return Math.max(chars * 20, 262_144);
+}
+
 export function createWebFetchTool({ cfg } = {}) {
   return {
     name: "web_fetch",
@@ -234,7 +252,7 @@ export function createWebFetchTool({ cfg } = {}) {
       if (!url || !/^https?:\/\//i.test(url)) {
         return errorResult("url must be http(s)");
       }
-      const max = Math.min(Number(args.max_chars) || 50_000, 200_000);
+      const max = Math.min(Number(args.max_chars) || 50_000, MAX_OUTPUT_CHARS);
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 25_000);
       try {
@@ -245,7 +263,11 @@ export function createWebFetchTool({ cfg } = {}) {
         };
         // SSRF-safe: validates the URL and every redirect hop (metadata /
         // loopback / private ranges blocked unless security.ssrf.allowPrivate)
-        const res = await safeFetch(url, { headers, signal: ctrl.signal }, cfg || {});
+        const res = await safeFetch(
+          url,
+          { headers, signal: ctrl.signal, maxBytes: webFetchIntakeCap(max) },
+          cfg || {}
+        );
         clearTimeout(timer);
         const ct = res.headers.get("content-type") || "";
         let body = await res.text();
