@@ -50,7 +50,26 @@ export function dailyHardUsd(cfg = {}) {
       process.env.XCLAW_DAILY_HARD_USD ??
       50
   );
-  return Number.isFinite(n) && n > 0 ? n : 50;
+  // `n > 0 ? n : 50` conflated "spend nothing" with "not configured": an
+  // operator setting the cap to 0 got a $50 budget on the path job.mjs
+  // reserves against — the strictest setting yielding nearly the loosest.
+  // A negative cap is nonsense, so it clamps closed rather than widening.
+  // Only a value that is not a number at all falls back.
+  return Number.isFinite(n) ? Math.max(0, n) : 50;
+}
+
+/**
+ * Share of the daily cap already committed. Both reporters (gateway /health
+ * and `xclaw doctor`) used to inline `hard > 0 ? … : 0`, which reads a
+ * fully-committed ledger under a zero cap as 0 — i.e. healthy. Zero caps
+ * became reachable when dailyHardUsd stopped discarding them.
+ * @returns {number} 0..1+ — 1 when the cap is 0 and anything is committed
+ */
+export function ledgerPressure(spentUsd = 0, reservedUsd = 0, hardUsd = 0) {
+  const committed = (Number(spentUsd) || 0) + (Number(reservedUsd) || 0);
+  const hard = Number(hardUsd) || 0;
+  if (hard > 0) return committed / hard;
+  return committed > 0 ? 1 : 0;
 }
 
 export function leaseRequired(cfg = {}) {
@@ -146,5 +165,6 @@ export default {
   ledgerSnapshot,
   ledgerPath,
   dailyHardUsd,
+  ledgerPressure,
   leaseRequired,
 };

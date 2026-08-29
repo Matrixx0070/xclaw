@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runningVersion } from "./build-version.mjs";
 import { stopAuthToken } from "./stop-auth.mjs";
-import { ledgerSnapshot, dailyHardUsd } from "../tokens/swarm-ledger.mjs";
+import { ledgerSnapshot, dailyHardUsd, ledgerPressure } from "../tokens/swarm-ledger.mjs";
 
 function readStopSurfaceFreeze() {
   try {
@@ -62,7 +62,7 @@ export function stopAuthReadiness(cfg = {}) {
       spentUsd: spent,
       reservedUsd: reserved,
       hardUsd: hard,
-      pressure: hard > 0 ? (spent + reserved) / hard : 0,
+      pressure: ledgerPressure(spent, reserved, hard),
     };
   } catch {
     /* */

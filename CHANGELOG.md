@@ -1,3 +1,30 @@
+## 3.344.0
+
+### a spend cap of zero meant a spend cap of fifty
+
+`cost.dailyHardUsd` is read by two independent resolvers. The cost governor's
+`getCostLimits` validates it with `Number.isFinite` and honours whatever it
+finds. The swarm ledger's `dailyHardUsd` ended `Number.isFinite(n) && n > 0 ? n
+: 50`, so it treated the strictest possible setting — spend nothing — as an
+absent one:
+
+    cost.dailyHardUsd = 0   ->  governor $0    swarm ledger $50
+    cost.dailyHardUsd = -5  ->  governor $-5   swarm ledger $50
+
+One key, two readers, opposite meanings, and the disagreement resolved
+fail-OPEN. It ACTS: `reserveUsd` gates every swarm child in `src/jobs/job.mjs`,
+so an operator freezing swarm spend actually authorised $50 of it. The guard
+now reads `Number.isFinite(n) ? Math.max(0, n) : 50` — zero is honoured, a
+negative cap clamps closed, and only a value that is not a number falls back.
+
+Honouring zero made `hard === 0` reachable for the first time, which exposed
+the reporters: `pressure: hard > 0 ? (spent + reserved) / hard : 0` appeared
+verbatim in `src/gateway/stop-health.mjs` and `src/cli/doctor-swarm-ledger.mjs`,
+and under a zero cap it reads a fully-committed ledger as 0 — healthy. That
+figure now comes from `ledgerPressure()` in the ledger module that owns it,
+which returns 1 when the cap is zero and anything is committed. Two copies of a
+formula became one; no new module.
+
 ## 3.343.0
 
 ### the gateway answered for the wrong machine

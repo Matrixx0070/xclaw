@@ -1,7 +1,7 @@
 /**
  * Doctor: swarm cost ledger + lease snapshot.
  */
-import { ledgerSnapshot, dailyHardUsd } from "../tokens/swarm-ledger.mjs";
+import { ledgerSnapshot, dailyHardUsd, ledgerPressure } from "../tokens/swarm-ledger.mjs";
 import { readLease } from "../tokens/ledger-lease.mjs";
 
 export function pushSwarmLedgerChecks(push, cfg = {}) {
@@ -10,7 +10,7 @@ export function pushSwarmLedgerChecks(push, cfg = {}) {
     const hard = dailyHardUsd(cfg);
     const reserved = Number(snap.reservedUsd) || 0;
     const spent = Number(snap.spentUsd) || 0;
-    const pressure = hard > 0 ? (spent + reserved) / hard : 0;
+    const pressure = ledgerPressure(spent, reserved, hard);
     const status = pressure > 0.95 ? "warn" : "ok";
     push(
       "cost.swarmLedger",
