@@ -46,7 +46,8 @@ The gateway cannot supervise its own restart, so deploy is split:
    a good state.)
 2. An **external watcher** (`xclaw self-deploy watch`, run under pm2 as its
    own process, or `run-once` for manual control) consumes the intent:
-   restart (`self.restartCmd`, default `pm2 restart xclaw-gateway`) → poll
+   restart (`self.restartCmd`, default `pm2 restart xclaw-gateway`, bounded by
+   `self.restartTimeoutMs`, default 120000) → poll
    `GET /ready` (`self.health {retries, delayMs}`) →
    - **pass**: mark known-good, mission `deployed`, owner alert;
    - **fail**: `git reset --hard <previous known-good>` → restart → mission
@@ -62,6 +63,7 @@ Every phase lands in the operational ledger (`kind:"deploy"`). The brake:
 { "self": {
     "repoDir": "/root/xclaw",
     "restartCmd": "pm2 restart xclaw-gateway",
+    "restartTimeoutMs": 120000,   // the restart runs in its own process group, so this bound reaches grandchildren
     "health": { "retries": 10, "delayMs": 3000 },
     "requireMergeApproval": false,
     "denyPaths": null,   // extra denies; added to the built-ins, never replacing them

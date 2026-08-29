@@ -1,3 +1,73 @@
+## 3.366.0
+
+### The deploy watcher carried its own copy of the timeout that cannot fire
+
+v3.364.0 fixed this in the mission runner. `src/self/deploy.mjs` had a private
+`run()` with the same defect, and it was the more dangerous of the two.
+
+`spawn` without `detached` puts the child in the caller's process group, so
+`child.kill("SIGKILL")` signals only the direct pid. The default restart command
+is `pm2 restart xclaw-gateway` — precisely the shape that defeats it: work
+continues in a process the signal never reaches, and the promise settles on
+`'close'`, which waits for BOTH stdio streams to hit EOF. The survivor is
+holding the write end.
+
+Measured against a verbatim copy of the shipped primitive:
+
+```
+{"timeoutMs":500,"elapsedMs":6005,"code":0,"output":"restarted"}
+```
+
+A 500ms bound returned after 6005ms — and returned **code 0**. The caller was
+affirmatively told the command succeeded. There was no exit code by which the
+overrun could be detected, so no amount of downstream checking could have
+noticed it.
+
+That matters more here than in the mission runner. `runDeployWatch` awaits
+`runDeployOnce` serially in a `while` loop, so one grandchild that never exits
+freezes the entire `xclaw-deployer` process — permanently, silently, and
+specifically on the path that exists to recover a bad deploy.
+
+Every subprocess on the deploy path now routes through `runProcess`
+(`src/missions/run-cmd.mjs`), which spawns into its own process group and
+signals the GROUP. The private `run()` is deleted rather than repaired: a second
+copy of a primitive is a second copy of its defects. Each call site passes its
+bound explicitly — `runProcess` defaults to 300s and the old `run()` to 120s, and
+silently trebling a deploy-path timeout is not a change to make by omission. The
+restart bound is overridable per-install via `self.restartTimeoutMs`.
+
+The regression test does not grade the wall clock. The restart script
+backgrounds a grandchild that writes a marker file after the bound elapses;
+the assertion is that the marker is never written, because the group kill
+reached it. That is the actual property.
+
+### Side effect worth naming: the deploy path is now env-scrubbed
+
+`runProcess` always applies `buildToolEnv`, so the restart command and the
+rollback's git calls no longer inherit the daemon's full `process.env`. That is
+the v3.365.0 policy reaching one more path, but it is a behaviour change on a
+production path, so it was measured before it was shipped rather than after: 11
+commands x 3 env modes, and under both `strip-secrets` and the `allowlist` mode
+prod actually runs, `pm2 list` exits 0 with byte-identical output, as do `git
+status` and `git rev-parse`. The one variable that could have mattered,
+`PM2_HOME`, is unset on the live deployer process, so dropping it is
+structurally irrelevant here rather than untested-and-lucky.
+
+### `git status` failing was read as uncommitted work
+
+Found while writing the test above, and fixed alongside it. The rollback path
+rescues uncommitted work before `git reset --hard`, and decided via
+`dirty.output.trim()` — any output at all meant "dirty". Git's own error text is
+output. So is the `[xclaw] command timed out after Nms and was killed` note
+`runProcess` appends to a killed command. Either one sent a `git stash push` at a
+repository whose status was never actually read.
+
+The test fixture demonstrated it accidentally: with `intent.repoDir` unset,
+`git -C undefined status --porcelain` exits 128 with a non-empty message, and the
+old check called that dirty. The decision is now the exported pure predicate
+`shouldStashBeforeReset`, which requires `code === 0` — reachable in a test
+without driving a failing deploy, and graded in both directions.
+
 ## 3.365.0
 
 ### Mission verification ran with the gateway's entire environment

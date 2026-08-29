@@ -15,7 +15,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { runProcess } from "../missions/run-cmd.mjs";
 import { getConfigDir } from "../config/load.mjs";
 import { getSharedLedger } from "../ops/ledger.mjs";
 
@@ -73,30 +73,39 @@ function ledgerDeploy(cfg, missionId, data) {
   } catch {}
 }
 
-function run(cmd, args, cwd, timeoutMs = 120_000) {
-  return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, shell: false });
-    let output = "";
-    const timer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch {}
-    }, timeoutMs);
-    child.stdout?.on("data", (d) => (output += d));
-    child.stderr?.on("data", (d) => (output += d));
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({ code: code ?? 1, output });
-    });
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      resolve({ code: 1, output: e.message });
-    });
-  });
-}
+/**
+ * Default bound for every subprocess on the deploy path, and one that can
+ * actually fire: runProcess spawns into its own process group and signals the
+ * GROUP.
+ *
+ * Passed explicitly at every call site — runProcess's own default is 300s, and
+ * silently trebling a deploy-path timeout is not a change this module should
+ * make by omission. Overridable per-install via `self.restartTimeoutMs`.
+ */
+const DEPLOY_TIMEOUT_MS = 120_000;
 
+/**
+ * Restart the gateway.
+ *
+ * This used a local `spawn` without `detached`, so `kill("SIGKILL")` reached
+ * only the direct pid. `pm2 restart` is exactly the shape that defeats: work
+ * continues in a process the signal never reaches, and the promise settles on
+ * 'close', which waits for both stdio streams to EOF — held open by the
+ * survivor. Measured against a verbatim copy of that code: a 500ms timeout
+ * returned after 6005ms, and returned **code 0**, so the caller was told the
+ * command succeeded. There was no exit code by which the overrun could be seen.
+ *
+ * It matters here more than most places: runDeployWatch awaits runDeployOnce
+ * serially, so one grandchild that never exits freezes the whole deployer.
+ */
 async function restartGateway(cfg) {
   const cmd = cfg.self?.restartCmd || "pm2 restart xclaw-gateway";
   const [exe, ...args] = cmd.split(/\s+/);
-  return run(exe, args, cfg.self?.repoDir || process.cwd());
+  return runProcess(exe, args, {
+    cwd: cfg.self?.repoDir || process.cwd(),
+    timeoutMs: cfg.self?.restartTimeoutMs ?? DEPLOY_TIMEOUT_MS,
+    cfg,
+  });
 }
 
 async function healthOk(cfg, { retries = 10, delayMs = 3000 } = {}, expectCommit = null) {
@@ -116,7 +125,7 @@ async function healthOk(cfg, { retries = 10, delayMs = 3000 } = {}, expectCommit
       // expected commit; if HEAD can't be read we fall back to ready-only.
       let commitOk = true;
       if (expectCommit) {
-        const head = await run("git", ["-C", cfg.self?.repoDir || process.cwd(), "rev-parse", "HEAD"], undefined, 5000);
+        const head = await runProcess("git", ["-C", cfg.self?.repoDir || process.cwd(), "rev-parse", "HEAD"], { timeoutMs: 5000, cfg });
         if (head.code === 0 && head.output.trim()) {
           commitOk = head.output.trim() === expectCommit;
         }
@@ -175,6 +184,27 @@ export function isActionableIntent(intent) {
 }
 
 /**
+ * Should the rollback rescue uncommitted work before `git reset --hard`?
+ *
+ * Only when `git status` actually RAN. Grading the output alone treats git's
+ * own error text as evidence of uncommitted work — and so does the
+ * "[xclaw] command timed out after Nms and was killed" note runProcess appends
+ * to a killed command. Either one used to send a `git stash push` at a repo
+ * whose status was never read. Measured: with `intent.repoDir` undefined,
+ * `git -C undefined status` exits 128 with a non-empty message, which the old
+ * `dirty.output.trim()` check read as dirty.
+ *
+ * Exported because a predicate buried in the rollback branch can only be
+ * reached by driving a failing deploy; as a pure function both directions are
+ * one assertion each.
+ *
+ * @param {{code: number, output: string}} status
+ */
+export function shouldStashBeforeReset(status) {
+  return status?.code === 0 && Boolean(status.output?.trim());
+}
+
+/**
  * Consume a pending intent: restart → health → resolve. Idempotent — call
  * from a watch loop or once. Returns the final intent (or null if nothing
  * pending).
@@ -227,11 +257,11 @@ export async function runDeployOnce(cfg) {
   // reset is recoverable (git stash list shows the rescue).
   const target = intent.prevKnownGood || `${intent.mergeCommit}~1`;
   ledgerDeploy(cfg, intent.missionId, { phase: "rollback", target });
-  const dirty = await run("git", ["-C", intent.repoDir, "status", "--porcelain"]);
-  if (dirty.output.trim()) {
-    await run("git", ["-C", intent.repoDir, "stash", "push", "-u", "-m", `xclaw-rollback-rescue ${intent.missionId}`]);
+  const dirty = await runProcess("git", ["-C", intent.repoDir, "status", "--porcelain"], { timeoutMs: DEPLOY_TIMEOUT_MS, cfg });
+  if (shouldStashBeforeReset(dirty)) {
+    await runProcess("git", ["-C", intent.repoDir, "stash", "push", "-u", "-m", `xclaw-rollback-rescue ${intent.missionId}`], { timeoutMs: DEPLOY_TIMEOUT_MS, cfg });
   }
-  const reset = await run("git", ["-C", intent.repoDir, "reset", "--hard", target]);
+  const reset = await runProcess("git", ["-C", intent.repoDir, "reset", "--hard", target], { timeoutMs: DEPLOY_TIMEOUT_MS, cfg });
   await restartGateway(cfg);
   const health2 = await healthOk(cfg, cfg.self?.health || {}, target);
   intent.state = health2.ok ? "rolled_back" : "failed";
