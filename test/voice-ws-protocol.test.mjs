@@ -176,11 +176,14 @@ describe("a voice session is a conversation, not a series of jobs", () => {
   });
 
   it("tool activity is surfaced to the client mid-turn", async () => {
-    const src = await fs.readFile(
-      new URL("../src/gateway/voice-ws.mjs", import.meta.url),
-      "utf8"
-    );
-    assert.match(src, /event: "tool"/);
+    // The frame is built in voice-events.mjs now: the hand-written filter that
+    // used to sit in the socket forwarded tool start/end and NOTHING else, so
+    // an approval ask reached the caller through no surface at all. The socket
+    // delegates; the vocabulary lives in the pure module beside it.
+    const src = await fs.readFile(new URL("../src/gateway/voice-ws.mjs", import.meta.url), "utf8");
+    assert.match(src, /voiceClientEvent\(e, \{ sessionId \}\)/);
+    const events = await fs.readFile(new URL("../src/gateway/voice-events.mjs", import.meta.url), "utf8");
+    assert.match(events, /event: "tool"/);
   });
 });
 

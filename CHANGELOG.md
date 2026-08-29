@@ -1,3 +1,24 @@
+## 3.354.0
+
+- Voice: a turn that pends for approval now tells the caller. `voice-ws.mjs`'s
+  `onEvent` forwarded only `type === "tool"` start/end, so a voice-originated
+  pending reached no surface at all — `produce()` is a per-SSE-stream writer and
+  a voice turn has no stream — while `loop.mjs` waited out
+  `security.approvalTimeoutMs` (120s default). The caller got two minutes of
+  silence on the most latency-sensitive channel there is, then a blocked reply.
+- New pure `src/gateway/voice-events.mjs` decides what a voice client is told.
+  It also carries every OTHER guard that stops a tool — `sandbox_denied`,
+  `egress_denied`, `receipt_required`, `quota_hard_circuit`,
+  `plan_revalidate_failed` and `denied` — each of which was silent in the same
+  way. Enumerating only the approval phase would have rebuilt the narrowed
+  allow-list this release exists to remove.
+- Restate suppression reuses `isNewApprovalAsk` rather than growing a fourth
+  per-channel dedup; announcing a pending twice on a voice call talks over the
+  caller. Tool args stay off the wire (the pendingId is enough). An absent risk
+  tier renders as absent, never a fabricated "safe". The announcement never
+  tells the caller to say "approve" — `src/voice/commands.mjs` has eight intents
+  and none of them approve anything.
+
 ## 3.353.0
 
 ### Fixed

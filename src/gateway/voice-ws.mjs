@@ -31,6 +31,7 @@ import crypto from "node:crypto";
 import { encodeTextFrame, encodeBinaryFrame, createFrameParser, sendClose } from "./ws-hub.mjs";
 import { createEntente } from "../voice/entente.mjs";
 import { localSpeak } from "../voice/providers/local.mjs";
+import { voiceClientEvent } from "./voice-events.mjs";
 
 const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -619,17 +620,12 @@ async function runVoiceTurn(state, cfg, body = {}) {
       chatSessionId: state.conversationId,
       workingDir: state.workingDir,
       onEvent: (e) => {
-        // Surface tool activity so a client can show/announce progress while
-        // the turn is still running.
-        if (e?.type === "tool" && (e.phase === "start" || e.phase === "end")) {
-          sendJson(socket, {
-            type: "event",
-            event: "tool",
-            phase: e.phase,
-            name: e.name,
-            sessionId,
-          });
-        }
+        // Tool progress AND anything the turn is waiting on a human for. The
+        // hand-written filter that used to live here forwarded only tool
+        // start/end, so a pending approval reached the caller through no
+        // surface at all and the turn simply went quiet for two minutes.
+        const frame = voiceClientEvent(e, { sessionId });
+        if (frame) sendJson(socket, frame);
       },
     });
     reply = String(out.text || out.error || "").slice(0, 2000);
