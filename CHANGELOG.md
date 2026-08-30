@@ -1,3 +1,18 @@
+## 3.483.0
+
+### Voice `/ws/voice` auto-promotes a turn-cap cutoff
+
+Webchat, `processInbound`, and the CLI already call `autoPromoteIfNeeded`
+when `stopReason === "maxTurns"`, so a truncated turn becomes a durable
+objective. Voice `runVoiceTurn` ran the same channel-invariant agent
+(named `conversationId` already persists) then sliced the reply to 2000
+chars and spoke it — a spoken cutoff never became a mission.
+
+The agent path now promotes the same way webchat does (detached notify
+over the socket, `formatPromotedReply` before the slice). Command-intent
+replies are unchanged. This slice does not mint `persistRun: true` and
+does not auto-promote HTTP `POST /agent/run` (caller-owned `stopReason`).
+
 ## 3.482.0
 
 ### Automations ticks opt out of inner-loop continuation

@@ -628,7 +628,55 @@ async function runVoiceTurn(state, cfg, body = {}) {
         if (frame) sendJson(socket, frame);
       },
     });
-    reply = String(out.text || out.error || "").slice(0, 2000);
+    // Same auto-promote as webchat: a turn-cap cutoff is an execution
+    // constraint, not completion. Voice used to slice and speak the
+    // truncated reply, so a spoken cutoff never became a durable
+    // objective. Named conversationId already persists — do not mint
+    // persistRun. Gateway stays alive, so the mission is detached.
+    let spoken = out.text || out.error || "";
+    if (cfg.objectives?.enabled !== false) {
+      try {
+        const { autoPromoteIfNeeded, formatPromotedReply } = await import(
+          "../channels/runtime.mjs"
+        );
+        const { replyWithAgent } = await import("../channels/base.mjs");
+        const promo = await autoPromoteIfNeeded({
+          text,
+          inbound: {
+            channel: "voice",
+            chatId: state.conversationId,
+            userId: state.conversationId,
+            identity: `voice:${state.conversationId}`,
+          },
+          cfg,
+          workingDir: state.workingDir,
+          replyWithAgent,
+          onEvent: (e) => {
+            const frame = voiceClientEvent(e, { sessionId });
+            if (frame) sendJson(socket, frame);
+          },
+          notify: async (t) => {
+            sendJson(socket, {
+              type: "event",
+              event: "objective",
+              text: String(t).slice(0, 2000),
+              sessionId,
+            });
+          },
+          turnResult: out,
+        });
+        if (promo) spoken = formatPromotedReply(out.text, promo.id);
+      } catch (err) {
+        sendJson(socket, {
+          type: "event",
+          event: "objective",
+          phase: "promote_error",
+          message: String(err?.message || err),
+          sessionId,
+        });
+      }
+    }
+    reply = String(spoken).slice(0, 2000);
   } catch (e) {
     reply = `Error: ${e.message || e}`;
   }

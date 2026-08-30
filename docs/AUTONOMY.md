@@ -134,8 +134,9 @@ to write snapshots after a run. Default surfaces (`xclaw agent`, TUI,
 id. Opt out with `persistRun: false`.
 
 A turn-cap cutoff (`stopReason === "maxTurns"`) auto-promotes into a
-durable objective on channels, webchat, and the CLI (CLI awaits the
-mission so the process does not exit mid-work). Disable with
+durable objective on channels, webchat, voice `/ws/voice`, and the CLI
+(CLI awaits the mission so the process does not exit mid-work; voice
+and channels leave it detached). Disable with
 `objectives.autoPromote: false`.
 
 A tool-free "Done." is not completion when the goal named a file (or

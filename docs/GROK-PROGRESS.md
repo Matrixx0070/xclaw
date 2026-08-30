@@ -1238,3 +1238,27 @@ RAN:
 - Webchat POST /channel/webchat/message `{"message":"ping 3.482.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 stopReason=natural.
 UNVERIFIED: live automation tick continuation opt-out (source pin only; a live tick would mean a real agent loop). Live POST /objectives continuation opt-out remains source-pinned from 3.481.0.
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.
+
+## 2026-08-30 — 3.483.0 voice /ws/voice auto-promotes a turn-cap cutoff (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: Webchat, processInbound, and CLI `xclaw agent` already call
+`autoPromoteIfNeeded` when `stopReason === "maxTurns"`. Voice
+`runVoiceTurn` ran the same channel-invariant agent (named
+`conversationId` already persists via chatSessionId) then sliced the
+reply to 2000 chars and spoke it — a spoken cutoff never became a
+durable objective. Continuation ON is intended (conversation). Persist
+is not a hole — do not mint persistRun:true. HTTP POST /agent/run
+auto-promote is caller-owned stopReason, not this slice. Command-intent
+early return has no agent turn and stays unpromoted.
+BUILT: `runVoiceTurn` agent path now calls `autoPromoteIfNeeded` +
+`formatPromotedReply` before the 2000-char slice. Notify is a truthy
+socket `sendJson` `{ type: "event", event: "objective" }` so
+`shouldAutoPromoteTurn` can fire; promote_error uses the same frame
+shape (voiceClientEvent drops type:"objective"). Mission is detached
+(gateway stays alive). Source-contract pin in
+`test/default-path-durability.test.mjs`.
+RAN: node --test test/default-path-durability.test.mjs → # tests 13 # pass 13 # fail 0 # duration_ms 55.74735; npm test (hermetic) → # tests 5028 # pass 5028 # fail 0 # duration_ms 75471.661981
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put. Live voice WS turn-cap → mission is source-pinned, not driven
+on the gateway (a live voice turn would mean a real agent loop).

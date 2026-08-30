@@ -58,6 +58,35 @@ describe("default-path durability wiring", () => {
     assert.match(src, /ok:\s*result\.ok !== false/);
   });
 
+  it("voice /ws/voice auto-promotes a turn-cap cutoff without minting persistRun", () => {
+    const src = read("src/gateway/voice-ws.mjs");
+    const start = src.indexOf("async function runVoiceTurn");
+    assert.ok(start >= 0, "runVoiceTurn not found");
+    const fn = src.slice(start);
+    const cmdReturn = fn.indexOf("return;");
+    const promote = fn.indexOf("autoPromoteIfNeeded");
+    assert.ok(cmdReturn >= 0, "command-intent early return missing");
+    assert.ok(
+      promote > cmdReturn,
+      "auto-promote must be on the agent path, after the command-intent return"
+    );
+    assert.match(fn, /autoPromoteIfNeeded/);
+    assert.match(fn, /formatPromotedReply/);
+    assert.match(fn, /channel:\s*"voice"/);
+    assert.match(fn, /notify:\s*async/);
+    assert.match(fn, /identity:\s*`voice:\$\{state\.conversationId\}`/);
+    const runStart = fn.indexOf("const out = await runAgent(");
+    assert.ok(runStart >= 0, "runAgent call not found in runVoiceTurn");
+    const runEnd = fn.indexOf("});", runStart);
+    assert.ok(runEnd > runStart, "runAgent call end not found");
+    const runBody = fn.slice(runStart, runEnd);
+    assert.match(runBody, /chatSessionId:\s*state\.conversationId/);
+    assert.ok(
+      !/persistRun:\s*true/.test(runBody),
+      "voice named conversationId already persists; do not mint persistRun:true"
+    );
+  });
+
   it("gateway /agent/run and the stream persist when a session id is present", () => {
     const json = read("src/gateway/routes/agent-run.mjs");
     assert.match(json, /persistRun:\s*runSessionId \? true : undefined/);
