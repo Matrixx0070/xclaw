@@ -1003,3 +1003,25 @@ resumable 0, ok 189. Leftover stayed `maxTurns` with no `resumedAt` /
 `objectiveId`; `obj_mtffg2yd_aaaad3` stayed `awaiting_human`. n_objectives
 23. Doctor `agentRuns.attention: no unfinished agent-run snapshots`.
 NEXT: long-horizon / context compression (evolution directive).
+
+## 2026-08-30 — 3.478.0 boot listResumableAgentRuns sorts by updatedAt not filename (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: after 3.477.0 made Control honest, boot
+`listResumableAgentRuns` still sliced reverse filenames at 80 then
+loaded. Live leftover reverse-lex rank 96 (`in80` false); 23 `job_*`
++ 1 `objective-*` occupy the top; 212 ISO ids outside the 80. Doctor
+uses `{ limit: 50 }`. Same class as 3.475.0, different surface
+(boot/doctor vs Control). Compaction already default-on (3.68.0);
+AUTONOMY_LONG_HORIZON.md is eval-harness only.
+BUILT: `listResumableAgentRuns` loads all, classifies with
+`isResumableAgentRun`, sorts by `updatedAt`, then applies the limit.
+Eval leftovers stay skipped. Not-ok / corrupt not pinned into boot.
+`agent.autoResumeMax` stays 3.
+RAN: `node --test` store+resume+doctor → 28/28
+(`# tests 28` `# fail 0` `# duration_ms 136.488396`);
+`npm test` → `# tests 5017` `# fail 0` `# duration_ms 69346`.
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving
+boot still does not auto-resume leftover and doctor attention stays
+honest (live resumable_count is 0 — hermetic proof covers the
+filename-slice class).

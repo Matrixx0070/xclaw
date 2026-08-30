@@ -1,3 +1,16 @@
+## 3.478.0
+
+### Boot listResumableAgentRuns sorts by updatedAt, not filename
+
+After 3.477.0 made Control honest, boot still sliced reverse filenames
+at 80 then loaded. Live leftover reverse-lex rank 96 (`in80` false);
+23 `job_*` + 1 `objective-*` occupy the top; 212 ISO ids outside the
+80. Doctor uses `{ limit: 50 }`. Same class as 3.475.0, different
+surface (boot/doctor vs Control). The boot list now loads all,
+classifies with `isResumableAgentRun`, sorts by `updatedAt`, then
+applies the limit. Eval leftovers stay skipped. Not-ok / corrupt are
+not pinned into boot. `agent.autoResumeMax` stays 3.
+
 ## 3.477.0
 
 ### Operator list does not pin missing-workdir rows

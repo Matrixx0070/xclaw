@@ -291,6 +291,72 @@ describe("reconcile + resume agent-runs", () => {
     assert.equal(owner.run.status, "resumed");
   });
 
+  it("listResumableAgentRuns finds an ISO owner id behind 80 job_* names", async () => {
+    const isolated = {
+      paths: { configDir: await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-run-resume-lex-")) },
+    };
+    const ownerWd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-run-wd-lex-owner-"));
+    const fillerWd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-run-wd-lex-filler-"));
+    const evalRoot = path.join(os.tmpdir(), "xclaw-eval");
+    await fs.mkdir(evalRoot, { recursive: true });
+    const evalWd = await fs.mkdtemp(path.join(evalRoot, "lex-leftover-"));
+    for (let i = 0; i < 81; i++) {
+      const n = String(i).padStart(3, "0");
+      await saveAgentRun(isolated, {
+        sessionId: `job_zzzzzzzz_filler_${n}`,
+        workingDir: fillerWd,
+        status: "completed",
+        stopReason: "natural",
+        meta: { goal: `filler ${n}` },
+      });
+    }
+    await saveAgentRun(isolated, {
+      sessionId: "2026-08-30T03-23-54-655Z_owner-interrupted",
+      workingDir: ownerWd,
+      status: "interrupted",
+      stopReason: "segment",
+      turns: 4,
+      meta: { goal: "finish the owner patch behind job_*" },
+    });
+    await saveAgentRun(isolated, {
+      sessionId: "2026-08-30T03-23-54-655Z_intel-symbol-locate",
+      workingDir: evalWd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+      turns: 20,
+      meta: { goal: "eval leftover must stay put" },
+    });
+    const dir = path.join(isolated.paths.configDir, "agent-runs");
+    const ownerFp = path.join(dir, "2026-08-30T03-23-54-655Z_owner-interrupted.json");
+    const leftoverFp = path.join(dir, "2026-08-30T03-23-54-655Z_intel-symbol-locate.json");
+    const ownerBody = JSON.parse(await fs.readFile(ownerFp, "utf8"));
+    const leftoverBody = JSON.parse(await fs.readFile(leftoverFp, "utf8"));
+    ownerBody.updatedAt = "2026-08-30T08:40:00.000Z";
+    leftoverBody.updatedAt = "2026-08-30T04:17:33.558Z";
+    await fs.writeFile(ownerFp, JSON.stringify(ownerBody, null, 2));
+    await fs.writeFile(leftoverFp, JSON.stringify(leftoverBody, null, 2));
+    const names = (await fs.readdir(dir)).filter((f) => f.endsWith(".json"));
+    names.sort();
+    names.reverse();
+    const lex80 = names.slice(0, 80).map((f) => f.replace(/\.json$/, ""));
+    assert.equal(
+      lex80.includes("2026-08-30T03-23-54-655Z_owner-interrupted"),
+      false,
+      "filename reverse-lex 80 must miss the ISO owner id"
+    );
+    const listed = await listResumableAgentRuns(isolated, { limit: 80 });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].sessionId, "2026-08-30T03-23-54-655Z_owner-interrupted");
+    assert.equal(
+      listed.some((r) => r.sessionId === "2026-08-30T03-23-54-655Z_intel-symbol-locate"),
+      false,
+      "eval leftover must not appear in the boot list"
+    );
+    const doctorWindow = await listResumableAgentRuns(isolated, { limit: 50 });
+    assert.equal(doctorWindow.length, 1);
+    assert.equal(doctorWindow[0].sessionId, "2026-08-30T03-23-54-655Z_owner-interrupted");
+  });
+
   it("skips a snapshot with no recoverable goal", async () => {
     await saveAgentRun(cfg, {
       sessionId: "empty_goal",

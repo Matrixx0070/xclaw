@@ -128,6 +128,12 @@ function lastAssistantText(run = {}) {
 /**
  * Scan the run store and return full resumable snapshots (newest first).
  * listAgentRuns is a 30-row operator summary; boot needs the bodies.
+ *
+ * Load ALL names, classify, sort by updatedAt, THEN apply the limit.
+ * Filename reverse-lex hid ISO-timestamp owner ids behind job_* /
+ * objective-* (live leftover rank 96, outside the default 80; doctor
+ * uses limit 50). Do not pin not-ok / corrupt into boot — boot must
+ * only return resumable. Eval leftovers stay skipped by the classifier.
  */
 export async function listResumableAgentRuns(cfg, opts = {}) {
   const dir = runsDir(cfg);
@@ -137,16 +143,16 @@ export async function listResumableAgentRuns(cfg, opts = {}) {
   } catch {
     return [];
   }
-  names.sort().reverse();
   const limit = Number(opts.limit) > 0 ? Number(opts.limit) : 80;
   const out = [];
-  for (const f of names.slice(0, limit)) {
+  for (const f of names) {
     const id = f.replace(/\.json$/, "");
     const loaded = await loadAgentRun(cfg, id);
     if (!loaded.ok) continue;
     if (isResumableAgentRun(loaded.run, opts)) out.push(loaded.run);
   }
-  return out;
+  out.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  return out.slice(0, limit);
 }
 
 /**

@@ -161,8 +161,12 @@ sorts by `updatedAt` (not filename), then pins resumable / not-ok
 rows into the window before applying the row limit, so a leftover is
 not hidden behind newer ok runs or `job_*` / `objective-*`. Missing
 workingDir / corrupt rows are not pinned — they crowded out newest
-ok after 3.476.0. Cap: `agent.autoResumeMax` (default 3). Age: 48h.
-Opt out: `agent.autoResume: false`.
+ok after 3.476.0. Boot `listResumableAgentRuns` also loads all, keeps
+resumable, sorts by `updatedAt`, then applies its limit (default 80)
+— filename reverse-lex hid ISO-timestamp owner ids behind `job_*` /
+`objective-*` (live leftover rank 96, outside the 80). Cap:
+`agent.autoResumeMax` (default 3). Age: 48h. Opt out:
+`agent.autoResume: false`.
 
 
 ## Telegram channel
