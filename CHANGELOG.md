@@ -1,3 +1,16 @@
+## 3.388.0
+
+### Relative dotfiles still have to exist
+
+v3.387.0 covered `/tmp/hello` and `Makefile`. `touch .gitignore` and
+`create .env` still derived nothing — the path matcher wanted either
+a leading `/` or a name with a non-leading extension — so a model
+"Done." was `natural` with no file.
+
+Leading-dot names (`.gitignore`, `.env`, `.nvmrc`) now derive
+`file_exists`; `write TEXT to .env` is `file_contains`. "What is in
+.gitignore?" and "how do I create a .env file?" stay chat.
+
 ## 3.387.0
 
 ### `/tmp/hello` and `Makefile` still have to exist

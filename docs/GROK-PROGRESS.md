@@ -774,3 +774,12 @@ BUILT: FILE_PREFIX allows `a file PATH`; CONTENT includes
 Then-stop/When-done closers. How-to still empty.
 RAN: 31 pass 0 fail (complete-gate, autonomy-contract, default-path-durability).
 UNVERIFIED: live lying-model then rewrite; full npm test.
+
+## 2026-08-30 — 3.388.0 relative dotfiles still have to exist
+
+STATUS: green
+DISCOVERED: PATH needed `/` or a non-leading extension, so
+`touch .gitignore` / `create .env` derived nothing.
+BUILT: leading-dot alternative `.[A-Za-z][\\w.-]*`. How-to stays empty.
+RAN: 36 pass 0 fail (complete-gate, autonomy-contract, default-path-durability).
+UNVERIFIED: live lying-model then rewrite; full npm test.

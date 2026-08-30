@@ -36,6 +36,24 @@ describe("deriveGoalVerifyChecks", () => {
     assert.deepEqual(deriveGoalVerifyChecks("what is in Makefile?"), []);
   });
 
+  it("relative dotfiles still have to exist", () => {
+    const g = deriveGoalVerifyChecks("touch .gitignore");
+    assert.equal(g[0].type, "file_exists");
+    assert.equal(g[0].path, ".gitignore");
+    const e = deriveGoalVerifyChecks("create .env");
+    assert.equal(e[0].type, "file_exists");
+    assert.equal(e[0].path, ".env");
+    const w = deriveGoalVerifyChecks("write SECRET=1 to .env");
+    assert.equal(w[0].type, "file_contains");
+    assert.equal(w[0].path, ".env");
+    assert.equal(w[0].text, "SECRET=1");
+    const named = deriveGoalVerifyChecks("create a file named .nvmrc");
+    assert.equal(named[0].type, "file_exists");
+    assert.equal(named[0].path, ".nvmrc");
+    assert.deepEqual(deriveGoalVerifyChecks("what is in .gitignore?"), []);
+    assert.deepEqual(deriveGoalVerifyChecks("how do I create a .env file?"), []);
+  });
+
   it("append TEXT to PATH and echo TEXT > PATH", () => {
     const a = deriveGoalVerifyChecks("append OK to notes.txt");
     assert.equal(a[0].type, "file_contains");
@@ -188,6 +206,24 @@ describe("evaluateNaturalStopVerify", () => {
     assert.equal(r.reject, false);
     assert.equal(r.result.ok, true);
   });
+
+  it("touch .gitignore rejects Done when missing and accepts when present", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-dot-ev-"));
+    const miss = await evaluateNaturalStopVerify({
+      naturalStop: true,
+      userMessage: "touch .gitignore",
+      workingDir: dir,
+    });
+    assert.equal(miss.reject, true);
+    fs.writeFileSync(path.join(dir, ".gitignore"), "node_modules\n");
+    const hit = await evaluateNaturalStopVerify({
+      naturalStop: true,
+      userMessage: "touch .gitignore",
+      workingDir: dir,
+    });
+    assert.equal(hit.reject, false);
+    assert.equal(hit.result.ok, true);
+  });
 });
 
 describe("loop rejects a false Done on a file goal", () => {
@@ -271,6 +307,19 @@ describe("loop rejects a false Done on a file goal", () => {
     });
     assert.equal(out.stopReason, "unverified");
     assert.equal(out.ok, false);
+  });
+
+  it("touch .gitignore is unverified when the file is missing", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-dot-"));
+    const out = await runAgentLoop({
+      cfg: CFG,
+      provider: doneProvider(),
+      userMessage: "touch .gitignore",
+      workingDir: dir,
+    });
+    assert.equal(out.stopReason, "unverified");
+    assert.equal(out.ok, false);
+    assert.equal(fs.existsSync(path.join(dir, ".gitignore")), false);
   });
 
   it("write a file PATH containing TEXT is unverified when missing", async () => {

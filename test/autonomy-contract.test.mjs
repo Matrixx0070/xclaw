@@ -33,6 +33,9 @@ describe("autonomy contract (hermetic)", () => {
     assert.equal(smoke[0].type, "file_contains");
     assert.equal(smoke[0].path, "hello.txt");
     assert.equal(smoke[0].text, "hello xclaw");
+    const dot = deriveGoalVerifyChecks("touch .gitignore");
+    assert.equal(dot[0].type, "file_exists");
+    assert.equal(dot[0].path, ".gitignore");
   });
 
   it("6 no-progress: repeated identical calls trip the loop guard", () => {
