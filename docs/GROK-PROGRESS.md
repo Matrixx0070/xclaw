@@ -1071,3 +1071,29 @@ RAN: `node --test test/agent-run-resume.test.mjs` → 16/16
 UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving
 boot still does not auto-resume leftover and recovered path (when a
 resumable owner snapshot exists) would fire the restart notice.
+
+## 2026-08-30 — 3.479.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green (recovered missions stamp interrupted; leftover stay-put; doctor honest)
+CLOSED UNVERIFIED from the 3.479.0 entry: GitHub `ci` / `install-e2e` /
+`eval-regression` / `ledger-guard` succeeded on `0635d10` (ci 33305108598
+1m41s, no web_search flake). Live after pm2 restart pid 3384836 created
+2026-08-30T09:52:54.053Z: `/version` 3.479.0 stale false, `/ready` ready
+true, webchat POST `{message}` → assistant `PONG` (sessionId
+`aa134fdd-724b-48db-9bb0-4406a0f1935a`). Boot after 09:52:54Z emitted no
+`[xclaw:agent-runs] auto-resumed` line (last still 06:27:15
+obj_mtffg2yd_aaaad3). `GET /agent-runs?limit=20` n=20 error 0 missing 0
+not_ok 4 resumable 0 ok 16. Leftover
+`2026-08-30T03-23-54-655Z_intel-symbol-locate` at index 1 (`resumable:
+false`, `ok: false`, status maxTurns, updatedAt 04:17:33.558Z).
+`limit=400` n=296: error 101, missing 101, not_ok 4, resumable 0, ok 191.
+Leftover stayed `maxTurns` with no `resumedAt` / `objectiveId`;
+`obj_mtffg2yd_aaaad3` stayed `awaiting_human`. n_objectives 23. Doctor
+`agentRuns.attention: no unfinished agent-run snapshots`. telegram
+writerLock pid=3384836. Recovered-path restart notice: live
+resumable_count is 0 so no owner snapshot existed to promote; hermetic
+test `"recovered agent-run first segment includes the runtime-restart
+notice"` covers that path. NEXT: recon remaining evolution gap — do not
+assume compaction or long-horizon still missing (compaction default-on
+since 3.68.0; AUTONOMY_LONG_HORIZON.md is eval-harness only).
+Empty-criteria done currently accepted (hermetic test depends on it).
