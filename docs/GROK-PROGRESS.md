@@ -1025,3 +1025,25 @@ UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving
 boot still does not auto-resume leftover and doctor attention stays
 honest (live resumable_count is 0 — hermetic proof covers the
 filename-slice class).
+
+## 2026-08-30 — 3.478.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green (boot sorts by updatedAt; leftover stay-put; doctor honest)
+CLOSED UNVERIFIED from the 3.478.0 entry: GitHub `ci` / `install-e2e` /
+`eval-regression` / `ledger-guard` succeeded on `ce540f5` (ci 33302318784
+1m44s, gates 22.22 + 24.15, no web_search flake). Live after pm2 restart
+pid 3331647 created 2026-08-30T08:44:29Z: `/version` 3.478.0 stale false,
+`/ready` ready true, webchat POST `{message}` → assistant `PONG`
+(sessionId `88ed633a-51bd-4456-b220-0931fea231b0`). Boot after 08:44:32Z
+emitted no `[xclaw:agent-runs] auto-resumed` line (last still 06:27:15
+obj_mtffg2yd_aaaad3). `GET /agent-runs?limit=20` n=20 error 0 missing 0
+not_ok 4 resumable 0 ok 16. Leftover
+`2026-08-30T03-23-54-655Z_intel-symbol-locate` at index 1 (`resumable:
+false`, `ok: false`, status maxTurns, updatedAt 04:17:33.558Z).
+`limit=400` n=295: error 101, missing 101, not_ok 4, resumable 0, ok 190.
+Leftover stayed `maxTurns` with no `resumedAt` / `objectiveId`;
+`obj_mtffg2yd_aaaad3` stayed `awaiting_human`. n_objectives 23. Doctor
+`agentRuns.attention: no unfinished agent-run snapshots`. telegram
+writerLock pid=3331647. NEXT: recon remaining evolution gap — do not
+assume compaction or long-horizon still missing (compaction default-on
+since 3.68.0; AUTONOMY_LONG_HORIZON.md is eval-harness only).
