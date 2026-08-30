@@ -1,3 +1,13 @@
+## 3.430.0
+
+### `voice_speak` does not claim audio when only a transcript landed
+
+Neural TTS wrote any byte length and returned `Neural TTS written`.
+Local TTS trusted `espeak` exit 0 without a dest file. No engine
+still returned success (`No TTS engine available. Wrote text`).
+Audio files are size-checked; fallback is `isError` with a transcript
+path.
+
 ## 3.429.0
 
 ### OCR and office convert do not succeed without their output files

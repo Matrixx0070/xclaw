@@ -38,9 +38,12 @@ async function neuralTts(text, out, voice) {
     });
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 100) return null;
     await fs.mkdir(path.dirname(out), { recursive: true });
     const dest = out.endsWith(".mp3") || out.endsWith(".wav") ? out : out + ".mp3";
     await fs.writeFile(dest, buf);
+    const written = await fs.readFile(dest);
+    if (written.length !== buf.length) return null;
     return dest;
   } catch {
     return null;
@@ -55,11 +58,26 @@ async function localTts(text, out) {
       c.on("close", (code) => resolve(code === 0));
       c.on("error", () => resolve(false));
     });
-  if (await tryCmd("espeak-ng", ["-w", out, text])) return out;
-  if (await tryCmd("espeak", ["-w", out, text])) return out;
+  const landed = async (file) => {
+    try {
+      const st = await fs.stat(file);
+      return st.size > 0 ? file : null;
+    } catch {
+      return null;
+    }
+  };
+  if (await tryCmd("espeak-ng", ["-w", out, text])) {
+    const hit = await landed(out);
+    if (hit) return hit;
+  }
+  if (await tryCmd("espeak", ["-w", out, text])) {
+    const hit = await landed(out);
+    if (hit) return hit;
+  }
   // piper if present: echo text | piper --model x --output_file out
   if (await tryCmd("bash", ["-lc", `command -v piper >/dev/null && echo ${JSON.stringify(text)} | piper -m en_US-lessac-medium -f ${JSON.stringify(out)}`])) {
-    return out;
+    const hit = await landed(out);
+    if (hit) return hit;
   }
   return null;
 }
@@ -135,9 +153,9 @@ export function createCallConnectedToolTool(ctx = {}) {
         const txt = out.replace(/\.\w+$/, "") + ".txt";
         await fs.mkdir(path.dirname(txt), { recursive: true });
         await fs.writeFile(txt, text);
-        return textResult(`No TTS engine available. Wrote text: ${txt}`, {
-          metadata: { ok: false, textPath: txt },
-        });
+        return errorResult(
+          `No TTS engine available. Wrote transcript only: ${txt}`
+        );
       }
 
       if (name === "github_request") {
