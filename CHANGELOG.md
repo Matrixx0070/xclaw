@@ -1,3 +1,15 @@
+## 3.383.0
+
+### Doctor warns on unfinished agent-run snapshots
+
+Interrupted objectives already had `objectives.attention`. Unfinished
+`~/.xclaw/agent-runs/` snapshots (the ones boot auto-resumes) were
+invisible to `xclaw doctor`, so an operator could miss work sitting
+on disk after a crash if auto-resume was capped or opted out.
+
+`agentRuns.attention` lists resumable runs (status/stopReason) or
+reports none.
+
 ## 3.382.0
 
 ### JSON/TUI `ok` follows the same honesty as the CLI exit

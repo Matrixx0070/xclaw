@@ -857,6 +857,25 @@ export async function runDoctor(opts = {}) {
     push("objectives.attention", "warn", err.message);
   }
 
+  try {
+    const { listResumableAgentRuns } = await import("../agent/run-resume.mjs");
+    const runs = await listResumableAgentRuns(cfg, { limit: 50 });
+    push(
+      "agentRuns.attention",
+      runs.length ? "warn" : "ok",
+      runs.length
+        ? `${runs.length} unfinished agent-run(s): ` +
+            runs
+              .slice(0, 8)
+              .map((r) => `${r.sessionId}(${r.status}/${r.stopReason || "?"})`)
+              .join(", ") +
+            " — auto-resume on gateway boot unless agent.autoResume:false"
+        : "no unfinished agent-run snapshots"
+    );
+  } catch (err) {
+    push("agentRuns.attention", "warn", err.message);
+  }
+
 
 
   // P5: connected OAuth token health
