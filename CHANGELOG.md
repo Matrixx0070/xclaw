@@ -1,3 +1,12 @@
+## 3.455.0
+
+### Python session reset HTTP errors are not swallowed
+
+`reset=true` used `.catch(() => {})` so a 500/timeout still ran
+code against the old kernel and looked like a successful reset.
+Network failure is `kernel reset failed`. Non-404 HTTP is
+`kernel reset HTTP <status>`. 404 (no session yet) is still OK.
+
 ## 3.454.0
 
 ### `view_x_video` does not treat a non-JPEG dest as a frame
