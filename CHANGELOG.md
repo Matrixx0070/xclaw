@@ -1,3 +1,11 @@
+## 3.435.0
+
+### `grep` engine failure is not "(no matches)"
+
+If ripgrep and GNU grep both fail (missing binary, exit 2) with empty
+stdout, the tool still returned success `(no matches)`. That is now
+`isError` with both exit codes. Exit 1 (no hits) is still no matches.
+
 ## 3.434.0
 
 ### CoinGecko HTTP 429 is an error, not a missing ticker

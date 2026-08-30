@@ -218,6 +218,12 @@ export function createGrepTool({ workingDir }) {
         if (args.case_insensitive) gArgs.push("-i");
         gArgs.push(pattern, searchPath);
         const g = await runCmd("grep", gArgs, { cwd: workingDir, timeoutMs: 30_000 });
+        if (g.timedOut) return errorResult("grep timed out");
+        if (g.code !== 0 && g.code !== 1 && !g.stdout) {
+          return errorResult(
+            `grep failed (rg ${rg.code}, grep ${g.code}): ${(g.stderr || rg.stderr || "").slice(0, 300)}`
+          );
+        }
         const lines = (g.stdout || "").split("\n").filter(Boolean).slice(0, max);
         return textResult(lines.join("\n") || "(no matches)", {
           metadata: { count: lines.length, engine: "grep", code: g.code },
