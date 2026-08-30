@@ -1,3 +1,11 @@
+## 3.463.0
+
+### `x_keyword_search` does not treat shapeless data as tweets
+
+HTTP 200 with `{ data: {} }` still called `.slice` and threw TypeError, and
+`[{}]` printed `1. undefined` as success. Non-array data and rows without
+`id` are now `invalid tweet payload`. Empty `data` is still `No tweets`.
+
 ## 3.462.0
 
 ### `x_user_search` does not return `@undefined` for empty data

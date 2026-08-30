@@ -51,12 +51,19 @@ export function createXKeywordSearchTool({ fetchFn } = {}) {
           });
           const j = await res.json().catch(() => ({}));
           if (!res.ok) return errorResult(j.detail || j.title || `HTTP ${res.status}`);
-          const lines = (j.data || []).slice(0, limit).map((t, i) => {
+          if (j.data != null && !Array.isArray(j.data)) {
+            return errorResult(j.detail || j.title || "invalid tweet payload");
+          }
+          const tweets = (j.data || []).filter((t) => t && typeof t === "object" && t.id != null);
+          if (!tweets.length && Array.isArray(j.data) && j.data.length) {
+            return errorResult("invalid tweet payload");
+          }
+          const lines = tweets.slice(0, limit).map((t, i) => {
             const m = t.public_metrics || {};
             return `${i + 1}. ${t.id}\n   ${t.created_at || ""}\n   ${t.text}\n   likes=${m.like_count ?? "?"} rt=${m.retweet_count ?? "?"}`;
           });
           return textResult(lines.join("\n\n") || "No tweets", {
-            metadata: { count: j.data?.length || 0, provider: "twitter_api_v2" },
+            metadata: { count: lines.length, provider: "twitter_api_v2" },
           });
         } catch (e) {
           return errorResult(e.message);

@@ -50,6 +50,74 @@ describe("x_keyword_search", () => {
       else process.env.X_BEARER_TOKEN = prev;
     }
   });
+
+  it("HTTP 200 with non-array data is invalid tweet payload, not a TypeError", async () => {
+    const prev = process.env.X_BEARER_TOKEN;
+    process.env.X_BEARER_TOKEN = "test";
+    try {
+      const tool = createXKeywordSearchTool({
+        fetchFn: async () => ({
+          ok: true,
+          status: 200,
+          async json() {
+            return { data: {} };
+          },
+        }),
+      });
+      const out = await tool.execute({ query: "xclaw" });
+      assert.equal(out.isError, true);
+      assert.match(out.content[0].text, /invalid tweet payload/);
+      assert.doesNotMatch(out.content[0].text, /slice is not a function|TypeError/);
+    } finally {
+      if (prev === undefined) delete process.env.X_BEARER_TOKEN;
+      else process.env.X_BEARER_TOKEN = prev;
+    }
+  });
+
+  it("HTTP 200 with missing data is No tweets, not isError", async () => {
+    const prev = process.env.X_BEARER_TOKEN;
+    process.env.X_BEARER_TOKEN = "test";
+    try {
+      const tool = createXKeywordSearchTool({
+        fetchFn: async () => ({
+          ok: true,
+          status: 200,
+          async json() {
+            return { meta: { result_count: 0 } };
+          },
+        }),
+      });
+      const out = await tool.execute({ query: "xclaw" });
+      assert.notEqual(out.isError, true);
+      assert.match(out.content[0].text, /No tweets/);
+    } finally {
+      if (prev === undefined) delete process.env.X_BEARER_TOKEN;
+      else process.env.X_BEARER_TOKEN = prev;
+    }
+  });
+
+  it("HTTP 200 with tweets missing id is invalid payload, not 1. undefined", async () => {
+    const prev = process.env.X_BEARER_TOKEN;
+    process.env.X_BEARER_TOKEN = "test";
+    try {
+      const tool = createXKeywordSearchTool({
+        fetchFn: async () => ({
+          ok: true,
+          status: 200,
+          async json() {
+            return { data: [{}] };
+          },
+        }),
+      });
+      const out = await tool.execute({ query: "xclaw" });
+      assert.equal(out.isError, true);
+      assert.match(out.content[0].text, /invalid tweet payload/);
+      assert.doesNotMatch(out.content[0].text, /undefined/);
+    } finally {
+      if (prev === undefined) delete process.env.X_BEARER_TOKEN;
+      else process.env.X_BEARER_TOKEN = prev;
+    }
+  });
 });
 
 describe("x_user_search", () => {
