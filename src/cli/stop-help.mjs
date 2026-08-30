@@ -9,7 +9,7 @@ Usage:
   xclaw stop --help
   xclaw stop --sign [--body '{}'] [--print-curl] [--dry-run] [--post] [--json]
   xclaw stop-sign                 (alias)
-  xclaw stop-all [--keep-computer]
+  xclaw stop-all [--keep-computer]   (also kills background bash PIDs this process started)
 
 Auth:
   Token:  Authorization: Bearer <token>  or  X-XClaw-Token

@@ -16,6 +16,7 @@ export const STOP_LOCKSTEP_PHRASES = [
   "stop-fire-drill",
   "openapi-stop.yaml",
   "dryRun",
+  "background bash",
 ];
 
 describe("STOP.md + stop --help lockstep", () => {

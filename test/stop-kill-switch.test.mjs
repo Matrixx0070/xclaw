@@ -18,6 +18,7 @@ describe("stop kill-switch", () => {
     assert.equal(r.ok, true);
     assert.ok(r.killedSessions.includes("sess_stop_test"));
     assert.ok("ws" in r && "sse" in r);
+    assert.ok(r.bashBg && Array.isArray(r.bashBg.killed));
   });
 
   it("doctor reports ws+sse capability", async () => {
@@ -25,5 +26,6 @@ describe("stop kill-switch", () => {
     await pushKillSwitchChecks((id, status, message, extra) => checks.push({ id, status, extra }));
     assert.equal(checks[0].id, "security.killSwitch");
     assert.equal(checks[0].extra.closeSse, true);
+    assert.equal(typeof checks[0].extra.bashBg, "number");
   });
 });

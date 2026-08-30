@@ -38,4 +38,7 @@ node scripts/stop-fire-drill.mjs
 xclaw doctor --json   # ops.stop_fire_drill + summary.stop
 ```
 
+`xclaw stop-all` also kills background bash PIDs this process started
+(detached `background: true` jobs). Dry-run reports `bashBgListed`.
+
 See `docs/openapi-stop.yaml` and `xclaw stop --help`.

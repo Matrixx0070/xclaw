@@ -1,3 +1,13 @@
+## 3.412.0
+
+### Doctor and stop docs name the background-bash kill
+
+v3.411.0 killed those PIDs but doctor still reported only
+sessions/ws/sse, so an operator could miss leftover sleepers.
+`security.killSwitch` now includes `bashBg=N`. STOP.md and
+`xclaw stop --help` say stop-all kills background bash PIDs.
+Drain records `bashBgKilled`.
+
 ## 3.411.0
 
 ### `stop-all` kills background bash PIDs we started

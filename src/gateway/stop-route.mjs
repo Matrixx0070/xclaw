@@ -78,6 +78,7 @@ export async function handleStopAll(req, res, { cfg } = {}) {
   });
   const drain = {
     ...drainStats(r, before),
+    bashBgKilled: Array.isArray(r.bashBg?.killed) ? r.bashBg.killed.length : 0,
     authMethod: auth.authMethod || (auth.skipped ? "lab" : "token"),
   };
   recordLastDrain(drain, { cfg });

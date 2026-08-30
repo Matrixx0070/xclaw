@@ -23,11 +23,18 @@ export async function pushKillSwitchChecks(push) {
   }
   const ready = wsOk && sseOk;
   const lastDrain = getLastDrain();
+  let bashBg = 0;
+  try {
+    const { listBackgroundBash } = await import("../computer/modules/bash-tool.mjs");
+    bashBg = listBackgroundBash().length;
+  } catch {
+    bashBg = 0;
+  }
   push(
     "security.killSwitch",
     ready ? "ok" : "warn",
-    `session kill-switch ready (activeSessions=${n} ws=${wsOk} sse=${sseOk}); POST /stop or xclaw stop-all`,
-    { activeSessions: n, closeWs: wsOk, closeSse: sseOk, lastDrain }
+    `session kill-switch ready (activeSessions=${n} ws=${wsOk} sse=${sseOk} bashBg=${bashBg}); POST /stop or xclaw stop-all`,
+    { activeSessions: n, closeWs: wsOk, closeSse: sseOk, bashBg, lastDrain }
   );
   if (lastDrain) {
     const method = lastDrain.authMethod || lastDrain.drain?.authMethod || "unknown";
