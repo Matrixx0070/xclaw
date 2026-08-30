@@ -151,7 +151,10 @@ as `source: "runtime"` without a baseline pass (the named artifact
 does not exist yet, so baseline would drop every `file_exists` /
 `file_contains`). Project-suite lint/test still baseline-filters.
 Operator `verify[]` is never overwritten. Chat/how-to still hold
-`no_checks`. `objectives.deriveChecks: false` to skip.
+`no_checks`. `objectives.deriveChecks: false` to skip. Gateway
+`POST /objectives` segments pass `continuation: false` the same way
+channel objectives already did — the inner loop no longer auto-continues
+4× inside one API-started segment.
 
 Gateway boot auto-resumes unfinished **agent-run snapshots** the same
 way it already resumes interrupted objectives: `active` / `maxTurns`

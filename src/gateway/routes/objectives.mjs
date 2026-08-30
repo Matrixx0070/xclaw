@@ -48,7 +48,8 @@ async function startGatewayObjective(cfg, runOpts, { workingDir, notify: notifyO
       workingDir: wd,
       channel: "api",
       onEvent: () => {},
-      history: [],
+      history: [], // fresh context each segment — durable state IS the memory
+      continuation: false, // objective owns segmentation — single-segment runs
       chatSessionId: sessionId,
       rescuePrompt,
     });

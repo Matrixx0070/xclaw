@@ -1150,3 +1150,28 @@ cover arm / reject-until-file / close-verified / how-to still
 compaction or long-horizon still missing (compaction default-on since
 3.68.0; AUTONOMY_LONG_HORIZON.md is eval-harness only). Empty-criteria
 done is already held by `deterministicGate` (`requireChecked: true`).
+
+## 2026-08-30 — 3.481.0 gateway objective segments opt out of inner-loop continuation (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: Channel `startDetachedObjective` already passed
+`continuation: false` so the inner loop kept a single-segment contract
+(`totalTurnCap = maxTurns`). Gateway `startGatewayObjective` (`POST
+/objectives`, boot auto-resume via `resumeObjectiveDetached`) omitted
+the flag. `replyWithAgent` only forwards `continuation` when the caller
+set it, so undefined meant ON (`maxTurns * 4` inside one API-started
+segment, fighting the orchestrator's own segmentation). Jobs empty-verify
+is NOT a missing derive hole — `runJob` goes through `runAgentLoop` with
+`userMessage: goal` and does not set `verifyOnComplete: false`;
+`sr === "unverified"` already maps to job failed. Recovered/promoted
+missions still hit the 3.480.0 derive block (not gated on resumeId).
+Empty-criteria done already held by `deterministicGate`. Compaction
+already default-on (3.68.0). Long-horizon orchestrator exists.
+BUILT: gateway `runSegment` now passes `continuation: false` next to
+`history: []`, matching the channel path. Source-contract test pins both
+live callers. Objective completion stays gated by `deterministicGate` +
+3.480.0 derive — this slice does not touch `verifyOnComplete`.
+RAN: `npm test` (hermetic) `# tests 5024` `# fail 0` `# duration_ms 69871.002828`. Targeted `node --test test/gateway-objective-continuation.test.mjs` `# tests 2` `# fail 0` `# duration_ms 46.850807`. Ship-gate `grep -qE "^# fail 0"` held.
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put and that POST /objectives segments inherit continuation:false
+(hermetic source pin covers the caller).

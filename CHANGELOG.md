@@ -1,3 +1,20 @@
+## 3.481.0
+
+### Gateway objective segments opt out of inner-loop continuation
+
+Channel `startDetachedObjective` already passed `continuation: false`
+so the inner loop kept a single-segment contract (`totalTurnCap =
+maxTurns`). Gateway `startGatewayObjective` (`POST /objectives`, boot
+auto-resume via `resumeObjectiveDetached`) omitted the flag.
+`replyWithAgent` only forwards `continuation` when the caller set it,
+so undefined meant ON (`maxTurns * 4` inside one API-started segment,
+fighting the orchestrator's own segmentation).
+
+Gateway `runSegment` now passes `continuation: false` next to
+`history: []`, matching the channel path. Objective completion stays
+gated by `deterministicGate` + 3.480.0 derive — this slice does not
+touch `verifyOnComplete`.
+
 ## 3.480.0
 
 ### Objective path arms goal-derived verify checks without baseline
