@@ -1,3 +1,12 @@
+## 3.446.0
+
+### Glob walk failures and empty spawn text are not success
+
+`walkGlob` swallowed `readdir` errors and returned `(no matches)`.
+If the walk found nothing and hit directory errors, glob is now
+`isError`. `xclaw_spawn_agent` treated empty child text as
+`(child returned no text)` success; that is `SPAWN_EMPTY`.
+
 ## 3.445.0
 
 ### `browser_snapshot` does not claim structure from a failed tab call

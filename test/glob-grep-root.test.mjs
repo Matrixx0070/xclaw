@@ -26,6 +26,11 @@ describe("glob/grep missing path is an error", () => {
     assert.match(out.content[0].text, /path not found/);
   });
 
+  it("glob walk unreadable dirs is isError, not no matches", () => {
+    const src = fs.readFileSync(new URL("../src/tools/extra-tools.mjs", import.meta.url), "utf8");
+    assert.match(src, /glob could not read/);
+  });
+
   it("grep source treats engine failure as isError, not no matches", () => {
     const src = fs.readFileSync(new URL("../src/tools/extra-tools.mjs", import.meta.url), "utf8");
     assert.match(src, /grep failed \(rg/);

@@ -47,12 +47,14 @@ function resolveUnder(root, p) {
 async function walkGlob(root, pattern, { max = 500 } = {}) {
   // Prefer ripgrep files / find; fallback to recursive walk with minimatch-ish
   const results = [];
+  let errors = 0;
   async function walk(dir, depth = 0) {
     if (results.length >= max || depth > 20) return;
     let entries;
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
     } catch {
+      errors += 1;
       return;
     }
     for (const ent of entries) {
@@ -70,7 +72,7 @@ async function walkGlob(root, pattern, { max = 500 } = {}) {
     }
   }
   await walk(root);
-  return results;
+  return { results, errors };
 }
 
 /** Minimal glob: * and ** and ? */
@@ -169,9 +171,20 @@ export function createGlobTool({ workingDir }) {
         });
       }
 
-      const found = await walkGlob(root, pattern, { max });
-      return textResult(found.join("\n") || "(no matches)", {
-        metadata: { count: found.length, pattern, root, engine: "walk" },
+      const walked = await walkGlob(root, pattern, { max });
+      if (!walked.results.length && walked.errors > 0) {
+        return errorResult(
+          `glob could not read ${walked.errors} director${walked.errors === 1 ? "y" : "ies"} under ${root}`
+        );
+      }
+      return textResult(walked.results.join("\n") || "(no matches)", {
+        metadata: {
+          count: walked.results.length,
+          pattern,
+          root,
+          engine: "walk",
+          walkErrors: walked.errors,
+        },
       });
     },
   };

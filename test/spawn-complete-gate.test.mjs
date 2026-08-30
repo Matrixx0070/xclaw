@@ -114,5 +114,6 @@ describe("xclaw_spawn_agent tool includes stopReason", () => {
     const fs = await import("node:fs");
     const src = fs.readFileSync(new URL("../src/tools/spawn-tools.mjs", import.meta.url), "utf8");
     assert.match(src, /stopReason=\$\{out\.result\.stopReason\}/);
+    assert.match(src, /SPAWN_EMPTY/);
   });
 });

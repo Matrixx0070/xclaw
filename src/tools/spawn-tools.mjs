@@ -123,8 +123,14 @@ export function createSpawnTools({ workingDir, cfg, runState } = {}) {
             stopReason: out?.result?.stopReason || null,
           });
         }
-        const body = String(out.result?.text ?? out.result ?? "").trim();
-        return textResult(body || "(child returned no text)", {
+        const body = String(out.result?.text ?? "").trim();
+        if (!body) {
+          return errorResult(
+            `child ${out.id || ""} finished with empty text (stopReason=${out.result?.stopReason || "n/a"})`,
+            { code: "SPAWN_EMPTY", subagent: out.id || null }
+          );
+        }
+        return textResult(body, {
           subagent: { id: out.id, status: out.status ?? "done", turns: out.result?.turns ?? null },
         });
       },
