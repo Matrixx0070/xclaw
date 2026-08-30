@@ -121,7 +121,11 @@ export async function sendTelegramVoiceNote(opts) {
       body: form,
       signal: AbortSignal.timeout(budget),
     });
-    const j = await res.json();
+    const j = await res.json().catch(() => null);
+    if (!j || typeof j !== "object" || Array.isArray(j)) {
+      throw new Error(res.ok ? "sendVoice invalid JSON" : `HTTP ${res.status}`);
+    }
+    if (!res.ok) throw new Error(j.description || `HTTP ${res.status}`);
     if (!j.ok) {
       // fallback: send as document
       return sendAsDocument({ token, chatId, filePath, replyTo, caption, buf, filename, timeoutMs });
@@ -155,8 +159,11 @@ async function sendAsDocument({ token, chatId, filePath, replyTo, caption, buf, 
     if (isAbortLikeError(e)) throw new Error(`Telegram sendDocument timed out after ${budget}ms`);
     throw e;
   }
-  const j = await res.json();
-  if (!j.ok) {
+  const j = await res.json().catch(() => null);
+  if (!j || typeof j !== "object" || Array.isArray(j)) {
+    throw new Error(res.ok ? "sendDocument invalid JSON" : `HTTP ${res.status}`);
+  }
+  if (!res.ok || !j.ok) {
     throw new Error(`Telegram sendDocument: ${j.description || res.status}`);
   }
   return { ok: true, method: "sendDocument", result: j.result };

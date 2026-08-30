@@ -1,3 +1,12 @@
+## 3.471.0
+
+### Telegram photo/voice 200 HTML is not a successful send
+
+`sendPhoto` / `sendVoice` / `sendDocument` called `res.json()` with no
+catch, so 200 HTML threw `Unexpected token` and photo-out retried the
+same body as a document. Invalid JSON is now a failed send; Telegram
+`ok:false` still falls back to document.
+
 ## 3.470.0
 
 ### `edit_image` does not treat 200 HTML as a successful Magick edit

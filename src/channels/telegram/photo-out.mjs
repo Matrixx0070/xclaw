@@ -84,7 +84,11 @@ export async function sendPhotoFile({ token, chatId, filePath, replyTo, caption,
       body: form,
       signal: AbortSignal.timeout(budget),
     });
-    const j = await res.json();
+    const j = await res.json().catch(() => null);
+    if (!j || typeof j !== "object" || Array.isArray(j)) {
+      return { ok: false, error: res.ok ? "sendPhoto invalid JSON" : `HTTP ${res.status}` };
+    }
+    if (!res.ok) return { ok: false, error: j.description || `HTTP ${res.status}` };
     if (j.ok) return { ok: true, method: "sendPhoto", result: j.result };
     // Fallback: deliver as a document (preserves the file even if photo is refused).
     return sendAsDocument({ token, chatId, filePath, replyTo, caption: cap, buf, filename, timeoutMs });
@@ -122,10 +126,14 @@ async function sendAsDocument({ token, chatId, filePath, replyTo, caption, buf, 
       body: form,
       signal: AbortSignal.timeout(budget),
     });
-    const j = await res.json();
-    return j.ok
-      ? { ok: true, method: "sendDocument", result: j.result }
-      : { ok: false, error: j.description || "sendDocument failed" };
+    const j = await res.json().catch(() => null);
+    if (!j || typeof j !== "object" || Array.isArray(j)) {
+      return { ok: false, error: res.ok ? "sendDocument invalid JSON" : `HTTP ${res.status}` };
+    }
+    if (!res.ok || !j.ok) {
+      return { ok: false, error: j.description || `HTTP ${res.status}` };
+    }
+    return { ok: true, method: "sendDocument", result: j.result };
   } catch (e) {
     return {
       ok: false,
