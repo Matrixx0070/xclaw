@@ -14,10 +14,32 @@ import { runVerifyChecks } from "../jobs/verify.mjs";
 import { inferGoal } from "./turn-state.mjs";
 
 const PATH = "(?:\\/|\\.\\/)?[\\w./-]+\\.[A-Za-z0-9]+";
+const CHAT_LEAD =
+  /^(what|why|how|when|where|who|explain|describe|list|tell|summarize|thanks)\b/i;
+const FILE_VERB = /^(create|write|save|put|touch|make)\b/i;
+
+function stripWrap(s) {
+  return String(s || "")
+    .trim()
+    .replace(/^[\`'"]+|[\`'"]+$/g, "")
+    .replace(/[.,;]+$/g, "")
+    .trim();
+}
+
+function isChat(u, g) {
+  if (g.question && !g.action) return true;
+  if (CHAT_LEAD.test(u) && !FILE_VERB.test(u)) return true;
+  return false;
+}
 
 /**
- * Conservative: only when the goal names a path AND the expected contents.
- * Questions and open-ended chat return [].
+ * Derive checks from a goal that names a file.
+ *
+ * file_contains when the goal names both a path and the expected text.
+ * file_exists when it names a path to create/write/save/touch/make/put
+ * but not the contents (the file still has to appear).
+ *
+ * Chat, questions, and "how do I write a file" stay empty.
  *
  * @param {string} goal
  * @returns {object[]}
@@ -26,25 +48,41 @@ export function deriveGoalVerifyChecks(goal = "") {
   const u = String(goal || "").trim();
   if (!u) return [];
   const g = inferGoal(u);
-  if (g.question && !g.action) return [];
+  if (isChat(u, g)) return [];
 
   const createWith = u.match(
     new RegExp(
-      `\\b(?:create|write)\\s+[\`'"]?(${PATH})[\`'"]?\\s+(?:with(?:\\s+text)?|containing)\\s+[\`'"]?(.+?)[\`'"]?\\s*$`,
+      `\\b(?:create|write|save|put|make)\\s+(?:a\\s+file\\s+(?:named|called)\\s+)?[\`'"]?(${PATH})[\`'"]?\\s+(?:with(?:\\s+text|\\s+contents)?|containing|that says)\\s+[\`'"]?(.+?)[\`'"]?\\s*$`,
       "i"
     )
   );
   if (createWith) {
-    return [{ type: "file_contains", path: createWith[1], text: createWith[2].trim() }];
+    const text = stripWrap(createWith[2]);
+    if (text) return [{ type: "file_contains", path: createWith[1], text }];
   }
+
   const writeTo = u.match(
     new RegExp(
-      `\\bwrite\\s+[\`'"](.+?)[\`'"]\\s+to\\s+[\`'"]?(${PATH})`,
+      `\\b(?:write|put|save)\\s+[\`'"]?([^\\s'\`"]+|[^'"\`]+?)[\`'"]?\\s+(?:to|into|in)\\s+[\`'"]?(${PATH})`,
       "i"
     )
   );
   if (writeTo) {
-    return [{ type: "file_contains", path: writeTo[2], text: writeTo[1] }];
+    const text = stripWrap(writeTo[1]);
+    if (text && !/\s/.test(text)) {
+      return [{ type: "file_contains", path: writeTo[2], text }];
+    }
+    if (text) return [{ type: "file_contains", path: writeTo[2], text }];
+  }
+
+  const createOnly = u.match(
+    new RegExp(
+      `\\b(?:create|write|save|touch|make|put)\\s+(?:a\\s+file\\s+(?:named|called)\\s+)?[\`'"]?(${PATH})[\`'"]?(?:\\s|$)`,
+      "i"
+    )
+  );
+  if (createOnly) {
+    return [{ type: "file_exists", path: createOnly[1] }];
   }
   return [];
 }

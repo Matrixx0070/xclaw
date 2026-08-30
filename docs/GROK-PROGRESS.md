@@ -743,6 +743,13 @@ loop-stages) pass.
 UNVERIFIED: live model that lies then writes the file after reject;
 full npm test.
 
+## 2026-08-30 — 3.380.0 touch/write-to still have to exist
+
+STATUS: green
+BUILT: complete-gate derives file_exists for touch/create-path and
+file_contains for `write TEXT to PATH`. Chat/how-to still empty.
+RAN: 35 pass (complete-gate, autonomy-contract, continuation, resume).
+
 ## 2026-08-30 — 3.379.0 live-e2e cron on the gateway, opt-in
 
 STATUS: green

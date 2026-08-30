@@ -21,6 +21,24 @@ describe("deriveGoalVerifyChecks", () => {
   it("does not derive checks from a question", () => {
     assert.deepEqual(deriveGoalVerifyChecks("what is 2+2?"), []);
     assert.deepEqual(deriveGoalVerifyChecks("explain how files work"), []);
+    assert.deepEqual(deriveGoalVerifyChecks("how do I create a file?"), []);
+    assert.deepEqual(deriveGoalVerifyChecks("what is in config.json?"), []);
+  });
+
+  it("write TEXT to PATH (eval / unquoted)", () => {
+    const c = deriveGoalVerifyChecks("write AUTONOMY_OK to results/PROOF.txt");
+    assert.equal(c[0].type, "file_contains");
+    assert.equal(c[0].path, "results/PROOF.txt");
+    assert.equal(c[0].text, "AUTONOMY_OK");
+  });
+
+  it("create PATH without contents is file_exists, not a chat skip", () => {
+    const c = deriveGoalVerifyChecks("touch status.txt");
+    assert.equal(c[0].type, "file_exists");
+    assert.equal(c[0].path, "status.txt");
+    const named = deriveGoalVerifyChecks("create a file named hello.txt");
+    assert.equal(named[0].type, "file_exists");
+    assert.equal(named[0].path, "hello.txt");
   });
 
   it("explicit verify[] wins over derivation", () => {
@@ -147,6 +165,17 @@ describe("loop rejects a false Done on a file goal", () => {
       workingDir: tmpHome,
     });
     assert.equal(out.stopReason, "natural");
+  });
+
+  it("touch PATH is unverified when the file is missing", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-touch-"));
+    const out = await runAgentLoop({
+      cfg: CFG,
+      provider: doneProvider(),
+      userMessage: `touch ${dir}/status.txt`,
+      workingDir: dir,
+    });
+    assert.equal(out.stopReason, "unverified");
   });
 
   it("stopReason is natural when the named file already satisfies the check", async () => {

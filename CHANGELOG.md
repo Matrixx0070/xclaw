@@ -1,3 +1,20 @@
+## 3.380.0
+
+### Create/touch/write-to a named file still has to exist
+
+v3.378.0 only derived `file_contains` when the goal said
+`with text` / `containing`. `touch status.txt`, `create a file named
+hello.txt`, and `write AUTONOMY_OK to results/PROOF.txt` still
+accepted a model "Done." with nothing on disk.
+
+Derivation now covers those shapes: path + expected text →
+`file_contains`; path with a create/write/save/touch/make/put verb
+and no contents → `file_exists`. Questions, "how do I create a
+file?", and "what is in config.json?" still derive nothing.
+
+Hermetic: README one-shot unchanged; write-to and touch reject
+`Done.` when the file is missing.
+
 ## 3.379.0
 
 ### Nightly live-e2e is a gateway job when you opt in
