@@ -1,3 +1,11 @@
+## 3.433.0
+
+### X keyword search fallback does not parse a 503 as tweets
+
+Without `X_BEARER_TOKEN`, the DuckDuckGo HTML fallback ignored
+`res.ok` and regex-parsed an error page as posts. HTTP failures now
+return `isError` (`X search fallback HTTP <status>`).
+
 ## 3.432.0
 
 ### Python kernel plots are not success if they never land on disk

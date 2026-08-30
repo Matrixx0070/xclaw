@@ -18,7 +18,8 @@ async function xaiChatSearch(query, { limit = 5 } = {}) {
   return null;
 }
 
-export function createXKeywordSearchTool() {
+export function createXKeywordSearchTool({ fetchFn } = {}) {
+  const doFetch = typeof fetchFn === "function" ? fetchFn : fetchWithRetry;
   return {
     name: "x_keyword_search",
     description:
@@ -44,7 +45,7 @@ export function createXKeywordSearchTool() {
           u.searchParams.set("query", query);
           u.searchParams.set("max_results", String(Math.max(10, Math.min(limit, 100))));
           u.searchParams.set("tweet.fields", "created_at,public_metrics,author_id,lang");
-          const res = await fetchWithRetry(u.toString(), {
+          const res = await doFetch(u.toString(), {
             headers: { Authorization: `Bearer ${bearer}` },
             signal: AbortSignal.timeout(20_000),
           });
@@ -65,10 +66,13 @@ export function createXKeywordSearchTool() {
       // Soft fallback: DuckDuckGo site:x.com
       try {
         const u = `https://html.duckduckgo.com/html/?q=${encodeURIComponent("site:x.com " + query)}`;
-        const res = await fetchWithRetry(u, {
+        const res = await doFetch(u, {
           headers: { "User-Agent": "XClaw/2.6" },
           signal: AbortSignal.timeout(15_000),
         });
+        if (!res.ok) {
+          return errorResult(`X search fallback HTTP ${res.status}`);
+        }
         const html = await res.text();
         const re = /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)</gi;
         const rows = [];
