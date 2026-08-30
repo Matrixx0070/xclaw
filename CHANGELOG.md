@@ -1,3 +1,22 @@
+## 3.480.0
+
+### Objective path arms goal-derived verify checks without baseline
+
+The default loop already derived file checks from the goal
+(`deriveGoalVerifyChecks` in `evaluateNaturalStopVerify`). The
+objective path only called `deriveVerifyChecks(workingDir)` (project
+lint/test) then `baselineArmChecks`, which DROPS failures. A mission
+"write OK to out.txt" in a non-node dir therefore held as `no_checks`
+awaiting_human even if the file was written — production fail-closed,
+but never VERIFIED the named artifact.
+
+The derive block now imports `deriveGoalVerifyChecks`, stamps
+`source: "runtime"`, and arms those checks WITHOUT a baseline pass
+(the named artifact does not exist yet). Project-suite lint/test
+still baseline-filters. Operator `verify[]` is never overwritten.
+Chat/how-to still hold `no_checks`. `objectives.deriveChecks: false`
+to skip.
+
 ## 3.479.0
 
 ### Recovered agent-runs stamp interrupted so the restart notice fires

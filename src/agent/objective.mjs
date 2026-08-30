@@ -508,9 +508,13 @@ async function runObjectiveInner(cfg, opts = {}) {
     }
   }
 
-  // Trust Sprint: derive deterministic checks from the project ONCE, arming
-  // only the ones that pass a baseline run (a suite already red before the
-  // mission started is the project's condition, not mission signal).
+  // Trust Sprint: derive deterministic checks ONCE. Two sources:
+  //   1. Goal-named files (same deriveGoalVerifyChecks the default loop uses).
+  //      Armed WITHOUT a baseline pass — the artifact does not exist yet, so
+  //      baselineArmChecks would drop every file_exists / file_contains.
+  //   2. Project suite (lint/test). Baseline-filtered so a pre-existing red
+  //      suite is the project's condition, not mission signal.
+  // Operator-provided verify[] is never overwritten (the length guard).
   if (
     cfg.objectives?.deriveChecks !== false &&
     !obj.verifyDeriveTried &&
@@ -519,18 +523,40 @@ async function runObjectiveInner(cfg, opts = {}) {
     obj.verifyDeriveTried = true;
     try {
       const { deriveVerifyChecks, baselineArmChecks } = await import("./objective-verify.mjs");
-      const derived = await deriveVerifyChecks(obj.workingDir);
-      if (derived.length) {
-        const { armed, dropped } = await baselineArmChecks(obj.workingDir, derived);
-        if (armed.length) {
-          obj.verify = [...(obj.verify || []), ...armed];
-          obj.progress = [
-            ...obj.progress,
-            `Runtime armed ${armed.length} deterministic verification check(s) derived from the project (baseline-passing).`,
-          ];
-        }
-        ledgerEvent(cfg, obj, "verify_derived", { armed: armed.length, dropped: dropped.length });
-        onEvent({ type: "objective", phase: "verify_derived", id: obj.id, armed: armed.length, dropped: dropped.length });
+      const { deriveGoalVerifyChecks } = await import("./complete-gate.mjs");
+      const fromGoal = deriveGoalVerifyChecks(obj.objective).map((c) => ({
+        ...c,
+        source: "runtime",
+      }));
+      const fromProject = await deriveVerifyChecks(obj.workingDir);
+      let armed = [...fromGoal];
+      let dropped = 0;
+      if (fromProject.length) {
+        const baseline = await baselineArmChecks(obj.workingDir, fromProject);
+        armed = [...armed, ...baseline.armed];
+        dropped = baseline.dropped.length;
+      }
+      if (armed.length) {
+        obj.verify = [...(obj.verify || []), ...armed];
+        const bits = [];
+        if (fromGoal.length) bits.push(`${fromGoal.length} from the goal`);
+        const projectArmed = armed.length - fromGoal.length;
+        if (projectArmed) bits.push(`${projectArmed} from the project (baseline-passing)`);
+        obj.progress = [
+          ...obj.progress,
+          `Runtime armed ${armed.length} deterministic verification check(s) (${bits.join("; ")}).`,
+        ];
+      }
+      if (fromGoal.length || fromProject.length) {
+        ledgerEvent(cfg, obj, "verify_derived", { armed: armed.length, dropped, fromGoal: fromGoal.length });
+        onEvent({
+          type: "objective",
+          phase: "verify_derived",
+          id: obj.id,
+          armed: armed.length,
+          dropped,
+          fromGoal: fromGoal.length,
+        });
       }
     } catch {
       /* derivation is best-effort — the gate still fails CLOSED without checks */

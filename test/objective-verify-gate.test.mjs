@@ -153,6 +153,107 @@ describe("fail-closed completion gate", () => {
     await fs.rm(wd, { recursive: true, force: true });
   });
 
+  it("goal-named file is armed without baseline and rejects done until the file exists", async () => {
+    const cfg = await cfgTmp();
+    const wd = await workDirTmp(); // empty dir — no project suite; file does not exist yet
+    let segs = 0;
+    const res = await runObjective(cfg, {
+      objective: "write OK to out.txt",
+      workingDir: wd,
+      runSegment: async () => {
+        segs += 1;
+        return doneSeg()();
+      },
+      notify: async () => {},
+    });
+    assert.equal(res.status, "awaiting_human", "missing artifact must not close");
+    const onDisk = await loadObjective(cfg, res.id);
+    assert.match(onDisk.humanQuestion || "", /verification still failing/i);
+    assert.equal(onDisk.pendingCompletion?.reason == null, true, "this is a failing trusted check, not no_checks");
+    assert.ok(
+      (onDisk.verify || []).some(
+        (c) => c.source === "runtime" && c.type === "file_contains" && c.path === "out.txt"
+      ),
+      "goal-derived file_contains must arm (baseline would have dropped it)"
+    );
+    assert.equal(onDisk.counters.verifyGateFails, 2, "both fix attempts persisted");
+    assert.equal(segs, 3, "actor got 2 fix directives before escalation");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await fs.rm(wd, { recursive: true, force: true });
+  });
+
+  it("goal-named file closes verified once the artifact exists — no owner tap", async () => {
+    const cfg = await cfgTmp();
+    const wd = await workDirTmp();
+    const res = await runObjective(cfg, {
+      objective: "write OK to out.txt",
+      workingDir: wd,
+      runSegment: async () => {
+        await fs.writeFile(path.join(wd, "out.txt"), "OK\n");
+        return doneSeg()();
+      },
+      notify: async () => {},
+    });
+    assert.equal(res.status, "done");
+    const onDisk = await loadObjective(cfg, res.id);
+    assert.equal(onDisk.verdict, "verified");
+    assert.ok(
+      (onDisk.verify || []).some(
+        (c) => c.source === "runtime" && c.type === "file_contains" && c.path === "out.txt"
+      )
+    );
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await fs.rm(wd, { recursive: true, force: true });
+  });
+
+  it("red project suite is dropped at baseline but a goal-named file still arms", async () => {
+    const cfg = await cfgTmp();
+    const wd = await workDirTmp();
+    await fs.writeFile(
+      path.join(wd, "package.json"),
+      JSON.stringify({ name: "demo", scripts: { test: "node -e \"process.exit(1)\"" } })
+    );
+    const res = await runObjective(cfg, {
+      objective: "write OK to out.txt",
+      workingDir: wd,
+      runSegment: async () => {
+        await fs.writeFile(path.join(wd, "out.txt"), "OK\n");
+        return doneSeg()();
+      },
+      notify: async () => {},
+    });
+    assert.equal(res.status, "done");
+    const onDisk = await loadObjective(cfg, res.id);
+    assert.equal(onDisk.verdict, "verified");
+    assert.ok(
+      (onDisk.verify || []).some((c) => c.type === "file_contains" && c.path === "out.txt"),
+      "goal-derived check must survive the red-suite drop"
+    );
+    assert.ok(
+      !(onDisk.verify || []).some((c) => c.type === "command"),
+      "red-baseline suite must not arm"
+    );
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await fs.rm(wd, { recursive: true, force: true });
+  });
+
+  it("how-to goals still hold no_checks — goal-derived stays empty", async () => {
+    const cfg = await cfgTmp();
+    const wd = await workDirTmp();
+    const res = await runObjective(cfg, {
+      objective: "how do I write a file named out.txt",
+      workingDir: wd,
+      runSegment: doneSeg(),
+      notify: async () => {},
+    });
+    assert.equal(res.status, "awaiting_human");
+    const onDisk = await loadObjective(cfg, res.id);
+    assert.equal(onDisk.pendingCompletion?.reason, "no_checks");
+    assert.ok(!(onDisk.verify || []).length, "how-to must not arm a file check");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+    await fs.rm(wd, { recursive: true, force: true });
+  });
+
   it("a suite already red at mission start is dropped at baseline — and the gate STILL fails closed", async () => {
     const cfg = await cfgTmp();
     const wd = await workDirTmp();

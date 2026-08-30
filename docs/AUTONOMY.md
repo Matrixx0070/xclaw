@@ -146,7 +146,12 @@ TEXT` / `whose first line is`); touch/create-path → `file_exists`
 (including relative dotfiles, `mkdir` / `create directory`, and
 extensionless names like `PROOF` / `results/PROOF`). Chat and how-to
 questions still derive nothing. `agent.verifyOnComplete: false` to
-opt out.
+opt out. The objective path now arms those same goal-derived checks
+as `source: "runtime"` without a baseline pass (the named artifact
+does not exist yet, so baseline would drop every `file_exists` /
+`file_contains`). Project-suite lint/test still baseline-filters.
+Operator `verify[]` is never overwritten. Chat/how-to still hold
+`no_checks`. `objectives.deriveChecks: false` to skip.
 
 Gateway boot auto-resumes unfinished **agent-run snapshots** the same
 way it already resumes interrupted objectives: `active` / `maxTurns`

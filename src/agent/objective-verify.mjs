@@ -12,9 +12,12 @@
  *
  * Three trust levels of checks (per-check `source` field):
  *   "api"     — operator-provided via POST /objectives {verify}. Trusted.
- *   "runtime" — derived here from the project's own structure (test/lint
+ *   "runtime" — derived from the project's own structure (test/lint
  *               scripts), baseline-filtered so pre-existing failures never
- *               gate a mission. Trusted.
+ *               gate a mission; OR from the goal text (file_exists /
+ *               file_contains via deriveGoalVerifyChecks) WITHOUT a
+ *               baseline pass — the named artifact does not exist yet.
+ *               Trusted.
  *   "model"   — proposed by the model in its state block. These can REJECT
  *               a completion but never CLOSE one on their own: a model that
  *               gamed the work could just as easily propose a check that

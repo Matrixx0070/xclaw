@@ -1097,3 +1097,29 @@ notice"` covers that path. NEXT: recon remaining evolution gap — do not
 assume compaction or long-horizon still missing (compaction default-on
 since 3.68.0; AUTONOMY_LONG_HORIZON.md is eval-harness only).
 Empty-criteria done currently accepted (hermetic test depends on it).
+
+## 2026-08-30 — 3.480.0 objective path arms goal-derived verify checks without baseline (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: the default loop already derived file checks from the
+goal (`deriveGoalVerifyChecks` in `evaluateNaturalStopVerify`). The
+objective path only called `deriveVerifyChecks(workingDir)` (project
+lint/test) then `baselineArmChecks`, which DROPS failures. A mission
+"write OK to out.txt" in a non-node dir therefore held as `no_checks`
+awaiting_human even if the file was written — production fail-closed,
+but never VERIFIED the named artifact. Empty-criteria done is already
+held by `deterministicGate` (`requireChecked: true`); hermetic longrun
+opts out via `requireChecked: false`. Not this slice. Compaction
+already default-on (3.68.0). Long-horizon orchestrator exists.
+BUILT: objective derive block now imports `deriveGoalVerifyChecks`,
+stamps `source: "runtime"`, arms WITHOUT baseline, then baseline-filters
+project-suite checks and merges. Operator `verify[]` length-guarded.
+`deriveChecks: false` still skips. Ledger/onEvent only if fromGoal or
+fromProject nonempty.
+RAN: `node --test test/objective-verify-gate.test.mjs
+test/complete-gate.test.mjs` after deduping triplicate `it()` copies
+→ `# tests 58` `# fail 0` `# duration_ms 2785.414306`;
+`npm test` → `# tests 5022` `# fail 0` `# duration_ms 70221.041535`.
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving
+leftover stay-put and that a live objective with a goal-named file
+arms the check (hermetic covers the arm/reject/close path).
