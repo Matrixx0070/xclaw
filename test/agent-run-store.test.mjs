@@ -55,4 +55,27 @@ describe("agent run-store", () => {
     const out = await loadAgentRun(cfg, "sess_1");
     assert.equal(out.code, "SESSION_NOT_FOUND");
   });
+
+  it("list marks maxTurns unfinished and natural complete", async () => {
+    const wd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-wd-"));
+    await saveAgentRun(cfg, {
+      sessionId: "cut_off",
+      workingDir: wd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+    });
+    await saveAgentRun(cfg, {
+      sessionId: "finished",
+      workingDir: wd,
+      status: "completed",
+      stopReason: "natural",
+    });
+    const list = await listAgentRuns(cfg);
+    const cut = list.find((r) => r.sessionId === "cut_off");
+    const done = list.find((r) => r.sessionId === "finished");
+    assert.equal(cut.ok, false);
+    assert.equal(cut.resumable, true);
+    assert.equal(done.ok, true);
+    assert.equal(done.resumable, false);
+  });
 });

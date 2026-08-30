@@ -208,6 +208,37 @@ async function loadCost() {
   }
 }
 
+async function loadAgentRuns() {
+  const table = $("agentRunsTable");
+  if (!table) return;
+  try {
+    const data = await getJSON("/agent-runs?limit=20");
+    const list = data.runs || [];
+    const meta = $("agentRunsMeta");
+    const unfinished = list.filter((r) => r.resumable || r.ok === false).length;
+    if (meta) {
+      meta.textContent = unfinished
+        ? `${unfinished} unfinished snapshot(s) — auto-resume on gateway boot`
+        : "No unfinished snapshots.";
+    }
+    table.querySelector("tbody").innerHTML =
+      list
+        .map((r) => {
+          const bad = r.resumable || r.ok === false;
+          return `<tr class="${bad ? "warn" : ""}">
+            <td><code>${esc(r.sessionId || "—")}</code></td>
+            <td>${esc(r.status || "—")}${r.objectiveId ? ` → ${esc(r.objectiveId)}` : ""}</td>
+            <td>${esc(r.stopReason || "—")}</td>
+            <td>${fmtWhen(r.updatedAt)}</td>
+          </tr>`;
+        })
+        .join("") || `<tr><td colspan="4" class="muted">No snapshots yet.</td></tr>`;
+  } catch (err) {
+    table.querySelector("tbody").innerHTML =
+      `<tr><td colspan="4" class="muted">${esc(err.message)}</td></tr>`;
+  }
+}
+
 async function loadSessions() {
   try {
     const data = await getJSON("/channel/webchat/sessions");
@@ -240,6 +271,7 @@ async function refreshAll() {
     loadConfigEviction(),
     loadCost(),
     loadSessions(),
+    loadAgentRuns(),
     loadPairing(),
     loadCronLogs(),
   ]).finally(() => {

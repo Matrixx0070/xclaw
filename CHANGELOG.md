@@ -1,3 +1,11 @@
+## 3.397.0
+
+### Unfinished agent-runs are visible in `xclaw runs` and Control
+
+`listAgentRuns` now includes `ok` and `resumable`. `xclaw runs list`
+exits 1 if any snapshot is unfinished. Control has an Agent runs
+table on `/agent-runs` so a cutoff is not only in `~/.xclaw/agent-runs/`.
+
 ## 3.396.0
 
 ### Telegram/Discord/Slack say "not complete" when `ok` is false

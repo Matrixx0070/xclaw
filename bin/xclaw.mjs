@@ -2309,7 +2309,9 @@ Enable with seats.enabled: true in config`);
       const cfg = await loadConfig();
       const sub = args[1] || "list";
       if (sub === "list") {
-        console.log(JSON.stringify({ runs: await listAgentRuns(cfg) }, null, 2));
+        const runs = await listAgentRuns(cfg);
+        console.log(JSON.stringify({ runs }, null, 2));
+        process.exitCode = runs.some((r) => r.resumable || r.ok === false) ? 1 : 0;
         break;
       }
       if (sub === "show" || sub === "get") {

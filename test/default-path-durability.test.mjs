@@ -8,6 +8,22 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
 
 describe("default-path durability wiring", () => {
+  it("CLI runs list exits 1 when a snapshot is unfinished", () => {
+    const src = read("bin/xclaw.mjs");
+    const start = src.indexOf('case "runs"');
+    const end = src.indexOf('case "approvals"');
+    assert.ok(start >= 0 && end > start);
+    assert.match(src.slice(start, end), /r\.resumable \|\| r\.ok === false/);
+  });
+
+  it("Control UI lists durable agent-runs", () => {
+    const html = read("ui/control/index.html");
+    const js = read("ui/control/app.js");
+    assert.match(html, /id="agentRunsTable"/);
+    assert.match(js, /loadAgentRuns/);
+    assert.match(js, /\/agent-runs\?limit=/);
+  });
+
   it("CLI agent goes through runAgent, persists, and auto-promotes on maxTurns", () => {
     const src = read("bin/xclaw.mjs");
     const start = src.indexOf('case "agent"');

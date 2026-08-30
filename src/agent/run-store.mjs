@@ -7,6 +7,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { agentExitCode } from "./complete-gate.mjs";
 
 export const RUN_STORE_VERSION = 1;
 
@@ -159,15 +160,31 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
     const id = f.replace(/\.json$/, "");
     const loaded = await loadAgentRun(cfg, id);
     if (loaded.ok) {
+      const run = loaded.run;
+      const resumable =
+        !run.resumedAt &&
+        !run.objectiveId &&
+        (run.status === "active" ||
+          run.status === "interrupted" ||
+          run.status === "maxTurns" ||
+          run.stopReason === "maxTurns" ||
+          run.stopReason === "segment");
+      const ok =
+        run.status === "resumed" ||
+        (run.status !== "active" &&
+          run.status !== "interrupted" &&
+          agentExitCode({ stopReason: run.stopReason }) === 0);
       out.push({
-        sessionId: loaded.run.sessionId,
-        updatedAt: loaded.run.updatedAt,
-        status: loaded.run.status,
-        stopReason: loaded.run.stopReason || null,
-        turns: loaded.run.turns,
-        model: loaded.run.model,
-        messageCount: (loaded.run.messages || []).length,
-        objectiveId: loaded.run.objectiveId || null,
+        sessionId: run.sessionId,
+        updatedAt: run.updatedAt,
+        status: run.status,
+        stopReason: run.stopReason || null,
+        turns: run.turns,
+        model: run.model,
+        messageCount: (run.messages || []).length,
+        objectiveId: run.objectiveId || null,
+        resumable,
+        ok,
       });
     } else {
       out.push({ sessionId: id, error: loaded.code });
