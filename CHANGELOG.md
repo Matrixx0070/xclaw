@@ -1,3 +1,12 @@
+## 3.443.0
+
+### `search_images` does not treat an HTML error page as a JPEG
+
+HTTP 200 HTML/JSON bodies (Openverse/Unsplash error pages, `text/html`)
+were written under `artifacts/images/` and returned as success. Downloads
+now reject HTML/JSON magic and non-image content types; missing real
+image bytes is `isError`.
+
 ## 3.442.0
 
 ### Leftover PDF dest and MITM-off assert are not success

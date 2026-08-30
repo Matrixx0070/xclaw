@@ -31,6 +31,37 @@ function errorResult(msg) {
   return { isError: true, content: [{ type: "text", text: String(msg) }] };
 }
 
+/** Reject HTML/JSON error pages that APIs often serve as HTTP 200. */
+export function looksLikeImageBytes(buf, contentType = "") {
+  if (!buf || buf.length < 100) return false;
+  const ct = String(contentType || "").toLowerCase();
+  if (
+    ct.includes("text/html") ||
+    ct.includes("text/plain") ||
+    ct.includes("application/json") ||
+    ct.includes("application/xml") ||
+    ct.includes("text/xml")
+  ) {
+    return false;
+  }
+  const s = Buffer.from(buf.subarray(0, 80))
+    .toString("latin1")
+    .replace(/^\uFEFF/, "")
+    .trimStart()
+    .toLowerCase();
+  if (
+    s.startsWith("<!doctype") ||
+    s.startsWith("<html") ||
+    s.startsWith("<head") ||
+    s.startsWith("<?xml") ||
+    s.startsWith("{") ||
+    s.startsWith("[")
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export async function assertImageLanded(dest, minBytes = 100) {
   let written;
   try {
@@ -40,6 +71,9 @@ export async function assertImageLanded(dest, minBytes = 100) {
   }
   if (written.length < minBytes) {
     throw new Error(`image too small (${written.length} bytes): ${dest}`);
+  }
+  if (!looksLikeImageBytes(written)) {
+    throw new Error(`not an image (${written.length} bytes): ${dest}`);
   }
   return written.length;
 }
@@ -52,9 +86,13 @@ async function downloadTo(url, dest, headers = {}) {
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length < 100) throw new Error("download too small");
+  const contentType = res.headers.get("content-type") || "";
+  if (!looksLikeImageBytes(buf, contentType)) {
+    throw new Error(`not an image (${contentType || "unknown type"}, ${buf.length} bytes)`);
+  }
   await fs.writeFile(dest, buf);
-  return { bytes: buf.length, contentType: res.headers.get("content-type") };
+  const bytes = await assertImageLanded(dest);
+  return { bytes, contentType };
 }
 
 function runConvert(args) {
