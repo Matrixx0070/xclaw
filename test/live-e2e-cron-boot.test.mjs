@@ -90,6 +90,14 @@ describe("live-e2e gateway cron opt-in", { concurrency: false }, () => {
     }
   });
 
+  it("doctor reports live-e2e cron as opt-in, not default-on", () => {
+    const doc = fs.readFileSync(new URL("../src/cli/doctor.mjs", import.meta.url), "utf8");
+    assert.match(doc, /probe: "liveE2e\.cron"/);
+    assert.match(doc, /liveE2e\?\.cron\?\.enabled === true/);
+    assert.match(doc, /opt-in off \(set liveE2e\.cron\.enabled: true to arm\)/);
+    assert.doesNotMatch(doc, /liveE2e\?\.cron\?\.enabled !== false/);
+  });
+
   it("gateway boot calls the opt-in helper, not the doctor/eval default-on gate", () => {
     const gw = fs.readFileSync(new URL("../src/gateway/index.mjs", import.meta.url), "utf8");
     assert.match(gw, /import \{ armLiveE2eCronJob \} from "\.\.\/cron\/live-e2e-job\.mjs"/);

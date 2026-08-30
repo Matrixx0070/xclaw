@@ -824,10 +824,27 @@ export async function runDoctor(opts = {}) {
       enabled: cfg.eval?.cron?.enabled !== false,
       intervalMs: Number(cfg.eval?.cron?.everyMs) || 24 * 3600_000,
     },
+    {
+      // v3.379 armed the job only when enabled === true. Doctor did not
+      // mention it, so an operator could think nightly live-e2e was
+      // running when the gateway left it off.
+      probe: "liveE2e.cron",
+      label: "live e2e",
+      key: "cron.liveE2e",
+      enabled: cfg.liveE2e?.cron?.enabled === true,
+      intervalMs: Number(cfg.liveE2e?.cron?.everyMs) || 24 * 3600_000,
+    },
   ]) {
     try {
-      if (!p.enabled) push(p.probe, "ok", "disabled by config");
-      else await reportSchedule(p.probe, p.label, p.key, p.intervalMs, true);
+      if (!p.enabled) {
+        push(
+          p.probe,
+          "ok",
+          p.probe === "liveE2e.cron"
+            ? "opt-in off (set liveE2e.cron.enabled: true to arm)"
+            : "disabled by config"
+        );
+      } else await reportSchedule(p.probe, p.label, p.key, p.intervalMs, true);
     } catch (err) {
       push(p.probe, "warn", err.message);
     }

@@ -1,3 +1,13 @@
+## 3.399.0
+
+### Doctor reports whether nightly live-e2e is actually armed
+
+v3.379.0 armed the gateway job only on `enabled === true`. Doctor
+never mentioned it, so an operator could assume a nightly Chromium
+drive was running. `liveE2e.cron` now reports "opt-in off" unless
+that boolean is set; when armed, it uses the same last-run overdue
+check as eval.
+
 ## 3.398.0
 
 ### `xclaw runs resume <sessionId>` continues a cutoff without a reboot
