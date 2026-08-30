@@ -1,3 +1,13 @@
+## 3.427.0
+
+### `edit_image` does not claim success without a real output file
+
+API edit wrote `b64_json` and returned `API edit saved` with no size
+check. ImageMagick `convert` exit 0 was enough even if `dest` was
+missing. Shared `assertImageLanded` now requires the file to exist
+and be at least 100 bytes. Tiny API payloads fall through instead of
+claiming an API save.
+
 ## 3.426.0
 
 ### `generate_image` re-reads the file before claiming Generated

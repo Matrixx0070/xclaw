@@ -31,6 +31,19 @@ function errorResult(msg) {
   return { isError: true, content: [{ type: "text", text: String(msg) }] };
 }
 
+export async function assertImageLanded(dest, minBytes = 100) {
+  let written;
+  try {
+    written = await fs.readFile(dest);
+  } catch {
+    throw new Error(`image file missing: ${dest}`);
+  }
+  if (written.length < minBytes) {
+    throw new Error(`image too small (${written.length} bytes): ${dest}`);
+  }
+  return written.length;
+}
+
 async function downloadTo(url, dest, headers = {}) {
   const res = await fetch(url, {
     headers: { "User-Agent": "XClaw/2.8", ...headers },
@@ -281,13 +294,13 @@ export function createGenerateImageTool({ workingDir, cfg }) {
                 continue;
               }
               await fs.writeFile(dest, buf);
-              const written = await fs.readFile(dest);
-              if (written.length !== buf.length) {
+              const bytes = await assertImageLanded(dest);
+              if (bytes !== buf.length) {
                 errors.push(`${model}: write verification failed`);
                 continue;
               }
               return textResult(`Generated: ${dest}`, {
-                metadata: { path: dest, model, prompt, bytes: written.length },
+                metadata: { path: dest, model, prompt, bytes },
               });
             }
             if (j.data?.[0]?.url) {
@@ -365,8 +378,13 @@ export function createEditImageTool({ workingDir, cfg }) {
           if (res.ok) {
             const j = await res.json();
             if (j.data?.[0]?.b64_json) {
-              await fs.writeFile(dest, Buffer.from(j.data[0].b64_json, "base64"));
-              return textResult(`API edit saved: ${dest}`, { metadata: { path: dest, engine: "xai" } });
+              const buf = Buffer.from(j.data[0].b64_json, "base64");
+              if (buf.length < 100) throw new Error(`image payload too small (${buf.length} bytes)`);
+              await fs.writeFile(dest, buf);
+              const bytes = await assertImageLanded(dest);
+              return textResult(`API edit saved: ${dest}`, {
+                metadata: { path: dest, engine: "xai", bytes },
+              });
             }
           }
         } catch {
@@ -398,6 +416,11 @@ export function createEditImageTool({ workingDir, cfg }) {
       im.push(dest);
       const r = await runConvert(im);
       if (r.code !== 0) return errorResult(r.err || "convert failed");
+      try {
+        await assertImageLanded(dest);
+      } catch (e) {
+        return errorResult(`convert reported success but ${e.message}`);
+      }
       return textResult(
         `Edited: ${dest}\nengine: imagemagick op=${op}` +
           (args.prompt ? `\nprompt: ${args.prompt}` : "") +
