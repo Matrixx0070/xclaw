@@ -109,5 +109,7 @@ describe("default-path durability wiring", () => {
     const browser = read("src/tools/browser-tools.mjs");
     assert.match(browser, /callToolRecovering/);
     assert.match(browser, /tabCall/);
+    const registry = read("src/tools/registry.mjs");
+    assert.match(registry, /setSessionId:\s*ctx\.setSessionId/);
   });
 });

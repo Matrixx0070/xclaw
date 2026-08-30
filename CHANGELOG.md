@@ -1,3 +1,12 @@
+## 3.438.0
+
+### Browser tools actually receive the session setter from the loop
+
+v3.422.0 passed `setSessionId` into `createAllLocalTools`, but the
+registry dropped it when constructing browser tools. SESSION_GONE
+recovery wrote a new id the loop never saw. The registry now
+forwards `setSessionId`.
+
 ## 3.437.0
 
 ### `file_type` does not succeed when magika and `file` both fail
