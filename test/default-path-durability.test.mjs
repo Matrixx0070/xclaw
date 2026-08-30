@@ -102,4 +102,12 @@ describe("default-path durability wiring", () => {
     assert.match(src, /recallMemory\(cfg, workingDir/);
     assert.match(src, /phase: "recall"/);
   });
+
+  it("loop passes a session getter into local browser tools", () => {
+    const src = read("src/agent/loop.mjs");
+    assert.match(src, /sessionId: \(\) => sessionId/);
+    const browser = read("src/tools/browser-tools.mjs");
+    assert.match(browser, /callToolRecovering/);
+    assert.match(browser, /tabCall/);
+  });
 });

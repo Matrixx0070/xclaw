@@ -73,6 +73,19 @@ function errorResult(msg) {
   return { isError: true, content: [{ type: "text", text: String(msg) }] };
 }
 
+function resolveSid(sessionId) {
+  return typeof sessionId === "function" ? sessionId() : sessionId;
+}
+
+function tabCall(ctx, args) {
+  return import("../agent/computer-client.mjs").then((m) =>
+    m.callToolRecovering(ctx.computer, ctx.sessionId, "xclaw_browser_tab", args, {
+      workingDir: ctx.workingDir,
+      setSessionId: ctx.setSessionId,
+    })
+  );
+}
+
 /**
  * @param {{ computer, sessionId, workingDir }} ctx
  */
@@ -114,7 +127,7 @@ export function createBrowserScreenshotTool(ctx = {}) {
         `;
       }
       try {
-        const result = await computer.callTool(sessionId, "xclaw_browser_tab", callArgs);
+        const result = await tabCall(ctx, callArgs);
         // Persist any image metadata / base64 if present
         const content = result?.content || [];
         let saved = null;
@@ -175,7 +188,7 @@ export function createBrowserSnapshotTool(ctx = {}) {
       const actionId = createActionId("browser_snapshot");
       const cursor = networkCursor(ctx.cfg || null);
       try {
-        const result = await computer.callTool(sessionId, "xclaw_browser_tab", {
+        const result = await tabCall(ctx, {
           tabId: args.tabId,
           url: args.url,
           waitTime: args.url ? 1.5 : 0.3,
@@ -246,7 +259,7 @@ export function createBrowserSnapshotTool(ctx = {}) {
 
         let markMeta = null;
         if (structure?.nodes) {
-          markMeta = setMarksFromStructure(sessionId, structure, { tabId: args.tabId });
+          markMeta = setMarksFromStructure(resolveSid(sessionId), structure, { tabId: args.tabId });
         } else {
           // soft: parse failed / no nodes — do not poison coordinates
           markMeta = { ok: false, code: "STRUCTURE_PARSE_FAILED" };
@@ -312,7 +325,7 @@ export function createBrowserClipboardTool(ctx = {}) {
             }
           `;
       try {
-        const result = await computer.callTool(sessionId, "xclaw_browser_tab", {
+        const result = await tabCall(ctx, {
           tabId: args.tabId,
           jsCode,
           waitTime: 0.2,
@@ -359,7 +372,7 @@ export function createBrowserPdfTool(ctx = {}) {
         };
       `;
       try {
-        const result = await computer.callTool(sessionId, "xclaw_browser_tab", {
+        const result = await tabCall(ctx, {
           tabId: args.tabId,
           url: args.url,
           jsCode,
@@ -371,7 +384,7 @@ export function createBrowserPdfTool(ctx = {}) {
         const texts = (result?.content || []).filter((c) => c.type === "text").map((c) => c.text);
         const htmlPath = dest.replace(/\\.pdf$/, ".html");
         // fetch page html
-        const htmlRes = await computer.callTool(sessionId, "xclaw_browser_tab", {
+        const htmlRes = await tabCall(ctx, {
           tabId: args.tabId,
           jsCode: `return document.documentElement.outerHTML.slice(0, 500000);`,
           waitTime: 0.2,
@@ -809,7 +822,7 @@ export function createTabLeaseTool(ctx = {}) {
     },
     async execute(args = {}) {
       const action = String(args.action || "list").toLowerCase();
-      const agentId = args.agentId || ctx.sessionId || process.env.XCLAW_AGENT_ID;
+      const agentId = args.agentId || resolveSid(ctx.sessionId) || process.env.XCLAW_AGENT_ID;
       if (action === "list") {
         const leases = await listTabLeases();
         return textResult(JSON.stringify(leases, null, 2), { metadata: { leases } });
@@ -873,7 +886,7 @@ export function createCommitGateTool(ctx = {}) {
     },
     async execute(args = {}) {
       const action = String(args.action || "list").toLowerCase();
-      const agentId = args.agentId || ctx.sessionId || process.env.XCLAW_AGENT_ID;
+      const agentId = args.agentId || resolveSid(ctx.sessionId) || process.env.XCLAW_AGENT_ID;
       if (action === "list") {
         const gates = await listCommitGates();
         return textResult(JSON.stringify(gates, null, 2), { metadata: { gates } });
@@ -1022,7 +1035,7 @@ export function createBrowserClickTool(ctx = {}) {
       let y = args.y;
       let markMeta = null;
       if (args.mark != null && args.mark !== "") {
-        const resolved = resolveMark(sessionId, args.mark, {
+        const resolved = resolveMark(resolveSid(sessionId), args.mark, {
           tabId: args.tabId,
           url: args.url,
         });
@@ -1046,7 +1059,7 @@ export function createBrowserClickTool(ctx = {}) {
         };
       }
       try {
-        const result = await computer.callTool(sessionId, "xclaw_browser_tab", {
+        const result = await tabCall(ctx, {
           tabId: args.tabId,
           motor: {
             op: "click",
@@ -1090,7 +1103,7 @@ export function createBrowserTypeTool(ctx = {}) {
       if (!computer || !sessionId) return errorResult("Computer session required");
       try {
         if (args.mark != null && args.mark !== "") {
-          const resolved = resolveMark(sessionId, args.mark, { tabId: args.tabId });
+          const resolved = resolveMark(resolveSid(sessionId), args.mark, { tabId: args.tabId });
           if (!resolved.ok) {
             return {
               isError: true,
@@ -1099,7 +1112,7 @@ export function createBrowserTypeTool(ctx = {}) {
               metadata: resolved,
             };
           }
-          await computer.callTool(sessionId, "xclaw_browser_tab", {
+          await tabCall(ctx, {
             tabId: args.tabId,
             motor: {
               op: "click",
@@ -1111,7 +1124,7 @@ export function createBrowserTypeTool(ctx = {}) {
             waitTime: 0.1,
           });
         }
-        const result = await computer.callTool(sessionId, "xclaw_browser_tab", {
+        const result = await tabCall(ctx, {
           tabId: args.tabId,
           motor: { op: "type", text: args.text },
           waitTime: 0.05,
@@ -1143,7 +1156,7 @@ export function createSessionRoleTool(ctx = {}) {
       required: ["action"],
     },
     async execute(args = {}) {
-      const sid = args.sessionId || ctx.sessionId || process.env.XCLAW_SESSION_ID || process.env.XCLAW_AGENT_ID;
+      const sid = args.sessionId || resolveSid(ctx.sessionId) || process.env.XCLAW_SESSION_ID || process.env.XCLAW_AGENT_ID;
       if (args.action === "bind") {
         const r = await bindRole(sid, args.role, { source: "tool" });
         return textResult(JSON.stringify(r, null, 2), { metadata: r, isError: !r.ok });

@@ -1,4 +1,4 @@
-import { sanitizeToolArgs } from "../agent/computer-client.mjs";
+import { sanitizeToolArgs, callToolRecovering } from "../agent/computer-client.mjs";
 /**
  * T1 — Tool Router: single dispatch path to planes.
  *
@@ -37,32 +37,11 @@ export function createToolRouter(ctx = {}) {
     setSessionId = null,
   } = ctx;
 
-  const currentSessionId = () =>
-    typeof sessionId === "function" ? sessionId() : sessionId;
-
-  const isSessionGone = (err) => {
-    const status = err?.status ?? err?.statusCode;
-    const msg = String(err?.message || err || "").toLowerCase();
-    return (
-      status === 404 ||
-      err?.code === "SESSION_GONE" ||
-      /session not found|no such session|unknown session/.test(msg)
-    );
-  };
-
   async function callComputer(name, args) {
-    const sid = currentSessionId();
-    try {
-      return await computer.callTool(sid, name, args);
-    } catch (err) {
-      if (!isSessionGone(err) || typeof computer.createSession !== "function") {
-        throw err;
-      }
-      const fresh = await computer.createSession(workingDir);
-      if (typeof setSessionId === "function") setSessionId(fresh);
-      else if (typeof sessionId === "object" && sessionId) sessionId.id = fresh;
-      return computer.callTool(fresh, name, args);
-    }
+    return callToolRecovering(computer, sessionId, name, args, {
+      workingDir,
+      setSessionId,
+    });
   }
 
   const localNames = new Set(

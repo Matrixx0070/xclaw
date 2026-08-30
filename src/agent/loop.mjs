@@ -587,7 +587,16 @@ export async function runAgentLoop(options) {
       }
     }
     // Local tools (glob/grep/web/media/finance/x/connected)
-    var localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId, channelContext });
+    var localTools = createAllLocalTools({
+      workingDir,
+      cfg,
+      computer,
+      sessionId: () => sessionId,
+      setSessionId: (id) => {
+        sessionId = id;
+      },
+      channelContext,
+    });
     tools.push(...localToolsAsOpenAI(localTools));
     // Cross-session recall (durable memory + receipts)
     if (cfg.memory?.recall !== false) {
@@ -683,7 +692,18 @@ export async function runAgentLoop(options) {
     await computer.destroySession(sessionId).catch(() => {});
     throw new Error(`Failed to list computer tools: ${err.message}`);
   }
-  if (typeof localTools === "undefined") localTools = createAllLocalTools({ workingDir, cfg, computer, sessionId, channelContext });
+  if (typeof localTools === "undefined") {
+    localTools = createAllLocalTools({
+      workingDir,
+      cfg,
+      computer,
+      sessionId: () => sessionId,
+      setSessionId: (id) => {
+        sessionId = id;
+      },
+      channelContext,
+    });
+  }
   const mcpHandlers = {};
   if (mcpTools?.enabled) {
     for (const n of mcpTools.names) {

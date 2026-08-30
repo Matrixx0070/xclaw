@@ -1,3 +1,12 @@
+## 3.422.0
+
+### Browser tools recover a dead session the same way the router does
+
+`browser_screenshot` / click / type called `computer.callTool` with a
+frozen sessionId, bypassing the SESSION_GONE retry. Shared
+`callToolRecovering` now wraps those calls. The loop passes a session
+getter/setter into local tools.
+
 ## 3.421.0
 
 ### A dead computer session is replaced, not retried forever

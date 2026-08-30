@@ -339,6 +339,34 @@ export function formatToolResult(result) {
 }
 
 
+export function isSessionGoneError(err) {
+  const status = err?.status ?? err?.statusCode;
+  const msg = String(err?.message || err || "").toLowerCase();
+  return (
+    status === 404 ||
+    err?.code === "SESSION_GONE" ||
+    /session not found|no such session|unknown session/.test(msg)
+  );
+}
+
+/**
+ * callTool, recreating the computer session once on 404 / SESSION_GONE.
+ * sessionId may be a string or a getter.
+ */
+export async function callToolRecovering(computer, sessionId, name, args, opts = {}) {
+  const sid = typeof sessionId === "function" ? sessionId() : sessionId;
+  try {
+    return await computer.callTool(sid, name, args);
+  } catch (err) {
+    if (!isSessionGoneError(err) || typeof computer.createSession !== "function") {
+      throw err;
+    }
+    const fresh = await computer.createSession(opts.workingDir || process.cwd());
+    if (typeof opts.setSessionId === "function") opts.setSessionId(fresh);
+    return computer.callTool(fresh, name, args);
+  }
+}
+
 /** Test/helper: drop reuse pool */
 export function clearComputerSessionPool() {
   sessionReusePool.clear();
