@@ -179,6 +179,19 @@ export function createSlackChannel(cfg, deps = {}) {
         workingDir: workspace,
         rateLimiter,
         replyWithAgent: deps.replyWithAgent,
+        // Same auto-promote as Telegram/Discord MESSAGE: shouldAutoPromoteTurn
+        // is false without notify. Named chatId already persists via
+        // processInbound → replyWithAgent — do not mint persistRun.
+        // Gateway stays alive, so the mission is detached. Follow-ups stay
+        // in the originating thread (same as the agent reply).
+        notify: async (t) => {
+          const notice = String(t || "").trim();
+          if (!notice) return;
+          await sendMessage(channelId, notice, msg.thread_ts || msg.ts);
+          console.log(
+            `[slack] → ${channelId}: [mission] ${notice.slice(0, 60)}`
+          );
+        },
         onEvent: (e) => {
           if (e.type === "tool" && e.phase === "start") {
             console.log(`[slack]   → ${e.name}`);

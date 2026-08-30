@@ -202,4 +202,22 @@ describe("default-path durability wiring", () => {
     const inboundBody = msg.slice(inbound, inboundEnd);
     assert.match(inboundBody, /notify:\s*async/);
   });
+
+  it("Slack processInbound auto-promotes a turn-cap cutoff via notify", () => {
+    const src = read("src/channels/slack/index.mjs");
+    const start = src.indexOf("async function handleMessage");
+    assert.ok(start >= 0, "handleMessage not found");
+    const fn = src.slice(start);
+    const inbound = fn.indexOf("processInbound(");
+    assert.ok(inbound >= 0, "Slack processInbound not found");
+    const inboundEnd = fn.indexOf("});", inbound);
+    assert.ok(inboundEnd > inbound, "Slack processInbound end not found");
+    const inboundBody = fn.slice(inbound, inboundEnd);
+    assert.match(inboundBody, /notify:\s*async/);
+    assert.match(inboundBody, /sendMessage\(channelId, notice/);
+    assert.ok(
+      !/persistRun:\s*true/.test(inboundBody),
+      "Slack named chatId already persists; do not mint persistRun:true"
+    );
+  });
 });

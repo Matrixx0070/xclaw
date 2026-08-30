@@ -1342,3 +1342,23 @@ RAN:
 - Webchat POST /channel/webchat/message `{"message":"ping 3.485.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `ee251a93-ef7a-46ee-8b81-393ab94fd5d1` stopReason=null. telegram writerLock true lastPollOkAt 2026-08-30T15:06:34.338Z. discord enabled=false.
 UNVERIFIED: live Discord `/ask` turn-cap → mission (source pin only; a live Discord turn would mean a real agent loop; live Discord is enabled=false). Live TUI / voice WS turn-cap → mission remain source-pinned from 3.484.0 / 3.483.0. Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0.
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, or Discord `/ask`. Do not auto-promote HTTP POST /agent/run. Slack/email notify is a sibling gap — name it from live recon, do not silently expand.
+
+## 2026-08-30 — 3.486.0 Slack processInbound auto-promotes a turn-cap cutoff
+
+STATUS: green (local hermetic)
+DISCOVERED: Telegram and Discord MESSAGE already pass `notify` into
+`processInbound`, so `shouldAutoPromoteTurn` can fire on
+`stopReason === "maxTurns"`. Slack went through the same helper but
+omitted `notify`, so a truncated Slack turn never became a mission.
+Named `chatId` already persists via processInbound → replyWithAgent.
+HTTP POST `/agent/run` auto-promote is caller-owned stopReason, not
+this slice. Do not mint persistRun:true. Email notify is a sibling
+gap, not this slice.
+BUILT: Slack `handleMessage` now passes `notify` (detached
+`sendMessage` into the originating thread `msg.thread_ts || msg.ts`).
+Source-contract pin in `test/default-path-durability.test.mjs` (one
+`it()`, not three).
+RAN: node --test test/default-path-durability.test.mjs → # tests 16 # pass 16 # fail 0 # duration_ms 71.564548; npm test (hermetic) → # tests 5031 # pass 5031 # fail 0 # duration_ms 69541.145019
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put. Live Slack turn-cap → mission is source-pinned, not driven
+(a live Slack turn would mean a real agent loop).

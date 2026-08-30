@@ -134,10 +134,11 @@ to write snapshots after a run. Default surfaces (`xclaw agent`, TUI,
 id. Opt out with `persistRun: false`.
 
 A turn-cap cutoff (`stopReason === "maxTurns"`) auto-promotes into a
-durable objective on channels, Discord `/ask`, webchat, voice `/ws/voice`,
-the TUI, and the CLI (CLI awaits the mission so the process does not
-exit mid-work; voice, TUI, and channels leave it detached). Disable with
-`objectives.autoPromote: false`.
+durable objective on Telegram, Discord (MESSAGE + `/ask`), Slack,
+webchat, voice `/ws/voice`, the TUI, and the CLI (CLI awaits the mission
+so the process does not exit mid-work; voice, TUI, and channels leave it
+detached). Disable with `objectives.autoPromote: false`. Email still
+omits `notify`, so processInbound promote cannot fire there.
 
 A tool-free "Done." is not completion when the goal named a file (or
 the caller passed `verify[]`). The loop runs `jobs/verify.mjs` and
