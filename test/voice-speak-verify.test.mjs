@@ -36,4 +36,35 @@ describe("voice_speak", () => {
       else process.env.TTS_API_KEY = prev;
     }
   });
+
+  it("JSON speech body is not treated as audio", async () => {
+    const prev = process.env.TTS_API_KEY;
+    process.env.TTS_API_KEY = "test-key";
+    const orig = globalThis.fetch;
+    const json = Buffer.from('{"error":"nope"}');
+    globalThis.fetch = async () => ({
+      ok: true,
+      headers: { get: () => "application/json" },
+      async arrayBuffer() {
+        return json.buffer.slice(json.byteOffset, json.byteOffset + json.byteLength);
+      },
+    });
+    try {
+      const fs = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-tts-json-"));
+      const { createCallConnectedToolTool } = await import("../src/tools/connected-tools.mjs");
+      const tool = createCallConnectedToolTool({ workingDir: dir, cfg: {} });
+      const out = await tool.execute({
+        tool_name: "voice_speak",
+        arguments: { text: "hello", out: path.join(dir, "t.mp3") },
+      });
+      assert.doesNotMatch(out.content[0].text, /Neural TTS written/);
+    } finally {
+      globalThis.fetch = orig;
+      if (prev === undefined) delete process.env.TTS_API_KEY;
+      else process.env.TTS_API_KEY = prev;
+    }
+  });
 });

@@ -51,8 +51,21 @@ async function neuralTts(text, out, voice) {
       signal: AbortSignal.timeout(120_000),
     });
     if (!res.ok) return null;
+    const ct = String(res.headers?.get?.("content-type") || "").toLowerCase();
+    if (
+      ct.includes("json") ||
+      ct.includes("text/") ||
+      ct.includes("html") ||
+      ct.includes("xml")
+    ) {
+      return null;
+    }
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length < 100) return null;
+    const head = buf.subarray(0, 40).toString("latin1").trimStart().toLowerCase();
+    if (head.startsWith("{") || head.startsWith("[") || head.startsWith("<")) {
+      return null;
+    }
     await fs.mkdir(path.dirname(out), { recursive: true });
     const dest = out.endsWith(".mp3") || out.endsWith(".wav") ? out : out + ".mp3";
     await fs.writeFile(dest, buf);

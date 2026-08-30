@@ -1,3 +1,13 @@
+## 3.444.0
+
+### Observe-with-pixels and neural TTS do not hide failed media
+
+`browser_observe include_pixels=true` still returned success when the
+screenshot channel was `isError`. That hybrid is now `isError`.
+Neural TTS rejected tiny buffers but still wrote a 200 JSON error
+body as `.mp3`. JSON/HTML content-types and `{`/`[`/`<` payloads
+are rejected.
+
 ## 3.443.0
 
 ### `search_images` does not treat an HTML error page as a JPEG

@@ -751,6 +751,11 @@ export function createBrowserObserveTool(ctx = {}) {
           .filter((c) => c.type === "text")
           .map((c) => c.text)
           .join("\n");
+        if (pixelResult?.isError) {
+          return errorResult(
+            [structText, "", "channel: pixels FAILED", pixelText].join("\n")
+          );
+        }
         return textResult(
           [
             structText,
@@ -767,8 +772,9 @@ export function createBrowserObserveTool(ctx = {}) {
           }
         );
       } catch (e) {
-        // structure alone is still useful
-        return structureResult;
+        return errorResult(
+          `include_pixels requested but screenshot failed: ${e.message}`
+        );
       }
     },
   };
