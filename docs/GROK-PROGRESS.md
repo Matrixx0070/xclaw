@@ -1262,3 +1262,15 @@ RAN: node --test test/default-path-durability.test.mjs → # tests 13 # pass 13 
 UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
 stay-put. Live voice WS turn-cap → mission is source-pinned, not driven
 on the gateway (a live voice turn would mean a real agent loop).
+
+## 2026-08-30 — 3.483.0 GitHub ci + live drive now verified
+
+STATUS: green
+BUILT: closeout only — no product change. Distinct heading from the 3.483.0 ship.
+RAN:
+- GitHub `ci` 33312536514 on `e2d3ba3` success, 1m37s (gate 24.15 1m37s, gate 22.22 1m36s). ledger-guard / install-e2e / eval-regression also success on the same push.
+- Live gateway after `pm2 restart xclaw-gateway` pid 3517717 created 2026-08-30T12:50:18.684Z startedAt 12:50:20.565Z: GET /version → name=xclaw version=3.483.0 onDiskVersion=3.483.0 stale=false profile=lab. GET /ready ready=true.
+- Leftover stay-put: agent-runs count 299 before and after restart; leftover `2026-08-30T03-23-54-655Z_intel-symbol-locate` status=maxTurns updatedAt=2026-08-30T04:17:33.558Z resumable=false ok=false objectiveId=null unchanged. Newest ok `c8dd816d-bb15-41fe-9088-11df6e353523` completed 2026-08-30T12:08:38.902Z unchanged. CLI `xclaw doctor` → `agentRuns.attention: no unfinished agent-run snapshots`. Boot log last `[xclaw:agent-runs] auto-resumed` still 2026-08-30T06:27:15 obj_mtffg2yd_aaaad3.
+- Webchat POST /channel/webchat/message `{"message":"ping 3.483.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `aea7494a-eae5-4366-a114-4aa9db39148b`.
+UNVERIFIED: live voice WS turn-cap → mission (source pin only; a live voice turn would mean a real agent loop). Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0.
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice.
