@@ -1,3 +1,12 @@
+## 3.386.0
+
+### `append` / `echo >` still have to land on disk
+
+`write TEXT to PATH` derived a check. `append OK to notes.txt` and
+`echo AUTONOMY_OK > results/PROOF.txt` did not, so a model "Done."
+was accepted with no file. Same `file_contains` gate now covers
+those. "How do I append to a file?" still derives nothing.
+
 ## 3.385.0
 
 ### "Write a file PATH containing TEXT" is not done until the file matches

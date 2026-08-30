@@ -21,7 +21,7 @@ const CONTENT =
   "(?:with(?:\\s+text|\\s+contents)?|containing|that says|whose first line is)";
 const CHAT_LEAD =
   /^(what|why|how|when|where|who|explain|describe|list|tell|summarize|thanks)\b/i;
-const FILE_VERB = /^(create|write|save|put|touch|make)\b/i;
+const FILE_VERB = /^(create|write|save|put|touch|make|append|echo)\b/i;
 
 function stripWrap(s) {
   return String(s || "")
@@ -83,16 +83,24 @@ export function deriveGoalVerifyChecks(goal = "") {
 
   const writeTo = u.match(
     new RegExp(
-      `\\b(?:write|put|save)\\s+[\`'"]?([^\\s'\`"]+|[^'"\`]+?)[\`'"]?\\s+(?:to|into|in)\\s+[\`'"]?(${PATH})`,
+      `\\b(?:write|put|save|append)\\s+[\`'"]?([^\\s'\`"]+|[^'"\`]+?)[\`'"]?\\s+(?:to|into|in)\\s+[\`'"]?(${PATH})`,
       "i"
     )
   );
   if (writeTo) {
     const text = stripWrap(writeTo[1]);
-    if (text && !/\s/.test(text)) {
-      return [{ type: "file_contains", path: writeTo[2], text }];
-    }
     if (text) return [{ type: "file_contains", path: writeTo[2], text }];
+  }
+
+  const echoRedirect = u.match(
+    new RegExp(
+      `\\becho\\s+[\`'"]?([^'\\n]+?)[\`'"]?\\s*>+\\s*[\`'"]?(${PATH})`,
+      "i"
+    )
+  );
+  if (echoRedirect) {
+    const text = stripWrap(echoRedirect[1]);
+    if (text) return [{ type: "file_contains", path: echoRedirect[2], text }];
   }
 
   const createOnly = u.match(

@@ -26,6 +26,18 @@ describe("deriveGoalVerifyChecks", () => {
     assert.deepEqual(deriveGoalVerifyChecks("what is in config.json?"), []);
   });
 
+  it("append TEXT to PATH and echo TEXT > PATH", () => {
+    const a = deriveGoalVerifyChecks("append OK to notes.txt");
+    assert.equal(a[0].type, "file_contains");
+    assert.equal(a[0].path, "notes.txt");
+    assert.equal(a[0].text, "OK");
+    const e = deriveGoalVerifyChecks("echo AUTONOMY_OK > results/PROOF.txt");
+    assert.equal(e[0].type, "file_contains");
+    assert.equal(e[0].path, "results/PROOF.txt");
+    assert.equal(e[0].text, "AUTONOMY_OK");
+    assert.deepEqual(deriveGoalVerifyChecks("how do I append to a file?"), []);
+  });
+
   it("write TEXT to PATH (eval / unquoted)", () => {
     const c = deriveGoalVerifyChecks("write AUTONOMY_OK to results/PROOF.txt");
     assert.equal(c[0].type, "file_contains");
