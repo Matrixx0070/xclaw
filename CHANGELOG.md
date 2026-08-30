@@ -1,3 +1,11 @@
+## 3.469.0
+
+### `glob` empty `rg --files` is not a walk failure
+
+`rg --files` exit 0 with empty stdout still fell through to `walkGlob`.
+Unreadable directories then made glob `isError` instead of `(no matches)`.
+Exit 0 is now a completed listing; walk is only for rg engine failure.
+
 ## 3.468.0
 
 ### `view_image` does not treat a 200 HTML vision body as a caption

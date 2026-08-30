@@ -130,7 +130,12 @@ function runCmd(cmd, args, { cwd, timeoutMs = 30_000, maxBytes = 512_000 } = {})
   });
 }
 
-export function createGlobTool({ workingDir }) {
+/** rg --files: 0 = listing done (including no matches). Other codes/timeouts are engine failure. */
+export function globRgOk(run) {
+  return Boolean(run) && !run.timedOut && run.code === 0;
+}
+
+export function createGlobTool({ workingDir, runCmd: run = runCmd } = {}) {
   return {
     name: "glob",
     description:
@@ -155,12 +160,12 @@ export function createGlobTool({ workingDir }) {
       if (missing) return missing;
 
       // Try rg --files + filter for speed
-      const rg = await runCmd("rg", ["--files", "-g", pattern, root], {
+      const rg = await run("rg", ["--files", "-g", pattern, root], {
         cwd: root,
         timeoutMs: 20_000,
       });
-      if (rg.code === 0 && rg.stdout.trim()) {
-        const lines = rg.stdout
+      if (globRgOk(rg)) {
+        const lines = (rg.stdout || "")
           .split("\n")
           .map((l) => l.trim())
           .filter(Boolean)

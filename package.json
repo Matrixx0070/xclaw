@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.468.0",
+  "version": "3.469.0",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {

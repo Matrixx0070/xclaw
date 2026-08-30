@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createGlobTool, createGrepTool, grepEngineOk } from "../src/tools/extra-tools.mjs";
+import { createGlobTool, createGrepTool, grepEngineOk, globRgOk } from "../src/tools/extra-tools.mjs";
 
 describe("glob/grep missing path is an error", () => {
   it("glob on a missing directory is isError", async () => {
@@ -43,5 +43,20 @@ describe("glob/grep missing path is an error", () => {
     assert.equal(grepEngineOk({ code: 0, stdout: "a:1:hit" }), true);
     assert.equal(grepEngineOk({ code: 1, stdout: "" }), true);
     assert.equal(grepEngineOk({ code: 0, timedOut: true, stdout: "a:1:hit" }), false);
+  });
+
+  it("rg --files exit 0 with empty stdout is no matches, not a walk failure", async () => {
+    assert.equal(globRgOk({ code: 0, stdout: "" }), true);
+    assert.equal(globRgOk({ code: 0, stdout: "a.mjs\n" }), true);
+    assert.equal(globRgOk({ code: 2, stdout: "rg: error\n" }), false);
+    assert.equal(globRgOk({ code: 0, timedOut: true, stdout: "" }), false);
+    const tool = createGlobTool({
+      workingDir: os.tmpdir(),
+      runCmd: async () => ({ code: 0, stdout: "  \n", stderr: "", timedOut: false }),
+    });
+    const out = await tool.execute({ pattern: "*.zzz-no-such" });
+    assert.ok(!out.isError);
+    assert.match(out.content[0].text, /\(no matches\)/);
+    assert.equal(out.metadata.engine, "rg");
   });
 });
