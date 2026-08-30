@@ -1875,6 +1875,8 @@ Enable with seats.enabled: true in config`);
         usageLine = ` · ~promptTokens=${u.estimatedPromptTokens} (${u.mode})`;
       }
       console.log(`\n[${result.turns} turns, model=${result.model}${usageLine}${result.stopReason ? " · " + result.stopReason : ""}]`);
+      const { agentExitCode } = await import("../src/agent/complete-gate.mjs");
+      process.exitCode = agentExitCode(result);
       break;
     }
     case "soak": {

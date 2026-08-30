@@ -1,3 +1,14 @@
+## 3.381.0
+
+### `xclaw agent` exits 1 when the run was not actually done
+
+The loop could set `stopReason: unverified` (or maxTurns/abort) and
+the CLI still exited 0, so a script treating the process as the
+success check would green-wash a rejected completion.
+
+`agentExitCode` maps unverified, aborted, guard, policy, budget, and
+maxTurns to 1. Natural chat and a finished mission stay 0.
+
 ## 3.380.0
 
 ### Create/touch/write-to a named file still has to exist

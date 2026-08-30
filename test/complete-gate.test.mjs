@@ -7,6 +7,7 @@ import {
   deriveGoalVerifyChecks,
   resolveCompletionChecks,
   evaluateNaturalStopVerify,
+  agentExitCode,
 } from "../src/agent/complete-gate.mjs";
 
 describe("deriveGoalVerifyChecks", () => {
@@ -39,6 +40,15 @@ describe("deriveGoalVerifyChecks", () => {
     const named = deriveGoalVerifyChecks("create a file named hello.txt");
     assert.equal(named[0].type, "file_exists");
     assert.equal(named[0].path, "hello.txt");
+  });
+
+  it("CLI exit is nonzero for unverified / cutoff, zero for natural chat", () => {
+    assert.equal(agentExitCode({ stopReason: "natural" }), 0);
+    assert.equal(agentExitCode({ stopReason: "unverified" }), 1);
+    assert.equal(agentExitCode({ stopReason: "maxTurns" }), 1);
+    assert.equal(agentExitCode({ stopReason: "aborted" }), 1);
+    assert.equal(agentExitCode({ ok: false, stopReason: "natural" }), 1);
+    assert.equal(agentExitCode({ stopReason: "done" }), 0);
   });
 
   it("explicit verify[] wins over derivation", () => {

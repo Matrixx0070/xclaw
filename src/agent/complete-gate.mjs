@@ -135,8 +135,30 @@ export async function evaluateNaturalStopVerify(inp = {}) {
   };
 }
 
+/**
+ * CLI / script exit: unverified and runtime cutoffs are not success.
+ * Chat that finished naturally stays 0.
+ */
+export function agentExitCode(result = {}) {
+  if (result.ok === false) return 1;
+  const sr = String(result.stopReason || "");
+  if (
+    sr === "unverified" ||
+    sr === "aborted" ||
+    sr === "guard" ||
+    sr === "policy" ||
+    sr === "budget" ||
+    sr === "maxTurns"
+  ) {
+    return 1;
+  }
+  if (result.status === "failed" || result.status === "blocked") return 1;
+  return 0;
+}
+
 export default {
   deriveGoalVerifyChecks,
   resolveCompletionChecks,
   evaluateNaturalStopVerify,
+  agentExitCode,
 };

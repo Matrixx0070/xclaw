@@ -19,6 +19,7 @@ describe("default-path durability wiring", () => {
     assert.match(agentCase, /persistRun:\s*true/);
     assert.match(agentCase, /autoPromoteIfNeeded/);
     assert.match(agentCase, /awaitRun:\s*true/);
+    assert.match(agentCase, /agentExitCode/);
   });
 
   it("webchat persists the session and auto-promotes a turn-cap cutoff", () => {
