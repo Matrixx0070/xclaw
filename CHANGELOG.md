@@ -1,3 +1,15 @@
+## 3.382.0
+
+### JSON/TUI `ok` follows the same honesty as the CLI exit
+
+v3.381.0 made `xclaw agent` exit 1 on `unverified`. `POST /agent/run`
+and the TUI stream still sent `ok: true` with that stopReason, so the
+operator console could paint a green result on a rejected completion.
+
+The loop now sets `ok` from `agentExitCode`. `runAgent`, `/agent/run`,
+and `/agent/run/stream` pass it through. HTTP stays 200; `ok` is the
+application verdict.
+
 ## 3.381.0
 
 ### `xclaw agent` exits 1 when the run was not actually done

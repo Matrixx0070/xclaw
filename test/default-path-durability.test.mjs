@@ -35,6 +35,8 @@ describe("default-path durability wiring", () => {
     const stream = read("src/gateway/index.mjs");
     assert.match(stream, /persistRun:\s*streamSessionId \? true : undefined/);
     assert.match(stream, /stopReason:\s*result\.stopReason/);
+    assert.match(stream, /ok:\s*result\.ok !== false/);
+    assert.match(json, /ok:\s*result\.ok !== false/);
   });
 
   it("the loop persist key is resolved once, including chatSessionId", () => {

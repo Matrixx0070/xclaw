@@ -163,6 +163,7 @@ describe("loop rejects a false Done on a file goal", () => {
       onEvent: (e) => events.push(e),
     });
     assert.equal(out.stopReason, "unverified");
+    assert.equal(out.ok, false);
     assert.ok(events.some((e) => e.type === "verify" && e.phase === "reject"));
     assert.equal(fs.existsSync(path.join(dir, "proof.txt")), false);
   });
@@ -175,6 +176,7 @@ describe("loop rejects a false Done on a file goal", () => {
       workingDir: tmpHome,
     });
     assert.equal(out.stopReason, "natural");
+    assert.notEqual(out.ok, false);
   });
 
   it("touch PATH is unverified when the file is missing", async () => {
@@ -186,6 +188,7 @@ describe("loop rejects a false Done on a file goal", () => {
       workingDir: dir,
     });
     assert.equal(out.stopReason, "unverified");
+    assert.equal(out.ok, false);
   });
 
   it("stopReason is natural when the named file already satisfies the check", async () => {
@@ -198,5 +201,6 @@ describe("loop rejects a false Done on a file goal", () => {
       workingDir: dir,
     });
     assert.equal(out.stopReason, "natural");
+    assert.notEqual(out.ok, false);
   });
 });

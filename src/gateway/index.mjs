@@ -404,7 +404,7 @@ async function streamAgentRun(req, res, { message, workingDir, cfg, body = {} })
     if (!controller.signal.aborted) {
       produce("result", {
         type: "result",
-        ok: true,
+        ok: result.ok !== false,
         text: result.text,
         turns: result.turns,
         model: result.model,

@@ -11,6 +11,7 @@
 
 import { applyClaimsGateToResult } from "./claims-gate.mjs";
 import { runAgentLoop, stripClaimsBlock } from "./loop.mjs";
+import { agentExitCode } from "./complete-gate.mjs";
 
 /**
  * The loop returns BOTH finalText (raw, WITH the claims scaffold — what the
@@ -168,6 +169,13 @@ export async function runAgent(req = {}) {
     // gate has already scored the raw text above.
     gated.text = presentationText;
     gated.finalText = presentationText;
+    // Claims may pass while the runtime cutoff is still not success
+    // (unverified / maxTurns / abort). The CLI already exits 1; JSON/TUI
+    // used to keep ok:true because this wrapper always started at ok:true.
+    if (agentExitCode(raw) !== 0) {
+      gated.ok = false;
+      gated.error = gated.error || raw.stopReason || "incomplete";
+    }
     return gated;
   } catch (e) {
     return {

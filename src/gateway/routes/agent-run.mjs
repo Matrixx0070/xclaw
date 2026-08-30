@@ -53,7 +53,7 @@ export async function tryHandleAgentRunRoute({
         },
       });
       json(res, 200, {
-        ok: true,
+        ok: result.ok !== false,
         ...result,
         events: body.includeEvents ? events : undefined,
       });

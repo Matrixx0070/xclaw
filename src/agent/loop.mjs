@@ -51,7 +51,7 @@ import { stampCostBlock } from "./cost-receipt.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
 import { checkLoopCostBudget, checkJobCostBudget } from "../tokens/loop-cost-check.mjs";
 import { saveAgentRun, resolveRunPersistId } from "./run-store.mjs";
-import { evaluateNaturalStopVerify } from "./complete-gate.mjs";
+import { evaluateNaturalStopVerify, agentExitCode } from "./complete-gate.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
   appendTranscript,
@@ -2245,6 +2245,7 @@ export async function runAgentLoop(options) {
     // blocked) — one shape across approval/sandbox/egress/plan/receipt.
     policyDecision: lastPolicyDecision,
     stopReason,
+    ok: agentExitCode({ stopReason }) === 0,
     context: {
       skills: (skills || []).map((s) => s.name),
       memory: (memoryFiles || []).map((m) => m.path),
