@@ -66,6 +66,23 @@ describe("deriveGoalVerifyChecks", () => {
     assert.deepEqual(deriveGoalVerifyChecks("how do I append to a file?"), []);
   });
 
+  it("relative PROOF/STATUS and delete/remove derive checks", () => {
+    const p = deriveGoalVerifyChecks("touch PROOF");
+    assert.equal(p[0].type, "file_exists");
+    assert.equal(p[0].path, "PROOF");
+    const w = deriveGoalVerifyChecks("write OK to PROOF");
+    assert.equal(w[0].type, "file_contains");
+    assert.equal(w[0].path, "PROOF");
+    assert.equal(w[0].text, "OK");
+    const d = deriveGoalVerifyChecks("delete notes.txt");
+    assert.equal(d[0].type, "file_not_exists");
+    assert.equal(d[0].path, "notes.txt");
+    const r = deriveGoalVerifyChecks("rm results/PROOF.txt");
+    assert.equal(r[0].type, "file_not_exists");
+    assert.equal(r[0].path, "results/PROOF.txt");
+    assert.deepEqual(deriveGoalVerifyChecks("how do I delete a file?"), []);
+  });
+
   it("save/copy SRC as DST checks the destination, not the source", () => {
     const s = deriveGoalVerifyChecks("save hello.txt as notes.txt");
     assert.equal(s[0].type, "file_exists");
@@ -78,6 +95,24 @@ describe("deriveGoalVerifyChecks", () => {
     const r = deriveGoalVerifyChecks("rename a.txt to b.txt");
     assert.equal(r[0].path, "b.txt");
     assert.deepEqual(deriveGoalVerifyChecks("how do I save hello.txt as notes.txt?"), []);
+  });
+
+  it("delete/remove PATH is not done while the file remains", () => {
+    const d = deriveGoalVerifyChecks("delete old.txt");
+    assert.equal(d[0].type, "file_not_exists");
+    assert.equal(d[0].path, "old.txt");
+    const r = deriveGoalVerifyChecks("remove config.bak");
+    assert.equal(r[0].type, "file_not_exists");
+    assert.equal(r[0].path, "config.bak");
+    const rm = deriveGoalVerifyChecks("rm /tmp/gone.txt");
+    assert.equal(rm[0].path, "/tmp/gone.txt");
+    const dash = deriveGoalVerifyChecks("rm -f notes.md");
+    assert.equal(dash[0].path, "notes.md");
+    const dot = deriveGoalVerifyChecks("delete .gitignore");
+    assert.equal(dot[0].path, ".gitignore");
+    assert.deepEqual(deriveGoalVerifyChecks("how do I delete a file?"), []);
+    assert.deepEqual(deriveGoalVerifyChecks("delete the bug"), []);
+    assert.deepEqual(deriveGoalVerifyChecks("explain how to remove a file"), []);
   });
 
   it("mkdir / create directory still has to exist", () => {
@@ -180,6 +215,18 @@ describe("deriveGoalVerifyChecks", () => {
 });
 
 describe("evaluateNaturalStopVerify", () => {
+  it("rejects Done after delete when the file still exists", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-del-"));
+    fs.writeFileSync(path.join(dir, "notes.txt"), "x");
+    const r = await evaluateNaturalStopVerify({
+      naturalStop: true,
+      userMessage: "delete notes.txt",
+      workingDir: dir,
+    });
+    assert.equal(r.reject, true);
+    assert.equal(r.checks[0].type, "file_not_exists");
+  });
+
   it("does not reject a natural stop with no checks (chat)", async () => {
     const r = await evaluateNaturalStopVerify({
       naturalStop: true,

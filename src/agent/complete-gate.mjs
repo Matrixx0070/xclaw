@@ -14,7 +14,7 @@ import { runVerifyChecks } from "../jobs/verify.mjs";
 import { inferGoal } from "./turn-state.mjs";
 
 const PATH =
-  "(?:\\/[\\w./-]+|(?:\\/|\\.\\/)?[\\w./-]+\\.[A-Za-z0-9]+|\\.[A-Za-z][\\w.-]*|Makefile|Dockerfile|LICENSE|README|Procfile)";
+  "(?:\\/[\\w./-]+|(?:\\/|\\.\\/)?[\\w./-]+\\.[A-Za-z0-9]+|\\.[A-Za-z][\\w.-]*|Makefile|Dockerfile|LICENSE|README|Procfile|PROOF|STATUS|OUT|DEST|OUTPUT|RESULT|NOTES|HELLO)";
 // Optional "a/the file named/called" between the verb and the path so
 // "write a file hello.txt" matches the same way "write hello.txt" does.
 const FILE_PREFIX = "(?:(?:a|the)\\s+)?(?:file\\s+)?(?:(?:named|called)\\s+)?";
@@ -22,7 +22,8 @@ const CONTENT =
   "(?:with(?:\\s+text|\\s+contents)?|containing|that says|whose first line is)";
 const CHAT_LEAD =
   /^(what|why|how|when|where|who|explain|describe|list|tell|summarize|thanks)\b/i;
-const FILE_VERB = /^(create|write|save|put|touch|make|append|echo|copy|rename|move|mkdir)\b/i;
+const FILE_VERB =
+  /^(create|write|save|put|touch|make|append|echo|copy|rename|move|mkdir|delete|remove|rm|unlink)\b/i;
 const DIR_STOP = /^(of|with|for|that|which|to|in|on|from|the|a|an|and|or)$/i;
 const PATH_RE = new RegExp(`^(?:${PATH})$`, "i");
 
@@ -124,6 +125,16 @@ export function deriveGoalVerifyChecks(goal = "") {
     if (text) return [{ type: "file_contains", path: echoRedirect[2], text }];
   }
 
+  const del = u.match(
+    new RegExp(
+      `\\b(?:delete|remove|unlink|rm(?:\\s+-[rRf]+)?)\\s+${FILE_PREFIX}[\`'"]?(${PATH})[\`'"]?`,
+      "i"
+    )
+  );
+  if (del && del[1] !== "/" && !String(del[1]).includes("*")) {
+    return [{ type: "file_not_exists", path: del[1] }];
+  }
+
   const mkdir = u.match(
     new RegExp(
       `\\b(?:mkdir(?:\\s+-p)?|create\\s+(?:a\\s+)?directory(?:\\s+(?:named|called))?)\\s+[\`'"]?([^\\s'\`"]+)[\`'"]?`,
@@ -142,6 +153,16 @@ export function deriveGoalVerifyChecks(goal = "") {
     ) {
       return [{ type: "file_exists", path: dir }];
     }
+  }
+
+  const remove = u.match(
+    new RegExp(
+      `\\b(?:delete|remove|rm(?:\\s+-f)?)\\s+${FILE_PREFIX}[\`'"]?(${PATH})[\`'"]?`,
+      "i"
+    )
+  );
+  if (remove) {
+    return [{ type: "file_not_exists", path: remove[1] }];
   }
 
   const createOnly = u.match(

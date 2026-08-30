@@ -1,3 +1,14 @@
+## 3.391.0
+
+### `touch PROOF` and `delete notes.txt` are evidence-gated
+
+Relative extensionless artifacts used in evals (`PROOF`, `STATUS`,
+`OUT`, …) derived no check. `delete`/`remove`/`rm` derived none
+either, so "Done." after a failed delete still passed.
+
+Those names now `file_exists`. Delete verbs now `file_not_exists`
+(never `/` or glob). How-to stays empty.
+
 ## 3.390.0
 
 ### `mkdir` / `create directory` still have to exist
