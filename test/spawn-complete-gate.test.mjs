@@ -108,3 +108,11 @@ describe("xclaw_spawn_subagent tool reports why the child failed", () => {
     assert.match(text, /stopReason=unverified/);
   });
 });
+
+describe("xclaw_spawn_agent tool includes stopReason", () => {
+  it("source pins stopReason in the refusal text", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../src/tools/spawn-tools.mjs", import.meta.url), "utf8");
+    assert.match(src, /stopReason=\$\{out\.result\.stopReason\}/);
+  });
+});

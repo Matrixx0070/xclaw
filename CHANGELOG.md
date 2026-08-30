@@ -1,3 +1,11 @@
+## 3.436.0
+
+### `xclaw_spawn_agent` reports child stopReason like spawn_subagent
+
+The loop-facing spawn tool returned `subagent refused: unknown` when
+the child was unverified (empty `error`). The parent could not replan.
+Refusal text now includes `stopReason=` and a slice of child text.
+
 ## 3.435.0
 
 ### `grep` engine failure is not "(no matches)"

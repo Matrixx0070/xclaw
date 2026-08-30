@@ -110,10 +110,18 @@ export function createSpawnTools({ workingDir, cfg, runState } = {}) {
         }
 
         if (!out?.ok) {
-          return errorResult(
-            `subagent refused: ${out?.error || out?.code || "unknown"}`,
-            { code: out?.code || "SPAWN_REFUSED", subagent: out?.id || null }
-          );
+          const why = [
+            out?.error || out?.code || `subagent ${out?.status || "failed"}`,
+            out?.result?.stopReason ? `stopReason=${out.result.stopReason}` : "",
+            out?.result?.text ? String(out.result.text).slice(0, 400) : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+          return errorResult(why, {
+            code: out?.code || "SPAWN_REFUSED",
+            subagent: out?.id || null,
+            stopReason: out?.result?.stopReason || null,
+          });
         }
         const body = String(out.result?.text ?? out.result ?? "").trim();
         return textResult(body || "(child returned no text)", {
