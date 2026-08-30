@@ -1330,3 +1330,15 @@ RAN: node --test test/default-path-durability.test.mjs → # tests 15 # pass 15 
 UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
 stay-put. Live Discord `/ask` turn-cap → mission is source-pinned, not
 driven (a live Discord turn would mean a real agent loop).
+
+## 2026-08-30 — 3.485.0 GitHub ci + live drive now verified
+
+STATUS: green
+BUILT: closeout only — no product change. Distinct heading from the 3.485.0 ship.
+RAN:
+- GitHub `ci` 33318642911 on `d03c3f2` success, 1m44s (gate 24.15 1m36s, gate 22.22 1m39s). ledger-guard / install-e2e / eval-regression also success on the same push.
+- Live gateway after `pm2 restart xclaw-gateway` pid 3586461 created 2026-08-30T15:06:01.226Z startedAt 15:06:03.139Z: GET /version → name=xclaw version=3.485.0 onDiskVersion=3.485.0 stale=false profile=lab. GET /ready ready=true.
+- Leftover stay-put: agent-runs count 301 before and after restart; leftover `2026-08-30T03-23-54-655Z_intel-symbol-locate` status=maxTurns updatedAt=2026-08-30T04:17:33.558Z resumable=false ok=false objectiveId=null unchanged. Snapshot workingDir still `/tmp/xclaw-eval/2026-08-30T03-23-54-655Z/intel-symbol-locate`. CLI `xclaw doctor` → `agentRuns.attention: no unfinished agent-run snapshots`. Boot log last `[xclaw:agent-runs] auto-resumed` still 2026-08-30T06:27:15 obj_mtffg2yd_aaaad3 (after 15:00 count 0). `obj_mtffg2yd_aaaad3` stayed `awaiting_human`. n_objectives 23.
+- Webchat POST /channel/webchat/message `{"message":"ping 3.485.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `ee251a93-ef7a-46ee-8b81-393ab94fd5d1` stopReason=null. telegram writerLock true lastPollOkAt 2026-08-30T15:06:34.338Z. discord enabled=false.
+UNVERIFIED: live Discord `/ask` turn-cap → mission (source pin only; a live Discord turn would mean a real agent loop; live Discord is enabled=false). Live TUI / voice WS turn-cap → mission remain source-pinned from 3.484.0 / 3.483.0. Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0.
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, or Discord `/ask`. Do not auto-promote HTTP POST /agent/run. Slack/email notify is a sibling gap — name it from live recon, do not silently expand.
