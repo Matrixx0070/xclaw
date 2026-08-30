@@ -1,3 +1,11 @@
+## 3.409.0
+
+### File write/edit re-read the disk before claiming success
+
+`fileWrite` / `fileEdit` returned `ok: true` after `writeFile` without
+checking the bytes landed. They now read the file back and fail with
+`FILE_WRITE_MISMATCH` / `FILE_EDIT_MISMATCH` if it does not match.
+
 ## 3.408.0
 
 ### `xclaw job` prints verdict/stopReason; screenshots observe the page

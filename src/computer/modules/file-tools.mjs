@@ -41,10 +41,20 @@ export async function fileWrite(input = {}, ctx = {}) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   const content = input.content ?? "";
   await fs.writeFile(target, content, "utf8");
+  const written = await fs.readFile(target);
+  const expected = Buffer.from(String(content), "utf8");
+  if (written.length !== expected.length || !written.equals(expected)) {
+    return {
+      ok: false,
+      error: "write verification failed: disk content does not match payload",
+      code: "FILE_WRITE_MISMATCH",
+      path: target,
+    };
+  }
   return {
     ok: true,
     path: target,
-    bytes: Buffer.byteLength(String(content), "utf8"),
+    bytes: written.length,
   };
 }
 
@@ -72,7 +82,16 @@ export async function fileEdit(input = {}, ctx = {}) {
     text = text.slice(0, idx) + newStr + text.slice(idx + oldStr.length);
   }
   await fs.writeFile(target, text, "utf8");
-  return { ok: true, path: target };
+  const written = await fs.readFile(target, "utf8");
+  if (written !== text) {
+    return {
+      ok: false,
+      error: "edit verification failed: disk content does not match edit",
+      code: "FILE_EDIT_MISMATCH",
+      path: target,
+    };
+  }
+  return { ok: true, path: target, bytes: Buffer.byteLength(written, "utf8") };
 }
 
 export const FileReadTool = {

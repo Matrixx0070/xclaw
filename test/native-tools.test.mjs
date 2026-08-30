@@ -29,7 +29,9 @@ describe("native computer tools", () => {
 
   it("file write read edit in temp workspace", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-nt-"));
-    await fileWrite({ path: "a.txt", content: "hello" }, { cwd: dir });
+    const w = await fileWrite({ path: "a.txt", content: "hello" }, { cwd: dir });
+    assert.equal(w.ok, true);
+    assert.equal(w.bytes, Buffer.byteLength("hello"));
     const rd = await fileRead({ path: "a.txt" }, { cwd: dir });
     assert.match(rd.content, /hello/);
     await fileEdit(
