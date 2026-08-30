@@ -280,6 +280,23 @@ export function createWebFetchTool({ cfg } = {}) {
             .trim();
         }
         if (body.length > max) body = body.slice(0, max) + "\n…[truncated]";
+        if (!res.ok) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: `HTTP ${res.status} ${res.url || url}\n${body.slice(0, 500)}`,
+              },
+            ],
+            metadata: {
+              status: res.status,
+              contentType: ct,
+              url: res.url || url,
+              chars: body.length,
+            },
+          };
+        }
         return textResult(body, {
           metadata: { status: res.status, contentType: ct, url: res.url, chars: body.length },
         });

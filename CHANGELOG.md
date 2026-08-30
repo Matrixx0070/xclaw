@@ -1,3 +1,12 @@
+## 3.423.0
+
+### `web_fetch` does not treat HTTP 404 as a successful page
+
+`safeFetch` already set `ok` from the status. `web_fetch` ignored it
+and returned the error body as success, so a model could quote a 404
+page as if it had read the document. Status >= 400 is now `isError`
+with `HTTP <status>` in the text. 2xx pages are unchanged.
+
 ## 3.422.0
 
 ### Browser tools recover a dead session the same way the router does

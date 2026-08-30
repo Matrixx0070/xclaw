@@ -94,4 +94,20 @@ describe("web_fetch intake cap", () => {
       server.close();
     }
   });
+
+  it("treats HTTP 404 as an error, not a successful fetch", async () => {
+    const server = http.createServer((req, res) => {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("missing");
+    });
+    const port = await listen(server);
+    try {
+      const tool = createWebFetchTool({ cfg });
+      const out = await tool.execute({ url: `http://127.0.0.1:${port}/nope` });
+      assert.equal(out.isError, true);
+      assert.match(out.content[0].text, /HTTP 404/);
+    } finally {
+      server.close();
+    }
+  });
 });
