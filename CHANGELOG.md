@@ -1,3 +1,13 @@
+## 3.449.0
+
+### `markitdown` empty stdout is not converted markdown
+
+v3.448.0 failed closed on non-zero exit but still returned success on
+exit 0 with whitespace-only stdout, and `host-utils-verify` imported
+an unexported `markitdownPickResult` (test file would not load).
+Empty/whitespace output and missing path are `isError`. The helper is
+exported.
+
 ## 3.448.0
 
 ### markitdown and view_image do not succeed when their engines fail
@@ -6,14 +16,6 @@
 is now `isError`. `view_image` still succeeded with `identify: n/a`
 and `magika: n/a` when both CLIs failed. Dual-engine failure is
 `isError`.
-
-## 3.448.0
-
-### `markitdown` does not treat a traceback as converted markdown
-
-Non-zero exit still returned success when stdout was non-empty, so a
-Python traceback was markdown. Both engines must exit 0 with
-non-whitespace stdout. Missing path is `isError`.
 
 ## 3.447.0
 

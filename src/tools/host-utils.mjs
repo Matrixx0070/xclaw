@@ -73,11 +73,25 @@ export function createFileTypeTool() {
   };
 }
 
+/** Prefer a 0-exit markdown body. Non-zero or whitespace-only stdout is not success. */
+export function markitdownPickResult(first, fallback) {
+  const usable = (r) => r && r.code === 0 && String(r.stdout || "").trim();
+  const r = usable(first) ? first : fallback || first;
+  const text = String(r?.stdout || "").trim();
+  if (!r || r.code !== 0 || !text) {
+    return {
+      ok: false,
+      error: String(r?.stderr || text || `markitdown exited ${r?.code ?? "n/a"}`).slice(0, 400),
+    };
+  }
+  return { ok: true, text };
+}
+
 export function createMarkitdownTool() {
   return {
     name: "markitdown",
     description:
-      "Convert Office/PDF/HTML files to Markdown using markitdown CLI (pptx, docx, pdf, xlsx, images, etc.).",
+      "Convert Office/PDF/HTML files to Markdown using markitdown CLI (pptx, docx, pdf, xlsx, images, etc.). Non-zero exit or empty stdout is isError.",
     parameters: {
       type: "object",
       properties: {
@@ -89,18 +103,20 @@ export function createMarkitdownTool() {
     async execute(args = {}) {
       const p = String(args.path || "").trim();
       if (!p) return errorResult("path required");
+      try {
+        await fs.access(p);
+      } catch {
+        return errorResult(`not found: ${p}`);
+      }
       const max = Math.min(Number(args.max_chars) || 80_000, 200_000);
-      // python -m markitdown path
-      let r = await run("python3", ["-m", "markitdown", p], { timeoutMs: 90_000 });
-      if (r.code !== 0) {
-        r = await run("markitdown", [p], { timeoutMs: 90_000 });
+      const py = await run("python3", ["-m", "markitdown", p], { timeoutMs: 90_000 });
+      let cli = null;
+      if (py.code !== 0 || !String(py.stdout || "").trim()) {
+        cli = await run("markitdown", [p], { timeoutMs: 90_000 });
       }
-      if (r.code !== 0) {
-        return errorResult(
-          r.stderr || r.stdout || `markitdown failed for ${p} (exit ${r.code})`
-        );
-      }
-      let text = r.stdout || "";
+      const picked = markitdownPickResult(py, cli);
+      if (!picked.ok) return errorResult(picked.error);
+      let text = picked.text;
       if (text.length > max) text = text.slice(0, max) + "\n…[truncated]";
       return textResult(text, {
         metadata: { path: p, chars: text.length, engine: "markitdown" },
