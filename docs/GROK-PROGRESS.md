@@ -1175,3 +1175,32 @@ RAN: `npm test` (hermetic) `# tests 5024` `# fail 0` `# duration_ms 69871.002828
 UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
 stay-put and that POST /objectives segments inherit continuation:false
 (hermetic source pin covers the caller).
+
+## 2026-08-30 — 3.481.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green (gateway continuation opt-out shipped; leftover stay-put; doctor honest)
+CLOSED UNVERIFIED from the 3.481.0 entry: GitHub `ci` / `install-e2e` /
+`eval-regression` / `ledger-guard` succeeded on `cd4f3e4` (ci 33308768125
+1m37s, no web_search flake). Live after pm2 restart pid 3447913 created
+2026-08-30T11:23:02.683Z startedAt 11:23:04.596Z: `/version` 3.481.0 stale
+false, `/ready` ready true, webchat POST `{message}` → assistant `PONG`
+(sessionId `5a349937-7e80-4716-ab59-6a8a720b895d`, model grok-4.6,
+stopReason natural). Boot after 11:23:04Z emitted no
+`[xclaw:agent-runs] auto-resumed` line (last still 06:27:15
+obj_mtffg2yd_aaaad3). `GET /agent-runs?limit=20` n=20 error 0 missing 0
+not_ok 4 resumable 0 ok 16. Leftover
+`2026-08-30T03-23-54-655Z_intel-symbol-locate` at index 1 (`resumable:
+false`, `ok: false`, status maxTurns, updatedAt 04:17:33.558Z, no
+`resumedAt` / `objectiveId`). Snapshot workingDir still
+`/tmp/xclaw-eval/2026-08-30T03-23-54-655Z/intel-symbol-locate`.
+`obj_mtffg2yd_aaaad3` stayed `awaiting_human`. n_objectives 23. Doctor
+`agentRuns.attention: no unfinished agent-run snapshots`. telegram
+writerLock true, lastPollOkAt 2026-08-30T11:24:06.570Z, lock pid=3447913.
+Live POST /objectives continuation opt-out was NOT driven on the gateway;
+hermetic source-contract test pins both live `runSegment` callers.
+NEXT: recon remaining evolution gap — do not assume compaction or
+long-horizon still missing (compaction default-on since 3.68.0;
+AUTONOMY_LONG_HORIZON.md is eval-harness only). Empty-criteria done is
+already held by `deterministicGate` (`requireChecked: true`). Do not
+treat jobs empty-verify as the next slice. Do not pass
+`verifyOnComplete: false` as extra scope.
