@@ -1,3 +1,12 @@
+## 3.405.0
+
+### computer_act reports what the page looks like after a click
+
+A successful `executeSteps` was treated as a successful click. The
+page may not have changed. After click/type/scroll the tool now
+evaluates `location.href` and `document.title` into `observed`.
+That is observation, not proof the gesture did the intended thing.
+
 ## 3.404.0
 
 ### The spawn tool tells the parent *why* the child failed

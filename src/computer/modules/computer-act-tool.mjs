@@ -30,6 +30,31 @@ import { resolveComputerEngine } from "../engine.mjs";
 const observeCache = new Map();
 
 /**
+ * Post-act observation. executeSteps succeeding is not proof the page
+ * did what the model wanted. Capture url/title after the gesture.
+ *
+ * @param {object} tab
+ * @returns {Promise<{ pageUrl: string|null, title: string|null }>}
+ */
+export async function observeAfterAct(tab) {
+  const out = { pageUrl: tab?.page?.url || null, title: null };
+  if (!tab || typeof tab.evaluate !== "function") return out;
+  try {
+    const raw = await tab.evaluate(
+      `JSON.stringify({ href: location.href, title: document.title })`
+    );
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (parsed && typeof parsed === "object") {
+      if (parsed.href) out.pageUrl = String(parsed.href);
+      if (parsed.title != null) out.title = String(parsed.title);
+    }
+  } catch {
+    /* CDP optional — still return cached page.url */
+  }
+  return out;
+}
+
+/**
  * Cache observe results so computer_act can resolve ref → name → coords.
  * Called by browser-tab observe or external callers.
  */
@@ -356,6 +381,7 @@ async function runComputerActImpl(input = {}) {
             engine: "cdp-motor",
           };
         }
+        const observed = await observeAfterAct(tab);
         return {
           ok: true,
           action,
@@ -363,7 +389,8 @@ async function runComputerActImpl(input = {}) {
           executed: r.executed,
           total: r.total,
           meta: plan.meta,
-          pageUrl: tab.page?.url || null,
+          pageUrl: observed.pageUrl,
+          observed,
           cuaPolicy: "tools_first_then_observe_then_gui",
         };
       },
