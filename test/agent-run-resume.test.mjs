@@ -44,6 +44,46 @@ describe("isResumableAgentRun", () => {
     );
   });
 
+  it("does not resume eval leftovers under tmp/xclaw-eval", () => {
+    const evalWd = path.join(os.tmpdir(), "xclaw-eval", "2026-08-30T03-23-54-655Z", "wc-a-04");
+    assert.equal(
+      isResumableAgentRun({
+        status: "maxTurns",
+        stopReason: "maxTurns",
+        workingDir: evalWd,
+        updatedAt: new Date().toISOString(),
+      }),
+      false
+    );
+    assert.equal(
+      isResumableAgentRun({
+        status: "interrupted",
+        stopReason: "segment",
+        workingDir: path.join(os.tmpdir(), "xclaw-eval", "run", "case"),
+        updatedAt: new Date().toISOString(),
+      }),
+      false
+    );
+    assert.equal(
+      isResumableAgentRun({
+        status: "maxTurns",
+        stopReason: "maxTurns",
+        workingDir: path.join(os.tmpdir(), "xclaw-eval"),
+        updatedAt: new Date().toISOString(),
+      }),
+      false
+    );
+    assert.equal(
+      isResumableAgentRun({
+        status: "interrupted",
+        stopReason: "segment",
+        workingDir: path.join(os.tmpdir(), "owner-work"),
+        updatedAt: new Date().toISOString(),
+      }),
+      true
+    );
+  });
+
   it("does not resume stale snapshots past maxAgeMs", () => {
     const old = {
       status: "active",
@@ -202,6 +242,53 @@ describe("reconcile + resume agent-runs", () => {
     assert.equal(started.length, 1);
     const still = await listResumableAgentRuns(cfg);
     assert.ok(still.length >= 1, "the uncapped leftover stays resumable");
+  });
+
+  it("does not auto-resume an eval leftover; owner interrupted still starts", async () => {
+    const isolated = { paths: { configDir: await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-run-resume-eval-")) } };
+    const ownerWd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-run-wd-owner-"));
+    const evalRoot = path.join(os.tmpdir(), "xclaw-eval");
+    await fs.mkdir(evalRoot, { recursive: true });
+    const evalWd = await fs.mkdtemp(path.join(evalRoot, "leftover-"));
+    await saveAgentRun(isolated, {
+      sessionId: "eval_leftover_maxturns",
+      workingDir: evalWd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+      turns: 20,
+      meta: { goal: "Please examine the two Excel files in the eval fixture" },
+    });
+    await saveAgentRun(isolated, {
+      sessionId: "owner_interrupted",
+      workingDir: ownerWd,
+      status: "interrupted",
+      stopReason: "segment",
+      turns: 4,
+      meta: { goal: "finish the owner patch" },
+    });
+    const started = [];
+    const out = await reconcileAndResumeAgentRuns(isolated, {
+      start: async (obj) => started.push({ id: obj.id, goal: obj.objective, workingDir: obj.workingDir }),
+    });
+    assert.equal(
+      started.some((s) => s.workingDir === evalWd),
+      false,
+      "eval leftover must not be started"
+    );
+    assert.equal(
+      started.some((s) => s.goal === "finish the owner patch"),
+      true,
+      "owner interrupted run must still start"
+    );
+    assert.equal(
+      out.resumed.some((r) => r.sessionId === "eval_leftover_maxturns"),
+      false
+    );
+    const leftover = await loadAgentRun(isolated, "eval_leftover_maxturns");
+    assert.equal(leftover.run.status, "maxTurns");
+    assert.equal(leftover.run.objectiveId || null, null);
+    const owner = await loadAgentRun(isolated, "owner_interrupted");
+    assert.equal(owner.run.status, "resumed");
   });
 
   it("skips a snapshot with no recoverable goal", async () => {

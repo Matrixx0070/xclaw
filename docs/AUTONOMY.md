@@ -152,7 +152,9 @@ Gateway boot auto-resumes unfinished **agent-run snapshots** the same
 way it already resumes interrupted objectives: `active` / `maxTurns`
 runs are promoted into an objective with an in-flight warning so the
 next segment verifies disk before rewriting. Kill, approval, and budget
-stops stay put. Cap: `agent.autoResumeMax` (default 3). Age: 48h.
+stops stay put. Eval leftovers whose `workingDir` is under
+`tmp/xclaw-eval` also stay put — scored eval trees are not owner
+missions. Cap: `agent.autoResumeMax` (default 3). Age: 48h.
 Opt out: `agent.autoResume: false`.
 
 

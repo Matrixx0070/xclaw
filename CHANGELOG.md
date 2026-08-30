@@ -1,3 +1,18 @@
+## 3.473.0
+
+### Eval leftovers do not auto-resume as live missions
+
+Gateway boot promoted unfinished agent-run snapshots (`active` /
+`maxTurns`) into objectives. Eval cases persist under
+`os.tmpdir()/xclaw-eval/<runId>/<caseId>` into `~/.xclaw/agent-runs`,
+so a restart treated a scored eval leftover as owner work. Live:
+`obj_mtffg2yd_aaaad3` auto-started from
+`2026-08-30T03-23-54-655Z_wc-a-04_Search_Retrieval_task_6_excel_with_search`
+(30 tool calls, $0.41, then fail-closed `no_checks`). Snapshots whose
+`workingDir` is under `tmp/xclaw-eval` now stay put. Owner interrupted
+and maxTurns resumes are unchanged. Kill, approval, and budget still
+stay put.
+
 ## 3.472.0
 
 ### Background bash liveness uses the canonical pid helper

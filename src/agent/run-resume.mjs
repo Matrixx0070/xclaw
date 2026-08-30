@@ -14,6 +14,8 @@
  */
 import { loadAgentRun, saveAgentRun, runsDir } from "./run-store.mjs";
 import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 const NOTICE_RE = /^\[XClaw notice\]/;
 const DEFAULT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
@@ -32,9 +34,29 @@ const STAY_PUT = new Set([
 ]);
 
 /**
+ * Eval cases write under os.tmpdir()/xclaw-eval/<runId>/<caseId>.
+ * Those snapshots land in ~/.xclaw/agent-runs because persistRun is on,
+ * then gateway boot treated maxTurns as owner work and auto-started them
+ * (live: obj_mtffg2yd_aaaad3, 30 tool calls, $0.41). Ephemeral eval trees
+ * are not owner missions.
+ */
+export function isEvalLeftoverWorkingDir(workingDir) {
+  if (!workingDir || typeof workingDir !== "string") return false;
+  const evalRoot = path.resolve(os.tmpdir(), "xclaw-eval");
+  let resolved;
+  try {
+    resolved = path.resolve(workingDir);
+  } catch {
+    return false;
+  }
+  const rel = path.relative(evalRoot, resolved);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+/**
  * Pure: whether a snapshot is unfinished work that a restart should
- * continue. Kill, pending approval, budget, policy, and natural
- * completion are NOT resumable.
+ * continue. Kill, pending approval, budget, policy, natural completion,
+ * and eval leftovers under tmp/xclaw-eval are NOT resumable.
  *
  * @param {object} run
  * @param {{ now?: number, maxAgeMs?: number }} [opts]
@@ -43,6 +65,7 @@ export function isResumableAgentRun(run = {}, opts = {}) {
   if (!run || typeof run !== "object") return false;
   if (run.resumedAt || run.objectiveId) return false;
   if (run.stopRequested) return false;
+  if (isEvalLeftoverWorkingDir(run.workingDir)) return false;
   const status = String(run.status || "");
   const reason = String(run.stopReason || "");
   if (STAY_PUT.has(status) || STAY_PUT.has(reason)) return false;

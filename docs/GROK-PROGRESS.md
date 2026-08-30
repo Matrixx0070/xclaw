@@ -823,3 +823,34 @@ RAN: `node --test` pid-alive + react + bash-tool-codes → 36/36;
 `npm test` → `# tests 5008` `# fail 0` (exit 0).
 UNVERIFIED: GitHub `ci` on this SHA (skills smoke / p2 still to run on
 Actions); live gateway drive after merge.
+
+## 2026-08-30 — 3.473.0 eval leftovers do not auto-resume as live missions (Claude)
+
+STATUS: green (local hermetic; GitHub `ci` UNVERIFIED until this SHA)
+DISCOVERED: Feature 2 recovery was correct for owner interrupted work and
+wrong for ephemeral eval trees. Eval cases persist under
+`os.tmpdir()/xclaw-eval/<runId>/<caseId>` into `~/.xclaw/agent-runs`
+because persistRun is on. Gateway boot treated `maxTurns` as owner
+work. Live: `obj_mtffg2yd_aaaad3` auto-started from
+`2026-08-30T03-23-54-655Z_wc-a-04_Search_Retrieval_task_6_excel_with_search`
+(30 tool calls, $0.41, then fail-closed `no_checks`). Census: 264
+eval-like snapshots; 1 still unpromoted bomb
+(`2026-08-30T03-23-54-655Z_intel-symbol-locate`, maxTurns, wd exists).
+BUILT: `isEvalLeftoverWorkingDir` + skip in `isResumableAgentRun` so
+list/resume/boot all refuse eval leftovers. Owner interrupted and
+maxTurns with a non-eval workingDir still resume. Kill, approval,
+budget stay put.
+RAN: `node --test test/agent-run-resume.test.mjs` → 14/14;
+`npm test` → `# tests 5010` `# fail 0` (exit 0).
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving
+`intel-symbol-locate` stays put and `obj_mtffg2yd_aaaad3` stays
+awaiting_human.
+
+## 2026-08-30 — 3.472.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green
+CLOSED UNVERIFIED from the 3.472.0 entry: GitHub `ci` succeeded on
+`3110bb8`; live drive after restart: `/version` 3.472.0 stale false,
+`/ready` ready true, webchat POST `{message}` → assistant `PONG`,
+telegram poller healthy writerLock pid=3157966. That restart is also
+what auto-started the eval leftover above.
