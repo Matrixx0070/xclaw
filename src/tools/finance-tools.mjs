@@ -45,7 +45,7 @@ export function createFinanceQuoteTool({ fetchFn } = {}) {
             const base = process.env.POLYGON_API_BASE_URL || "https://api.polygon.io";
             const url = `${base}/v2/aggs/ticker/${encodeURIComponent(sym)}/prev?adjusted=true&apiKey=${encodeURIComponent(key)}`;
             const res = await doFetch(url, { signal: AbortSignal.timeout(15_000) });
-            const j = await res.json();
+            const j = await res.json().catch(() => ({}));
             if (!res.ok) return errorResult(j.error || j.message || `HTTP ${res.status}`);
             const bar = j.results?.[0];
             if (!bar) return errorResult(`No data for ${sym}`);

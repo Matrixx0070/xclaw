@@ -1,3 +1,10 @@
+## 3.458.0
+
+### Polygon `finance_quote` does not throw on 429 HTML as a successful parse
+
+`res.json()` ran before `res.ok`. A 429 HTML body threw
+`Unexpected token` instead of `HTTP 429`. json() is now catch-empty.
+
 ## 3.457.0
 
 ### X keyword search does not throw on 429 HTML as a successful parse
