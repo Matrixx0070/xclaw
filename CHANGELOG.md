@@ -1,3 +1,11 @@
+## 3.434.0
+
+### CoinGecko HTTP 429 is an error, not a missing ticker
+
+`finance_quote` parsed CoinGecko JSON without checking `res.ok`. A
+rate-limit page became `No crypto match`. Non-OK responses now return
+`CoinGecko HTTP <status>`.
+
 ## 3.433.0
 
 ### X keyword search fallback does not parse a 503 as tweets
