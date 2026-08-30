@@ -49,7 +49,7 @@ export function createXKeywordSearchTool({ fetchFn } = {}) {
             headers: { Authorization: `Bearer ${bearer}` },
             signal: AbortSignal.timeout(20_000),
           });
-          const j = await res.json();
+          const j = await res.json().catch(() => ({}));
           if (!res.ok) return errorResult(j.detail || j.title || `HTTP ${res.status}`);
           const lines = (j.data || []).slice(0, limit).map((t, i) => {
             const m = t.public_metrics || {};

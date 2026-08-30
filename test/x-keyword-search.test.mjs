@@ -27,6 +27,29 @@ describe("x_keyword_search", () => {
       if (prev !== undefined) process.env.X_BEARER_TOKEN = prev;
     }
   });
+
+  it("bearer HTTP 429 with invalid JSON is isError HTTP 429, not a parse throw", async () => {
+    const prev = process.env.X_BEARER_TOKEN;
+    process.env.X_BEARER_TOKEN = "test";
+    try {
+      const tool = createXKeywordSearchTool({
+        fetchFn: async () => ({
+          ok: false,
+          status: 429,
+          async json() {
+            throw new Error("Unexpected token <");
+          },
+        }),
+      });
+      const out = await tool.execute({ query: "xclaw" });
+      assert.equal(out.isError, true);
+      assert.match(out.content[0].text, /HTTP 429/);
+      assert.doesNotMatch(out.content[0].text, /Unexpected token/);
+    } finally {
+      if (prev === undefined) delete process.env.X_BEARER_TOKEN;
+      else process.env.X_BEARER_TOKEN = prev;
+    }
+  });
 });
 
 describe("x_user_search", () => {
