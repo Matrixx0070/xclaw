@@ -412,11 +412,19 @@ export function createSpawnTool(ctx = {}) {
         onEvent: ctx.onEvent,
         role: role || undefined,
         swarmRole: role || undefined,
+        provider: ctx.provider,
       });
       if (!out.ok) {
+        const why = [
+          out.error || `subagent ${out.status || "failed"}`,
+          out.result?.stopReason ? `stopReason=${out.result.stopReason}` : "",
+          out.result?.text ? String(out.result.text).slice(0, 400) : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
         return {
           isError: true,
-          content: [{ type: "text", text: out.error || "subagent failed" }],
+          content: [{ type: "text", text: why }],
         };
       }
       return {

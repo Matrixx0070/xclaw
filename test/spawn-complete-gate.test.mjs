@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSubagent } from "../src/agents/spawn.mjs";
+import { spawnSubagent, createSpawnTool } from "../src/agents/spawn.mjs";
 
 describe("spawnSubagent does not treat a child's false Done as success", () => {
   const CFG = {
@@ -63,5 +63,48 @@ describe("spawnSubagent does not treat a child's false Done as success", () => {
     });
     assert.equal(out.ok, true);
     assert.equal(out.status, "done");
+  });
+});
+
+describe("xclaw_spawn_subagent tool reports why the child failed", () => {
+  it("includes stopReason when the child is unverified", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-spawn-tool-"));
+    const tool = createSpawnTool({
+      cfg: {
+        agent: {
+          maxTurns: 4,
+          persistTranscript: false,
+          continueOnMaxTurns: false,
+          finalAnswerRescue: false,
+        },
+        tokens: { enabled: false, ledger: false },
+        skills: { enabled: false },
+        memory: { enabled: false, recall: false },
+        computer: { autoStart: false },
+        security: { autoApprove: true },
+        hooks: { log: false, stopBlockCap: 2 },
+        router: { enabled: false },
+      },
+      workingDir: dir,
+      provider: {
+        providerName: "fake",
+        model: "fake-1",
+        modelRef: "fake-1",
+        baseUrl: "http://127.0.0.1:1",
+        async chat() {
+          return {
+            message: { role: "assistant", content: "Done." },
+            finishReason: "stop",
+          };
+        },
+      },
+    });
+    const out = await tool.execute({
+      task: `Create ${dir}/proof.txt with text PROOF`,
+      maxTurns: 4,
+    });
+    assert.equal(out.isError, true);
+    const text = out.content.map((c) => c.text).join("\n");
+    assert.match(text, /stopReason=unverified/);
   });
 });

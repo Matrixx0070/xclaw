@@ -1,3 +1,13 @@
+## 3.404.0
+
+### The spawn tool tells the parent *why* the child failed
+
+`xclaw_spawn_subagent` returned `isError` with only `out.error`,
+which is empty on an unverified child (the loop did not throw). The
+parent saw "subagent failed" with no stopReason and could not replan.
+The tool text now includes `stopReason=` and a slice of the child's
+text. Tests inject `provider` via the tool ctx.
+
 ## 3.403.0
 
 ### A partial swarm is not a successful swarm
