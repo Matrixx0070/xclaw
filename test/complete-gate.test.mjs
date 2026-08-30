@@ -26,6 +26,16 @@ describe("deriveGoalVerifyChecks", () => {
     assert.deepEqual(deriveGoalVerifyChecks("what is in config.json?"), []);
   });
 
+  it("absolute extensionless and Makefile still derive a check", () => {
+    const t = deriveGoalVerifyChecks("touch /tmp/xclaw-noext");
+    assert.equal(t[0].type, "file_exists");
+    assert.equal(t[0].path, "/tmp/xclaw-noext");
+    const m = deriveGoalVerifyChecks("create Makefile");
+    assert.equal(m[0].type, "file_exists");
+    assert.equal(m[0].path, "Makefile");
+    assert.deepEqual(deriveGoalVerifyChecks("what is in Makefile?"), []);
+  });
+
   it("append TEXT to PATH and echo TEXT > PATH", () => {
     const a = deriveGoalVerifyChecks("append OK to notes.txt");
     assert.equal(a[0].type, "file_contains");

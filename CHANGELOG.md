@@ -1,3 +1,13 @@
+## 3.387.0
+
+### `/tmp/hello` and `Makefile` still have to exist
+
+The path matcher required a file extension, so `touch /tmp/xclaw-noext`
+and `create Makefile` derived no check. Absolute paths without an
+extension and a short list of well-known basenames (Makefile,
+Dockerfile, LICENSE, README, Procfile) now derive `file_exists`.
+"What is in Makefile?" stays chat.
+
 ## 3.386.0
 
 ### `append` / `echo >` still have to land on disk

@@ -13,7 +13,8 @@
 import { runVerifyChecks } from "../jobs/verify.mjs";
 import { inferGoal } from "./turn-state.mjs";
 
-const PATH = "(?:\\/|\\.\\/)?[\\w./-]+\\.[A-Za-z0-9]+";
+const PATH =
+  "(?:\\/[\\w./-]+|(?:\\/|\\.\\/)?[\\w./-]+\\.[A-Za-z0-9]+|Makefile|Dockerfile|LICENSE|README|Procfile)";
 // Optional "a/the file named/called" between the verb and the path so
 // "write a file hello.txt" matches the same way "write hello.txt" does.
 const FILE_PREFIX = "(?:(?:a|the)\\s+)?(?:file\\s+)?(?:(?:named|called)\\s+)?";
