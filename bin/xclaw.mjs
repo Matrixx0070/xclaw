@@ -1780,36 +1780,32 @@ Enable with seats.enabled: true in config`);
     }
 
     case "agent": {
-      // xclaw agent [--session <id>] <message>
+      // xclaw agent [--session <id>] [--gateway] <message>
+      // --gateway is boolean presence (not the URL form `xclaw run --gateway <url>`).
+      const { takeGatewayFlag, runGatewayHandoff } = await import("../src/cli/gateway-handoff.mjs");
+      const { viaGateway, rest } = takeGatewayFlag(args.slice(1));
       let sessionId = null;
       const msgParts = [];
-      for (let i = 1; i < args.length; i++) {
-        if ((args[i] === "--session" || args[i] === "--session-id") && args[i + 1]) {
-          sessionId = args[++i];
+      for (let i = 0; i < rest.length; i++) {
+        if ((rest[i] === "--session" || rest[i] === "--session-id") && rest[i + 1]) {
+          sessionId = rest[++i];
         } else {
-          msgParts.push(args[i]);
+          msgParts.push(rest[i]);
         }
       }
       const message = msgParts.join(" ").trim();
       if (!message) {
-        console.error("Usage: xclaw agent [--session <id>] <message>");
+        console.error("Usage: xclaw agent [--session <id>] [--gateway] <message>");
         process.exit(1);
       }
       const { loadConfig } = await import("../src/config/load.mjs");
-      const { isComputerRunning, startComputer } = await import("../src/computer/manager.mjs");
-      const { runAgent } = await import("../src/agent/run-agent.mjs");
       const cfg = await loadConfig();
-      if (!(await isComputerRunning(cfg))) {
-        console.log("[xclaw] Starting Computer…");
-        await startComputer({ root, foreground: false });
-      }
-      console.log(`[xclaw] Agent model: ${cfg.agent?.model || "gpt-4o-mini"}`);
       // Sticky cache: default a session id so multi-invocation CLIs can share
       // via --session; auto-generate when unset (single-run still warms within loop).
+      // Gateway persist fires when sessionId is present — mint before the POST.
       if (!sessionId && cfg.tokens?.autoSession !== false) {
         sessionId = `cli-${Date.now().toString(36)}`;
       }
-      if (sessionId) console.log(`[xclaw] session: ${sessionId}`);
       const onEvent = (e) => {
         if (e.type === "tool" && e.phase === "start") {
           console.log(`  → tool ${e.name}`, JSON.stringify(e.args || {}).slice(0, 100));
@@ -1825,14 +1821,39 @@ Enable with seats.enabled: true in config`);
           console.log(`  · mission ${e.phase || ""} ${e.id || ""}`.trim());
         }
       };
-      let result = await runAgent({
-        goal: message,
-        cfg,
-        channel: "cli",
-        chatSessionId: sessionId || null,
-        persistRun: true,
-        onEvent,
-      });
+      let result;
+      if (viaGateway) {
+        // Gateway owns computer. Fail closed — no silent in-process fallback.
+        const h = await runGatewayHandoff(cfg, "agent", {
+          message,
+          sessionId: sessionId || undefined,
+          workingDir: process.cwd(),
+        });
+        if (!h.ok) {
+          console.error(h.error);
+          process.exitCode = h.exitCode || 1;
+          break;
+        }
+        result = h.result || {};
+        if (sessionId) console.log(`[xclaw] session: ${sessionId} (via gateway)`);
+      } else {
+        const { isComputerRunning, startComputer } = await import("../src/computer/manager.mjs");
+        const { runAgent } = await import("../src/agent/run-agent.mjs");
+        if (!(await isComputerRunning(cfg))) {
+          console.log("[xclaw] Starting Computer…");
+          await startComputer({ root, foreground: false });
+        }
+        console.log(`[xclaw] Agent model: ${cfg.agent?.model || "gpt-4o-mini"}`);
+        if (sessionId) console.log(`[xclaw] session: ${sessionId}`);
+        result = await runAgent({
+          goal: message,
+          cfg,
+          channel: "cli",
+          chatSessionId: sessionId || null,
+          persistRun: true,
+          onEvent,
+        });
+      }
       console.log("\n---\n" + result.text);
       // A0: CLI used to call runAgentLoop directly, skipping the claims gate
       // AND never persisting (it passed chatSessionId, which the loop ignored).
@@ -2329,48 +2350,75 @@ Enable with seats.enabled: true in config`);
         break;
       }
       if (sub === "resume") {
-        const id = args[2];
-        if (!id) { console.error("Usage: xclaw runs resume <sessionId>"); process.exit(1); }
+        const { takeGatewayFlag, runGatewayHandoff, probeGateway } = await import("../src/cli/gateway-handoff.mjs");
+        const { viaGateway, rest } = takeGatewayFlag(args.slice(2));
+        const id = rest[0];
+        if (!id) { console.error("Usage: xclaw runs resume [--gateway] <sessionId>"); process.exit(1); }
         const loaded = await loadAgentRun(cfg, id);
         if (!loaded.ok) {
           console.error(loaded.code || loaded.message || "load failed");
           process.exit(1);
         }
+        if (viaGateway) {
+          // Probe BEFORE resumeAgentRunAsObjective stamps resumedAt/objectiveId.
+          // Stamp-then-POST is one-way: isResumableAgentRun returns false once
+          // stamped, and the catch below does not roll the stamp back.
+          const probe = await probeGateway(cfg);
+          if (!probe.ok) {
+            console.error(probe.error);
+            process.exitCode = probe.exitCode || 1;
+            break;
+          }
+        }
         const { resumeAgentRunAsObjective } = await import("../src/agent/run-resume.mjs");
-        const { replyWithAgent } = await import("../src/channels/base.mjs");
-        const { runObjective } = await import("../src/agent/objective.mjs");
-        const out = await resumeAgentRunAsObjective(cfg, loaded.run, {
-          start: async (obj) => {
-            const wd = obj.workingDir || process.cwd();
-            return runObjective(cfg, {
-              resumeId: obj.id,
-              workingDir: wd,
-              runSegment: async ({ prompt, rescuePrompt, sessionId }) =>
-                replyWithAgent({
-                  cfg,
-                  message: prompt,
-                  workingDir: wd,
-                  history: [],
-                  continuation: false,
-                  chatSessionId: sessionId,
-                  rescuePrompt,
-                  onEvent: (e) => {
-                    if (e.type === "tool" && e.phase === "start") {
-                      console.log(`  → ${e.name}`);
-                    }
-                  },
-                }),
-              notify: async (t) => {
-                console.log("\n[mission] " + String(t));
-              },
-            });
-          },
-        });
+        const start = viaGateway
+          ? async (obj) => {
+              // Probe already passed. HTTP resume is detached — CLI prints
+              // {ok,id,status:running} and exits. Fail closed on POST reject.
+              const h = await runGatewayHandoff(cfg, "resume", { objectiveId: obj.id });
+              if (!h.ok) throw new Error(h.error);
+              return h.result;
+            }
+          : async (obj) => {
+              const { replyWithAgent } = await import("../src/channels/base.mjs");
+              const { runObjective } = await import("../src/agent/objective.mjs");
+              const wd = obj.workingDir || process.cwd();
+              return runObjective(cfg, {
+                resumeId: obj.id,
+                workingDir: wd,
+                runSegment: async ({ prompt, rescuePrompt, sessionId }) =>
+                  replyWithAgent({
+                    cfg,
+                    message: prompt,
+                    workingDir: wd,
+                    history: [],
+                    continuation: false,
+                    chatSessionId: sessionId,
+                    rescuePrompt,
+                    onEvent: (e) => {
+                      if (e.type === "tool" && e.phase === "start") {
+                        console.log(`  → ${e.name}`);
+                      }
+                    },
+                  }),
+                notify: async (t) => {
+                  console.log("\n[mission] " + String(t));
+                },
+              });
+            };
+        let out;
+        try {
+          out = await resumeAgentRunAsObjective(cfg, loaded.run, { start });
+        } catch (err) {
+          console.error(err?.message || err);
+          process.exitCode = 1;
+          break;
+        }
         console.log(JSON.stringify(out, null, 2));
         process.exitCode = out.ok ? 0 : 1;
         break;
       }
-      console.error("Usage: xclaw runs [list|show <id>|resume <id>|delete <id>]");
+      console.error("Usage: xclaw runs [list|show <id>|resume [--gateway] <id>|delete <id>]");
       process.exit(1);
       break;
     }
@@ -2707,10 +2755,35 @@ Enable with seats.enabled: true in config`);
       break;
     }
     case "job": {
+      const { takeGatewayFlag, runGatewayHandoff } = await import("../src/cli/gateway-handoff.mjs");
+      const { viaGateway, rest } = takeGatewayFlag(args.slice(1));
       const { loadConfig } = await import("../src/config/load.mjs");
-      const { runJob, saveJobSummary } = await import("../src/jobs/job.mjs");
       const cfg = await loadConfig();
-      const goal = args.slice(1).join(" ") || "List files in the workspace";
+      const goal = rest.join(" ") || "List files in the workspace";
+      if (viaGateway) {
+        // Gateway already saveJobSummary. Response omits verdict/stopReason —
+        // print what the API returns. Do not delete the in-process prints.
+        const h = await runGatewayHandoff(cfg, "job", { goal, autoApprove: true });
+        if (!h.ok) {
+          console.error(h.error);
+          process.exitCode = h.exitCode || 1;
+          break;
+        }
+        const job = h.result || {};
+        console.log(JSON.stringify({
+          id: job.id,
+          status: job.status,
+          pass: job.pass,
+          turns: job.turns,
+          wallMs: job.wallMs,
+          text: job.text,
+          evidence: Array.isArray(job.evidence) ? job.evidence.length : job.evidence,
+          error: job.error,
+        }, null, 2));
+        process.exitCode = job.pass ? 0 : 1;
+        break;
+      }
+      const { runJob, saveJobSummary } = await import("../src/jobs/job.mjs");
       const job = await runJob({ goal, cfg, autoApprove: true });
       await saveJobSummary(job);
       console.log(JSON.stringify({
@@ -2842,7 +2915,7 @@ Usage:
 Commands:
   gateway, start       Start Gateway (Computer + Agent + WebChat + channels)
   computer             Computer server only (start|status|stop|restart)
-  agent <message>      One agent turn (CLI)
+  agent [--gateway] <message>  One agent turn (CLI; opt-in POST /agent/run)
   run <message>        Stream via gateway (--ndjson, --resume)
   status [--json]      Gateway + computer + active sessions
   tui [-c|--continue]  Interactive terminal chat (streaming, inline approvals)
@@ -2860,7 +2933,7 @@ Commands:
   timeline             list | diff <a> <b> | revert <missionId> | known-good | attribute <path>
   self-deploy          status | run-once | watch (external deploy executor)
   eval                 Eval suite (--tag, --mock, --json)
-  job <goal>           Verified job in a temp workspace
+  job [--gateway] <goal>  Verified job in a temp workspace (opt-in POST /jobs)
   harness <goal>       Long-run grounded harness (anti-hallucination)
   evolve               status|tick|overlay — self-evolution / hands-free
   skills               list|proposals|install|reject  (prod install needs --owner-approved)

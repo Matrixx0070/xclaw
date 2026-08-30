@@ -267,6 +267,49 @@ describe("default-path durability wiring", () => {
     );
   });
 
+  it("CLI --gateway is opt-in handoff; default stays in-process", () => {
+    const src = read("bin/xclaw.mjs");
+    const agentStart = src.indexOf('case "agent"');
+    const agentEnd = src.indexOf('case "soak"');
+    assert.ok(agentStart >= 0 && agentEnd > agentStart);
+    const agent = src.slice(agentStart, agentEnd);
+    assert.match(agent, /takeGatewayFlag/);
+    assert.match(agent, /runGatewayHandoff/);
+    assert.match(agent, /runAgent\(/);
+    assert.match(agent, /persistRun:\s*true/);
+    assert.match(agent, /autoPromoteIfNeeded/);
+    assert.match(agent, /awaitRun:\s*true/);
+    const jobStart = src.indexOf('case "job"');
+    const jobEnd = src.indexOf('case "wait-ready"');
+    assert.ok(jobStart >= 0 && jobEnd > jobStart);
+    const job = src.slice(jobStart, jobEnd);
+    assert.match(job, /runGatewayHandoff/);
+    assert.match(job, /verdict: job\.verdict/);
+    assert.match(job, /stopReason: job\.stopReason/);
+    const runsStart = src.indexOf('case "runs"');
+    const runsEnd = src.indexOf('case "approvals"');
+    assert.ok(runsStart >= 0 && runsEnd > runsStart);
+    const runs = src.slice(runsStart, runsEnd);
+    assert.match(runs, /resumeAgentRunAsObjective/);
+    assert.match(runs, /runGatewayHandoff/);
+    assert.match(runs, /probeGateway/);
+    const probeAt = runs.indexOf("probeGateway");
+    const stampAt = runs.indexOf("resumeAgentRunAsObjective");
+    assert.ok(
+      probeAt >= 0 && stampAt > probeAt,
+      "runs resume --gateway must probe before resumeAgentRunAsObjective stamps"
+    );
+    const handoff = read("src/cli/gateway-handoff.mjs");
+    assert.match(handoff, /\/agent\/run/);
+    assert.match(handoff, /\/jobs/);
+    assert.match(handoff, /\/objectives\/\$\{id\}\/resume/);
+    assert.match(handoff, /probeGateway/);
+    assert.match(handoff, /\/health/);
+    assert.doesNotMatch(handoff, /persistRun:\s*true/);
+    assert.match(handoff, /HANDOFF_TIMEOUT_MS/);
+    assert.doesNotMatch(handoff, /timeoutMs = 4000/);
+  });
+
   it("Voice listen auto-promotes a turn-cap cutoff without minting persistRun", () => {
     const src = read("src/voice/wake/listen.mjs");
     const start = src.indexOf("export async function runVoiceListen");

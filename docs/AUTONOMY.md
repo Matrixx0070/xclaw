@@ -124,7 +124,21 @@ Snapshots under `~/.xclaw/agent-runs/`.
 xclaw runs list
 xclaw runs show <sessionId>
 xclaw runs resume <sessionId>
+xclaw runs resume --gateway <sessionId>   # opt-in: POST /objectives/:id/resume (detached)
+xclaw agent --gateway "…"                 # opt-in: POST /agent/run
+xclaw job --gateway "…"                   # opt-in: POST /jobs
 ```
+
+`--gateway` on `agent` / `job` / `runs resume` is boolean presence (not the
+URL form `xclaw run --gateway <url>`). Default stays in-process. When
+opted in and the gateway is unreachable or rejects, the CLI fails closed
+(exit 1, says why) — no silent in-process fallback. `runs resume
+--gateway` probes GET `/health` first; it does not stamp `resumedAt` /
+`objectiveId` unless the gateway is reachable. HTTP resume is then
+detached (CLI exits while the gateway runs). A rejecting POST after a
+successful probe is still TOCTOU — probe-first beats stamp-then-POST.
+`xclaw agent --gateway` still auto-promotes a turn-cap cutoff locally
+with `awaitRun: true` (CLI-owned; not HTTP API auto-promote).
 
 `GET /agent-runs?id=` · Codes: `SESSION_NOT_FOUND` | `SESSION_CORRUPT` | `SESSION_UNSUPPORTED_VERSION` | `SESSION_WORKDIR_MISSING`
 

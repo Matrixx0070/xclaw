@@ -1,3 +1,45 @@
+## 3.490.0
+
+### CLI `--gateway` is opt-in handoff; resume does not stamp a dead owner
+
+Default `xclaw agent` / `job` / `runs resume` stay in-process. `--gateway` is
+boolean presence (not the URL form `xclaw run --gateway <url>`). When opted
+in and the gateway is unreachable or rejects, the CLI fails closed (exit 1,
+says why) — no silent in-process fallback.
+
+`runs resume --gateway` probes GET `/health` first. It does not stamp
+`resumedAt` / `objectiveId` unless the gateway is reachable. Stamp-then-POST
+was one-way: `isResumableAgentRun` returns false once stamped, and the CLI
+catch did not roll the stamp back. HTTP resume is then detached (CLI exits
+while the gateway runs). A rejecting POST after a successful probe is still
+TOCTOU — probe-first beats stamp-then-POST.
+
+`xclaw agent --gateway` still auto-promotes a turn-cap cutoff locally with
+`awaitRun: true` (CLI-owned; not HTTP API auto-promote). This slice does not
+mint `persistRun: true` on voice, TUI, Discord `/ask`, Slack, email, voice
+TUI, or voice listen, and does not auto-promote HTTP `POST /agent/run`.
+
+## 3.490.0
+
+### CLI `--gateway` is opt-in handoff; resume does not stamp a dead owner
+
+Default `xclaw agent` / `job` / `runs resume` stay in-process. `--gateway` is
+boolean presence (not the URL form `xclaw run --gateway <url>`). When opted
+in and the gateway is unreachable or rejects, the CLI fails closed (exit 1,
+says why) — no silent in-process fallback.
+
+`runs resume --gateway` probes GET `/health` first. It does not stamp
+`resumedAt` / `objectiveId` unless the gateway is reachable. Stamp-then-POST
+was one-way: `isResumableAgentRun` returns false once stamped, and the CLI
+catch did not roll the stamp back. HTTP resume is then detached (CLI exits
+while the gateway runs). A rejecting POST after a successful probe is still
+TOCTOU — probe-first beats stamp-then-POST.
+
+`xclaw agent --gateway` still auto-promotes a turn-cap cutoff locally with
+`awaitRun: true` (CLI-owned; not HTTP API auto-promote). This slice does not
+mint `persistRun: true` on voice, TUI, Discord `/ask`, Slack, email, voice
+TUI, or voice listen, and does not auto-promote HTTP `POST /agent/run`.
+
 ## 3.489.0
 
 ### Voice listen auto-promotes a turn-cap cutoff

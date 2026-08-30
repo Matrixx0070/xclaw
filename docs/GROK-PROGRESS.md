@@ -1474,3 +1474,28 @@ RAN:
 - Webchat POST /channel/webchat/message `{"message":"ping 3.489.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `c7a0faec-65de-4c0c-8380-2e4acae5be25` stopReason=natural. telegram writerLock held by live pid=3695988 lastPollOkAt 2026-08-30T16:23:11.680Z. discord enabled=false. slack enabled=false. email enabled=false.
 UNVERIFIED: live voice listen turn-cap → mission (source pin only; a live voice listen turn would mean a real agent loop). Live voice TUI / email / Slack / Discord `/ask` / TUI / voice WS turn-cap → mission remain source-pinned from 3.488.0 / 3.487.0 / 3.486.0 / 3.485.0 / 3.484.0 / 3.483.0. Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0.
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, Discord `/ask`, Slack, email, voice TUI, or voice listen. Do not auto-promote HTTP POST /agent/run.
+
+## 2026-08-30 — 3.490.0 CLI --gateway opt-in handoff; resume does not stamp a dead owner
+
+STATUS: green (local hermetic)
+DISCOVERED: Default `xclaw agent` / `job` / `runs resume` stay in-process.
+`--gateway` is boolean presence (not the URL form `xclaw run --gateway <url>`).
+Agent/job POSTs already fail closed. `runs resume --gateway` classified and
+promoted locally (stamped snapshot `resumedAt`/`objectiveId`) BEFORE POST, so
+a dead gateway left the snapshot un-resumable (`isResumableAgentRun` returns
+false once stamped; CLI catch does not roll the stamp back). Stamp-then-POST
+is the live-drive class: any writer holding a record across unbounded `await`
+must re-read before its terminal write.
+BUILT: `src/cli/gateway-handoff.mjs` (`takeGatewayFlag`, `runGatewayHandoff`,
+`probeGateway` GET `/health` at `PROBE_TIMEOUT_MS=3000`). `gatewayGet` next
+to `gatewayPost` (POST default 4000ms unchanged). CLI `runs resume --gateway`
+probes before `resumeAgentRunAsObjective`. Dead-port e2e: snapshot stays
+unstamped and `isResumableAgentRun` still true. Durability `it()` collapsed
+to one copy; pin now requires probe-before-stamp. AUTONOMY no longer says
+stamp-then-POST.
+RAN: node --test test/gateway-handoff.test.mjs test/default-path-durability.test.mjs → # tests 34 # pass 34 # fail 0 # duration_ms 304.372323; npm test (hermetic) → # tests 5049 # pass 5049 # fail 0 # duration_ms 71857.683718
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put. Live `runs resume --gateway` against a running owner is source-pinned
+plus dead-port e2e, not driven against the live pid (that would stamp a real
+snapshot). A rejecting POST after a successful probe is still TOCTOU.
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, Discord `/ask`, Slack, email, voice TUI, or voice listen. Do not auto-promote HTTP POST /agent/run. Do not stamp `runs resume --gateway` before GET `/health`.
