@@ -44,7 +44,7 @@ export async function pushKillSwitchChecks(push) {
     push(
       "security.killSwitch.lastDrain",
       channelOk ? "ok" : "warn",
-      `last stop drain authMethod=${method} channel=${channel} sessions=${lastDrain.sessionsKilled} ws=${lastDrain.wsClosed} sse=${lastDrain.sseClosed}`,
+      `last stop drain authMethod=${method} channel=${channel} sessions=${lastDrain.sessionsKilled} ws=${lastDrain.wsClosed} sse=${lastDrain.sseClosed} bashBgKilled=${lastDrain.bashBgKilled ?? lastDrain.drain?.bashBgKilled ?? 0}`,
       { ...lastDrain, authMethod: method, channel, channelKnown: channelOk }
     );
   }

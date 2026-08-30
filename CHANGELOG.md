@@ -1,3 +1,11 @@
+## 3.413.0
+
+### Last-drain doctor line includes `bashBgKilled`
+
+The drain record already stored the count; the doctor lastDrain
+probe did not print it. Operators reading `xclaw doctor` after a
+stop can see leftover-bash kills on that line.
+
 ## 3.412.0
 
 ### Doctor and stop docs name the background-bash kill
