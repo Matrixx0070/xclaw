@@ -73,6 +73,17 @@ function errorResult(msg) {
   return { isError: true, content: [{ type: "text", text: String(msg) }] };
 }
 
+const SCREENSHOT_MIN_BYTES = 100;
+
+async function screenshotFileLanded(dest, minBytes = SCREENSHOT_MIN_BYTES) {
+  try {
+    const buf = await fs.readFile(dest);
+    return buf.length >= minBytes;
+  } catch {
+    return false;
+  }
+}
+
 function resolveSid(sessionId) {
   return typeof sessionId === "function" ? sessionId() : sessionId;
 }
@@ -133,30 +144,36 @@ export function createBrowserScreenshotTool(ctx = {}) {
         let saved = null;
         for (const c of content) {
           if (c.type === "image" && c.data) {
-            const buf = Buffer.from(c.data, c.mimeType?.includes("base64") ? "base64" : "base64");
-            await fs.writeFile(dest, buf);
-            saved = dest;
+            const buf = Buffer.from(c.data, "base64");
+            if (buf.length >= SCREENSHOT_MIN_BYTES) {
+              await fs.writeFile(dest, buf);
+              if (await screenshotFileLanded(dest)) saved = dest;
+            }
           }
-          if (c.type === "text" && c.text) {
+          if (!saved && c.type === "text" && c.text) {
             // try extract data URL
             const m = String(c.text).match(/data:image\/png;base64,([A-Za-z0-9+/=]+)/);
             if (m) {
-              await fs.writeFile(dest, Buffer.from(m[1], "base64"));
-              saved = dest;
+              const buf = Buffer.from(m[1], "base64");
+              if (buf.length >= SCREENSHOT_MIN_BYTES) {
+                await fs.writeFile(dest, buf);
+                if (await screenshotFileLanded(dest)) saved = dest;
+              }
             }
           }
         }
-        // If tool wrote a path in metadata
-        if (result?.metadata?.screenshotPath) {
-          saved = result.metadata.screenshotPath;
+        // Computer may have written the file itself — only trust a real PNG
+        if (!saved && result?.metadata?.screenshotPath) {
+          if (await screenshotFileLanded(result.metadata.screenshotPath)) {
+            saved = result.metadata.screenshotPath;
+          }
         }
         if (!saved) {
-          // Write JSON diagnostic so agent can still reason
+          // Diagnostic for the model, but this is not a screenshot
           const diag = path.join(outDir, `shot_${id}.json`);
           await fs.writeFile(diag, JSON.stringify(result, null, 2).slice(0, 50_000));
-          return textResult(
-            `Screenshot API returned no image bytes. Diagnostic: ${diag}\nUse xclaw_browser_tab with screenshot:"desktop" or check computer server vision flags.`,
-            { metadata: { diagnostic: diag, resultPreview: String(result).slice(0, 500) } }
+          return errorResult(
+            `Screenshot API returned no image bytes. Diagnostic: ${diag}\nUse xclaw_browser_tab with screenshot:"desktop" or check computer server vision flags.`
           );
         }
         return textResult(`Screenshot saved: ${saved}`, { metadata: { path: saved } });

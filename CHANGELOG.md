@@ -1,3 +1,12 @@
+## 3.439.0
+
+### `browser_screenshot` does not succeed without an image file
+
+No image bytes still returned success with a JSON diagnostic, so the
+model could treat a failed capture as a screenshot. Tiny payloads
+and a `screenshotPath` that is missing or under 100 bytes are now
+`isError`. A real PNG still returns `Screenshot saved`.
+
 ## 3.438.0
 
 ### Browser tools actually receive the session setter from the loop
