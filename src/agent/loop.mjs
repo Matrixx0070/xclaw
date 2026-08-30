@@ -522,7 +522,7 @@ export async function runAgentLoop(options) {
   if (!ready.ok) {
     throw new Error(ready.error || "Computer server is not available");
   }
-  const sessionId = await computer.createSession(workingDir);
+  let sessionId = await computer.createSession(workingDir);
   onEvent({ type: "computer", phase: "session", sessionId });
 
   // Optional run-scoped tool allowlist (cfg.agent.allowTools): narrows which
@@ -692,7 +692,11 @@ export async function runAgentLoop(options) {
   }
   const toolRouter = createToolRouter({
     computer,
-    sessionId,
+    sessionId: () => sessionId,
+    setSessionId: (id) => {
+      sessionId = id;
+      onEvent({ type: "computer", phase: "session_recovered", sessionId: id });
+    },
     localTools,
     agentHandlers: mcpHandlers,
     cfg,

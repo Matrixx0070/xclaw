@@ -1,3 +1,13 @@
+## 3.421.0
+
+### A dead computer session is replaced, not retried forever
+
+v3.420.0 starts a local computer on ECONNREFUSED, then retries the
+same `sessionId`. After a restart that id is 404. The tool router
+now accepts a session getter/setter; on SESSION_GONE / 404 it
+`createSession`s and retries the tool once. The loop updates
+`sessionId` so later tools use the new session.
+
 ## 3.420.0
 
 ### Computer retries start the computer, not only the HTTP call

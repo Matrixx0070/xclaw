@@ -122,6 +122,41 @@ describe("T3 computer-only plane", () => {
     assert.equal(localRan, false);
   });
 
+  it("recreates a computer session after SESSION_GONE", async () => {
+    const calls = [];
+    const computer = {
+      async callTool(sessionId, name) {
+        calls.push(sessionId);
+        if (sessionId === "dead") {
+          const e = new Error("session not found");
+          e.status = 404;
+          e.code = "SESSION_GONE";
+          throw e;
+        }
+        return { ok: true, stdout: "ok" };
+      },
+      async createSession() {
+        return "fresh";
+      },
+    };
+    let sid = "dead";
+    const router = createToolRouter({
+      computer,
+      sessionId: () => sid,
+      setSessionId: (id) => {
+        sid = id;
+      },
+      localTools: [],
+    });
+    const r = await router.dispatch({
+      name: "xclaw_bash",
+      args: { command: "echo" },
+    });
+    assert.equal(r.ok, true);
+    assert.equal(sid, "fresh");
+    assert.deepEqual(calls, ["dead", "fresh"]);
+  });
+
   it("isComputerOnlyTool true for browser", async () => {
     const { isComputerOnlyTool } = await import("../src/tools/planes.mjs");
     assert.equal(isComputerOnlyTool("xclaw_browser_tab"), true);

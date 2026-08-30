@@ -285,10 +285,19 @@ export function createComputerClient(cfg) {
     async callTool(sessionId, name, args) {
       // Tool *logic* errors are returned as HTTP 200 + isError payload.
       // Only transport-level failures are retried by withBackoff.
-      return request("POST", `/xclaw/sessions/${sessionId}/tools/call`, {
-        method: "tools/call",
-        params: { name, arguments: sanitizeToolArgs(name, args || {}) },
-      });
+      try {
+        return await request("POST", `/xclaw/sessions/${sessionId}/tools/call`, {
+          method: "tools/call",
+          params: { name, arguments: sanitizeToolArgs(name, args || {}) },
+        });
+      } catch (err) {
+        const status = err?.status ?? err?.statusCode;
+        if (status === 404 || /session not found|no such session/i.test(String(err?.message || ""))) {
+          clearComputerSessionPool();
+          err.code = err.code || "SESSION_GONE";
+        }
+        throw err;
+      }
     },
   };
 }

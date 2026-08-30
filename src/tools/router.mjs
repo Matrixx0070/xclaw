@@ -34,7 +34,36 @@ export function createToolRouter(ctx = {}) {
     cfg = {},
     workingDir = process.cwd(),
     beforeComputer = null,
+    setSessionId = null,
   } = ctx;
+
+  const currentSessionId = () =>
+    typeof sessionId === "function" ? sessionId() : sessionId;
+
+  const isSessionGone = (err) => {
+    const status = err?.status ?? err?.statusCode;
+    const msg = String(err?.message || err || "").toLowerCase();
+    return (
+      status === 404 ||
+      err?.code === "SESSION_GONE" ||
+      /session not found|no such session|unknown session/.test(msg)
+    );
+  };
+
+  async function callComputer(name, args) {
+    const sid = currentSessionId();
+    try {
+      return await computer.callTool(sid, name, args);
+    } catch (err) {
+      if (!isSessionGone(err) || typeof computer.createSession !== "function") {
+        throw err;
+      }
+      const fresh = await computer.createSession(workingDir);
+      if (typeof setSessionId === "function") setSessionId(fresh);
+      else if (typeof sessionId === "object" && sessionId) sessionId.id = fresh;
+      return computer.callTool(fresh, name, args);
+    }
+  }
 
   const localNames = new Set(
     typeof localToolNames === "function"
@@ -120,14 +149,10 @@ export function createToolRouter(ctx = {}) {
           } else if (gate?.skip) {
             result = { ok: false, error: gate.error || "computer skipped" };
           } else {
-            result = await computer.callTool(
-              sessionId,
-              name,
-              gate?.args || args
-            );
+            result = await callComputer(name, gate?.args || args);
           }
         } else {
-          result = await computer.callTool(sessionId, name, args);
+          result = await callComputer(name, args);
         }
       } else if (plane === "search" || isSearchPlaneTool(name)) {
         // T4: dedicated search plane — allowlisted HTTP only, never shell
