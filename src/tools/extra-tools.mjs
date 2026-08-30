@@ -308,7 +308,8 @@ export function createWebFetchTool({ cfg } = {}) {
   };
 }
 
-export function createWebSearchTool() {
+export function createWebSearchTool({ fetchFn } = {}) {
+  const doFetch = typeof fetchFn === "function" ? fetchFn : fetchWithRetry;
   return {
     name: "web_search",
     description:
@@ -326,6 +327,8 @@ export function createWebSearchTool() {
       if (!query) return errorResult("query is required");
       const limit = Math.min(Number(args.num_results) || 8, 15);
       const results = [];
+      let backendsOk = 0;
+      const backendErrors = [];
 
       // 1) DuckDuckGo Instant Answer API
       try {
@@ -334,11 +337,12 @@ export function createWebSearchTool() {
         u.searchParams.set("format", "json");
         u.searchParams.set("no_html", "1");
         u.searchParams.set("skip_disambig", "1");
-        const res = await fetchWithRetry(u.toString(), {
+        const res = await doFetch(u.toString(), {
           headers: { "User-Agent": "XClaw/2.5" },
           signal: AbortSignal.timeout(12_000),
         });
         if (res.ok) {
+          backendsOk += 1;
           const j = await res.json();
           if (j.AbstractText) {
             results.push({
@@ -359,16 +363,18 @@ export function createWebSearchTool() {
               }
             }
           }
+        } else {
+          backendErrors.push(`instant-answer HTTP ${res.status}`);
         }
-      } catch {
-        /* */
+      } catch (e) {
+        backendErrors.push(`instant-answer ${e?.message || e}`);
       }
 
       // 2) HTML lite fallback
       if (results.length < 3) {
         try {
           const u = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-          const res = await fetchWithRetry(u, {
+          const res = await doFetch(u, {
             headers: {
               "User-Agent": "Mozilla/5.0 (compatible; XClaw/2.5)",
               Accept: "text/html",
@@ -376,6 +382,7 @@ export function createWebSearchTool() {
             signal: AbortSignal.timeout(15_000),
           });
           if (res.ok) {
+            backendsOk += 1;
             const html = await res.text();
             const re =
               /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|td|div)/gi;
@@ -394,14 +401,23 @@ export function createWebSearchTool() {
               const snippet = m[3].replace(/<[^>]+>/g, "").trim();
               if (title && url) results.push({ title, url, snippet });
             }
+          } else {
+            backendErrors.push(`html HTTP ${res.status}`);
           }
-        } catch {
-          /* */
+        } catch (e) {
+          backendErrors.push(`html ${e?.message || e}`);
         }
       }
 
       if (!results.length) {
-        return textResult(`No results for: ${query}`, { metadata: { count: 0, query } });
+        if (backendsOk === 0) {
+          return errorResult(
+            `web_search failed for ${query}: ${backendErrors.join("; ") || "all backends failed"}`
+          );
+        }
+        return textResult(`No results for: ${query}`, {
+          metadata: { count: 0, query, backendsOk },
+        });
       }
       const lines = results.slice(0, limit).map(
         (r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet || ""}`

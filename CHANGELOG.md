@@ -1,3 +1,12 @@
+## 3.424.0
+
+### `web_search` does not treat a dead backend as "no results"
+
+When DuckDuckGo instant-answer and HTML both failed, the tool still
+returned success: `No results for: query`. The model could treat a
+network outage as an empty web. All-backend failure is now `isError`.
+A 200 with zero hits stays "No results".
+
 ## 3.423.0
 
 ### `web_fetch` does not treat HTTP 404 as a successful page
