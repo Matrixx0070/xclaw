@@ -1,3 +1,20 @@
+## 3.448.0
+
+### markitdown and view_image do not succeed when their engines fail
+
+`markitdown` still returned stdout on a non-zero exit. Any non-zero
+is now `isError`. `view_image` still succeeded with `identify: n/a`
+and `magika: n/a` when both CLIs failed. Dual-engine failure is
+`isError`.
+
+## 3.448.0
+
+### `markitdown` does not treat a traceback as converted markdown
+
+Non-zero exit still returned success when stdout was non-empty, so a
+Python traceback was markdown. Both engines must exit 0 with
+non-whitespace stdout. Missing path is `isError`.
+
 ## 3.447.0
 
 ### Local TTS does not treat a 1-byte file as spoken audio

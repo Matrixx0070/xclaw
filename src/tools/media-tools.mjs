@@ -241,11 +241,18 @@ export function createViewImageTool({ workingDir }) {
         const st = await fs.stat(p);
         const mag = await run("magika", ["-j", p], { timeoutMs: 10_000 });
         const id = await run("identify", ["-format", "%m %wx%h %b", p], { timeoutMs: 10_000 });
+        const idOk = id.code === 0 && String(id.stdout || "").trim();
+        const magOk = mag.code === 0 && String(mag.stdout || "").trim();
+        if (!idOk && !magOk) {
+          return errorResult(
+            `view_image: identify and magika both failed for ${p} (identify ${id.code}, magika ${mag.code})`
+          );
+        }
         const lines = [
           `path: ${p}`,
           `size: ${st.size} bytes`,
-          `identify: ${(id.stdout || id.stderr || "").trim() || "n/a"}`,
-          `magika: ${(mag.stdout || "").trim() || "n/a"}`,
+          `identify: ${idOk || "n/a"}`,
+          `magika: ${magOk || "n/a"}`,
         ];
         if (args.with_ocr !== false) {
           const ocrTool = createOcrTool({ workingDir });

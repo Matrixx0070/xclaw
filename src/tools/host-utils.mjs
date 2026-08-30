@@ -95,8 +95,10 @@ export function createMarkitdownTool() {
       if (r.code !== 0) {
         r = await run("markitdown", [p], { timeoutMs: 90_000 });
       }
-      if (r.code !== 0 && !String(r.stdout || "").trim()) {
-        return errorResult(r.stderr || `markitdown failed for ${p}`);
+      if (r.code !== 0) {
+        return errorResult(
+          r.stderr || r.stdout || `markitdown failed for ${p} (exit ${r.code})`
+        );
       }
       let text = r.stdout || "";
       if (text.length > max) text = text.slice(0, max) + "\n…[truncated]";

@@ -29,5 +29,6 @@ describe("media tools do not claim success without output", () => {
     const src = fs.readFileSync(new URL("../src/tools/media-tools.mjs", import.meta.url), "utf8");
     assert.match(src, /soffice exited 0 but output missing/);
     assert.match(src, /tesseract reported success but output file missing/);
+    assert.match(src, /identify and magika both failed/);
   });
 });
