@@ -1,3 +1,22 @@
+## 3.489.0
+
+### Voice listen auto-promotes a turn-cap cutoff
+
+Webchat, `processInbound`, voice `/ws/voice`, the TUI, Discord `/ask`,
+Slack, email, the voice TUI, and the CLI already call
+`autoPromoteIfNeeded` when `stopReason === "maxTurns"`, so a truncated
+turn becomes a durable objective. Voice listen preferAgent called
+`runJob` then spoke the truncated reply — a cutoff never became a
+mission. Distinct from closed `/ws/voice` and the voice TUI.
+
+The preferAgent path now promotes the same way the voice TUI does
+(detached notify into the listen transcript, `formatPromotedReply`
+before speak). `runJob` already persists by default — this slice does
+not mint `persistRun: true` and does not auto-promote HTTP
+`POST /agent/run` (caller-owned `stopReason`). Command-intent continue,
+casual replies, streamSpeakReply, and the gateway-bridge path are not
+agent turn-caps and stay unpromoted.
+
 ## 3.488.0
 
 ### Voice TUI auto-promotes a turn-cap cutoff

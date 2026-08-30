@@ -135,7 +135,7 @@ id. Opt out with `persistRun: false`.
 
 A turn-cap cutoff (`stopReason === "maxTurns"`) auto-promotes into a
 durable objective on Telegram, Discord (MESSAGE + `/ask`), Slack, email,
-webchat, voice `/ws/voice`, the voice TUI, the TUI, and the CLI (CLI
+webchat, voice `/ws/voice`, the voice TUI, voice listen, the TUI, and the CLI (CLI
 awaits the mission so the process does not exit mid-work; voice, TUI,
 and channels leave it detached). Disable with `objectives.autoPromote: false`.
 

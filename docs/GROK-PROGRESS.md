@@ -1437,3 +1437,27 @@ RAN:
 - Webchat POST /channel/webchat/message `{"message":"ping 3.488.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `3c295094-1ae9-4c78-a6d1-51694b7eb14a` stopReason=natural. telegram writerLock held by live pid=3674428 lastPollOkAt 2026-08-30T16:13:30.869Z. discord enabled=false. slack enabled=false. email enabled=false.
 UNVERIFIED: live voice TUI turn-cap → mission (source pin only; a live voice TUI turn would mean a real agent loop). Live email / Slack / Discord `/ask` / TUI / voice WS turn-cap → mission remain source-pinned from 3.487.0 / 3.486.0 / 3.485.0 / 3.484.0 / 3.483.0. Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0.
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, Discord `/ask`, Slack, email, or voice TUI. Do not auto-promote HTTP POST /agent/run. Voice listen is a sibling gap — name it from live recon, do not silently expand.
+
+
+## 2026-08-30 — 3.489.0 Voice listen auto-promotes a turn-cap cutoff
+
+STATUS: green (local hermetic)
+DISCOVERED: Webchat, processInbound, voice `/ws/voice`, the TUI, Discord
+`/ask`, Slack, email, the voice TUI, and CLI `xclaw agent` already call
+`autoPromoteIfNeeded` when `stopReason === "maxTurns"`. Voice listen
+preferAgent called `runJob` then spoke the truncated reply — a cutoff
+never became a mission. Distinct from closed `/ws/voice` and the voice
+TUI. `runJob` already persistRun by default. HTTP POST `/agent/run`
+auto-promote is caller-owned stopReason, not this slice. Do not mint
+persistRun:true. Command-intent continue, casual replies,
+streamSpeakReply, and the gateway-bridge path are not agent turn-caps
+and stay unpromoted.
+BUILT: Voice listen preferAgent path now calls `autoPromoteIfNeeded` +
+`formatPromotedReply` after `runJob` (detached notify into the listen
+transcript). Session id `voice-listen_${…}` minted for identity.
+Source-contract pin in `test/default-path-durability.test.mjs` (one
+`it()`, not three).
+RAN: node --test test/default-path-durability.test.mjs → # tests 19 # pass 19 # fail 0 # duration_ms 56.388268; npm test (hermetic) → # tests 5034 # pass 5034 # fail 0 # duration_ms 69318.426724
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put. Live voice listen turn-cap → mission is source-pinned, not driven
+(a live voice listen turn would mean a real agent loop).

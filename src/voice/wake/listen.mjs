@@ -45,6 +45,7 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
   const commandSeconds =
     opts.commandSeconds ?? c.commandSeconds ?? cfg.voice?.wake?.commandSeconds ?? 4;
   const speakReplies = opts.speak !== false;
+  const sessionId = `voice-listen_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const entente = createEntente();
   const onEvent = (ev) => {
     try {
@@ -314,6 +315,51 @@ export async function runVoiceListen(cfg = {}, opts = {}) {
             autoApprove: cfg.security?.autoApprove ?? true,
           });
           reply = String(job.text || job.error || "").slice(0, 2000);
+          // Same auto-promote as voice TUI: a turn-cap cutoff is an
+          // execution constraint, not completion. Voice listen used runJob
+          // (already persistRun by default) then spoke the truncated reply.
+          // Distinct from closed /ws/voice and voice TUI. Do not mint persistRun.
+          // Listen stays alive, so the mission is detached (not CLI awaitRun).
+          if (cfg.objectives?.enabled !== false) {
+            try {
+              const { autoPromoteIfNeeded, formatPromotedReply } = await import(
+                "../../channels/runtime.mjs"
+              );
+              const { replyWithAgent } = await import("../../channels/base.mjs");
+              const promo = await autoPromoteIfNeeded({
+                text: userText,
+                inbound: {
+                  channel: "voice-listen",
+                  chatId: sessionId,
+                  userId: sessionId,
+                  identity: `voice-listen:${sessionId}`,
+                },
+                cfg,
+                workingDir: process.cwd(),
+                replyWithAgent,
+                onEvent: (e) => {
+                  if (e?.type === "objective" && e.phase === "promote_error") {
+                    console.log("[listen] promote failed", e.message || "error");
+                  }
+                },
+                notify: async (t) => {
+                  const notice = String(t || "").trim();
+                  if (!notice) return;
+                  console.log(`[xclaw] ${notice}`);
+                },
+                turnResult: {
+                  stopReason: job.stopReason,
+                  text: job.text,
+                  toolTrace: job.toolTrace,
+                },
+              });
+              if (promo) {
+                reply = formatPromotedReply(job.text, promo.id).slice(0, 2000);
+              }
+            } catch (err) {
+              console.log("[listen] promote failed", err.message || err);
+            }
+          }
         } else {
           const { localThink } = await import("../providers/local.mjs");
           const thought = await localThink(userText, cfg, { history: [] });

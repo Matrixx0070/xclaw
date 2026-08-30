@@ -267,4 +267,32 @@ describe("default-path durability wiring", () => {
     );
   });
 
+  it("Voice listen auto-promotes a turn-cap cutoff without minting persistRun", () => {
+    const src = read("src/voice/wake/listen.mjs");
+    const start = src.indexOf("export async function runVoiceListen");
+    assert.ok(start >= 0, "runVoiceListen not found");
+    const fn = src.slice(start);
+    const cmdContinue = fn.indexOf("continue;");
+    const promote = fn.indexOf("autoPromoteIfNeeded");
+    assert.ok(cmdContinue >= 0, "command-intent continue missing");
+    assert.ok(
+      promote > cmdContinue,
+      "auto-promote must be on the preferAgent path, after the command-intent continue"
+    );
+    assert.match(fn, /autoPromoteIfNeeded/);
+    assert.match(fn, /formatPromotedReply/);
+    assert.match(fn, /channel:\s*"voice-listen"/);
+    assert.match(fn, /notify:\s*async/);
+    assert.match(fn, /identity:\s*`voice-listen:\$\{sessionId\}`/);
+    const runStart = fn.indexOf("const job = await runJob(");
+    assert.ok(runStart >= 0, "runJob call not found in runVoiceListen");
+    const runEnd = fn.indexOf("});", runStart);
+    assert.ok(runEnd > runStart, "runJob call end not found");
+    const runBody = fn.slice(runStart, runEnd);
+    assert.ok(
+      !/persistRun:\s*true/.test(runBody),
+      "voice listen runJob already persistRun by default; do not mint persistRun:true"
+    );
+  });
+
 });

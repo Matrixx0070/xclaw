@@ -554,7 +554,7 @@ export function formatPromotedReply(text, id) {
 /**
  * Promote a turn-cap cutoff into a durable objective. Shared by processInbound
  * (Telegram/Discord/Slack/email), Discord `/ask`, webchat, voice `/ws/voice`,
- * the voice TUI, the TUI, and the CLI one-shot path.
+ * the voice TUI, voice listen, the TUI, and the CLI one-shot path.
  *
  * `awaitRun: true` (CLI) waits for the mission to settle so the process does
  * not exit out from under the continuation. Channel, voice, and TUI notify
