@@ -25,7 +25,7 @@ const CONTENT =
 const CHAT_LEAD =
   /^(what|why|how|when|where|who|explain|describe|list|tell|summarize|thanks)\b/i;
 const FILE_VERB =
-  /^(create|write|save|put|touch|make|append|echo|copy|rename|move|mkdir|delete|remove|rm|unlink)\b/i;
+  /^(create|write|save|put|touch|make|append|echo|copy|rename|move|mkdir|delete|remove|rm|unlink|ensure)\b/i;
 const DIR_STOP = /^(of|with|for|that|which|to|in|on|from|the|a|an|and|or)$/i;
 const PATH_RE = new RegExp(`^(?:${PATH})$`, "i");
 
@@ -155,6 +155,16 @@ export function deriveGoalVerifyChecks(goal = "") {
     ) {
       return [{ type: "file_exists", path: dir }];
     }
+  }
+
+  const ensureExists = u.match(
+    new RegExp(
+      `\\b(?:ensure|make sure)\\s+${FILE_PREFIX}[\`'"]?(${PATH})[\`'"]?\\s+exists\\b`,
+      "i"
+    )
+  );
+  if (ensureExists) {
+    return [{ type: "file_exists", path: ensureExists[1] }];
   }
 
   const createOnly = u.match(

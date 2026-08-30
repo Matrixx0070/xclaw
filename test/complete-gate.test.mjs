@@ -66,6 +66,16 @@ describe("deriveGoalVerifyChecks", () => {
     assert.deepEqual(deriveGoalVerifyChecks("how do I append to a file?"), []);
   });
 
+  it("ensure PATH exists derives file_exists, not chat", () => {
+    const e = deriveGoalVerifyChecks("ensure notes.txt exists");
+    assert.equal(e[0].type, "file_exists");
+    assert.equal(e[0].path, "notes.txt");
+    const m = deriveGoalVerifyChecks("make sure hello.txt exists");
+    assert.equal(m[0].path, "hello.txt");
+    assert.deepEqual(deriveGoalVerifyChecks("ensure FILE exists"), []);
+    assert.deepEqual(deriveGoalVerifyChecks("how do I ensure a file exists?"), []);
+  });
+
   it("relative PROOF/STATUS and delete/remove derive checks", () => {
     const p = deriveGoalVerifyChecks("touch PROOF");
     assert.equal(p[0].type, "file_exists");

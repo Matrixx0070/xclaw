@@ -1,3 +1,11 @@
+## 3.393.0
+
+### `ensure notes.txt exists` is a check, not chat
+
+That phrasing derived nothing. `ensure` / `make sure` PATH `exists`
+now `file_exists`. `ensure FILE exists` (not a path) and how-to stay
+empty. This is the last planned complete-gate regex slice.
+
 ## 3.392.0
 
 ### `results/PROOF` is the path, not `result`
