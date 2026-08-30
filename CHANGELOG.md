@@ -1,3 +1,12 @@
+## 3.441.0
+
+### `browser_clipboard` does not succeed when the page returns ok:false
+
+Headless clipboard permission failures came back as `{ ok: false, error }`
+inside a successful tool result, so the model treated a refused write as
+done. JS `ok:false`, computer `ok:false`, and `isError` are now `isError`.
+A real `{ ok: true, action: read|write }` still succeeds.
+
 ## 3.440.0
 
 ### `browser_pdf` does not claim success with an HTML snapshot

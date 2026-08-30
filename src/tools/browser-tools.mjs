@@ -305,10 +305,80 @@ export function createBrowserSnapshotTool(ctx = {}) {
   };
 }
 
+function parseMaybeJson(v) {
+  if (v && typeof v === "object") return v;
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  const start = s.indexOf("{");
+  if (start < 0) return null;
+  const slice = s.slice(start);
+  try {
+    return JSON.parse(slice);
+  } catch {
+    const m = slice.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    try {
+      return JSON.parse(m[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
+/** JS clipboard return, or the `value` inside a computer jsCode wrapper. */
+function clipboardJsPayload(obj) {
+  if (!obj || typeof obj !== "object") return null;
+  if (obj.value && typeof obj.value === "object" && ("ok" in obj.value || obj.action === "jsCode")) {
+    return obj.value;
+  }
+  if (
+    "ok" in obj &&
+    (obj.action === "read" ||
+      obj.action === "write" ||
+      "text" in obj ||
+      "len" in obj ||
+      "error" in obj)
+  ) {
+    return obj;
+  }
+  return null;
+}
+
+function clipboardOutcome(result) {
+  if (!result) return { ok: false, error: "no computer result" };
+  const texts = (result.content || []).filter((c) => c.type === "text").map((c) => c.text);
+  const joined = texts.join("\n");
+  if (result.isError) {
+    return { ok: false, error: joined || "clipboard computer error" };
+  }
+  const candidates = [result.value, result.data, ...texts, result];
+  for (const c of candidates) {
+    const j = parseMaybeJson(c);
+    const payload = clipboardJsPayload(j);
+    if (payload) {
+      if (payload.ok === false) {
+        return { ok: false, error: String(payload.error || joined || "clipboard failed") };
+      }
+      if (payload.ok === true) return { ok: true, payload };
+    }
+    if (j && j.ok === false && j.action !== "jsCode") {
+      return { ok: false, error: String(j.error || j.reason || joined || "clipboard failed") };
+    }
+  }
+  if (result.ok === false) {
+    return { ok: false, error: String(result.error || joined || "clipboard failed") };
+  }
+  return {
+    ok: false,
+    error: joined || JSON.stringify(result).slice(0, 300) || "clipboard produced no result",
+  };
+}
+
 export function createBrowserClipboardTool(ctx = {}) {
   return {
     name: "browser_clipboard",
-    description: "Read or write the browser page clipboard via document/execCommand or navigator.clipboard (best-effort).",
+    description:
+      "Read or write the browser page clipboard via navigator.clipboard. Permission failures and JS ok:false are isError.",
     parameters: {
       type: "object",
       properties: {
@@ -347,8 +417,15 @@ export function createBrowserClipboardTool(ctx = {}) {
           jsCode,
           waitTime: 0.2,
         });
-        const texts = (result?.content || []).filter((c) => c.type === "text").map((c) => c.text);
-        return textResult(texts.join("\\n") || JSON.stringify(result).slice(0, 8000));
+        const out = clipboardOutcome(result);
+        if (!out.ok) return errorResult(out.error);
+        const p = out.payload || {};
+        if (p.action === "read" || "text" in p) {
+          return textResult(p.text ?? "", { metadata: { action: "read", ok: true } });
+        }
+        return textResult(`clipboard write ok (${p.len ?? 0} chars)`, {
+          metadata: { action: "write", ok: true, len: p.len },
+        });
       } catch (e) {
         return errorResult(e.message);
       }
