@@ -33,6 +33,33 @@ describe("web_search backend honesty", () => {
     assert.match(out.content[0].text, /503/);
   });
 
+  it("200 HTML instead of JSON does not count as a working backend", async () => {
+    let n = 0;
+    const tool = createWebSearchTool({
+      fetchFn: async () => {
+        n += 1;
+        if (n === 1) {
+          return {
+            ok: true,
+            status: 200,
+            async json() {
+              throw new Error("Unexpected token <");
+            },
+            async text() {
+              return "<html>rate limited</html>";
+            },
+          };
+        }
+        return { ok: false, status: 503, async json() { return {}; }, async text() { return "down"; } };
+      },
+    });
+    const out = await tool.execute({ query: "anything" });
+    assert.equal(out.isError, true);
+    assert.match(out.content[0].text, /web_search failed/);
+    assert.match(out.content[0].text, /invalid JSON|503/);
+    assert.doesNotMatch(out.content[0].text, /No results/);
+  });
+
   it("a 200 with no hits is empty results, not a failure", async () => {
     const tool = createWebSearchTool({
       fetchFn: async () => ({

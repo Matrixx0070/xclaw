@@ -381,30 +381,34 @@ export function createWebSearchTool({ fetchFn } = {}) {
           headers: { "User-Agent": "XClaw/2.5" },
           signal: AbortSignal.timeout(12_000),
         });
-        if (res.ok) {
-          backendsOk += 1;
-          const j = await res.json();
-          if (j.AbstractText) {
-            results.push({
-              title: j.Heading || query,
-              url: j.AbstractURL || j.AbstractSource || "",
-              snippet: j.AbstractText,
-            });
-          }
-          for (const t of j.RelatedTopics || []) {
-            if (results.length >= limit) break;
-            if (t.Text && t.FirstURL) {
-              results.push({ title: t.Text.slice(0, 80), url: t.FirstURL, snippet: t.Text });
+        if (!res.ok) {
+          backendErrors.push(`instant-answer HTTP ${res.status}`);
+        } else {
+          const j = await res.json().catch(() => null);
+          if (!j || typeof j !== "object") {
+            backendErrors.push("instant-answer invalid JSON");
+          } else {
+            backendsOk += 1;
+            if (j.AbstractText) {
+              results.push({
+                title: j.Heading || query,
+                url: j.AbstractURL || j.AbstractSource || "",
+                snippet: j.AbstractText,
+              });
             }
-            for (const tt of t.Topics || []) {
+            for (const t of j.RelatedTopics || []) {
               if (results.length >= limit) break;
-              if (tt.Text && tt.FirstURL) {
-                results.push({ title: tt.Text.slice(0, 80), url: tt.FirstURL, snippet: tt.Text });
+              if (t.Text && t.FirstURL) {
+                results.push({ title: t.Text.slice(0, 80), url: t.FirstURL, snippet: t.Text });
+              }
+              for (const tt of t.Topics || []) {
+                if (results.length >= limit) break;
+                if (tt.Text && tt.FirstURL) {
+                  results.push({ title: tt.Text.slice(0, 80), url: tt.FirstURL, snippet: tt.Text });
+                }
               }
             }
           }
-        } else {
-          backendErrors.push(`instant-answer HTTP ${res.status}`);
         }
       } catch (e) {
         backendErrors.push(`instant-answer ${e?.message || e}`);
@@ -421,9 +425,11 @@ export function createWebSearchTool({ fetchFn } = {}) {
             },
             signal: AbortSignal.timeout(15_000),
           });
-          if (res.ok) {
-            backendsOk += 1;
+          if (!res.ok) {
+            backendErrors.push(`html HTTP ${res.status}`);
+          } else {
             const html = await res.text();
+            backendsOk += 1;
             const re =
               /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|td|div)/gi;
             let m;
@@ -441,8 +447,6 @@ export function createWebSearchTool({ fetchFn } = {}) {
               const snippet = m[3].replace(/<[^>]+>/g, "").trim();
               if (title && url) results.push({ title, url, snippet });
             }
-          } else {
-            backendErrors.push(`html HTTP ${res.status}`);
           }
         } catch (e) {
           backendErrors.push(`html ${e?.message || e}`);

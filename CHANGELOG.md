@@ -1,3 +1,12 @@
+## 3.459.0
+
+### `web_search` 200 HTML is not a successful empty search
+
+Instant Answer incremented `backendsOk` before `res.json()`. A 200
+HTML body threw, the HTML fallback could 503, and the tool still
+returned `No results` success. JSON must parse before a backend is
+counted as OK.
+
 ## 3.458.0
 
 ### Polygon `finance_quote` does not throw on 429 HTML as a successful parse
