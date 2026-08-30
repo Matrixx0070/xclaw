@@ -1,3 +1,13 @@
+## 3.394.0
+
+### TUI paints "not complete" when the stream result is `ok: false`
+
+`POST /agent/run/stream` already sends `ok: false` on unverified
+(v3.382). The TUI treated HTTP 200 as success and printed the
+assistant text with no mark. `streamAgent` now returns
+`ok: result.ok !== false`, and the transcript/footer show
+`not complete (<stopReason>)`.
+
 ## 3.393.0
 
 ### `ensure notes.txt exists` is a check, not chat

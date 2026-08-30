@@ -509,3 +509,12 @@ describe("renderMcpServers", () => {
     assert.doesNotMatch(text, /mcp login/);
   });
 });
+
+describe("TUI stream treats application ok:false as not complete", () => {
+  it("does not hardcode streamAgent success as HTTP-only", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../src/cli/tui.mjs", import.meta.url), "utf8");
+    assert.match(src, /ok:\s*result\?\.ok !== false/);
+    assert.match(src, /not complete \(\$\{why\}\)/);
+  });
+});

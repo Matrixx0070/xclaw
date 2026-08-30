@@ -959,7 +959,9 @@ async function streamAgent(base, token, message, onEvent, signal, extra = {}) {
       onEvent(ev);
     }
   }
-  return { ok: true, result };
+  // HTTP 200 is not application success: unverified / abort still stream a
+  // result event with ok:false (v3.382). Treat that as a failed run.
+  return { ok: result?.ok !== false, result };
 }
 
 export async function runTui(cfg = {}, opts = {}) {
@@ -1401,12 +1403,18 @@ async function chatLoop(cfg, opts) {
       } else {
         push(dim(`  ${ELBOW} ${out.error || "(no reply)"}`));
       }
+      if (out.result?.ok === false) {
+        const why = out.result.stopReason || out.result.error || "incomplete";
+        push(p(`  ${ELBOW} not complete (${why})`, C.yellow));
+        push("");
+      }
       const usd = out.result?.usage?.costUsd;
       const turns = out.result?.turns;
       setFooter([
         turns ? `${turns} turn(s)` : null,
         tools ? `${tools} tool call(s)` : null,
         usd != null ? `$${Number(usd).toFixed(4)}` : null,
+        out.result?.ok === false ? out.result.stopReason || "incomplete" : null,
       ]);
     } catch (e) {
       state.live = "";
