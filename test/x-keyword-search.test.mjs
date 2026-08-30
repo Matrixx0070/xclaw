@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createXKeywordSearchTool } from "../src/tools/x-tools.mjs";
+import { createXKeywordSearchTool, createXUserSearchTool } from "../src/tools/x-tools.mjs";
 
 describe("x_keyword_search", () => {
   it("DDG fallback HTTP 503 is isError, not parsed HTML success", async () => {
@@ -26,5 +26,23 @@ describe("x_keyword_search", () => {
     } finally {
       if (prev !== undefined) process.env.X_BEARER_TOKEN = prev;
     }
+  });
+});
+
+describe("x_user_search", () => {
+  it("HTTP 429 with invalid JSON is isError HTTP 429, not a parse throw", async () => {
+    process.env.X_BEARER_TOKEN = "test";
+    const tool = createXUserSearchTool({
+      fetchFn: async () => ({
+        ok: false,
+        status: 429,
+        async json() {
+          throw new Error("Unexpected token <");
+        },
+      }),
+    });
+    const out = await tool.execute({ query: "grok" });
+    assert.equal(out.isError, true);
+    assert.match(out.content[0].text, /HTTP 429/);
   });
 });

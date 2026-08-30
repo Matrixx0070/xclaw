@@ -100,7 +100,8 @@ export function createXKeywordSearchTool({ fetchFn } = {}) {
   };
 }
 
-export function createXUserSearchTool() {
+export function createXUserSearchTool({ fetchFn } = {}) {
+  const doFetch = typeof fetchFn === "function" ? fetchFn : fetchWithRetry;
   return {
     name: "x_user_search",
     description: "Search X users by name (requires X_BEARER_TOKEN).",
@@ -121,11 +122,11 @@ export function createXUserSearchTool() {
         const u = new URL("https://api.twitter.com/2/users/by");
         // usernames endpoint needs exact; use search recent as weak fallback not available
         const url = `https://api.twitter.com/2/users/by/username/${encodeURIComponent(q.replace(/^@/, ""))}?user.fields=description,public_metrics,verified`;
-        const res = await fetchWithRetry(url, {
+        const res = await doFetch(url, {
           headers: { Authorization: `Bearer ${bearer}` },
           signal: AbortSignal.timeout(15_000),
         });
-        const j = await res.json();
+        const j = await res.json().catch(() => ({}));
         if (!res.ok) return errorResult(j.detail || j.title || `HTTP ${res.status}`);
         const urow = j.data;
         if (!urow) return errorResult("user not found");
@@ -140,7 +141,8 @@ export function createXUserSearchTool() {
   };
 }
 
-export function createXThreadFetchTool() {
+export function createXThreadFetchTool({ fetchFn } = {}) {
+  const doFetch = typeof fetchFn === "function" ? fetchFn : fetchWithRetry;
   return {
     name: "x_thread_fetch",
     description: "Fetch a tweet by ID and conversation context (requires X_BEARER_TOKEN).",
@@ -155,11 +157,11 @@ export function createXThreadFetchTool() {
       const id = String(args.post_id || "").trim();
       try {
         const url = `https://api.twitter.com/2/tweets/${encodeURIComponent(id)}?tweet.fields=created_at,public_metrics,conversation_id,author_id,text&expansions=author_id`;
-        const res = await fetchWithRetry(url, {
+        const res = await doFetch(url, {
           headers: { Authorization: `Bearer ${bearer}` },
           signal: AbortSignal.timeout(15_000),
         });
-        const j = await res.json();
+        const j = await res.json().catch(() => ({}));
         if (!res.ok) return errorResult(j.detail || j.title || `HTTP ${res.status}`);
         const t = j.data;
         return textResult(

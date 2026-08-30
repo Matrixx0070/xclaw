@@ -1,3 +1,11 @@
+## 3.456.0
+
+### X user/thread fetch does not throw on 429 HTML as a successful parse
+
+`res.json()` ran before `res.ok`. A 429 HTML body threw
+`Unexpected token` instead of `HTTP 429`. json() is now catch-empty
+and `!res.ok` is `isError` with the status.
+
 ## 3.455.0
 
 ### Python session reset HTTP errors are not swallowed
