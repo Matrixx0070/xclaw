@@ -69,7 +69,7 @@ import {
   buildContextSections,
 } from "../skills/loader.mjs";
 import { loadDurableMemoryFile } from "../memory/durable.mjs";
-import { createRecallTool, createForgetTool } from "../memory/recall.mjs";
+import { createRecallTool, createForgetTool, recallMemory } from "../memory/recall.mjs";
 import { createRepoIntelTool } from "../intel/intel-tool.mjs";
 import { estimateRequestTokens, resolveTokenizer } from "../tokens/count.mjs";
 import { createUsageTracker, defaultLedgerPath } from "../tokens/usage-tracker.mjs";
@@ -826,6 +826,31 @@ export async function runAgentLoop(options) {
       historyMessages: priorCapped.length,
       capped: prior.length > maxHistory,
     });
+  }
+  // Objectives already inject recall into the first segment. The default
+  // loop only exposed xclaw_recall as a tool, so a model that never called
+  // it started cold. Bounded, advisory, never blocks the run.
+  if (cfg.memory?.recall !== false && effectiveMessage) {
+    try {
+      const recalled = await recallMemory(cfg, workingDir, {
+        query: effectiveMessage,
+        limit: 4,
+      });
+      const hits = (recalled?.hits || []).filter((h) => h.summary || h.goal);
+      if (hits.length) {
+        const lines = hits
+          .slice(0, 4)
+          .map((h) => `- ${String(h.summary || h.goal).slice(0, 160)}`);
+        messages.push(
+          makeEphemeralNotice(
+            `Durable memory (advisory; verify before relying):\n${lines.join("\n")}`
+          )
+        );
+        onEvent({ type: "memory", phase: "recall", hits: hits.length });
+      }
+    } catch {
+      /* recall is additive */
+    }
   }
   onEvent({
     type: "cache",

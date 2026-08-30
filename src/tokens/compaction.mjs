@@ -144,6 +144,14 @@ export function buildExtractiveSummary(messages, opts = {}) {
     }
     if (m.role === "user" && text) {
       const first = text.trim().slice(0, 200);
+      // Runtime notices and verify-rejects are not the user's mission.
+      if (
+        /^\[XClaw notice\]/i.test(first) ||
+        /^\[progress\]/i.test(first) ||
+        /^Completion rejected:/i.test(first)
+      ) {
+        continue;
+      }
       if (first) goals.push(first);
     }
     if (m.role === "assistant" && text) {

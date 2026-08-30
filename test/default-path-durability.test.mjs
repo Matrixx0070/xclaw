@@ -86,4 +86,10 @@ describe("default-path durability wiring", () => {
     assert.match(src, /evaluateNaturalStopVerify/);
     assert.match(src, /unverifiedStop/);
   });
+
+  it("the default loop injects bounded durable-memory recall at start", () => {
+    const src = read("src/agent/loop.mjs");
+    assert.match(src, /recallMemory\(cfg, workingDir/);
+    assert.match(src, /phase: "recall"/);
+  });
 });

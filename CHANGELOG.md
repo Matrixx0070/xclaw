@@ -1,3 +1,16 @@
+## 3.401.0
+
+### Memory is retrieval, not leftover notices
+
+Compaction treated `[XClaw notice]`, `[progress]`, and
+`Completion rejected:` user rows as "user intent." Those are runtime
+scaffolding. They are skipped.
+
+The default loop only offered `xclaw_recall` as a tool, so a model
+that never called it started cold. Objectives already inject a
+bounded recall into the first segment. The loop now does the same
+(top 4 hits, advisory, never blocks).
+
 ## 3.400.0
 
 ### Compaction keeps the original goal, not only the last three user turns

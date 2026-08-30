@@ -45,6 +45,7 @@ describe("compaction", () => {
     assert.match(s, /Create \/tmp\/mission\.txt with text DONE/);
     assert.match(s, /### User intent/);
     assert.doesNotMatch(s, /User intent \(recent\)/);
+    assert.doesNotMatch(s, /\[XClaw notice\]/);
   });
 
   it("offloadToolResults writes file and stubs content", async () => {
