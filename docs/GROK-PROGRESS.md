@@ -1123,3 +1123,30 @@ test/complete-gate.test.mjs` after deduping triplicate `it()` copies
 UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving
 leftover stay-put and that a live objective with a goal-named file
 arms the check (hermetic covers the arm/reject/close path).
+
+## 2026-08-30 — 3.480.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green (goal-derived checks armed on objective path; leftover stay-put; doctor honest)
+CLOSED UNVERIFIED from the 3.480.0 entry: GitHub `ci` / `install-e2e` /
+`eval-regression` / `ledger-guard` succeeded on `a10628f` (ci 33307335061
+1m46s, no web_search flake). Live after pm2 restart pid 3419751 created
+2026-08-30T10:47:50.109Z startedAt 10:47:52.004Z: `/version` 3.480.0 stale
+false, `/ready` ready true, webchat POST `{message}` → assistant `PONG`
+(sessionId `eca57da9-ac2f-4078-92d1-a1fb93e1841e`, model grok-4.6,
+stopReason natural). Boot after 10:47:52Z emitted no
+`[xclaw:agent-runs] auto-resumed` line (last still 06:27:15
+obj_mtffg2yd_aaaad3). `GET /agent-runs?limit=20` n=20 error 0 missing 0
+not_ok 4 resumable 0 ok 16. Leftover
+`2026-08-30T03-23-54-655Z_intel-symbol-locate` at index 1 (`resumable:
+false`, `ok: false`, status maxTurns, updatedAt 04:17:33.558Z).
+Leftover stayed `maxTurns` with no `resumedAt` / `objectiveId`;
+`obj_mtffg2yd_aaaad3` stayed `awaiting_human` (`pendingCompletion.reason`
+`no_checks`, verdict unverified). n_objectives 23. Doctor
+`agentRuns.attention: no unfinished agent-run snapshots`. telegram
+writerLock true, lastPollOkAt 2026-08-30T10:48:53.740Z. Live objective
+with a goal-named file was NOT driven on the gateway; hermetic tests
+cover arm / reject-until-file / close-verified / how-to still
+`no_checks`. NEXT: recon remaining evolution gap — do not assume
+compaction or long-horizon still missing (compaction default-on since
+3.68.0; AUTONOMY_LONG_HORIZON.md is eval-harness only). Empty-criteria
+done is already held by `deterministicGate` (`requireChecked: true`).
