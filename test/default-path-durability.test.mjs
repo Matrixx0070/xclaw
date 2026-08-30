@@ -170,4 +170,36 @@ describe("default-path durability wiring", () => {
     const registry = read("src/tools/registry.mjs");
     assert.match(registry, /setSessionId:\s*ctx\.setSessionId/);
   });
+
+  it("Discord /ask auto-promotes a turn-cap cutoff without minting persistRun", () => {
+    const src = read("src/channels/discord/index.mjs");
+    const askStart = src.indexOf('if (name === "ask")');
+    assert.ok(askStart >= 0, "/ask handler not found");
+    const askEnd = src.indexOf("async function handleMessage", askStart);
+    assert.ok(askEnd > askStart, "/ask handler end not found");
+    const ask = src.slice(askStart, askEnd);
+    assert.match(ask, /autoPromoteIfNeeded/);
+    assert.match(ask, /formatPromotedReply/);
+    assert.match(ask, /channel:\s*"discord"/);
+    assert.match(ask, /notify:\s*async/);
+    assert.match(ask, /identity:\s*`discord:\$\{userId\}`/);
+    const runStart = ask.indexOf("const result = await replyWithAgent(");
+    assert.ok(runStart >= 0, "/ask replyWithAgent not found");
+    const runEnd = ask.indexOf("});", runStart);
+    assert.ok(runEnd > runStart, "/ask replyWithAgent end not found");
+    const runBody = ask.slice(runStart, runEnd);
+    assert.ok(
+      !/persistRun:\s*true/.test(runBody),
+      "Discord /ask named chatId already persists; do not mint persistRun:true"
+    );
+    const msgStart = src.indexOf("async function handleMessage");
+    assert.ok(msgStart >= 0, "handleMessage not found");
+    const msg = src.slice(msgStart);
+    const inbound = msg.indexOf("processInbound(");
+    assert.ok(inbound >= 0, "MESSAGE processInbound not found");
+    const inboundEnd = msg.indexOf("});", inbound);
+    assert.ok(inboundEnd > inbound, "MESSAGE processInbound end not found");
+    const inboundBody = msg.slice(inbound, inboundEnd);
+    assert.match(inboundBody, /notify:\s*async/);
+  });
 });

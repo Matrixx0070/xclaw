@@ -238,7 +238,54 @@ async function handleInteraction(interaction) {
             }
           },
         });
-        await editInteraction(interaction, result.text);
+        // Same auto-promote as webchat/voice/TUI: a turn-cap cutoff is an
+        // execution constraint, not completion. Discord /ask used to edit
+        // the interaction with the truncated reply and stop. Named chatId
+        // already persists via replyWithAgent — do not mint persistRun.
+        // Gateway stays alive, so the mission is detached (not CLI awaitRun).
+        // Interaction tokens expire; follow-up notify goes to the channel.
+        let displayText = result.text;
+        if (cfg.objectives?.enabled !== false) {
+          try {
+            const { autoPromoteIfNeeded, formatPromotedReply } = await import(
+              "../runtime.mjs"
+            );
+            const promo = await autoPromoteIfNeeded({
+              text: String(prompt),
+              inbound: {
+                channel: "discord",
+                chatId: channelId,
+                userId,
+                identity: `discord:${userId}`,
+              },
+              cfg,
+              workingDir: session.workingDir || workingDir,
+              replyWithAgent,
+              onEvent: (e) => {
+                if (e?.type === "objective" && e.phase === "promote_error") {
+                  console.error(`[discord] promote failed: ${e.message || "error"}`);
+                }
+              },
+              notify: async (t) => {
+                const notice = String(t || "").trim();
+                if (!notice) return;
+                await sendMessage(channelId, notice);
+                console.log(
+                  `[discord] → #${channelId}: [mission] ${notice.slice(0, 60)}`
+                );
+              },
+              turnResult: result,
+            });
+            if (promo) {
+              displayText = formatPromotedReply(result.text, promo.id);
+            }
+          } catch (err) {
+            console.error(
+              `[discord] promote failed: ${String(err?.message || err)}`
+            );
+          }
+        }
+        await editInteraction(interaction, displayText);
         messagesHandled += 1;
       } catch (err) {
         try {
@@ -356,6 +403,14 @@ async function handleInteraction(interaction) {
         },
         workingDir: session.workingDir || workingDir || workspace,
         rateLimiter,
+        notify: async (t) => {
+          const notice = String(t || "").trim();
+          if (!notice) return;
+          await sendMessage(channelId, notice);
+          console.log(
+            `[discord] → #${channelId}: [mission] ${notice.slice(0, 60)}`
+          );
+        },
         onEvent: (e) => {
           if (e.type === "tool" && e.phase === "start") {
             console.log(`[discord]   → ${e.name}`);

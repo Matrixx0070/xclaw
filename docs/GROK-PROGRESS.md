@@ -1306,3 +1306,27 @@ RAN:
 - Webchat POST /channel/webchat/message `{"message":"ping 3.484.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `3e863f85-955c-459e-b572-796dc4cd2eaa` stopReason=natural. telegram writerLock true lastPollOkAt 2026-08-30T14:02:20.400Z lock pid=3552308.
 UNVERIFIED: live TUI turn-cap → mission (source pin only; a live TUI turn would mean a real agent loop). Live voice WS turn-cap → mission remains source-pinned from 3.483.0. Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0.
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice or TUI stream body. Do not auto-promote HTTP POST /agent/run.
+
+## 2026-08-30 — 3.485.0 Discord /ask auto-promotes a turn-cap cutoff (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: Webchat, processInbound, voice `/ws/voice`, the TUI, and CLI
+`xclaw agent` already call `autoPromoteIfNeeded` when `stopReason ===
+"maxTurns"`. Discord `/ask` called `replyWithAgent` then
+`editInteraction` with the truncated reply — a cutoff never became a
+mission. Discord MESSAGE_CREATE already went through `processInbound`
+but omitted `notify`, so `shouldAutoPromoteTurn` stayed false even on
+maxTurns. Named `chatId` already persists via replyWithAgent. HTTP POST
+`/agent/run` auto-promote is caller-owned stopReason, not this slice.
+Do not mint persistRun:true. `/status` and `/session` are not agent
+turns. Slack/email notify is a sibling gap, not this slice.
+BUILT: Discord `/ask` now calls `autoPromoteIfNeeded` +
+`formatPromotedReply` after `replyWithAgent` (detached notify into the
+channel via sendMessage; interaction tokens expire). MESSAGE_CREATE
+`processInbound` now passes `notify` so processInbound promote can fire.
+Source-contract pin in `test/default-path-durability.test.mjs` (one
+`it()`, not three).
+RAN: node --test test/default-path-durability.test.mjs → # tests 15 # pass 15 # fail 0 # duration_ms 55.708933; npm test (hermetic) → # tests 5030 # pass 5030 # fail 0 # duration_ms 69934.091489
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put. Live Discord `/ask` turn-cap → mission is source-pinned, not
+driven (a live Discord turn would mean a real agent loop).

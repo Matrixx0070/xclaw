@@ -1,3 +1,22 @@
+## 3.485.0
+
+### Discord `/ask` auto-promotes a turn-cap cutoff
+
+Webchat, `processInbound`, voice `/ws/voice`, the TUI, and the CLI already
+call `autoPromoteIfNeeded` when `stopReason === "maxTurns"`, so a truncated
+turn becomes a durable objective. Discord `/ask` called `replyWithAgent`
+then `editInteraction` with the truncated reply — a cutoff never became a
+mission. Discord MESSAGE_CREATE already went through `processInbound` but
+omitted `notify`, so `shouldAutoPromoteTurn` stayed false.
+
+`/ask` now promotes the same way webchat does (detached notify into the
+channel, `formatPromotedReply` before edit). MESSAGE_CREATE now passes
+`notify` so processInbound promote can fire. Named `chatId` already
+persists — this slice does not mint `persistRun: true` and does not
+auto-promote HTTP `POST /agent/run` (caller-owned `stopReason`). `/status`
+and `/session` stay put. Slack/email notify is a sibling gap, not this
+slice.
+
 ## 3.484.0
 
 ### TUI auto-promotes a turn-cap cutoff
