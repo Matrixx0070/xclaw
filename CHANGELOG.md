@@ -1,3 +1,14 @@
+## 3.408.0
+
+### `xclaw job` prints verdict/stopReason; screenshots observe the page
+
+The job CLI JSON omitted `verdict` and `stopReason`, so a failed
+false-Done job looked like a short dump of `pass: false` with no why.
+Those fields are now in the JSON.
+
+`computer_act screenshot` now calls `observeAfterAct` so the image
+path is paired with the page url/title at capture time.
+
 ## 3.407.0
 
 ### A job whose loop refused a false "Done." is failed, not incomplete

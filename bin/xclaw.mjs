@@ -2713,7 +2713,17 @@ Enable with seats.enabled: true in config`);
       const goal = args.slice(1).join(" ") || "List files in the workspace";
       const job = await runJob({ goal, cfg, autoApprove: true });
       await saveJobSummary(job);
-      console.log(JSON.stringify({ id: job.id, status: job.status, pass: job.pass, turns: job.turns, wallMs: job.wallMs, text: job.text, evidence: job.evidence?.length }, null, 2));
+      console.log(JSON.stringify({
+        id: job.id,
+        status: job.status,
+        pass: job.pass,
+        verdict: job.verdict,
+        stopReason: job.stopReason,
+        turns: job.turns,
+        wallMs: job.wallMs,
+        text: job.text,
+        evidence: job.evidence?.length,
+      }, null, 2));
       process.exitCode = job.pass ? 0 : 1;
       break;
     }

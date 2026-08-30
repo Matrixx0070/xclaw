@@ -300,6 +300,7 @@ async function runComputerActImpl(input = {}) {
       fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
       const file = path.join(SCREENSHOT_DIR, `act-${Date.now()}.png`);
       fs.writeFileSync(file, buf);
+      const observed = await observeAfterAct(tab);
       return {
         ok: true,
         action: "screenshot",
@@ -307,7 +308,8 @@ async function runComputerActImpl(input = {}) {
         mime: "image/png",
         bytes: buf.length,
         path: file,
-        pageUrl: tab.page?.url || null,
+        pageUrl: observed.pageUrl,
+        observed,
       };
     }
 

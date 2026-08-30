@@ -40,10 +40,7 @@ describe("observeAfterAct", () => {
     const key = src.indexOf('if (action === "key")');
     const click = src.indexOf("const observed = await observeAfterAct(tab);");
     assert.ok(nav >= 0 && key >= 0 && click >= 0);
-    assert.equal(
-      (src.match(/await observeAfterAct\(tab\)/g) || []).length >= 3,
-      true,
-      "navigate, key, and click/type/scroll must observe"
-    );
+    const n = (src.match(/await observeAfterAct\(tab\)/g) || []).length;
+    assert.ok(n >= 4, `navigate, key, screenshot, and click/type/scroll must observe (got ${n})`);
   });
 });

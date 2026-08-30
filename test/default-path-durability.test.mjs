@@ -8,6 +8,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
 
 describe("default-path durability wiring", () => {
+  it("CLI job prints verdict and stopReason", () => {
+    const src = read("bin/xclaw.mjs");
+    const start = src.indexOf('case "job"');
+    const end = src.indexOf('case "wait-ready"');
+    assert.ok(start >= 0 && end > start);
+    const jobCase = src.slice(start, end);
+    assert.match(jobCase, /verdict: job\.verdict/);
+    assert.match(jobCase, /stopReason: job\.stopReason/);
+  });
+
   it("CLI runs list exits 1 when a snapshot is unfinished", () => {
     const src = read("bin/xclaw.mjs");
     const start = src.indexOf('case "runs"');
