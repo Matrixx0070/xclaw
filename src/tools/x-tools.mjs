@@ -129,7 +129,9 @@ export function createXUserSearchTool({ fetchFn } = {}) {
         const j = await res.json().catch(() => ({}));
         if (!res.ok) return errorResult(j.detail || j.title || `HTTP ${res.status}`);
         const urow = j.data;
-        if (!urow) return errorResult("user not found");
+        if (!urow || typeof urow !== "object" || (!urow.username && urow.id == null)) {
+          return errorResult("user not found");
+        }
         return textResult(
           `@${urow.username} (${urow.name})\nid=${urow.id}\n${urow.description || ""}\nfollowers=${urow.public_metrics?.followers_count ?? "?"}`,
           { metadata: { user: urow } }

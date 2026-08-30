@@ -87,3 +87,22 @@ describe("x_thread_fetch", () => {
     assert.match(out.content[0].text, /tweet not found/);
   });
 });
+
+describe("x_user_search empty data", () => {
+  it("HTTP 200 with empty data object is user not found, not @undefined", async () => {
+    process.env.X_BEARER_TOKEN = "test";
+    const tool = createXUserSearchTool({
+      fetchFn: async () => ({
+        ok: true,
+        status: 200,
+        async json() {
+          return { data: {} };
+        },
+      }),
+    });
+    const out = await tool.execute({ query: "nobody" });
+    assert.equal(out.isError, true);
+    assert.match(out.content[0].text, /user not found/);
+    assert.doesNotMatch(out.content[0].text, /@undefined/);
+  });
+});

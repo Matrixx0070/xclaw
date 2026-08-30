@@ -1,3 +1,10 @@
+## 3.462.0
+
+### `x_user_search` does not return `@undefined` for empty data
+
+HTTP 200 with `{ data: {} }` passed `if (!urow)` and interpolated
+`@undefined`. Missing username and id is now `user not found`.
+
 ## 3.461.0
 
 ### `finance_quote` does not treat a payload without a price as a quote
