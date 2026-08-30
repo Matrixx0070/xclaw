@@ -1,3 +1,11 @@
+## 3.429.0
+
+### OCR and office convert do not succeed without their output files
+
+Tesseract exit 0 with a missing `.txt` returned `(no text recognized)`.
+LibreOffice exit 0 with a missing dest returned `soffice finished
+(check outDir)`. Both are now `isError`.
+
 ## 3.428.0
 
 ### `view_x_video` does not succeed with zero frames

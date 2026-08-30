@@ -100,7 +100,12 @@ export function createOcrTool({ workingDir }) {
         if (r.code !== 0) {
           return errorResult(r.stderr || "tesseract failed");
         }
-        let text = await fs.readFile(`${outBase}.txt`, "utf8").catch(() => "");
+        let text;
+        try {
+          text = await fs.readFile(`${outBase}.txt`, "utf8");
+        } catch {
+          return errorResult("tesseract reported success but output file missing");
+        }
         if (text.length > max) text = text.slice(0, max) + "\n…[truncated]";
         return textResult(text.trim() || "(no text recognized)", {
           metadata: { path: p, lang, engine: "tesseract" },
@@ -195,19 +200,19 @@ export function createOfficeConvertTool({ workingDir, cfg } = {}) {
         } catch {
           /* */
         }
-        return textResult(
-          exists
-            ? `Converted → ${expected} (${size} bytes)`
-            : `soffice finished (check ${outDir}):\n${r.stdout || r.stderr}`,
-          {
-            metadata: {
-              input: p,
-              output: exists ? expected : null,
-              format: convertTo,
-              size,
-            },
-          }
-        );
+        if (!exists) {
+          return errorResult(
+            `soffice exited 0 but output missing: ${expected}\n${r.stdout || r.stderr}`
+          );
+        }
+        return textResult(`Converted → ${expected} (${size} bytes)`, {
+          metadata: {
+            input: p,
+            output: expected,
+            format: convertTo,
+            size,
+          },
+        });
       } finally {
         if (profileDir) {
           await fs.rm(profileDir, { recursive: true, force: true }).catch(() => {});
