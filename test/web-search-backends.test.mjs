@@ -60,6 +60,42 @@ describe("web_search backend honesty", () => {
     assert.doesNotMatch(out.content[0].text, /No results/);
   });
 
+  it("HTML 200 with no parseable results does not count as a working backend", async () => {
+    let n = 0;
+    const tool = createWebSearchTool({
+      fetchFn: async () => {
+        n += 1;
+        if (n === 1) {
+          return {
+            ok: true,
+            status: 200,
+            async json() {
+              throw new Error("Unexpected token <");
+            },
+            async text() {
+              return "<html>ia</html>";
+            },
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {};
+          },
+          async text() {
+            return "<html>captcha challenge</html>";
+          },
+        };
+      },
+    });
+    const out = await tool.execute({ query: "anything" });
+    assert.equal(out.isError, true);
+    assert.match(out.content[0].text, /web_search failed/);
+    assert.match(out.content[0].text, /no parseable results|invalid JSON/);
+    assert.doesNotMatch(out.content[0].text, /No results/);
+  });
+
   it("a 200 with no hits is empty results, not a failure", async () => {
     const tool = createWebSearchTool({
       fetchFn: async () => ({

@@ -1,3 +1,12 @@
+## 3.465.0
+
+### `web_search` HTML 200 without results is not a successful empty search
+
+The HTML fallback incremented `backendsOk` on any 200 before parsing
+`result__a` rows. Instant Answer invalid JSON plus a captcha page still
+returned `No results` success. Only a parsed hit counts the HTML backend
+as OK.
+
 ## 3.464.0
 
 ### `x_semantic_search` does not swallow a failed xAI rerank as keyword success

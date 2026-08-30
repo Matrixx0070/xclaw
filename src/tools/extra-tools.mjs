@@ -429,9 +429,9 @@ export function createWebSearchTool({ fetchFn } = {}) {
             backendErrors.push(`html HTTP ${res.status}`);
           } else {
             const html = await res.text();
-            backendsOk += 1;
             const re =
               /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|td|div)/gi;
+            const before = results.length;
             let m;
             while ((m = re.exec(html)) && results.length < limit) {
               const href = m[1].replace(/&amp;/g, "&");
@@ -446,6 +446,11 @@ export function createWebSearchTool({ fetchFn } = {}) {
               const title = m[2].replace(/<[^>]+>/g, "").trim();
               const snippet = m[3].replace(/<[^>]+>/g, "").trim();
               if (title && url) results.push({ title, url, snippet });
+            }
+            if (results.length > before) {
+              backendsOk += 1;
+            } else {
+              backendErrors.push("html no parseable results");
             }
           }
         } catch (e) {
