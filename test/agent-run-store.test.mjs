@@ -113,4 +113,37 @@ describe("agent run-store", () => {
       /run\.status === "active" \|\|[\s\S]*run\.status === "interrupted"/
     );
   });
+
+  it("list sorts by updatedAt, not filename, so a timestamped leftover beats job_*", async () => {
+    const isolated = { paths: { configDir: await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-runs-sort-")) } };
+    const wd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-wd-sort-"));
+    await saveAgentRun(isolated, {
+      sessionId: "job_aaaaaaaa_old",
+      workingDir: wd,
+      status: "completed",
+      stopReason: "natural",
+    });
+    await saveAgentRun(isolated, {
+      sessionId: "2026-08-30T03-23-54-655Z_intel-symbol-locate",
+      workingDir: wd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+    });
+    const dir = path.join(isolated.paths.configDir, "agent-runs");
+    const jobFp = path.join(dir, "job_aaaaaaaa_old.json");
+    const leftoverFp = path.join(dir, "2026-08-30T03-23-54-655Z_intel-symbol-locate.json");
+    const job = JSON.parse(await fs.readFile(jobFp, "utf8"));
+    const leftover = JSON.parse(await fs.readFile(leftoverFp, "utf8"));
+    job.updatedAt = "2026-08-01T00:00:00.000Z";
+    leftover.updatedAt = "2026-08-30T04:17:33.558Z";
+    await fs.writeFile(jobFp, JSON.stringify(job, null, 2));
+    await fs.writeFile(leftoverFp, JSON.stringify(leftover, null, 2));
+    const list = await listAgentRuns(isolated, { limit: 1 });
+    assert.equal(list.length, 1);
+    assert.equal(
+      list[0].sessionId,
+      "2026-08-30T03-23-54-655Z_intel-symbol-locate",
+      "filename reverse-lex would have picked job_* first"
+    );
+  });
 });

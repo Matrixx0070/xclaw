@@ -156,8 +156,10 @@ stops stay put. Eval leftovers whose `workingDir` is under
 `tmp/xclaw-eval` also stay put — scored eval trees are not owner
 missions. `xclaw runs list`, Control `/agent-runs`, and doctor
 `agentRuns.attention` use that same classifier (`isResumableAgentRun`);
-they do not re-derive resumable from status alone. Cap:
-`agent.autoResumeMax` (default 3). Age: 48h. Opt out:
+they do not re-derive resumable from status alone. The operator list
+sorts by `updatedAt` (not filename) before applying its row limit, so
+a timestamped leftover is not hidden behind `job_*` / `objective-*`.
+Cap: `agent.autoResumeMax` (default 3). Age: 48h. Opt out:
 `agent.autoResume: false`.
 
 

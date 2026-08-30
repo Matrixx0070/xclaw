@@ -1,3 +1,15 @@
+## 3.475.0
+
+### Operator list sorts by updatedAt, not filename
+
+`listAgentRuns` sliced the directory by reverse filename before
+reading bodies. `job_*` / `objective-*` sort ahead of ISO-timestamp
+ids, so Control's default 20-row window never included
+`2026-08-30T03-23-54-655Z_intel-symbol-locate` even after 3.474.0
+made the classifier honest. Live: `GET /agent-runs?limit=20` had 0
+not-ok rows; `limit=400` had 4, including that leftover. The list
+now loads, sorts by `updatedAt`, then applies the limit.
+
 ## 3.474.0
 
 ### Operator list uses the same resume classifier as boot

@@ -899,3 +899,18 @@ Served `/control/app.js` contains `stay put (not auto-resumed)`.
 `intel-symbol-locate` stayed `maxTurns` with no `resumedAt` /
 `objectiveId`; `obj_mtffg2yd_aaaad3` stayed `awaiting_human`;
 `n_objectives` 23 unchanged.
+
+## 2026-08-30 — 3.475.0 operator list sorts by updatedAt not filename (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: after 3.474.0 made the classifier honest, Control's
+default 20-row window still hid `intel-symbol-locate`.
+`listAgentRuns` sliced reverse filenames before reading bodies;
+`job_*` / `objective-*` sort ahead of ISO-timestamp ids. Live:
+`GET /agent-runs?limit=20` not-ok 0; `limit=400` not-ok 4 including
+that leftover.
+BUILT: load all snapshots, sort by `updatedAt`, then apply limit.
+RAN: `node --test` store+resume+doctor → 25/25; `npm test` →
+`# tests 5014` `# fail 0` `# duration_ms 69822`.
+UNVERIFIED: GitHub `ci` on this SHA; live `GET /agent-runs?limit=20`
+includes `intel-symbol-locate` as `resumable: false` / `ok: false`.

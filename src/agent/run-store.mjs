@@ -167,9 +167,14 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
   } catch {
     return [];
   }
-  names.sort().reverse();
+  // Load then sort by updatedAt. Filename reverse-lex put job_* /
+  // objective-* ahead of ISO-timestamp leftovers, so Control's
+  // default 20-row window never showed intel-symbol-locate even
+  // after the classifier was honest (live: GET /agent-runs?limit=20
+  // had 0 not-ok rows; limit=400 had 4, including that leftover).
+  const cap = Number(limit) > 0 ? Number(limit) : 30;
   const out = [];
-  for (const f of names.slice(0, limit)) {
+  for (const f of names) {
     const id = f.replace(/\.json$/, "");
     const loaded = await loadAgentRun(cfg, id);
     if (loaded.ok) {
@@ -193,10 +198,11 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
         ok,
       });
     } else {
-      out.push({ sessionId: id, error: loaded.code });
+      out.push({ sessionId: id, error: loaded.code, updatedAt: "" });
     }
   }
-  return out;
+  out.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  return out.slice(0, cap);
 }
 
 export async function deleteAgentRun(cfg, sessionId) {
