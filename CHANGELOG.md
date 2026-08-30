@@ -1,3 +1,19 @@
+## 3.482.0
+
+### Automations ticks opt out of inner-loop continuation
+
+Cron `announceCronJob` already passed `continuation: false` so a
+scheduled announce kept a single-segment contract (`totalTurnCap =
+maxTurns`). Automations `executeAutomation` prefers `runAgentOnce`,
+which omitted the flag. Undefined meant ON (`maxTurns * 4` inside one
+scheduled tick, and inside each goal-mode "single most useful next
+step"). Goal-mode already owns segmentation via ticks + the
+automations store.
+
+`runAgentOnce` now passes `continuation: false` into `runAgent`.
+Persist stays in the automations store — this slice does not mint
+agent-run snapshots and does not invert default-path durability.
+
 ## 3.481.0
 
 ### Gateway objective segments opt out of inner-loop continuation

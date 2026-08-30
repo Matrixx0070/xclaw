@@ -254,7 +254,8 @@ export async function runAgentLoop(options) {
   // complete"). Resource limits (cost governor, run budget) remain the real
   // stops and are checked every turn. Orchestrators that manage their own
   // segmentation (objective segments, spawn children, jobs, missions,
-  // sub-runs) pass continuation:false and keep the single-segment contract.
+  // automations ticks, sub-runs) pass continuation:false and keep the
+  // single-segment contract.
   const continuationEnabled =
     options.continuation !== false && cfg.agent?.continueOnMaxTurns !== false;
   const totalTurnCap = continuationEnabled

@@ -154,7 +154,9 @@ Operator `verify[]` is never overwritten. Chat/how-to still hold
 `no_checks`. `objectives.deriveChecks: false` to skip. Gateway
 `POST /objectives` segments pass `continuation: false` the same way
 channel objectives already did — the inner loop no longer auto-continues
-4× inside one API-started segment.
+4× inside one API-started segment. Automations ticks (`runAgentOnce`)
+pass `continuation: false` the same way cron announce already did —
+a scheduled tick (and each goal-mode step) no longer auto-continues 4×.
 
 Gateway boot auto-resumes unfinished **agent-run snapshots** the same
 way it already resumes interrupted objectives: `active` / `maxTurns`

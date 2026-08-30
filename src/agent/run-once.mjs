@@ -1,6 +1,11 @@
 /**
  * Minimal one-shot agent entry for automations / CLI helpers.
  * A0: delegates to channel-invariant runAgent.
+ *
+ * Automations own their own segmentation (scheduled ticks; goal-mode
+ * "single most useful next step"). Undefined continuation would ON the
+ * inner loop (maxTurns * 4) inside one tick. Persist stays in the
+ * automations store — do not mint agent-run snapshots here.
  */
 import { runAgent } from "./run-agent.mjs";
 
@@ -12,6 +17,7 @@ export async function runAgentOnce({ cfg, message, goal, channel = "automation" 
       goal: text,
       cfg: cfg || {},
       channel,
+      continuation: false, // automations own the tick — single-segment run
     });
     return {
       ok: out.ok,

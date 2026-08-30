@@ -1204,3 +1204,25 @@ AUTONOMY_LONG_HORIZON.md is eval-harness only). Empty-criteria done is
 already held by `deterministicGate` (`requireChecked: true`). Do not
 treat jobs empty-verify as the next slice. Do not pass
 `verifyOnComplete: false` as extra scope.
+
+## 2026-08-30 — 3.482.0 automations ticks opt out of inner-loop continuation (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: Cron `announceCronJob` already passed `continuation: false`.
+Automations `executeAutomation` prefers `runAgentOnce`, which omitted
+the flag. Undefined meant ON (`maxTurns * 4` inside one scheduled tick,
+and inside each goal-mode "single most useful next step"). Goal-mode
+already owns segmentation via ticks + the automations store. Sessionless
+HTTP persist was inspected and REJECTED — AUTONOMY.md +
+`test/default-path-durability.test.mjs` pin persist under the
+conversation id. S3 listed callers (objective/spawn/jobs/missions/
+rescue/cron) already opted out.
+BUILT: `runAgentOnce` now passes `continuation: false` into `runAgent`.
+Source-contract test pins run-once, executeAutomation still calling it,
+and announceCronJob still opted out. Persist stays in the automations
+store — this slice does not mint agent-run snapshots and does not invert
+default-path durability.
+RAN: node --test test/automation-continuation.test.mjs + related pins → # tests 40 # pass 40 # fail 0 # duration_ms 203.789378; npm test (hermetic) → # tests 5027 # pass 5027 # fail 0 # duration_ms 70797.467975
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put. Live automation tick continuation opt-out is source-pinned, not
+driven on the gateway.
