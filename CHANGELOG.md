@@ -1,3 +1,13 @@
+## 3.400.0
+
+### Compaction keeps the original goal, not only the last three user turns
+
+`buildExtractiveSummary` listed `goals.slice(-3)`. After a few
+runtime notices the first user message — the mission — dropped out of
+the compacted note. The first goal is now pinned; later user turns
+are appended. TEST 10 (continue after context fold) no longer loses
+the objective.
+
 ## 3.399.0
 
 ### Doctor reports whether nightly live-e2e is actually armed

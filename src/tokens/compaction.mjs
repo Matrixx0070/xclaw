@@ -173,8 +173,16 @@ export function buildExtractiveSummary(messages, opts = {}) {
     lines.push("");
   }
   if (goals.length) {
-    lines.push("### User intent (recent)");
-    for (const g of goals.slice(-3)) lines.push(`- ${g}`);
+    // The first user message is the mission. slice(-3) used to drop it
+    // once more than three user turns existed, so compaction could
+    // continue without the original objective (TEST 10).
+    lines.push("### User intent");
+    const first = goals[0];
+    const rest = [];
+    for (const g of goals.slice(1).slice(-3)) {
+      if (g !== first && !rest.includes(g)) rest.push(g);
+    }
+    for (const g of [first, ...rest]) lines.push(`- ${g}`);
     lines.push("");
   }
   if (tools.length) {

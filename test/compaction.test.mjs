@@ -35,6 +35,18 @@ describe("compaction", () => {
     assert.match(s, /ENOENT|Errors/);
   });
 
+  it("keeps the first user goal after more than three user turns", () => {
+    const msgs = [];
+    msgs.push({ role: "user", content: "Create /tmp/mission.txt with text DONE" });
+    for (let i = 0; i < 5; i++) {
+      msgs.push({ role: "user", content: `[XClaw notice] checkpoint ${i}` });
+    }
+    const s = buildExtractiveSummary(msgs);
+    assert.match(s, /Create \/tmp\/mission\.txt with text DONE/);
+    assert.match(s, /### User intent/);
+    assert.doesNotMatch(s, /User intent \(recent\)/);
+  });
+
   it("offloadToolResults writes file and stubs content", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-off-"));
     const big = "x".repeat(5000);
