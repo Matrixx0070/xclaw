@@ -1,3 +1,12 @@
+## 3.396.0
+
+### Telegram/Discord/Slack say "not complete" when `ok` is false
+
+processInbound forwarded the assistant text with no verdict. After
+3.382 the loop sets `ok: false` on unverified; the channel reply now
+appends `⚠️ Not complete (<stopReason>)` and returns `ok` /
+`stopReason`. Chat that finished naturally is unchanged.
+
 ## 3.395.0
 
 ### Hermetic HOME probe is not failed by a stale leftover file

@@ -314,16 +314,23 @@ export async function processInbound(inbound, opts = {}) {
     onEvent?.({ type: "objective", phase: "promote_error", message: String(err?.message || err) });
   }
 
+  let reply = result.text || "(no response)";
+  if (result.ok === false) {
+    const why = result.stopReason || result.error || "incomplete";
+    reply = `${reply}\n\n⚠️ Not complete (${why}).`;
+  }
   return {
     handled: true,
     via: "agent",
-    reply: result.text || "(no response)",
+    reply,
     images: result.images || [],
     identity: result.identity || inbound.identity,
     vaultUserId: result.vaultUserId,
     userId: inbound.userId,
     turns: result.turns,
     suggestions: result.suggestions || [],
+    stopReason: result.stopReason || null,
+    ok: result.ok !== false,
   };
 }
 

@@ -57,6 +57,12 @@ describe("default-path durability wiring", () => {
     assert.match(src, /agent-runs/);
   });
 
+  it("processInbound surfaces ok:false as not complete in the channel reply", () => {
+    const src = read("src/channels/runtime.mjs");
+    assert.match(src, /Not complete \(\$\{why\}\)/);
+    assert.match(src, /ok:\s*result\.ok !== false/);
+  });
+
   it("the default loop runs the completion gate before treating a natural stop as done", () => {
     const src = read("src/agent/loop.mjs");
     assert.match(src, /evaluateNaturalStopVerify/);
