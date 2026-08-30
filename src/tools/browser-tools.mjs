@@ -456,6 +456,15 @@ export function createBrowserPdfTool(ctx = {}) {
       const dest =
         args.out ||
         path.join(outDir, `page_${crypto.randomBytes(4).toString("hex")}.pdf`);
+      let beforeBytes = 0;
+      let beforeMtime = 0;
+      try {
+        const st = await fs.stat(dest);
+        beforeBytes = st.size;
+        beforeMtime = st.mtimeMs;
+      } catch {
+        /* no leftover */
+      }
       // Try Page.printToPDF via injected evaluation marker — computer may expose print
       const jsCode = `
         return {
@@ -485,12 +494,17 @@ export function createBrowserPdfTool(ctx = {}) {
         });
         const htmlTexts = (htmlRes?.content || []).filter((c) => c.type === "text").map((c) => c.text);
         let destBytes = 0;
+        let destMtime = 0;
         try {
-          destBytes = (await fs.stat(dest)).size;
+          const st = await fs.stat(dest);
+          destBytes = st.size;
+          destMtime = st.mtimeMs;
         } catch {
           destBytes = 0;
         }
-        if (destBytes >= 100) {
+        const producedThisCall =
+          destBytes >= 100 && destMtime > beforeMtime;
+        if (producedThisCall) {
           return textResult(`PDF saved: ${dest} (${destBytes} bytes)`, {
             metadata: { pdfPath: dest, bytes: destBytes },
           });
@@ -782,13 +796,8 @@ export function createBrowserAssertTool(ctx = {}) {
     },
     async execute(args = {}) {
       if (!isMitmEnabled(ctx.cfg || null)) {
-        return textResult(
-          JSON.stringify({
-            ok: false,
-            skipped: true,
-            reason: "MITM disabled — enable XCLAW_MITM for truth-channel assertions",
-          }),
-          { metadata: { skipped: true } }
+        return errorResult(
+          "MITM disabled — enable XCLAW_MITM for truth-channel assertions"
         );
       }
       let flows = [];

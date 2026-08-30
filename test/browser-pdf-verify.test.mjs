@@ -29,6 +29,27 @@ describe("browser_pdf", () => {
     assert.equal(fs.existsSync(dest), false);
   });
 
+  it("a leftover PDF at dest is not this-call success", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-bpdf-old-"));
+    const dest = path.join(dir, "out.pdf");
+    fs.writeFileSync(dest, Buffer.alloc(200, 0x25));
+    const tool = createBrowserPdfTool({
+      workingDir: dir,
+      computer: {
+        async callTool() {
+          return { content: [{ type: "text", text: "<html></html>" }] };
+        },
+        async createSession() {
+          return "s";
+        },
+      },
+      sessionId: "s",
+    });
+    const out = await tool.execute({ out: dest });
+    assert.equal(out.isError, true);
+    assert.match(out.content[0].text, /PDF not produced/);
+  });
+
   it("source does not claim Saved HTML snapshot as success", () => {
     const src = fs.readFileSync(new URL("../src/tools/browser-tools.mjs", import.meta.url), "utf8");
     assert.match(src, /PDF not produced/);

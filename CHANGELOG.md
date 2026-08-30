@@ -1,3 +1,12 @@
+## 3.442.0
+
+### Leftover PDF dest and MITM-off assert are not success
+
+`browser_pdf` treated any `>=100` byte file at `out` as this call's
+PDF. It now requires the dest mtime to advance. `browser_assert` with
+MITM off returned JSON `{ ok: false, skipped: true }` as a successful
+tool; that is now `isError`.
+
 ## 3.441.0
 
 ### `browser_clipboard` does not succeed when the page returns ok:false
