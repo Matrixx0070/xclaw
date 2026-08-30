@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createXKeywordSearchTool, createXUserSearchTool, createXThreadFetchTool } from "../src/tools/x-tools.mjs";
+import { createXKeywordSearchTool, createXUserSearchTool, createXThreadFetchTool, createXSemanticSearchTool } from "../src/tools/x-tools.mjs";
 
 describe("x_keyword_search", () => {
   it("DDG fallback HTTP 503 is isError, not parsed HTML success", async () => {
@@ -172,5 +172,41 @@ describe("x_user_search empty data", () => {
     assert.equal(out.isError, true);
     assert.match(out.content[0].text, /user not found/);
     assert.doesNotMatch(out.content[0].text, /@undefined/);
+  });
+});
+
+describe("x_semantic_search", () => {
+  it("xAI 200 HTML is isError, not a silent keyword_proxy success", async () => {
+    const prev = process.env.XAI_API_KEY;
+    process.env.XAI_API_KEY = "test-key";
+    try {
+      const tool = createXSemanticSearchTool({
+        keywordTool: {
+          async execute() {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "1. https://x.com/a/status/1\nhello world this is a long enough keyword payload",
+                },
+              ],
+            };
+          },
+        },
+        fetchFn: async () => ({
+          ok: true,
+          status: 200,
+          async json() {
+            throw new Error("Unexpected token <");
+          },
+        }),
+      });
+      const out = await tool.execute({ query: "hello" });
+      assert.equal(out.isError, true);
+      assert.match(out.content[0].text, /no usable content|rerank failed/i);
+    } finally {
+      if (prev === undefined) delete process.env.XAI_API_KEY;
+      else process.env.XAI_API_KEY = prev;
+    }
   });
 });

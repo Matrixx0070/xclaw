@@ -1,3 +1,11 @@
+## 3.464.0
+
+### `x_semantic_search` does not swallow a failed xAI rerank as keyword success
+
+When `XAI_API_KEY` is set, a 200 HTML `res.json()` throw used to fall
+through to `keyword_proxy` success. Rerank HTTP/JSON failure is now
+`isError`. Keyword-only remains when no xAI key is set.
+
 ## 3.463.0
 
 ### `x_keyword_search` does not treat shapeless data as tweets

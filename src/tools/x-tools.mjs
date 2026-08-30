@@ -188,7 +188,8 @@ export function createXThreadFetchTool({ fetchFn } = {}) {
 }
 
 
-export function createXSemanticSearchTool() {
+export function createXSemanticSearchTool({ fetchFn, keywordTool } = {}) {
+  const doFetch = typeof fetchFn === "function" ? fetchFn : fetchWithRetry;
   return {
     name: "x_semantic_search",
     description:
@@ -206,7 +207,7 @@ export function createXSemanticSearchTool() {
       if (!query) return errorResult("query required");
       const limit = Math.min(Number(args.limit) || 5, 15);
       // Prefer keyword search then rank by naive token overlap as semantic proxy
-      const kw = createXKeywordSearchTool();
+      const kw = keywordTool || createXKeywordSearchTool();
       const base = await kw.execute({ query, limit: Math.min(limit * 2, 15), mode: "Latest" });
       if (base.isError) return base;
       const text = base.content?.[0]?.text || "";
@@ -214,7 +215,7 @@ export function createXSemanticSearchTool() {
       const key = process.env.XAI_API_KEY || process.env.XCLAW_API_KEY;
       if (key && text.length > 20) {
         try {
-          const res = await fetchWithRetry("https://api.x.ai/v1/chat/completions", {
+          const res = await doFetch("https://api.x.ai/v1/chat/completions", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${key}`,
@@ -233,15 +234,17 @@ export function createXSemanticSearchTool() {
             }),
             signal: AbortSignal.timeout(60_000),
           });
-          if (res.ok) {
-            const j = await res.json();
-            const content = j.choices?.[0]?.message?.content;
-            if (content) {
-              return textResult(content, { metadata: { provider: "xai_rerank", query } });
-            }
+          const j = await res.json().catch(() => null);
+          if (!res.ok) {
+            return errorResult(`xAI rerank HTTP ${res.status}`);
           }
-        } catch {
-          /* */
+          const content = j?.choices?.[0]?.message?.content;
+          if (!content) {
+            return errorResult(`xAI rerank HTTP ${res.status} with no usable content`);
+          }
+          return textResult(content, { metadata: { provider: "xai_rerank", query } });
+        } catch (e) {
+          return errorResult(`xAI rerank failed: ${e.message}`);
         }
       }
       return textResult(text, { metadata: { provider: "keyword_proxy", query } });
