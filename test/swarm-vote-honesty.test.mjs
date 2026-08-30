@@ -100,6 +100,7 @@ describe("swarm vote honesty", () => {
     });
     // stub-only nodes count as failures (NO_OUTPUT) → the run cannot be "done"
     assert.notEqual(out.status, "done", "stub-only nodes must not read as done");
+    assert.equal(out.ok, false, "partial/error swarm is not success");
     assert.ok(out.results.every((r) => r.code === "NO_OUTPUT"), JSON.stringify(out.results.map((r) => r.code)));
     await fsp.rm(dir, { recursive: true, force: true });
   });

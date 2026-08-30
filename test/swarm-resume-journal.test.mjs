@@ -82,6 +82,7 @@ describe("swarm resume journal", () => {
       spawnSubagent: first.spawn,
     });
     assert.equal(out1.status, "partial"); // c failed, a+b succeeded
+    assert.equal(out1.ok, false);
     assert.deepEqual(new Set(first.executed), new Set(["a", "b", "c"]));
 
     // Resume: only c re-runs, now succeeding.

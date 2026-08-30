@@ -1,3 +1,12 @@
+## 3.403.0
+
+### A partial swarm is not a successful swarm
+
+`runSwarmFanOut` set `ok: true` whenever status was not `error` or
+`aborted`, so a run with failed children still looked successful.
+`ok` is now `status === "done"`. Partial keeps the parent healthy
+(results, summary, resume) without claiming the goal is met.
+
 ## 3.402.0
 
 ### A child's "Done." is not the parent's success

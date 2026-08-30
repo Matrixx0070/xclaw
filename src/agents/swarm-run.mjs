@@ -1567,7 +1567,10 @@ export async function runSwarmFanOut(cfg, input = {}) {
   });
 
   const finalResult = {
-    ok: status !== "error" && status !== "aborted",
+    // partial means some children failed — that is not success.
+    // The parent stays healthy (status/results/summary); it does not
+    // declare the swarm done.
+    ok: status === "done",
     status,
     swarmId: run.id,
     children: childIds,

@@ -132,7 +132,7 @@ describe("S1 runtime fan-out (mock spawnSubagent)", () => {
     });
 
     assert.equal(out.status, "partial");
-    assert.equal(out.ok, true);
+    assert.equal(out.ok, false);
     const bad = out.results.find((r) => r.nodeId === "bad1");
     const good = out.results.find((r) => r.nodeId === "ok1");
     assert.equal(good.ok, true);
