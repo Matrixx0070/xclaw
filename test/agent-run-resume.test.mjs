@@ -13,6 +13,7 @@ import {
   listResumableAgentRuns,
 } from "../src/agent/run-resume.mjs";
 import { loadObjective } from "../src/agent/objective-store.mjs";
+import { runObjective, STATE_FENCE } from "../src/agent/objective.mjs";
 
 describe("isResumableAgentRun", () => {
   it("resumes crash-mid-loop and turn-cap cutoffs", () => {
@@ -176,6 +177,7 @@ describe("reconcile + resume agent-runs", () => {
     assert.equal(started.length, 1);
     const obj = await loadObjective(cfg, first.objectiveId);
     assert.equal(obj.objective, "analyse the whole repo");
+    assert.equal(obj.status, "interrupted", "recovered missions are interrupted so the restart notice fires");
     assert.ok(obj.progress.some((p) => /Recovered after process restart/.test(p)));
     assert.ok(obj.inspected.files.includes("/tmp/notes.md"));
     assert.ok(obj.inFlightSegment);
@@ -191,6 +193,50 @@ describe("reconcile + resume agent-runs", () => {
     });
     assert.equal(second.ok, false);
     assert.equal(second.reason, "not_resumable");
+  });
+
+  it("recovered agent-run first segment includes the runtime-restart notice", async () => {
+    await saveAgentRun(cfg, {
+      sessionId: "crash_notice",
+      workingDir: wd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+      turns: 8,
+      meta: { goal: "finish the recovered patch" },
+      messages: [{ role: "assistant", content: "Partial so far." }],
+      toolTrace: [{ artifacts: [{ type: "file", ref: "/tmp/notes.md" }] }],
+    });
+    const first = await resumeAgentRunAsObjective(cfg, (await loadAgentRun(cfg, "crash_notice")).run, {
+      start: async () => {},
+    });
+    assert.equal(first.ok, true);
+    let seen = "";
+    await runObjective(cfg, {
+      resumeId: first.objectiveId,
+      runSegment: async ({ prompt }) => {
+        seen = prompt;
+        assert.ok(prompt.includes("runtime restarted"), "reconcile notice present");
+        assert.ok(/Recovered after process restart/.test(prompt), "seed progress present");
+        assert.ok(prompt.includes("/tmp/notes.md"), "inspected files present");
+        // Pause after the first prompt — this test is the restart notice,
+        // not the fail-closed done-gate (that lives in objective-longrun).
+        return {
+          text:
+            "```" +
+            STATE_FENCE +
+            "\n" +
+            JSON.stringify({
+              status: "needs_human",
+              humanQuestion: "spot-check the recovered files before I continue?",
+            }) +
+            "\n```",
+          turns: 1,
+          toolTrace: [],
+          stopReason: "natural",
+        };
+      },
+    });
+    assert.ok(seen.includes("runtime restarted"));
   });
 
   it("does not resume an aborted kill", async () => {

@@ -1,3 +1,17 @@
+## 3.479.0
+
+### Recovered agent-runs stamp interrupted so the restart notice fires
+
+`resumeAgentRunAsObjective` saved the promoted objective as `running`
+(`newObjective` default). `runObjectiveInner` sets `reconcile` only
+when `obj.status === "interrupted"`, so recovered missions never got
+the "runtime restarted" notice. inFlight `failures[]` already fired.
+The recovered objective is now stamped `interrupted` before save —
+same signal true interrupted objectives already use. Channel
+auto-promote stays `running` (live continuation, not a crash).
+Saving interrupted also keeps boot's running→interrupted pass from
+double-starting the recovered id.
+
 ## 3.478.0
 
 ### Boot listResumableAgentRuns sorts by updatedAt, not filename

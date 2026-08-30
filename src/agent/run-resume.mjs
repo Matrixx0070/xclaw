@@ -239,6 +239,13 @@ export async function resumeAgentRunAsObjective(cfg, run, opts = {}) {
     n: Number(run.turns) || 1,
     at: run.updatedAt || new Date().toISOString(),
   };
+  // newObjective defaults to "running". Recovered agent-runs are crash
+  // leftovers, not live starts — stamp interrupted so runObjectiveInner
+  // sets reconcile and the "runtime restarted" notice fires. Channel
+  // auto-promote stays running (that path is a live continuation).
+  // Saving interrupted also keeps boot's running→interrupted pass from
+  // picking this id up and double-starting it.
+  obj.status = "interrupted";
   await store.saveObjective(cfg, obj);
   await saveAgentRun(cfg, {
     ...run,

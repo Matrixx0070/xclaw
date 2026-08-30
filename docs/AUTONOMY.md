@@ -150,8 +150,10 @@ opt out.
 
 Gateway boot auto-resumes unfinished **agent-run snapshots** the same
 way it already resumes interrupted objectives: `active` / `maxTurns`
-runs are promoted into an objective with an in-flight warning so the
-next segment verifies disk before rewriting. Kill, approval, and budget
+runs are promoted into an objective stamped `interrupted` (so the
+runtime-restart notice fires) with an in-flight warning so the next
+segment verifies disk before rewriting. Channel auto-promote stays
+`running` — that path is a live continuation, not a crash. Kill, approval, and budget
 stops stay put. Eval leftovers whose `workingDir` is under
 `tmp/xclaw-eval` also stay put — scored eval trees are not owner
 missions. `xclaw runs list`, Control `/agent-runs`, and doctor

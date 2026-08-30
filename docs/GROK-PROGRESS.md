@@ -1047,3 +1047,27 @@ Leftover stayed `maxTurns` with no `resumedAt` / `objectiveId`;
 writerLock pid=3331647. NEXT: recon remaining evolution gap — do not
 assume compaction or long-horizon still missing (compaction default-on
 since 3.68.0; AUTONOMY_LONG_HORIZON.md is eval-harness only).
+
+## 2026-08-30 — 3.479.0 recovered agent-runs stamp interrupted so restart notice fires (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: `resumeAgentRunAsObjective` saved the promoted objective as
+`running` (`newObjective` default). `runObjectiveInner` sets
+`reconcile` only when `obj.status === "interrupted"`, so recovered
+missions never got the "runtime restarted" notice. inFlight
+`failures[]` DID fire. Channel auto-promote shares resumeId+running
+but is a live continuation, not a crash — left alone. firstSegment
+stays false (true would hide recovered seed progress/findings/files).
+Empty-criteria done currently accepted (hermetic test depends on it) —
+not this slice. Compaction already default-on (3.68.0).
+BUILT: `resumeAgentRunAsObjective` stamps `obj.status = "interrupted"`
+before save. Promotion test asserts status interrupted. New test
+drives `runObjective` through the recovered path and asserts the
+prompt contains "runtime restarted" plus seed progress and inspected
+files.
+RAN: `node --test test/agent-run-resume.test.mjs` → 16/16
+(`# tests 16` `# fail 0` `# duration_ms 156.599237`);
+`npm test` → `# tests 5018` `# fail 0` `# duration_ms 70462`.
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving
+boot still does not auto-resume leftover and recovered path (when a
+resumable owner snapshot exists) would fire the restart notice.
