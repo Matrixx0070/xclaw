@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { runningVersion } from "./build-version.mjs";
 import { stopAuthToken } from "./stop-auth.mjs";
 import { ledgerSnapshot, dailyHardUsd, ledgerPressure } from "../tokens/swarm-ledger.mjs";
+import { listBackgroundBash } from "../computer/modules/bash-tool.mjs";
 
 function readStopSurfaceFreeze() {
   try {
@@ -32,6 +33,7 @@ export function stopAuthReadiness(cfg = {}) {
       note: "stop auth disabled",
       surfaceVersion: readStopSurfaceFreeze(),
       swarmLedger: null,
+      bashBg: 0,
     };
   }
   const token = stopAuthToken(cfg);
@@ -68,6 +70,13 @@ export function stopAuthReadiness(cfg = {}) {
     /* */
   }
 
+  let bashBg = 0;
+  try {
+    bashBg = listBackgroundBash().length;
+  } catch {
+    bashBg = 0;
+  }
+
   return {
     auth,
     hmac,
@@ -75,6 +84,7 @@ export function stopAuthReadiness(cfg = {}) {
     singlePort: true,
     surfaceVersion: readStopSurfaceFreeze(),
     swarmLedger,
+    bashBg,
   };
 }
 

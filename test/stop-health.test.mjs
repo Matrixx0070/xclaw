@@ -7,6 +7,7 @@ describe("stop health readiness", () => {
     const r = stopAuthReadiness({});
     assert.equal(r.auth, "lab");
     assert.equal(r.ready, true);
+    assert.equal(typeof r.bashBg, "number");
   });
 
   it("token + hmac configured", () => {

@@ -1,3 +1,12 @@
+## 3.414.0
+
+### `/health` stop object includes live `bashBg` count
+
+Doctor already showed `bashBg=N`. `GET /health` `stop` did not, so
+load balancers and `/ready` consumers could not see leftover
+background jobs. `stopAuthReadiness` now includes `bashBg`. OpenAPI
+documents `bashBg`, `bashBgKilled`, and `bashBgListed`.
+
 ## 3.413.0
 
 ### Last-drain doctor line includes `bashBgKilled`

@@ -15,6 +15,7 @@ export function checkOpenapiStopContract(root = process.cwd()) {
   if (!yaml.includes("x-dry-run-response")) missing.push("x-dry-run-response");
   if (!yaml.includes("/stop")) missing.push("/stop");
   if (!/X-XClaw-Stop-Sig/.test(yaml)) missing.push("X-XClaw-Stop-Sig");
+  if (!yaml.includes("bashBg")) missing.push("bashBg");
   return {
     ok: missing.length === 0,
     missing,

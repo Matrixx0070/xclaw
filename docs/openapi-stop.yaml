@@ -25,6 +25,7 @@ paths:
                       hmac: { type: string, enum: [configured, off, missing, disabled] }
                       ready: { type: boolean }
                       singlePort: { type: boolean }
+                      bashBg: { type: integer, description: Live background bash PIDs this process started }
   /ready:
     get:
       summary: Readiness
@@ -87,6 +88,8 @@ paths:
                       sessionsKilled: { type: integer }
                       wsClosed: { type: integer }
                       sseClosed: { type: integer }
+                      bashBgKilled: { type: integer }
+                      bashBgListed: { type: integer }
                       authMethod: { type: string }
                       channel: { type: string, enum: [http, ws] }
                       dryRun: { type: boolean }
@@ -126,3 +129,7 @@ x-dry-run-response:
     killedSessions: { type: array, items: { type: string }, maxItems: 0 }
     authMethod: { type: string }
     message: { type: string }
+    drain:
+      type: object
+      properties:
+        bashBgListed: { type: integer }
