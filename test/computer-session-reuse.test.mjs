@@ -93,3 +93,17 @@ describe("computer session reuse", () => {
     assert.ok(stats.sessions >= 1);
   });
 });
+
+describe("session reuse always probes liveness", () => {
+  it("does not return a pooled sessionId from tools cache alone", async () => {
+    const src = await fs.readFile(
+      new URL("../src/agent/computer-client.mjs", import.meta.url),
+      "utf8"
+    );
+    assert.match(src, /Always probe/);
+    assert.doesNotMatch(
+      src,
+      /if \(cached\?\.tools\) \{[\s\S]{0,80}return hit\.sessionId/
+    );
+  });
+});

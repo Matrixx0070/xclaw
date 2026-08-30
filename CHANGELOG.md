@@ -1,3 +1,13 @@
+## 3.418.0
+
+### Computer session reuse probes liveness, not a warm tools cache
+
+`createSession` reused a pooled sessionId whenever `toolsListCache`
+still had an entry — no HTTP check. After a computer restart the
+stale id looked live until the first tool call failed. Reuse now
+always `tools/list`s; a failed probe drops the pool entry and
+creates a new session.
+
 ## 3.417.0
 
 ### Computer server and Ollama daemon join the stop-all registry

@@ -200,12 +200,9 @@ export function createComputerClient(cfg) {
         const key = poolKey(baseUrl, wd);
         const hit = sessionReusePool.get(key);
         if (hit?.sessionId) {
-          // Prefer tools cache; otherwise lightweight tools/list probe
-          const cached = toolsListCache.get(hit.sessionId);
-          if (cached?.tools) {
-            hit.at = Date.now();
-            return hit.sessionId;
-          }
+          // Always probe. A warm tools cache used to skip this, so a
+          // recycled sessionId after computer restart looked live until
+          // the first real tool call failed.
           try {
             const r = await request("POST", `/xclaw/sessions/${hit.sessionId}/tools/list`, {
               method: "tools/list",
