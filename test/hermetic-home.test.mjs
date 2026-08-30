@@ -85,6 +85,13 @@ describe("hermetic HOME", () => {
     const home = createHermeticHome();
     const real = path.join(os.homedir(), ".xclaw", "hermetic-probe.json");
     try {
+      // A leftover probe from a prior leak (this host: 2026-08-28) must
+      // not fail THIS run. The invariant is the child write below.
+      try {
+        fs.unlinkSync(real);
+      } catch {
+        /* absent */
+      }
       child(
         [
           "const os=require('os'),fs=require('fs'),p=require('path');",

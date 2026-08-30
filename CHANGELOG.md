@@ -1,3 +1,13 @@
+## 3.395.0
+
+### Hermetic HOME probe is not failed by a stale leftover file
+
+`test/hermetic-home.test.mjs` asserted the real
+`~/.xclaw/hermetic-probe.json` did not exist. A leftover from
+2026-08-28 made the top-level suite 4897/4898. The invariant is that
+the *child* write under redirected HOME does not create that file;
+the test now unlinks a stale probe first.
+
 ## 3.394.0
 
 ### TUI paints "not complete" when the stream result is `ok: false`
