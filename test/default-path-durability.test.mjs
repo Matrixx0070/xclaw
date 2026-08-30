@@ -14,6 +14,8 @@ describe("default-path durability wiring", () => {
     const end = src.indexOf('case "approvals"');
     assert.ok(start >= 0 && end > start);
     assert.match(src.slice(start, end), /r\.resumable \|\| r\.ok === false/);
+    assert.match(src.slice(start, end), /sub === "resume"/);
+    assert.match(src.slice(start, end), /resumeAgentRunAsObjective/);
   });
 
   it("Control UI lists durable agent-runs", () => {

@@ -123,6 +123,7 @@ Snapshots under `~/.xclaw/agent-runs/`.
 ```bash
 xclaw runs list
 xclaw runs show <sessionId>
+xclaw runs resume <sessionId>
 ```
 
 `GET /agent-runs?id=` · Codes: `SESSION_NOT_FOUND` | `SESSION_CORRUPT` | `SESSION_UNSUPPORTED_VERSION` | `SESSION_WORKDIR_MISSING`

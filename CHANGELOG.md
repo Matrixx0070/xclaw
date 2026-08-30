@@ -1,3 +1,11 @@
+## 3.398.0
+
+### `xclaw runs resume <sessionId>` continues a cutoff without a reboot
+
+Unfinished snapshots were only auto-resumed on gateway boot. Operators
+can now promote one snapshot into an objective in-process and wait
+for it: `xclaw runs resume <id>`. Kill/approval/budget still refuse.
+
 ## 3.397.0
 
 ### Unfinished agent-runs are visible in `xclaw runs` and Control

@@ -2328,7 +2328,49 @@ Enable with seats.enabled: true in config`);
         console.log(JSON.stringify(await deleteAgentRun(cfg, id), null, 2));
         break;
       }
-      console.error("Usage: xclaw runs [list|show <id>|delete <id>]");
+      if (sub === "resume") {
+        const id = args[2];
+        if (!id) { console.error("Usage: xclaw runs resume <sessionId>"); process.exit(1); }
+        const loaded = await loadAgentRun(cfg, id);
+        if (!loaded.ok) {
+          console.error(loaded.code || loaded.message || "load failed");
+          process.exit(1);
+        }
+        const { resumeAgentRunAsObjective } = await import("../src/agent/run-resume.mjs");
+        const { replyWithAgent } = await import("../src/channels/base.mjs");
+        const { runObjective } = await import("../src/agent/objective.mjs");
+        const out = await resumeAgentRunAsObjective(cfg, loaded.run, {
+          start: async (obj) => {
+            const wd = obj.workingDir || process.cwd();
+            return runObjective(cfg, {
+              resumeId: obj.id,
+              workingDir: wd,
+              runSegment: async ({ prompt, rescuePrompt, sessionId }) =>
+                replyWithAgent({
+                  cfg,
+                  message: prompt,
+                  workingDir: wd,
+                  history: [],
+                  continuation: false,
+                  chatSessionId: sessionId,
+                  rescuePrompt,
+                  onEvent: (e) => {
+                    if (e.type === "tool" && e.phase === "start") {
+                      console.log(`  → ${e.name}`);
+                    }
+                  },
+                }),
+              notify: async (t) => {
+                console.log("\n[mission] " + String(t));
+              },
+            });
+          },
+        });
+        console.log(JSON.stringify(out, null, 2));
+        process.exitCode = out.ok ? 0 : 1;
+        break;
+      }
+      console.error("Usage: xclaw runs [list|show <id>|resume <id>|delete <id>]");
       process.exit(1);
       break;
     }
