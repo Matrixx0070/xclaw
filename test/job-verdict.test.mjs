@@ -102,6 +102,20 @@ describe("job verdict provenance (S2)", () => {
     assert.equal(job.verdict, "incomplete");
   });
 
+  it("loop unverified (false Done on a file goal) → failed, not succeeded", async () => {
+    const ws = fs.mkdtempSync(path.join(tmpHome, "ws-uv-"));
+    const job = await runJob({
+      goal: `Create ${ws}/proof.txt with text PROOF`,
+      cfg: CFG,
+      workspace: ws,
+      provider: textProvider("Done."),
+      persistRun: false,
+    });
+    assert.equal(job.stopReason, "unverified");
+    assert.equal(job.status, "failed");
+    assert.equal(job.pass, false);
+  });
+
   it("natural finish without verify → succeeded but verdict unverified", async () => {
     const ws = fs.mkdtempSync(path.join(tmpHome, "ws-b-"));
     const job = await runJob({

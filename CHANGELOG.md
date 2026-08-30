@@ -1,3 +1,20 @@
+## 3.407.0
+
+### A job whose loop refused a false "Done." is failed, not incomplete
+
+Without verify[], `stopReason: unverified` fell through to
+`incomplete` (a cutoff). The loop already proved the success checks
+failed. That is `failed` / `pass: false`. Chat "say done" is still
+succeeded with verdict unverified.
+
+## 3.406.0
+
+### navigate and key also observe after the act
+
+v3.405.0 observed after click/type/scroll. `navigate` and `key`
+still returned `ok: true` with only a cached URL. They now call
+`observeAfterAct` the same way.
+
 ## 3.405.0
 
 ### computer_act reports what the page looks like after a click

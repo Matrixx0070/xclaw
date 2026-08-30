@@ -312,7 +312,9 @@ export async function runJob(opts) {
       const critical = events.some((e) => e.type === "guard" && e.level === "critical");
       const sr = agentResult?.stopReason || "natural";
       const modelEnded = sr === "natural" || sr === "hook";
-      status = critical ? "failed" : modelEnded ? "succeeded" : "incomplete";
+      // The loop refused a false "Done." — that is failure, not a cutoff.
+      if (sr === "unverified") status = "failed";
+      else status = critical ? "failed" : modelEnded ? "succeeded" : "incomplete";
     }
   } catch (err) {
     error = err.message || String(err);

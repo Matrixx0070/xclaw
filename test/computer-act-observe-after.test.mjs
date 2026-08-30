@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { observeAfterAct } from "../src/computer/modules/computer-act-tool.mjs";
 
 describe("observeAfterAct", () => {
@@ -28,5 +29,21 @@ describe("observeAfterAct", () => {
     const o = await observeAfterAct(tab);
     assert.equal(o.pageUrl, "https://cached.example/");
     assert.equal(o.title, null);
+  });
+
+  it("navigate and key success paths call observeAfterAct", () => {
+    const src = fs.readFileSync(
+      new URL("../src/computer/modules/computer-act-tool.mjs", import.meta.url),
+      "utf8"
+    );
+    const nav = src.indexOf('if (action === "navigate")');
+    const key = src.indexOf('if (action === "key")');
+    const click = src.indexOf("const observed = await observeAfterAct(tab);");
+    assert.ok(nav >= 0 && key >= 0 && click >= 0);
+    assert.equal(
+      (src.match(/await observeAfterAct\(tab\)/g) || []).length >= 3,
+      true,
+      "navigate, key, and click/type/scroll must observe"
+    );
   });
 });

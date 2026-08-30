@@ -272,18 +272,14 @@ async function runComputerActImpl(input = {}) {
         } catch {
           /* ignore settle errors */
         }
-        let pageUrl = null;
-        try {
-          pageUrl = await tab.evaluate("location.href");
-        } catch {
-          pageUrl = url;
-        }
+        const observed = await observeAfterAct(tab);
         return {
           ok: true,
           action: "navigate",
           engine: "cdp-motor",
           url,
-          pageUrl,
+          pageUrl: observed.pageUrl || url,
+          observed,
           cuaPolicy: "tools_first_then_observe_then_gui",
         };
       } catch (e) {
@@ -355,12 +351,14 @@ async function runComputerActImpl(input = {}) {
       }
       await tab.send("Input.dispatchKeyEvent", { type: "keyDown", key });
       await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key });
+      const observed = await observeAfterAct(tab);
       return {
         ok: true,
         action: "key",
         engine: "cdp-motor",
         key,
-        pageUrl: tab.page?.url || null,
+        pageUrl: observed.pageUrl,
+        observed,
       };
     } else {
       return {
