@@ -65,8 +65,39 @@ describe("live soak report", () => {
     }
   });
 
-  it("doctor exposes lastLiveReport", async () => {
+  it("missing live report is not a throw", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-rep-"));
+    const r = await readLiveSoakReport({ base });
+    assert.equal(r.ok, false);
+    assert.equal(r.report, null);
+    assert.equal(r.path, liveReportPath(base));
+  });
+
+  it("truncated live report is not a throw", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-rep-"));
+    const fp = liveReportPath(base);
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.writeFileSync(fp, '{"liveReport":true,"ok":tru');
+    const r = await readLiveSoakReport({ base });
+    assert.equal(r.ok, false);
+    assert.equal(r.report, null);
+    assert.equal(r.path, fp);
+  });
+
+  it("empty live report is not a throw", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-rep-"));
+    const fp = liveReportPath(base);
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.writeFileSync(fp, "");
+    const r = await readLiveSoakReport({ base });
+    assert.equal(r.ok, false);
+    assert.equal(r.report, null);
+  });
+
+  it("doctor exposes lastLiveReport without throwing on checkout evidence", async () => {
     const d = await doctorHorizon({});
-    assert.ok("lastLiveReport" in d || d.lastLiveReport === undefined);
+    assert.equal(typeof d.lastLiveReport, "object");
+    assert.equal(typeof d.lastLiveReport.ok, "boolean");
+    assert.ok("report" in d.lastLiveReport);
   });
 });

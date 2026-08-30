@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -9,6 +11,10 @@ import {
   getScorecardOk,
 } from "../src/eval/horizon-scorecard.mjs";
 import { doctorHorizon } from "../src/cli/doctor-horizon.mjs";
+import {
+  lastScorecardPath,
+  readLastScorecard,
+} from "../src/eval/horizon-scorecard-last.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -38,6 +44,17 @@ describe("autonomy scorecard", () => {
     assert.equal(card.ok, false);
     assert.deepEqual(card.missing, ["G20"]);
     assert.equal(getScorecardOk(), 0);
+  });
+
+  it("truncated last-scorecard is not a throw", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-sc-"));
+    const fp = lastScorecardPath(base);
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.writeFileSync(fp, '{"ok":tru');
+    const r = await readLastScorecard({ base });
+    assert.equal(r.ok, false);
+    assert.equal(r.scorecard, null);
+    assert.equal(r.path, fp);
   });
 
   it("doctor embeds scorecard", async () => {

@@ -15,11 +15,11 @@ export async function readLastScorecard(opts = {}) {
     const j = JSON.parse(await fsp.readFile(fp, "utf8"));
     const mtime = (await fsp.stat(fp)).mtime.toISOString();
     return { ok: true, path: fp, age: mtime, scorecard: j };
-  } catch (e) {
-    if (e && e.code === "ENOENT") {
-      return { ok: false, path: fp, age: null, scorecard: null };
-    }
-    throw e;
+  } catch {
+    // Same catch class as readLiveSoakReport: doctorHorizon({}) reads
+    // this with no isolated base, so truncated checkout evidence must
+    // not throw. Class 10: no sample is not a fault.
+    return { ok: false, path: fp, age: null, scorecard: null };
   }
 }
 

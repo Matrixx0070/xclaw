@@ -1,23 +1,20 @@
-## 3.490.0
+## 3.491.0
 
-### CLI `--gateway` is opt-in handoff; resume does not stamp a dead owner
+### Doctor live-soak evidence: truncated JSON is not a fault
 
-Default `xclaw agent` / `job` / `runs resume` stay in-process. `--gateway` is
-boolean presence (not the URL form `xclaw run --gateway <url>`). When opted
-in and the gateway is unreachable or rejects, the CLI fails closed (exit 1,
-says why) — no silent in-process fallback.
+`readLiveSoakReport` threw `SyntaxError: Unexpected end of JSON input` on
+truncated or empty `.xclaw-evidence/last-live-report.json`. GitHub `ci`
+33331581979 gate 22.22 first try failed that way at
+`test/horizon-live-report.test.mjs` "doctor exposes lastLiveReport" —
+`doctorHorizon({})` reads checkout cwd with no isolated `base`. Class 10:
+no sample is not a fault. Unparseable evidence now returns
+`{ ok: false, report: null }` the same as ENOENT. Sibling
+`readLastScorecard` had the same ENOENT-only throw on the same doctor
+path; same fail-soft. Tests pin truncated JSON under an isolated `base`.
 
-`runs resume --gateway` probes GET `/health` first. It does not stamp
-`resumedAt` / `objectiveId` unless the gateway is reachable. Stamp-then-POST
-was one-way: `isResumableAgentRun` returns false once stamped, and the CLI
-catch did not roll the stamp back. HTTP resume is then detached (CLI exits
-while the gateway runs). A rejecting POST after a successful probe is still
-TOCTOU — probe-first beats stamp-then-POST.
-
-`xclaw agent --gateway` still auto-promotes a turn-cap cutoff locally with
-`awaitRun: true` (CLI-owned; not HTTP API auto-promote). This slice does not
-mint `persistRun: true` on voice, TUI, Discord `/ask`, Slack, email, voice
-TUI, or voice listen, and does not auto-promote HTTP `POST /agent/run`.
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
 
 ## 3.490.0
 

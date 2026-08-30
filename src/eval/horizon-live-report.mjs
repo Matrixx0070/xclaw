@@ -102,9 +102,12 @@ export async function readLiveSoakReport(opts = {}) {
   try {
     const j = JSON.parse(await fsp.readFile(fp, "utf8"));
     return { ok: true, path: fp, report: j };
-  } catch (e) {
-    if (e && e.code === "ENOENT") return { ok: false, path: fp, report: null };
-    throw e;
+  } catch {
+    // Class 10: no sample is not a fault. Truncated / empty checkout
+    // evidence must not throw — doctorHorizon({}) reads this with no
+    // isolated base. GitHub ci 33331581979 gate 22.22 first try failed
+    // here on SyntaxError: Unexpected end of JSON input.
+    return { ok: false, path: fp, report: null };
   }
 }
 
