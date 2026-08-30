@@ -1,3 +1,13 @@
+## 3.389.0
+
+### `save hello.txt as notes.txt` checks the destination
+
+That goal derived `file_exists hello.txt` (the source). Copying or
+renaming could "succeed" while `notes.txt` never appeared.
+`save`/`copy`/`rename`/`move` SRC as/to DST now check DST.
+`write SECRET=1 to .env` is still `file_contains` (left side is not a
+path). How-to questions stay empty.
+
 ## 3.388.0
 
 ### Relative dotfiles still have to exist

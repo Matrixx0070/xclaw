@@ -22,7 +22,12 @@ const CONTENT =
   "(?:with(?:\\s+text|\\s+contents)?|containing|that says|whose first line is)";
 const CHAT_LEAD =
   /^(what|why|how|when|where|who|explain|describe|list|tell|summarize|thanks)\b/i;
-const FILE_VERB = /^(create|write|save|put|touch|make|append|echo)\b/i;
+const FILE_VERB = /^(create|write|save|put|touch|make|append|echo|copy|rename|move)\b/i;
+const PATH_RE = new RegExp(`^(?:${PATH})$`, "i");
+
+function looksLikePath(s) {
+  return PATH_RE.test(stripWrap(s));
+}
 
 function stripWrap(s) {
   return String(s || "")
@@ -82,6 +87,16 @@ export function deriveGoalVerifyChecks(goal = "") {
     if (text) return [{ type: "file_contains", path: createWith[1], text }];
   }
 
+  const saveAs = u.match(
+    new RegExp(
+      `\\b(?:save|copy|rename|move)\\s+[\`'"]?(${PATH})[\`'"]?\\s+(?:as|to)\\s+[\`'"]?(${PATH})`,
+      "i"
+    )
+  );
+  if (saveAs) {
+    return [{ type: "file_exists", path: saveAs[2] }];
+  }
+
   const writeTo = u.match(
     new RegExp(
       `\\b(?:write|put|save|append)\\s+[\`'"]?([^\\s'\`"]+|[^'"\`]+?)[\`'"]?\\s+(?:to|into|in)\\s+[\`'"]?(${PATH})`,
@@ -89,8 +104,12 @@ export function deriveGoalVerifyChecks(goal = "") {
     )
   );
   if (writeTo) {
-    const text = stripWrap(writeTo[1]);
-    if (text) return [{ type: "file_contains", path: writeTo[2], text }];
+    const left = stripWrap(writeTo[1]);
+    const dest = writeTo[2];
+    if (looksLikePath(left)) {
+      return [{ type: "file_exists", path: dest }];
+    }
+    if (left) return [{ type: "file_contains", path: dest, text: left }];
   }
 
   const echoRedirect = u.match(
@@ -106,7 +125,7 @@ export function deriveGoalVerifyChecks(goal = "") {
 
   const createOnly = u.match(
     new RegExp(
-      `\\b(?:create|write|save|touch|make|put)\\s+${FILE_PREFIX}[\`'"]?(${PATH})[\`'"]?(?:\\s|$)`,
+      `\\b(?:create|write|save|touch|make|put)\\s+${FILE_PREFIX}[\`'"]?(${PATH})[\`'"]?(?!\\s+(?:as|to|into)\\s+)(?:\\s|$)`,
       "i"
     )
   );

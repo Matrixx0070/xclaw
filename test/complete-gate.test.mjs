@@ -66,6 +66,20 @@ describe("deriveGoalVerifyChecks", () => {
     assert.deepEqual(deriveGoalVerifyChecks("how do I append to a file?"), []);
   });
 
+  it("save/copy SRC as DST checks the destination, not the source", () => {
+    const s = deriveGoalVerifyChecks("save hello.txt as notes.txt");
+    assert.equal(s[0].type, "file_exists");
+    assert.equal(s[0].path, "notes.txt");
+    const t = deriveGoalVerifyChecks("save hello.txt to notes.txt");
+    assert.equal(t[0].path, "notes.txt");
+    assert.equal(t[0].type, "file_exists");
+    const c = deriveGoalVerifyChecks("copy foo.md as bar.md");
+    assert.equal(c[0].path, "bar.md");
+    const r = deriveGoalVerifyChecks("rename a.txt to b.txt");
+    assert.equal(r[0].path, "b.txt");
+    assert.deepEqual(deriveGoalVerifyChecks("how do I save hello.txt as notes.txt?"), []);
+  });
+
   it("write TEXT to PATH (eval / unquoted)", () => {
     const c = deriveGoalVerifyChecks("write AUTONOMY_OK to results/PROOF.txt");
     assert.equal(c[0].type, "file_contains");
