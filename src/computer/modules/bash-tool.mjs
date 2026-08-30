@@ -32,6 +32,17 @@ function pidAlive(pid) {
   }
 }
 
+export function registerBackgroundPid(pid, meta = {}) {
+  const n = Number(pid);
+  if (!Number.isFinite(n) || n <= 0) return false;
+  bgJobs.set(n, {
+    logFile: meta.logFile || null,
+    startedAt: meta.startedAt || Date.now(),
+    kind: meta.kind || "bash",
+  });
+  return true;
+}
+
 export function listBackgroundBash() {
   for (const pid of [...bgJobs.keys()]) {
     if (!pidAlive(pid)) bgJobs.delete(pid);
@@ -40,6 +51,7 @@ export function listBackgroundBash() {
     pid,
     logFile: meta.logFile,
     startedAt: meta.startedAt,
+    kind: meta.kind || "bash",
     alive: true,
   }));
 }
@@ -301,7 +313,7 @@ export async function executeBash(input = {}, ctx = {}) {
         code: "BASH_BG_DEAD",
       };
     }
-    bgJobs.set(spawned.pid, { logFile, startedAt: Date.now() });
+    registerBackgroundPid(spawned.pid, { logFile, kind: "bash" });
     return {
       ok: true,
       pid: spawned.pid,

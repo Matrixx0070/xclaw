@@ -16,7 +16,7 @@ export async function pushStopHealthChecks(push, cfg = {}) {
     push(
       "ops.stop_health",
       status,
-      `stop auth=${r.auth} hmac=${r.hmac} ready=${r.ready}`,
+      `stop auth=${r.auth} hmac=${r.hmac} ready=${r.ready} bashBg=${r.bashBg ?? 0}`,
       r
     );
     return { status, ...r };

@@ -71,6 +71,13 @@ async function ensurePool() {
         { cwd: RUNTIME_DIR, detached: true, stdio: "ignore" }
       );
       child.unref();
+      if (child.pid) {
+        import("../computer/modules/bash-tool.mjs")
+          .then((m) =>
+            m.registerBackgroundPid(child.pid, { kind: "python-kernel-pool" })
+          )
+          .catch(() => {});
+      }
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 500));
         if (await poolHealthy()) return { ok: true };

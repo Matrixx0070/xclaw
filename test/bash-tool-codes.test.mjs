@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   executeBash,
   normalizeBashTimeoutSeconds,
@@ -8,6 +9,12 @@ import {
 } from "../src/computer/modules/bash-tool.mjs";
 
 describe("xclaw_bash codes", () => {
+  it("python kernel pool registers PIDs for stop-all", () => {
+    const src = fs.readFileSync(new URL("../src/tools/python-tools.mjs", import.meta.url), "utf8");
+    assert.match(src, /registerBackgroundPid/);
+    assert.match(src, /python-kernel-pool/);
+  });
+
   it("normalizes ms to seconds", () => {
     assert.equal(normalizeBashTimeoutSeconds(30000), 30);
     assert.equal(normalizeBashTimeoutSeconds(5), 5);
@@ -59,6 +66,7 @@ describe("xclaw_bash codes", () => {
     assert.ok(r.logFile);
     const listed = listBackgroundBash().some((j) => j.pid === r.pid);
     assert.equal(listed, true);
+    assert.equal(listBackgroundBash().find((j) => j.pid === r.pid)?.kind, "bash");
     const k = killBackgroundBash();
     assert.ok(k.killed.includes(r.pid) || !listBackgroundBash().some((j) => j.pid === r.pid));
     assert.equal(listBackgroundBash().some((j) => j.pid === r.pid), false);

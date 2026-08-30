@@ -1,3 +1,12 @@
+## 3.415.0
+
+### Python kernel pool PIDs join the stop-all registry
+
+The Jupyter kernel pool is spawned `detached`/`unref` like background
+bash, so `stop-all` left it running. `registerBackgroundPid` is now
+exported; the pool registers as `kind: python-kernel-pool`. Doctor
+`ops.stop_health` prints `bashBg=N`.
+
 ## 3.414.0
 
 ### `/health` stop object includes live `bashBg` count
