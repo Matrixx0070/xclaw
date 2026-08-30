@@ -1,3 +1,11 @@
+## 3.428.0
+
+### `view_x_video` does not succeed with zero frames
+
+Missing ffmpeg or a non-video file still returned a success blob
+(`duration: ?`, empty frames). `ffprobe` failure with no streams is
+now `isError`. Extracting 0 of N requested frames is `isError`.
+
 ## 3.427.0
 
 ### `edit_image` does not claim success without a real output file

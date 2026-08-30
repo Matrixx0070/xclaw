@@ -88,6 +88,11 @@ export function createViewXVideoTool({ workingDir } = {}) {
         meta = { raw: probe.stdout || probe.stderr };
       }
       const duration = Number(meta.format?.duration) || 0;
+      if (probe.code !== 0 && !duration && !(meta.streams || []).length) {
+        return errorResult(
+          `ffprobe failed (is ffmpeg installed?): ${String(probe.stderr || probe.code).slice(0, 400)}`
+        );
+      }
       const lines = [
         `video: ${p}`,
         `duration: ${duration || "?"}s`,
@@ -116,6 +121,11 @@ export function createViewXVideoTool({ workingDir } = {}) {
         } catch {
           lines.push(`frame ${i} failed: ${(r.stderr || "").slice(-200)}`);
         }
+      }
+      if (framePaths.length === 0) {
+        return errorResult(
+          `ffmpeg extracted 0/${nFrames} frames from ${p}. ${lines.join(" | ").slice(0, 400)}`
+        );
       }
       lines.push(`frames (${framePaths.length}):`);
       for (const f of framePaths) lines.push(`  t=${f.t.toFixed?.(2) ?? f.t}s → ${f.path}`);
