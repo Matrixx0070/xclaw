@@ -74,6 +74,13 @@ describe("deriveGoalVerifyChecks", () => {
     assert.equal(w[0].type, "file_contains");
     assert.equal(w[0].path, "PROOF");
     assert.equal(w[0].text, "OK");
+    const nested = deriveGoalVerifyChecks("write AUTONOMY_OK to results/PROOF");
+    assert.equal(nested[0].type, "file_contains");
+    assert.equal(nested[0].path, "results/PROOF");
+    assert.equal(nested[0].text, "AUTONOMY_OK");
+    const t = deriveGoalVerifyChecks("touch results/PROOF");
+    assert.equal(t[0].type, "file_exists");
+    assert.equal(t[0].path, "results/PROOF");
     const d = deriveGoalVerifyChecks("delete notes.txt");
     assert.equal(d[0].type, "file_not_exists");
     assert.equal(d[0].path, "notes.txt");
@@ -313,6 +320,26 @@ describe("evaluateNaturalStopVerify", () => {
     assert.equal(hit.result.ok, true);
   });
 
+  it("write TEXT to results/PROOF rejects Done when missing and accepts when present", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-proof-ev-"));
+    fs.mkdirSync(path.join(dir, "results"));
+    const miss = await evaluateNaturalStopVerify({
+      naturalStop: true,
+      userMessage: "write AUTONOMY_OK to results/PROOF",
+      workingDir: dir,
+    });
+    assert.equal(miss.reject, true);
+    assert.equal(miss.checks[0].path, "results/PROOF");
+    fs.writeFileSync(path.join(dir, "results", "PROOF"), "AUTONOMY_OK\n");
+    const hit = await evaluateNaturalStopVerify({
+      naturalStop: true,
+      userMessage: "write AUTONOMY_OK to results/PROOF",
+      workingDir: dir,
+    });
+    assert.equal(hit.reject, false);
+    assert.equal(hit.result.ok, true);
+  });
+
   it("mkdir out rejects Done when missing and accepts when the dir exists", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-mkdir-ev-"));
     const miss = await evaluateNaturalStopVerify({
@@ -426,6 +453,20 @@ describe("loop rejects a false Done on a file goal", () => {
     assert.equal(out.stopReason, "unverified");
     assert.equal(out.ok, false);
     assert.equal(fs.existsSync(path.join(dir, ".gitignore")), false);
+  });
+
+  it("write TEXT to results/PROOF is unverified when missing", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-proof-loop-"));
+    fs.mkdirSync(path.join(dir, "results"));
+    const out = await runAgentLoop({
+      cfg: CFG,
+      provider: doneProvider(),
+      userMessage: "write AUTONOMY_OK to results/PROOF",
+      workingDir: dir,
+    });
+    assert.equal(out.stopReason, "unverified");
+    assert.equal(out.ok, false);
+    assert.equal(fs.existsSync(path.join(dir, "results", "PROOF")), false);
   });
 
   it("mkdir out is unverified when the directory is missing", async () => {

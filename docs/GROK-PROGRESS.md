@@ -793,3 +793,13 @@ BUILT: dedicated mkdir/create-directory matcher after write checks;
 stopwords ("of files") and how-to stay empty.
 RAN: 41 pass 0 fail (complete-gate, autonomy-contract, default-path-durability).
 UNVERIFIED: live lying-model then rewrite; full npm test.
+
+## 2026-08-30 — 3.392.0 results/PROOF is the path, not result
+
+STATUS: green
+DISCOVERED: v3.391 `RESULT` matched as a prefix of `results/PROOF`,
+so the gate checked a file named `result`.
+BUILT: known basenames are whole tokens; optional `dir/` prefix.
+Duplicate delete matcher removed. How-to empty.
+RAN: 46 pass 0 fail (complete-gate, autonomy-contract, default-path-durability).
+UNVERIFIED: live lying-model then rewrite; full npm test.

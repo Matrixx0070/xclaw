@@ -13,8 +13,10 @@
 import { runVerifyChecks } from "../jobs/verify.mjs";
 import { inferGoal } from "./turn-state.mjs";
 
+const KNOWN =
+  "Makefile|Dockerfile|LICENSE|README|Procfile|PROOF|STATUS|OUTPUT|OUT|DEST|RESULT|NOTES|HELLO";
 const PATH =
-  "(?:\\/[\\w./-]+|(?:\\/|\\.\\/)?[\\w./-]+\\.[A-Za-z0-9]+|\\.[A-Za-z][\\w.-]*|Makefile|Dockerfile|LICENSE|README|Procfile|PROOF|STATUS|OUT|DEST|OUTPUT|RESULT|NOTES|HELLO)";
+  `(?:\\/[\\w./-]+|(?:\\/|\\.\\/)?[\\w./-]+\\.[A-Za-z0-9]+|\\.[A-Za-z][\\w.-]*|(?:[\\w.-]+/)*(?:${KNOWN})(?![\\w./-]))`;
 // Optional "a/the file named/called" between the verb and the path so
 // "write a file hello.txt" matches the same way "write hello.txt" does.
 const FILE_PREFIX = "(?:(?:a|the)\\s+)?(?:file\\s+)?(?:(?:named|called)\\s+)?";
@@ -153,16 +155,6 @@ export function deriveGoalVerifyChecks(goal = "") {
     ) {
       return [{ type: "file_exists", path: dir }];
     }
-  }
-
-  const remove = u.match(
-    new RegExp(
-      `\\b(?:delete|remove|rm(?:\\s+-f)?)\\s+${FILE_PREFIX}[\`'"]?(${PATH})[\`'"]?`,
-      "i"
-    )
-  );
-  if (remove) {
-    return [{ type: "file_not_exists", path: remove[1] }];
   }
 
   const createOnly = u.match(

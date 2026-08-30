@@ -39,6 +39,10 @@ describe("autonomy contract (hermetic)", () => {
     const dir = deriveGoalVerifyChecks("mkdir out");
     assert.equal(dir[0].type, "file_exists");
     assert.equal(dir[0].path, "out");
+    const nested = deriveGoalVerifyChecks("write AUTONOMY_OK to results/PROOF");
+    assert.equal(nested[0].type, "file_contains");
+    assert.equal(nested[0].path, "results/PROOF");
+    assert.equal(nested[0].text, "AUTONOMY_OK");
   });
 
   it("6 no-progress: repeated identical calls trip the loop guard", () => {

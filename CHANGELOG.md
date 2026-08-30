@@ -1,3 +1,14 @@
+## 3.392.0
+
+### `results/PROOF` is the path, not `result`
+
+v3.391.0 added extensionless names including `RESULT`. That
+alternative matched as a prefix, so `write AUTONOMY_OK to
+results/PROOF` derived `file_contains` on `result` — the wrong file.
+
+Known basenames are now whole tokens and may sit under a relative
+dir (`results/PROOF`). `touch PROOF` is unchanged. How-to stays empty.
+
 ## 3.391.0
 
 ### `touch PROOF` and `delete notes.txt` are evidence-gated
