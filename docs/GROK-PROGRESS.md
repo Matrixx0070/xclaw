@@ -982,3 +982,24 @@ RAN: `node --test` store+resume+doctor → 27/27; `npm test` →
 `# tests 5016` `# fail 0` `# duration_ms 69244`.
 UNVERIFIED: GitHub `ci` on this SHA; live `GET /agent-runs?limit=20`
 includes leftover as not-ok and has 0 SESSION_WORKDIR_MISSING rows.
+
+## 2026-08-30 — 3.477.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green (leftover in default 20; 0 missing-workdir in the window)
+CLOSED UNVERIFIED from the 3.477.0 entry: GitHub `ci` / `install-e2e` /
+`eval-regression` / `ledger-guard` succeeded on `982df74` (ci 33301026923
+1m45s, no web_search flake). Live after pm2 restart pid 3299306 created
+2026-08-30T08:13:21Z: `/version` 3.477.0 stale false, `/ready` ready true,
+webchat POST `{message}` → assistant `PING` (user sent `PONG`). Boot after
+08:13:21Z emitted no `[xclaw:agent-runs] auto-resumed` line (last still
+06:27:15 obj_mtffg2yd_aaaad3). `GET /agent-runs?limit=20` n=20 error 0
+missing 0 not_ok 4 resumable 0 ok 16. Leftover
+`2026-08-30T03-23-54-655Z_intel-symbol-locate` at index 1 (`resumable:
+false`, `ok: false`, status maxTurns, updatedAt 04:17:33.558Z). not_ok_20
+= sandbox-escape-denied, intel-symbol-locate, campaign-static-site,
+campaign-svc-admin. Newest ok PONG uuid `096fd05a-631f-49e5-ac68-1bf59d930738`
+at index 4. `limit=400` n=294: error 101, missing 101, not_ok 4,
+resumable 0, ok 189. Leftover stayed `maxTurns` with no `resumedAt` /
+`objectiveId`; `obj_mtffg2yd_aaaad3` stayed `awaiting_human`. n_objectives
+23. Doctor `agentRuns.attention: no unfinished agent-run snapshots`.
+NEXT: long-horizon / context compression (evolution directive).
