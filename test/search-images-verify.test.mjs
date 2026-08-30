@@ -145,7 +145,8 @@ describe("search_images JSON parse", () => {
       const out = await tool.execute({ query: "cat", count: 1 });
       assert.equal(out.isError, true);
       assert.match(out.content[0].text, /No images/i);
-      assert.doesNotMatch(out.content[0].text, /Unexpected token|unsplash/i);
+      assert.doesNotMatch(out.content[0].text, /Unexpected token/);
+      assert.doesNotMatch(out.content[0].text, /source: unsplash/i);
     } finally {
       if (prevBing === undefined) delete process.env.BING_SEARCH_KEY;
       else process.env.BING_SEARCH_KEY = prevBing;

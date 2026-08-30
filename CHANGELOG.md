@@ -1,3 +1,11 @@
+## 3.467.0
+
+### `search_images` failed catalog may list Unsplash as tried
+
+v3.466.0 asserted the error text must not mention unsplash, but a failed
+JSON catalog still tries Unsplash and reports `tried: unsplash`. The test
+now rejects `source: unsplash` success, not the tried list.
+
 ## 3.466.0
 
 ### `search_images` does not treat 200 HTML JSON as an image backend success
