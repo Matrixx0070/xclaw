@@ -1274,3 +1274,23 @@ RAN:
 - Webchat POST /channel/webchat/message `{"message":"ping 3.483.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `aea7494a-eae5-4366-a114-4aa9db39148b`.
 UNVERIFIED: live voice WS turn-cap → mission (source pin only; a live voice turn would mean a real agent loop). Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0.
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice.
+
+## 2026-08-30 — 3.484.0 TUI auto-promotes a turn-cap cutoff (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: Webchat, processInbound, voice `/ws/voice`, and CLI `xclaw
+agent` already call `autoPromoteIfNeeded` when `stopReason ===
+"maxTurns"`. The TUI streamed `/agent/run/stream` then printed `not
+complete (maxTurns)` and waited — a cutoff never became a mission.
+Named `sessionId` already persists. HTTP POST `/agent/run` auto-promote
+is caller-owned stopReason, not this slice. POST `/objectives` was
+rejected (skips derive/toolTrace). Do not mint persistRun:true.
+BUILT: TUI submit path now calls `autoPromoteIfNeeded` +
+`formatPromotedReply` after the stream result (detached notify into the
+transcript). Skip the "not complete" line only when promoted.
+Approval / budget / kill stay put. Source-contract pin in
+`test/default-path-durability.test.mjs` (one `it()`, not three).
+RAN: node --test test/default-path-durability.test.mjs → # tests 14 # pass 14 # fail 0 # duration_ms 51.895141; npm test (hermetic) → # tests 5029 # pass 5029 # fail 0 # duration_ms 69620.99076
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put. Live TUI turn-cap → mission is source-pinned, not driven
+(a live TUI turn would mean a real agent loop).

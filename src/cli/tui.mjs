@@ -1391,8 +1391,56 @@ async function chatLoop(cfg, opts) {
         { sessionId, ...flags }
       );
       if (out.result?.sessionId) sessionId = out.result.sessionId;
+      // Same auto-promote as webchat/voice: a turn-cap cutoff is an execution
+      // constraint, not completion. TUI used to print "not complete (maxTurns)"
+      // and wait. Named sessionId already persists — do not mint persistRun.
+      // TUI stays alive, so the mission is detached (not CLI awaitRun).
+      let displayText = out.result?.text || out.result?.finalText || "";
+      let promoted = null;
+      if (out.result && cfg.objectives?.enabled !== false) {
+        try {
+          const { autoPromoteIfNeeded, formatPromotedReply } = await import(
+            "../channels/runtime.mjs"
+          );
+          const { replyWithAgent } = await import("../channels/base.mjs");
+          const promo = await autoPromoteIfNeeded({
+            text,
+            inbound: {
+              channel: "tui",
+              chatId: sessionId,
+              userId: sessionId,
+              identity: `tui:${sessionId}`,
+            },
+            cfg,
+            workingDir: process.cwd(),
+            replyWithAgent,
+            onEvent: (e) => {
+              if (e?.type === "objective" && e.phase === "promote_error") {
+                push(p(`  ${ELBOW} promote failed: ${e.message || "error"}`, C.red));
+              }
+            },
+            notify: async (t) => {
+              const notice = String(t || "").trim();
+              if (!notice) return;
+              push("");
+              const md = renderMarkdownLines(notice, { colour, width: cols() - 6 });
+              push(`${acc(MARK)} ${md[0] ?? ""}`);
+              for (const l of md.slice(1)) push(l ? `  ${l}` : "");
+              push("");
+              draw();
+            },
+            turnResult: out.result,
+          });
+          if (promo) {
+            promoted = promo;
+            displayText = formatPromotedReply(out.result.text, promo.id);
+          }
+        } catch (err) {
+          push(p(`  ${ELBOW} promote failed: ${String(err?.message || err)}`, C.red));
+        }
+      }
       // result.text is stripped server-side; finalText is raw, so clean either
-      const answer = stripLiveScaffold(out.result?.text || out.result?.finalText || "");
+      const answer = stripLiveScaffold(displayText);
       state.live = "";
       push("");
       if (answer) {
@@ -1403,7 +1451,7 @@ async function chatLoop(cfg, opts) {
       } else {
         push(dim(`  ${ELBOW} ${out.error || "(no reply)"}`));
       }
-      if (out.result?.ok === false) {
+      if (out.result?.ok === false && !promoted) {
         const why = out.result.stopReason || out.result.error || "incomplete";
         push(p(`  ${ELBOW} not complete (${why})`, C.yellow));
         push("");

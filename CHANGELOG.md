@@ -1,3 +1,19 @@
+## 3.484.0
+
+### TUI auto-promotes a turn-cap cutoff
+
+Webchat, `processInbound`, voice `/ws/voice`, and the CLI already call
+`autoPromoteIfNeeded` when `stopReason === "maxTurns"`, so a truncated
+turn becomes a durable objective. The TUI streamed `/agent/run/stream`
+then printed `not complete (maxTurns)` and waited — a cutoff never
+became a mission.
+
+The submit path now promotes the same way webchat does (detached notify
+into the transcript, `formatPromotedReply` before display). Named
+`sessionId` already persists — this slice does not mint `persistRun:
+true` and does not auto-promote HTTP `POST /agent/run` (caller-owned
+`stopReason`). Approval / budget / kill stay put.
+
 ## 3.483.0
 
 ### Voice `/ws/voice` auto-promotes a turn-cap cutoff

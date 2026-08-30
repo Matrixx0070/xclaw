@@ -58,6 +58,35 @@ describe("default-path durability wiring", () => {
     assert.match(src, /ok:\s*result\.ok !== false/);
   });
 
+  it("TUI auto-promotes a turn-cap cutoff without minting persistRun", () => {
+    const src = read("src/cli/tui.mjs");
+    const start = src.indexOf("const submit = async (text)");
+    assert.ok(start >= 0, "submit not found");
+    const fn = src.slice(start);
+    const promote = fn.indexOf("autoPromoteIfNeeded");
+    assert.ok(promote >= 0, "auto-promote must be on the TUI submit path");
+    assert.match(fn, /autoPromoteIfNeeded/);
+    assert.match(fn, /formatPromotedReply/);
+    assert.match(fn, /channel:\s*"tui"/);
+    assert.match(fn, /notify:\s*async/);
+    assert.match(fn, /identity:\s*`tui:\$\{sessionId\}`/);
+    const streamStart = src.indexOf("async function streamAgent");
+    assert.ok(streamStart >= 0, "streamAgent not found");
+    const streamEnd = src.indexOf("export async function runTui");
+    assert.ok(streamEnd > streamStart, "streamAgent end not found");
+    const streamFn = src.slice(streamStart, streamEnd);
+    const bodyStart = streamFn.indexOf("body: JSON.stringify({");
+    assert.ok(bodyStart >= 0, "streamAgent JSON body not found");
+    const bodyEnd = streamFn.indexOf("})", bodyStart);
+    assert.ok(bodyEnd > bodyStart, "streamAgent JSON body end not found");
+    const streamBody = streamFn.slice(bodyStart, bodyEnd);
+    assert.match(streamBody, /sessionId:\s*extra\.sessionId/);
+    assert.ok(
+      !/persistRun:\s*true/.test(streamBody),
+      "TUI named sessionId already persists; do not mint persistRun:true"
+    );
+  });
+
   it("voice /ws/voice auto-promotes a turn-cap cutoff without minting persistRun", () => {
     const src = read("src/gateway/voice-ws.mjs");
     const start = src.indexOf("async function runVoiceTurn");
