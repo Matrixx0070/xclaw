@@ -37,6 +37,13 @@ export async function handleStopAll(req, res, { cfg } = {}) {
   const before = listActiveSessions();
   const dryRun = body.dryRun === true || body.dry_run === true;
   if (dryRun) {
+    let bashBgListed = 0;
+    try {
+      const { listBackgroundBash } = await import("../computer/modules/bash-tool.mjs");
+      bashBgListed = listBackgroundBash().length;
+    } catch {
+      bashBgListed = 0;
+    }
     const drain = {
       sessionsKilled: 0,
       sessionsBefore: before.length,
@@ -44,6 +51,7 @@ export async function handleStopAll(req, res, { cfg } = {}) {
       sseClosed: 0,
       wsOk: true,
       sseOk: true,
+      bashBgListed,
       authMethod: auth.authMethod || (auth.skipped ? "lab" : "token"),
       dryRun: true,
     };
@@ -80,6 +88,7 @@ export async function handleStopAll(req, res, { cfg } = {}) {
     ws: r.ws || null,
     sse: r.sse || null,
     computer: r.computer || null,
+    bashBg: r.bashBg || null,
     drain,
     authMethod: drain.authMethod,
   };

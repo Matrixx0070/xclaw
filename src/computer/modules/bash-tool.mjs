@@ -19,6 +19,66 @@ import { buildToolEnv } from "../../security/env-policy.mjs";
 const DEFAULT_TIMEOUT_SECONDS = 30;
 const MAX_TIMEOUT_SECONDS = 120;
 
+/** PIDs we started with background:true — stop-all must be able to kill them. */
+const bgJobs = new Map();
+
+function pidAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function listBackgroundBash() {
+  for (const pid of [...bgJobs.keys()]) {
+    if (!pidAlive(pid)) bgJobs.delete(pid);
+  }
+  return [...bgJobs.entries()].map(([pid, meta]) => ({
+    pid,
+    logFile: meta.logFile,
+    startedAt: meta.startedAt,
+    alive: true,
+  }));
+}
+
+/**
+ * SIGTERM the process group, then SIGKILL. Used by session kill-switch.
+ */
+export function killBackgroundBash() {
+  const killed = [];
+  const missed = [];
+  for (const [pid] of [...bgJobs]) {
+    let hit = false;
+    try {
+      process.kill(-pid, "SIGTERM");
+      hit = true;
+    } catch {
+      try {
+        process.kill(pid, "SIGTERM");
+        hit = true;
+      } catch {
+        /* already gone */
+      }
+    }
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* */
+      }
+    }
+    bgJobs.delete(pid);
+    if (hit) killed.push(pid);
+    else missed.push(pid);
+  }
+  return { ok: true, killed, missed };
+}
+
 const TERMINATE_GRACE_MS = 2_000;
 
 /**
@@ -241,6 +301,7 @@ export async function executeBash(input = {}, ctx = {}) {
         code: "BASH_BG_DEAD",
       };
     }
+    bgJobs.set(spawned.pid, { logFile, startedAt: Date.now() });
     return {
       ok: true,
       pid: spawned.pid,

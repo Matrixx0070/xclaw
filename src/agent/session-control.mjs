@@ -79,7 +79,14 @@ export async function killAll({ stopComputer: stopComp = true, closeWs = true, c
       computer = { ok: false, error: String(e?.message || e) };
     }
   }
-  return { ok: true, killedSessions: ids, computer, ws, sse };
+  let bashBg = { ok: true, killed: [], missed: [] };
+  try {
+    const { killBackgroundBash } = await import("../computer/modules/bash-tool.mjs");
+    bashBg = killBackgroundBash();
+  } catch (e) {
+    bashBg = { ok: false, error: String(e?.message || e), killed: [], missed: [] };
+  }
+  return { ok: true, killedSessions: ids, computer, ws, sse, bashBg };
 }
 
 export function unregisterSession(sessionId) {

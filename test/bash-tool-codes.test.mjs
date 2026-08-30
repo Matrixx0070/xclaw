@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   executeBash,
   normalizeBashTimeoutSeconds,
+  listBackgroundBash,
+  killBackgroundBash,
 } from "../src/computer/modules/bash-tool.mjs";
 
 describe("xclaw_bash codes", () => {
@@ -55,7 +57,11 @@ describe("xclaw_bash codes", () => {
     assert.equal(r.code, "BASH_BG_STARTED");
     assert.ok(r.pid);
     assert.ok(r.logFile);
-    await executeBash({ command: `kill ${r.pid} 2>/dev/null; kill -9 ${r.pid} 2>/dev/null; true`, timeout: 5 });
+    const listed = listBackgroundBash().some((j) => j.pid === r.pid);
+    assert.equal(listed, true);
+    const k = killBackgroundBash();
+    assert.ok(k.killed.includes(r.pid) || !listBackgroundBash().some((j) => j.pid === r.pid));
+    assert.equal(listBackgroundBash().some((j) => j.pid === r.pid), false);
   });
 
   it("background command that exits immediately is not BASH_BG_STARTED", async () => {

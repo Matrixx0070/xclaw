@@ -1,3 +1,12 @@
+## 3.411.0
+
+### `stop-all` kills background bash PIDs we started
+
+Detached `background: true` jobs were `unref()`'d and never registered,
+so `xclaw stop-all` aborted agent loops but left sleepers running.
+Live PIDs are tracked; `killAll` SIGTERM+SIGKILL the process group.
+Dry-run `/stop` reports how many would be killed.
+
 ## 3.410.0
 
 ### Background bash is not success until the PID is actually alive
