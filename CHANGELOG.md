@@ -1,3 +1,12 @@
+## 3.426.0
+
+### `generate_image` re-reads the file before claiming Generated
+
+A 2xx API response with a tiny or empty `b64_json` still wrote a
+file and returned `Generated: path`. The tool now rejects payloads
+under 100 bytes and re-reads the file. URL downloads are checked
+the same way.
+
 ## 3.425.0
 
 ### `glob` / `grep` on a missing path is an error, not "no matches"

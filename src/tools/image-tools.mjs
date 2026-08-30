@@ -275,15 +275,30 @@ export function createGenerateImageTool({ workingDir, cfg }) {
             const id = crypto.randomBytes(5).toString("hex");
             const dest = path.join(outDir, `gen_${id}.png`);
             if (j.data?.[0]?.b64_json) {
-              await fs.writeFile(dest, Buffer.from(j.data[0].b64_json, "base64"));
+              const buf = Buffer.from(j.data[0].b64_json, "base64");
+              if (buf.length < 100) {
+                errors.push(`${model}: image payload too small (${buf.length} bytes)`);
+                continue;
+              }
+              await fs.writeFile(dest, buf);
+              const written = await fs.readFile(dest);
+              if (written.length !== buf.length) {
+                errors.push(`${model}: write verification failed`);
+                continue;
+              }
               return textResult(`Generated: ${dest}`, {
-                metadata: { path: dest, model, prompt },
+                metadata: { path: dest, model, prompt, bytes: written.length },
               });
             }
             if (j.data?.[0]?.url) {
-              await downloadTo(j.data[0].url, dest, { Authorization: `Bearer ${key}` });
+              const dl = await downloadTo(j.data[0].url, dest, { Authorization: `Bearer ${key}` });
+              const written = await fs.readFile(dest);
+              if (written.length < 100 || written.length !== dl.bytes) {
+                errors.push(`${model}: download verification failed`);
+                continue;
+              }
               return textResult(`Generated: ${dest}`, {
-                metadata: { path: dest, model, prompt, url: j.data[0].url },
+                metadata: { path: dest, model, prompt, url: j.data[0].url, bytes: written.length },
               });
             }
             errors.push(`${model}: no image payload`);
