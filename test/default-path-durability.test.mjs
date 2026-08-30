@@ -220,4 +220,22 @@ describe("default-path durability wiring", () => {
       "Slack named chatId already persists; do not mint persistRun:true"
     );
   });
+
+  it("Email processInbound auto-promotes a turn-cap cutoff via notify", () => {
+    const src = read("src/channels/email/index.mjs");
+    const start = src.indexOf("async function handleMail");
+    assert.ok(start >= 0, "handleMail not found");
+    const fn = src.slice(start);
+    const inbound = fn.indexOf("processInbound(");
+    assert.ok(inbound >= 0, "Email processInbound not found");
+    const inboundEnd = fn.indexOf("});", inbound);
+    assert.ok(inboundEnd > inbound, "Email processInbound end not found");
+    const inboundBody = fn.slice(inbound, inboundEnd);
+    assert.match(inboundBody, /notify:\s*async/);
+    assert.match(inboundBody, /smtpSend\(/);
+    assert.ok(
+      !/persistRun:\s*true/.test(inboundBody),
+      "Email named chatId already persists; do not mint persistRun:true"
+    );
+  });
 });

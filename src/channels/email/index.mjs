@@ -245,6 +245,27 @@ export function createEmailChannel(cfg) {
         cfg,
         workingDir: workspace,
         rateLimiter,
+        // Same auto-promote as Telegram/Discord MESSAGE/Slack: shouldAutoPromoteTurn
+        // is false without notify. Named chatId already persists via
+        // processInbound → replyWithAgent — do not mint persistRun.
+        // Gateway stays alive, so the mission is detached. Follow-ups stay
+        // In-Reply-To the originating message (same as the agent reply).
+        notify: async (t) => {
+          const notice = String(t || "").trim();
+          if (!notice) return;
+          await smtpSend({
+            smtp: conf.smtp,
+            to: fromAddr,
+            subject: mail.subject?.startsWith("Re:")
+              ? mail.subject
+              : `Re: ${mail.subject || "XClaw"}`,
+            body: notice,
+            inReplyTo: mail.messageId,
+          });
+          console.log(
+            `[email] → ${fromAddr}: [mission] ${notice.slice(0, 60)}`
+          );
+        },
         onEvent: (e) => {
           if (e.type === "tool" && e.phase === "start") console.log(`[email]   → ${e.name}`);
         },

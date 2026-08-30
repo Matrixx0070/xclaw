@@ -1,3 +1,17 @@
+## 3.487.0
+
+### Email processInbound auto-promotes a turn-cap cutoff
+
+Telegram, Discord MESSAGE, and Slack already pass `notify` into
+`processInbound`, so `shouldAutoPromoteTurn` can fire on
+`stopReason === "maxTurns"`. Email went through the same helper but
+omitted `notify`, so a truncated email turn never became a mission.
+
+`handleMail` now passes `notify` (detached `smtpSend` In-Reply-To the
+originating message). Named `chatId` already persists — this slice does
+not mint `persistRun: true` and does not auto-promote HTTP
+`POST /agent/run` (caller-owned `stopReason`).
+
 ## 3.486.0
 
 ### Slack processInbound auto-promotes a turn-cap cutoff

@@ -1374,3 +1374,21 @@ RAN:
 - Webchat POST /channel/webchat/message `{"message":"ping 3.486.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `add00cf3-5913-4bfc-a30d-c480a7bf69c2` stopReason=natural. telegram writerLock held by live pid=3609422. discord enabled=false. slack enabled=false.
 UNVERIFIED: live Slack turn-cap → mission (source pin only; a live Slack turn would mean a real agent loop; live Slack is enabled=false). Live Discord `/ask` / TUI / voice WS turn-cap → mission remain source-pinned from 3.485.0 / 3.484.0 / 3.483.0. Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0.
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, Discord `/ask`, or Slack. Do not auto-promote HTTP POST /agent/run. Email notify is a sibling gap — name it from live recon, do not silently expand.
+
+## 2026-08-30 — 3.487.0 Email processInbound auto-promotes a turn-cap cutoff
+
+STATUS: green (local hermetic)
+DISCOVERED: Telegram, Discord MESSAGE, and Slack already pass `notify`
+into `processInbound`, so `shouldAutoPromoteTurn` can fire on
+`stopReason === "maxTurns"`. Email went through the same helper but
+omitted `notify`, so a truncated email turn never became a mission.
+Named `chatId` already persists via processInbound → replyWithAgent.
+HTTP POST `/agent/run` auto-promote is caller-owned stopReason, not
+this slice. Do not mint persistRun:true.
+BUILT: Email `handleMail` now passes `notify` (detached `smtpSend`
+In-Reply-To the originating message). Source-contract pin in
+`test/default-path-durability.test.mjs` (one `it()`, not three).
+RAN: node --test test/default-path-durability.test.mjs → # tests 17 # pass 17 # fail 0 # duration_ms 52.945103; npm test (hermetic) → # tests 5032 # pass 5032 # fail 0 # duration_ms 69061.505157
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put. Live email turn-cap → mission is source-pinned, not driven
+(a live email turn would mean a real agent loop).
