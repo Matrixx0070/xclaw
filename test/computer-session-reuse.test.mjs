@@ -105,5 +105,10 @@ describe("session reuse always probes liveness", () => {
       src,
       /if \(cached\?\.tools\) \{[\s\S]{0,80}return hit\.sessionId/
     );
+    assert.match(src, /Always fetch/);
+    assert.doesNotMatch(
+      src,
+      /if \(hit\?\.tools\) \{[\s\S]{0,80}return hit\.tools/
+    );
   });
 });

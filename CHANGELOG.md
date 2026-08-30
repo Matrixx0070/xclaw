@@ -1,3 +1,12 @@
+## 3.419.0
+
+### `listTools` fetches; it does not serve a dead session from cache
+
+v3.418.0 probed on `createSession` reuse. `listTools` still returned
+`toolsListCache` without HTTP, so a recycled session after computer
+restart still advertised tools. `listTools` now always fetches and
+drops the cache on transport failure.
+
 ## 3.418.0
 
 ### Computer session reuse probes liveness, not a warm tools cache

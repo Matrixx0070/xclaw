@@ -252,19 +252,22 @@ export function createComputerClient(cfg) {
 
     async listTools(sessionId) {
       const sid = String(sessionId || "");
-      const hit = toolsListCache.get(sid);
-      if (hit?.tools) {
-        hit.at = Date.now();
-        return hit.tools;
+      // Always fetch. A warm toolsListCache used to skip HTTP, so after a
+      // computer restart listTools still advertised tools for a dead
+      // session. The cache remains a snapshot for stats/reuse probes.
+      try {
+        const r = await request(
+          "POST",
+          `/xclaw/sessions/${sid}/tools/list`,
+          { method: "tools/list" }
+        );
+        const tools = r.tools || [];
+        toolsListCache.set(sid, { tools, at: Date.now() });
+        return tools;
+      } catch (e) {
+        toolsListCache.delete(sid);
+        throw e;
       }
-      const r = await request(
-        "POST",
-        `/xclaw/sessions/${sid}/tools/list`,
-        { method: "tools/list" }
-      );
-      const tools = r.tools || [];
-      toolsListCache.set(sid, { tools, at: Date.now() });
-      return tools;
     },
 
     async callTool(sessionId, name, args) {
