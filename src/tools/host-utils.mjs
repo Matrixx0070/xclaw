@@ -63,6 +63,11 @@ export function createFileTypeTool() {
         return textResult(mag.stdout.trim(), { metadata: { engine: "magika" } });
       }
       const f = await run("file", ["-b", p]);
+      if (f.code !== 0 && !String(f.stdout || "").trim()) {
+        return errorResult(
+          `file_type failed (magika ${mag.code}, file ${f.code}): ${String(f.stderr || mag.stderr).slice(0, 300)}`
+        );
+      }
       return textResult(f.stdout.trim() || f.stderr, { metadata: { engine: "file" } });
     },
   };
@@ -90,7 +95,7 @@ export function createMarkitdownTool() {
       if (r.code !== 0) {
         r = await run("markitdown", [p], { timeoutMs: 90_000 });
       }
-      if (r.code !== 0 && !r.stdout) {
+      if (r.code !== 0 && !String(r.stdout || "").trim()) {
         return errorResult(r.stderr || `markitdown failed for ${p}`);
       }
       let text = r.stdout || "";

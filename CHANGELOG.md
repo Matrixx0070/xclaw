@@ -1,3 +1,11 @@
+## 3.437.0
+
+### `file_type` does not succeed when magika and `file` both fail
+
+If magika failed, the tool still returned `file`'s empty stdout as
+success. Dual-engine failure is now `isError`. `markitdown` treats
+whitespace-only stdout the same as empty.
+
 ## 3.436.0
 
 ### `xclaw_spawn_agent` reports child stopReason like spawn_subagent
