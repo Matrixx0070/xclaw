@@ -164,6 +164,9 @@ export function createXThreadFetchTool({ fetchFn } = {}) {
         const j = await res.json().catch(() => ({}));
         if (!res.ok) return errorResult(j.detail || j.title || `HTTP ${res.status}`);
         const t = j.data;
+        if (!t || typeof t !== "object" || t.id == null) {
+          return errorResult(j.detail || j.title || "tweet not found");
+        }
         return textResult(
           `id=${t.id}\n${t.created_at}\n${t.text}\nconversation=${t.conversation_id}`,
           { metadata: j }

@@ -1,3 +1,10 @@
+## 3.460.0
+
+### `x_thread_fetch` does not throw on HTTP 200 with missing data
+
+`j.data` missing still interpolated `t.id` and threw TypeError, which
+looked like a transport failure. Missing tweet is now `tweet not found`.
+
 ## 3.459.0
 
 ### `web_search` 200 HTML is not a successful empty search

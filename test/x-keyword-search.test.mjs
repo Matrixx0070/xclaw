@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createXKeywordSearchTool, createXUserSearchTool } from "../src/tools/x-tools.mjs";
+import { createXKeywordSearchTool, createXUserSearchTool, createXThreadFetchTool } from "../src/tools/x-tools.mjs";
 
 describe("x_keyword_search", () => {
   it("DDG fallback HTTP 503 is isError, not parsed HTML success", async () => {
@@ -67,5 +67,23 @@ describe("x_user_search", () => {
     const out = await tool.execute({ query: "grok" });
     assert.equal(out.isError, true);
     assert.match(out.content[0].text, /HTTP 429/);
+  });
+});
+
+describe("x_thread_fetch", () => {
+  it("HTTP 200 with missing data is tweet not found, not a TypeError", async () => {
+    process.env.X_BEARER_TOKEN = "test";
+    const tool = createXThreadFetchTool({
+      fetchFn: async () => ({
+        ok: true,
+        status: 200,
+        async json() {
+          return { data: null };
+        },
+      }),
+    });
+    const out = await tool.execute({ post_id: "1" });
+    assert.equal(out.isError, true);
+    assert.match(out.content[0].text, /tweet not found/);
   });
 });
