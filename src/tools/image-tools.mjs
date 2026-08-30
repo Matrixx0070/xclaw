@@ -375,7 +375,8 @@ export function createGenerateImageTool({ workingDir, cfg }) {
 }
 
 /** P1.4 edit_image — semantic via API if possible, else structured Magick ops from prompt keywords */
-export function createEditImageTool({ workingDir, cfg }) {
+export function createEditImageTool({ workingDir, cfg, fetchFn } = {}) {
+  const doFetch = typeof fetchFn === "function" ? fetchFn : fetch;
   return {
     name: "edit_image",
     description:
@@ -407,7 +408,7 @@ export function createEditImageTool({ workingDir, cfg }) {
       if (key && args.prompt) {
         try {
           // Many providers lack edits; attempt once
-          const res = await fetch("https://api.x.ai/v1/images/edits", {
+          const res = await doFetch("https://api.x.ai/v1/images/edits", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${key}`,
@@ -421,8 +422,8 @@ export function createEditImageTool({ workingDir, cfg }) {
             signal: AbortSignal.timeout(60_000),
           });
           if (res.ok) {
-            const j = await res.json();
-            if (j.data?.[0]?.b64_json) {
+            const j = await res.json().catch(() => null);
+            if (j?.data?.[0]?.b64_json) {
               const buf = Buffer.from(j.data[0].b64_json, "base64");
               if (buf.length < 100) throw new Error(`image payload too small (${buf.length} bytes)`);
               await fs.writeFile(dest, buf);
@@ -431,9 +432,13 @@ export function createEditImageTool({ workingDir, cfg }) {
                 metadata: { path: dest, engine: "xai", bytes },
               });
             }
+            return errorResult(`API edit HTTP ${res.status} with no image payload`);
           }
-        } catch {
-          /* fall through */
+        } catch (e) {
+          if (/no image payload|too small/i.test(String(e?.message || ""))) {
+            return errorResult(e.message);
+          }
+          /* 4xx / transport: magick fallback */
         }
       }
 

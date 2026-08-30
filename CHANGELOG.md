@@ -1,3 +1,11 @@
+## 3.470.0
+
+### `edit_image` does not treat 200 HTML as a successful Magick edit
+
+xAI edits `res.json()` on 200 HTML threw and was swallowed; ImageMagick
+then returned success as a local op. HTTP 200 with no image payload is
+now `isError`. 4xx still falls through to Magick.
+
 ## 3.469.0
 
 ### `glob` empty `rg --files` is not a walk failure
