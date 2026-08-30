@@ -116,3 +116,41 @@ describe("search_images does not treat HTML as an image", () => {
     }
   });
 });
+
+describe("search_images JSON parse", () => {
+  it("Bing 200 HTML json throw is isError, not Unsplash success", async () => {
+    const prevBing = process.env.BING_SEARCH_KEY;
+    const prevSerp = process.env.SERPAPI_API_KEY;
+    process.env.BING_SEARCH_KEY = "test";
+    delete process.env.SERPAPI_API_KEY;
+    try {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-simg-json-"));
+      const tool = createSearchImagesTool({
+        workingDir: dir,
+        fetchFn: async () => ({
+          ok: true,
+          status: 200,
+          headers: { get: () => "text/html" },
+          async json() {
+            throw new Error("Unexpected token <");
+          },
+          async text() {
+            return "<html>nope</html>";
+          },
+          async arrayBuffer() {
+            return htmlPage();
+          },
+        }),
+      });
+      const out = await tool.execute({ query: "cat", count: 1 });
+      assert.equal(out.isError, true);
+      assert.match(out.content[0].text, /No images/i);
+      assert.doesNotMatch(out.content[0].text, /Unexpected token|unsplash/i);
+    } finally {
+      if (prevBing === undefined) delete process.env.BING_SEARCH_KEY;
+      else process.env.BING_SEARCH_KEY = prevBing;
+      if (prevSerp === undefined) delete process.env.SERPAPI_API_KEY;
+      else process.env.SERPAPI_API_KEY = prevSerp;
+    }
+  });
+});

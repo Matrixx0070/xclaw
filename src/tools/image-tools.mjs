@@ -78,8 +78,9 @@ export async function assertImageLanded(dest, minBytes = 100) {
   return written.length;
 }
 
-async function downloadTo(url, dest, headers = {}) {
-  const res = await fetch(url, {
+async function downloadTo(url, dest, headers = {}, doFetch = fetch) {
+  const fetchImpl = typeof doFetch === "function" ? doFetch : fetch;
+  const res = await fetchImpl(url, {
     headers: { "User-Agent": "XClaw/2.8", ...headers },
     signal: AbortSignal.timeout(45_000),
     redirect: "follow",
@@ -106,7 +107,8 @@ function runConvert(args) {
 }
 
 /** P1.2 stronger search */
-export function createSearchImagesTool({ workingDir }) {
+export function createSearchImagesTool({ workingDir, fetchFn } = {}) {
+  const doFetch = typeof fetchFn === "function" ? fetchFn : fetch;
   return {
     name: "search_images",
     description:
@@ -137,12 +139,13 @@ export function createSearchImagesTool({ workingDir }) {
           u.searchParams.set("q", query);
           u.searchParams.set("count", String(count));
           u.searchParams.set("safeSearch", "Moderate");
-          const res = await fetch(u, {
+          const res = await doFetch(u, {
             headers: { "Ocp-Apim-Subscription-Key": bingKey },
             signal: AbortSignal.timeout(20_000),
           });
           if (res.ok) {
-            const j = await res.json();
+            const j = await res.json().catch(() => null);
+            if (!j || typeof j !== "object") throw new Error("bing invalid JSON");
             for (const item of j.value || []) {
               if (results.length >= count) break;
               const url = item.contentUrl || item.thumbnailUrl;
@@ -151,7 +154,7 @@ export function createSearchImagesTool({ workingDir }) {
               const ext = (url.match(/\.(jpg|jpeg|png|webp|gif)/i) || [, "jpg"])[1].toLowerCase();
               const dest = path.join(outDir, `img_${id}.${ext}`);
               try {
-                await downloadTo(url, dest);
+                await downloadTo(url, dest, {}, doFetch);
                 results.push({
                   title: item.name || query,
                   path: dest,
@@ -177,9 +180,10 @@ export function createSearchImagesTool({ workingDir }) {
           u.searchParams.set("engine", "google_images");
           u.searchParams.set("q", query);
           u.searchParams.set("api_key", serp);
-          const res = await fetch(u, { signal: AbortSignal.timeout(25_000) });
+          const res = await doFetch(u, { signal: AbortSignal.timeout(25_000) });
           if (res.ok) {
-            const j = await res.json();
+            const j = await res.json().catch(() => null);
+            if (!j || typeof j !== "object") throw new Error("serpapi invalid JSON");
             for (const item of j.images_results || []) {
               if (results.length >= count) break;
               const url = item.original || item.thumbnail;
@@ -187,7 +191,7 @@ export function createSearchImagesTool({ workingDir }) {
               const id = crypto.randomBytes(4).toString("hex");
               const dest = path.join(outDir, `img_${id}.jpg`);
               try {
-                await downloadTo(url, dest);
+                await downloadTo(url, dest, {}, doFetch);
                 results.push({
                   title: item.title || query,
                   path: dest,
@@ -209,12 +213,13 @@ export function createSearchImagesTool({ workingDir }) {
         tried.push("openverse");
         try {
           const ov = `https://api.openverse.engineering/v1/images/?q=${encodeURIComponent(query)}&page_size=${count}`;
-          const res = await fetch(ov, {
+          const res = await doFetch(ov, {
             headers: { Accept: "application/json", "User-Agent": "XClaw/2.8" },
             signal: AbortSignal.timeout(20_000),
           });
           if (res.ok) {
-            const j = await res.json();
+            const j = await res.json().catch(() => null);
+            if (!j || typeof j !== "object") throw new Error("openverse invalid JSON");
             for (const item of j.results || []) {
               if (results.length >= count) break;
               const url = item.url || item.thumbnail;
@@ -223,7 +228,7 @@ export function createSearchImagesTool({ workingDir }) {
               const ext = (url.match(/\.(jpg|jpeg|png|webp|gif)/i) || [, "jpg"])[1];
               const dest = path.join(outDir, `img_${id}.${ext}`);
               try {
-                await downloadTo(url, dest);
+                await downloadTo(url, dest, {}, doFetch);
                 results.push({
                   title: item.title || query,
                   path: dest,
@@ -249,7 +254,9 @@ export function createSearchImagesTool({ workingDir }) {
           try {
             await downloadTo(
               `https://source.unsplash.com/960x640/?${encodeURIComponent(query)}&sig=${id}`,
-              dest
+              dest,
+              {},
+              doFetch
             );
             results.push({ title: query, path: dest, url: "unsplash", source: "unsplash" });
           } catch {

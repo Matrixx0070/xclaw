@@ -1,3 +1,12 @@
+## 3.466.0
+
+### `search_images` does not treat 200 HTML JSON as an image backend success
+
+Bing/SerpAPI/Openverse called `res.json()` on 200 HTML; the throw was
+swallowed and Unsplash could still look like success. Invalid JSON on
+those backends now fails the backend. With Bing key and no Unsplash,
+that is `isError`.
+
 ## 3.465.0
 
 ### `web_search` HTML 200 without results is not a successful empty search
