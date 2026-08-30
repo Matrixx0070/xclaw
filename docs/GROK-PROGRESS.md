@@ -1226,3 +1226,15 @@ RAN: node --test test/automation-continuation.test.mjs + related pins → # test
 UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
 stay-put. Live automation tick continuation opt-out is source-pinned, not
 driven on the gateway.
+
+## 2026-08-30 — 3.482.0 GitHub ci + live drive now verified
+
+STATUS: green
+BUILT: closeout only — no product change. Distinct heading from the 3.482.0 ship.
+RAN:
+- GitHub `ci` 33310667301 on `2d479c3` success, 1m37s (gate 24.15 1m30s, gate 22.22 1m37s). ledger-guard / install-e2e / eval-regression also success on the same push.
+- Live gateway after `pm2 restart xclaw-gateway`: GET /version → name=xclaw version=3.482.0 onDiskVersion=3.482.0 stale=false profile=lab.
+- Leftover stay-put: agent-runs count 298 before and after restart; newest `5a349937-7e80-4716-ab59-6a8a720b895d` status=completed updatedAt=2026-08-30T11:23:33.746Z unchanged. CLI `xclaw doctor` → `agentRuns.attention: no unfinished agent-run snapshots`.
+- Webchat POST /channel/webchat/message `{"message":"ping 3.482.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 stopReason=natural.
+UNVERIFIED: live automation tick continuation opt-out (source pin only; a live tick would mean a real agent loop). Live POST /objectives continuation opt-out remains source-pinned from 3.481.0.
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.
