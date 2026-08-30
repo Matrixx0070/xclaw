@@ -80,6 +80,33 @@ describe("deriveGoalVerifyChecks", () => {
     assert.deepEqual(deriveGoalVerifyChecks("how do I save hello.txt as notes.txt?"), []);
   });
 
+  it("mkdir / create directory still has to exist", () => {
+    const m = deriveGoalVerifyChecks("mkdir out");
+    assert.equal(m[0].type, "file_exists");
+    assert.equal(m[0].path, "out");
+    const abs = deriveGoalVerifyChecks("mkdir /tmp/xclaw-out");
+    assert.equal(abs[0].path, "/tmp/xclaw-out");
+    const p = deriveGoalVerifyChecks("mkdir -p results/out");
+    assert.equal(p[0].path, "results/out");
+    const d = deriveGoalVerifyChecks("create directory out");
+    assert.equal(d[0].type, "file_exists");
+    assert.equal(d[0].path, "out");
+    const named = deriveGoalVerifyChecks("create a directory named build");
+    assert.equal(named[0].path, "build");
+    assert.deepEqual(deriveGoalVerifyChecks("how do I mkdir?"), []);
+    assert.deepEqual(deriveGoalVerifyChecks("explain how to create a directory"), []);
+    assert.deepEqual(deriveGoalVerifyChecks("create a directory of files"), []);
+  });
+
+  it("write-file in a mkdir+write goal still checks the file, not only the dir", () => {
+    const c = deriveGoalVerifyChecks(
+      "create directory /tmp/p2/out, write file /tmp/p2/out/hello.txt with exact content xclaw-p2-ok"
+    );
+    assert.equal(c[0].type, "file_contains");
+    assert.equal(c[0].path, "/tmp/p2/out/hello.txt");
+    assert.match(c[0].text, /xclaw-p2-ok/);
+  });
+
   it("write TEXT to PATH (eval / unquoted)", () => {
     const c = deriveGoalVerifyChecks("write AUTONOMY_OK to results/PROOF.txt");
     assert.equal(c[0].type, "file_contains");
@@ -238,6 +265,24 @@ describe("evaluateNaturalStopVerify", () => {
     assert.equal(hit.reject, false);
     assert.equal(hit.result.ok, true);
   });
+
+  it("mkdir out rejects Done when missing and accepts when the dir exists", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-mkdir-ev-"));
+    const miss = await evaluateNaturalStopVerify({
+      naturalStop: true,
+      userMessage: "mkdir out",
+      workingDir: dir,
+    });
+    assert.equal(miss.reject, true);
+    fs.mkdirSync(path.join(dir, "out"));
+    const hit = await evaluateNaturalStopVerify({
+      naturalStop: true,
+      userMessage: "mkdir out",
+      workingDir: dir,
+    });
+    assert.equal(hit.reject, false);
+    assert.equal(hit.result.ok, true);
+  });
 });
 
 describe("loop rejects a false Done on a file goal", () => {
@@ -334,6 +379,19 @@ describe("loop rejects a false Done on a file goal", () => {
     assert.equal(out.stopReason, "unverified");
     assert.equal(out.ok, false);
     assert.equal(fs.existsSync(path.join(dir, ".gitignore")), false);
+  });
+
+  it("mkdir out is unverified when the directory is missing", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-mkdir-loop-"));
+    const out = await runAgentLoop({
+      cfg: CFG,
+      provider: doneProvider(),
+      userMessage: "mkdir out",
+      workingDir: dir,
+    });
+    assert.equal(out.stopReason, "unverified");
+    assert.equal(out.ok, false);
+    assert.equal(fs.existsSync(path.join(dir, "out")), false);
   });
 
   it("write a file PATH containing TEXT is unverified when missing", async () => {

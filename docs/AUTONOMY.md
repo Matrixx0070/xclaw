@@ -142,9 +142,9 @@ the caller passed `verify[]`). The loop runs `jobs/verify.mjs` and
 re-enters on failure (`stopReason: unverified` at cap). Create/write
 with text → `file_contains` (including `write a file PATH containing
 TEXT` / `whose first line is`); touch/create-path → `file_exists`
-(including relative dotfiles like `.gitignore`). Chat and how-to
-questions still derive nothing. `agent.verifyOnComplete: false` to
-opt out.
+(including relative dotfiles like `.gitignore` and `mkdir` /
+`create directory`). Chat and how-to questions still derive nothing.
+`agent.verifyOnComplete: false` to opt out.
 
 Gateway boot auto-resumes unfinished **agent-run snapshots** the same
 way it already resumes interrupted objectives: `active` / `maxTurns`

@@ -1,3 +1,14 @@
+## 3.390.0
+
+### `mkdir` / `create directory` still have to exist
+
+`touch PATH` derived `file_exists`. `mkdir out` and `create a
+directory named build` derived nothing, so a model "Done." was
+`natural` with no directory. Same existence check now covers those
+(`mkdir -p` included). How-to questions and "create a directory of
+files" stay empty. A mkdir+write goal still checks the file, not
+only the dir.
+
 ## 3.389.0
 
 ### `save hello.txt as notes.txt` checks the destination

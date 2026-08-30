@@ -22,7 +22,8 @@ const CONTENT =
   "(?:with(?:\\s+text|\\s+contents)?|containing|that says|whose first line is)";
 const CHAT_LEAD =
   /^(what|why|how|when|where|who|explain|describe|list|tell|summarize|thanks)\b/i;
-const FILE_VERB = /^(create|write|save|put|touch|make|append|echo|copy|rename|move)\b/i;
+const FILE_VERB = /^(create|write|save|put|touch|make|append|echo|copy|rename|move|mkdir)\b/i;
+const DIR_STOP = /^(of|with|for|that|which|to|in|on|from|the|a|an|and|or)$/i;
 const PATH_RE = new RegExp(`^(?:${PATH})$`, "i");
 
 function looksLikePath(s) {
@@ -121,6 +122,26 @@ export function deriveGoalVerifyChecks(goal = "") {
   if (echoRedirect) {
     const text = stripWrap(echoRedirect[1]);
     if (text) return [{ type: "file_contains", path: echoRedirect[2], text }];
+  }
+
+  const mkdir = u.match(
+    new RegExp(
+      `\\b(?:mkdir(?:\\s+-p)?|create\\s+(?:a\\s+)?directory(?:\\s+(?:named|called))?)\\s+[\`'"]?([^\\s'\`"]+)[\`'"]?`,
+      "i"
+    )
+  );
+  if (mkdir) {
+    const dir = stripWrap(mkdir[1]);
+    if (
+      dir &&
+      !dir.startsWith("-") &&
+      dir !== "." &&
+      dir !== ".." &&
+      dir !== "/" &&
+      !DIR_STOP.test(dir)
+    ) {
+      return [{ type: "file_exists", path: dir }];
+    }
   }
 
   const createOnly = u.match(

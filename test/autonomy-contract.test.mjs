@@ -36,6 +36,9 @@ describe("autonomy contract (hermetic)", () => {
     const dot = deriveGoalVerifyChecks("touch .gitignore");
     assert.equal(dot[0].type, "file_exists");
     assert.equal(dot[0].path, ".gitignore");
+    const dir = deriveGoalVerifyChecks("mkdir out");
+    assert.equal(dir[0].type, "file_exists");
+    assert.equal(dir[0].path, "out");
   });
 
   it("6 no-progress: repeated identical calls trip the loop guard", () => {

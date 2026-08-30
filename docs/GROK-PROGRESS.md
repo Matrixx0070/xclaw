@@ -783,3 +783,13 @@ DISCOVERED: PATH needed `/` or a non-leading extension, so
 BUILT: leading-dot alternative `.[A-Za-z][\\w.-]*`. How-to stays empty.
 RAN: 36 pass 0 fail (complete-gate, autonomy-contract, default-path-durability).
 UNVERIFIED: live lying-model then rewrite; full npm test.
+
+## 2026-08-30 — 3.390.0 mkdir / create directory still have to exist
+
+STATUS: green
+DISCOVERED: `mkdir out` / `create a directory named build` derived
+nothing. mkdir+write eval still correctly prefers the file check.
+BUILT: dedicated mkdir/create-directory matcher after write checks;
+stopwords ("of files") and how-to stay empty.
+RAN: 41 pass 0 fail (complete-gate, autonomy-contract, default-path-durability).
+UNVERIFIED: live lying-model then rewrite; full npm test.
