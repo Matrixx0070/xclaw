@@ -270,6 +270,7 @@ export async function spawnSubagent(opts = {}) {
         workingDir: workingDir || process.cwd(),
         signal: nest.signal,
         onEvent: pushEvent,
+        ...(opts.provider ? { provider: opts.provider } : {}),
         // A1 ledger correlation: swarm/mission joins resolve node-level work
         ledgerIds: {
           nodeId: id,
@@ -287,7 +288,8 @@ export async function spawnSubagent(opts = {}) {
       nest.dispose();
     }
 
-    record.status = "done";
+    const childOk = result.ok !== false;
+    record.status = childOk ? "done" : "failed";
     record.finishedAt = new Date().toISOString();
     record.workspace = workingDir;
     record.isolated = Boolean(isolatedDir);
@@ -304,6 +306,8 @@ export async function spawnSubagent(opts = {}) {
       turns: result.turns,
       model: result.model,
       sessionId: result.sessionId,
+      stopReason: result.stopReason || null,
+      ok: childOk,
       toolTrace: result.toolTrace || [],
       workspace: workingDir,
       isolated: Boolean(isolatedDir) || Boolean(worktree),
@@ -328,12 +332,14 @@ export async function spawnSubagent(opts = {}) {
       }
     }
 
-    subagentMetrics.completed += 1;
+    if (childOk) subagentMetrics.completed += 1;
+    else subagentMetrics.errors += 1;
     void persist(record);
     pushEvent({
       type: "subagent",
-      phase: "done",
+      phase: childOk ? "done" : "failed",
       text: result.text,
+      stopReason: result.stopReason || null,
       workspace: workingDir,
       toolCalls: (result.toolTrace || []).length,
       merge: merge
@@ -343,7 +349,7 @@ export async function spawnSubagent(opts = {}) {
     if (opts.cleanupWorktree && worktree?.path) {
       await removeWorktree(baseDir, worktree.path).catch(() => {});
     }
-    return { ok: true, ...publicView(record), result: record.result };
+    return { ok: childOk, ...publicView(record), result: record.result };
   } catch (err) {
     const msg = err.message || String(err);
     const isTimeout = /timeout/i.test(msg) || err.name === "AbortError";

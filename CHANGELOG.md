@@ -1,3 +1,13 @@
+## 3.402.0
+
+### A child's "Done." is not the parent's success
+
+`spawnSubagent` always returned `ok: true` and `status: "done"` when
+the child loop finished without throwing — including
+`stopReason: unverified`. The parent could merge a lie. The child's
+`result.ok` now drives spawn `ok` / `failed`. Chat children still
+succeed. Injected `provider` is forwarded for tests (and embedders).
+
 ## 3.401.0
 
 ### Memory is retrieval, not leftover notices
