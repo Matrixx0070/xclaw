@@ -63,12 +63,13 @@ export function createFileTypeTool() {
         return textResult(mag.stdout.trim(), { metadata: { engine: "magika" } });
       }
       const f = await run("file", ["-b", p]);
-      if (f.code !== 0 && !String(f.stdout || "").trim()) {
+      const type = String(f.stdout || "").trim();
+      if (f.code !== 0 || !type) {
         return errorResult(
-          `file_type failed (magika ${mag.code}, file ${f.code}): ${String(f.stderr || mag.stderr).slice(0, 300)}`
+          `file_type failed (magika ${mag.code}, file ${f.code}): ${String(f.stderr || mag.stderr || "no type").slice(0, 300)}`
         );
       }
-      return textResult(f.stdout.trim() || f.stderr, { metadata: { engine: "file" } });
+      return textResult(type, { metadata: { engine: "file" } });
     },
   };
 }

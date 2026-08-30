@@ -20,6 +20,7 @@ describe("file_type", () => {
   it("source treats dual-engine failure as isError", async () => {
     const src = fs.readFileSync(new URL("../src/tools/host-utils.mjs", import.meta.url), "utf8");
     assert.match(src, /file_type failed \(magika/);
+    assert.doesNotMatch(src, /f\.stdout\.trim\(\) \|\| f\.stderr/);
     assert.match(src, /markitdownPickResult/);
   });
 });

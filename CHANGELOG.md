@@ -1,3 +1,11 @@
+## 3.450.0
+
+### `file_type` does not treat `file` stderr as a MIME type
+
+If magika failed and `file` exited non-zero or wrote nothing to
+stdout, the tool still returned `f.stderr` as success. Only a 0-exit
+non-empty stdout is a type. Everything else is `isError`.
+
 ## 3.449.0
 
 ### `markitdown` empty stdout is not converted markdown
