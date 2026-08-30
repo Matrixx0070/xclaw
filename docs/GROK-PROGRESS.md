@@ -881,3 +881,21 @@ RAN: `node --test` store+resume+doctor → 24/24; `npm test` →
 `# tests 5013` `# fail 0` `# duration_ms 68402`.
 UNVERIFIED: GitHub `ci` on this SHA; live `xclaw runs list` /
 Control after restart showing `intel-symbol-locate` not resumable.
+
+## 2026-08-30 — 3.474.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green
+CLOSED UNVERIFIED from the 3.474.0 entry: GitHub `ci` (rerun after
+flake `web_search returns structured text` `isError true` vs
+`undefined` on first 24.15 gate), `install-e2e`, `eval-regression`,
+`ledger-guard` succeeded on `9cfa018`. Live after pm2 restart:
+`/version` 3.474.0 stale false, `/ready` ready true, webchat POST
+`{message}` → assistant `PONG`. Boot after 07:32:18Z emitted no
+`[xclaw:agent-runs] auto-resumed` line. `GET /agent-runs?limit=400`
+row for `2026-08-30T03-23-54-655Z_intel-symbol-locate`:
+`resumable: false`, `ok: false`. `listAgentRuns` resumable_count 0.
+Doctor `agentRuns.attention: no unfinished agent-run snapshots`.
+Served `/control/app.js` contains `stay put (not auto-resumed)`.
+`intel-symbol-locate` stayed `maxTurns` with no `resumedAt` /
+`objectiveId`; `obj_mtffg2yd_aaaad3` stayed `awaiting_human`;
+`n_objectives` 23 unchanged.
