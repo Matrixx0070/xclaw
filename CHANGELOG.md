@@ -1,3 +1,12 @@
+## 3.445.0
+
+### `browser_snapshot` does not claim structure from a failed tab call
+
+Computer `isError` / `ok:false` and unparsed JS still returned
+`channel: structure (raw)` as success, so the model treated a dead
+tab as an a11y tree. Those are now `isError`. A real `{ channel:
+structure, nodes }` (including empty nodes) still succeeds.
+
 ## 3.444.0
 
 ### Observe-with-pixels and neural TTS do not hide failed media

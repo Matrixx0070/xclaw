@@ -184,15 +184,35 @@ export function createBrowserScreenshotTool(ctx = {}) {
   };
 }
 
+function snapshotStructureFromResult(result) {
+  const texts = (result?.content || []).filter((x) => x.type === "text").map((x) => x.text);
+  const raw = texts.join("\n");
+  const candidates = [result?.value, result?.data, ...texts, result];
+  for (const c of candidates) {
+    const j = parseMaybeJson(c);
+    if (!j || typeof j !== "object") continue;
+    const inner =
+      j.value &&
+      typeof j.value === "object" &&
+      (j.value.channel === "structure" || Array.isArray(j.value.nodes))
+        ? j.value
+        : j;
+    if (inner.channel === "structure" || Array.isArray(inner.nodes)) {
+      return { structure: inner, raw };
+    }
+  }
+  return { structure: null, raw };
+}
+
 export function createBrowserSnapshotTool(ctx = {}) {
   return {
     name: "browser_snapshot",
     description:
-      "Structure-first page observation (Horizon 1): interactive a11y-oriented tree (roles, names, values), title, url. Prefer this over screenshots. Attaches network delta when MITM is on.",
+      "Structure-first page observation (Horizon 1): interactive a11y-oriented tree (roles, names, values), title, url. Prefer this over screenshots. Attaches network delta when MITM is on. Computer isError and unparsed JS are isError.",
     parameters: {
       type: "object",
       properties: {
-        url: { type: "string", description: "Optional URL to open first" },
+        url: { type: "string" },
         tabId: { type: "string" },
         max_nodes: { type: "number", description: "Max interactive nodes (default 150)" },
       },
@@ -211,6 +231,18 @@ export function createBrowserSnapshotTool(ctx = {}) {
           waitTime: args.url ? 1.5 : 0.3,
           jsCode: STRUCTURE_SNAPSHOT_JS,
         });
+        const { structure, raw: textParts } = snapshotStructureFromResult(result);
+        if (result?.isError) {
+          return errorResult(textParts || "browser_snapshot computer error");
+        }
+        if (result?.ok === false) {
+          return errorResult(String(result.error || textParts || "browser_snapshot failed"));
+        }
+        if (!Array.isArray(structure?.nodes)) {
+          return errorResult(
+            `STRUCTURE_PARSE_FAILED: no structure nodes.${textParts ? " " + textParts.slice(0, 500) : ""}`
+          );
+        }
         const delta = await networkDeltaSince(cursor, { cfg: ctx.cfg || null });
         await bindActionFlows(actionId, delta.flows, {
           cfg: ctx.cfg || null,
@@ -218,49 +250,19 @@ export function createBrowserSnapshotTool(ctx = {}) {
           tabId: args.tabId,
         });
 
-        // Parse structure from tool text if possible
-        let structure = null;
-        const textParts = (result?.content || [])
-          .filter((x) => x.type === "text")
-          .map((x) => x.text)
-          .join("\n");
-        try {
-          // computer may wrap JS return as JSON in text
-          const m = textParts.match(/\{[\s\S]*"channel"\s*:\s*"structure"[\s\S]*\}/);
-          if (m) structure = JSON.parse(m[0]);
-          else {
-            const m2 = textParts.match(/\{[\s\S]{20,}\}/);
-            if (m2) {
-              const j = JSON.parse(m2[0]);
-              if (j.nodes || j.title) structure = j;
-            }
-          }
-        } catch {
-          /* keep raw */
-        }
-
-        let body;
-        if (structure?.nodes) {
-          const tree = formatA11ySnapshot(structure.nodes, {
-            maxNodes: Number(args.max_nodes) || 150,
-          });
-          body = [
-            `channel: structure`,
-            `title: ${structure.title || ""}`,
-            `url: ${structure.url || ""}`,
-            `ready: ${structure.readyState || ""}`,
-            `nodes: ${structure.nodeCount ?? structure.nodes.length}`,
-            `actionId: ${actionId}`,
-            "",
-            tree || "(no interactive nodes)",
-          ].join("\n");
-        } else {
-          body = [
-            `channel: structure (raw)`,
-            `actionId: ${actionId}`,
-            textParts.slice(0, 12_000),
-          ].join("\n");
-        }
+        const tree = formatA11ySnapshot(structure.nodes, {
+          maxNodes: Number(args.max_nodes) || 150,
+        });
+        let body = [
+          `channel: structure`,
+          `title: ${structure.title || ""}`,
+          `url: ${structure.url || ""}`,
+          `ready: ${structure.readyState || ""}`,
+          `nodes: ${structure.nodeCount ?? structure.nodes.length}`,
+          `actionId: ${actionId}`,
+          "",
+          tree || "(no interactive nodes)",
+        ].join("\n");
 
         if (delta.enabled) {
           body += `\n\n[sense] network_delta=${delta.count}`;
@@ -274,13 +276,9 @@ export function createBrowserSnapshotTool(ctx = {}) {
           }
         }
 
-        let markMeta = null;
-        if (structure?.nodes) {
-          markMeta = setMarksFromStructure(resolveSid(sessionId), structure, { tabId: args.tabId });
-        } else {
-          // soft: parse failed / no nodes — do not poison coordinates
-          markMeta = { ok: false, code: "STRUCTURE_PARSE_FAILED" };
-        }
+        const markMeta = setMarksFromStructure(resolveSid(sessionId), structure, {
+          tabId: args.tabId,
+        });
 
         return textResult(body, {
           metadata: {
