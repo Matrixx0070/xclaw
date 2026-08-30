@@ -1,3 +1,24 @@
+## 3.379.0
+
+### Nightly live-e2e is a gateway job when you opt in
+
+`liveE2e.cron.enabled` was documented, mapped, and honoured by
+`xclaw live-e2e-schedule`. The process operators actually leave up —
+the gateway — never called `ensureLiveE2eCronJob`. Doctor and eval
+cron already register at boot. Live-e2e did not, so a JSON block
+that said `"enabled": true` was a no-op.
+
+Boot now arms the existing job, **opt-in only**: `enabled === true`.
+Missing, `false`, `"true"`, and `1` stay unregistered. Doctor/eval
+still default on (`!== false`); live-e2e spawns Chromium and can
+spend, so a stock gateway must not. The job is anchored
+(`cron.liveE2e`) so a 24h interval survives the restart cycle that
+silently starved the daily eval suite.
+
+Hermetic proof: empty/false/"true" configs return null and add no
+job; `{ enabled: true }` registers `payload.kind=live-e2e` with the
+anchor; profiles do not opt in; gateway source calls the helper.
+
 ## 3.378.0
 
 ### "Done." is not done when the file is missing

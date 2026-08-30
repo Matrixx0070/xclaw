@@ -111,6 +111,7 @@ import { startRefreshScheduler } from "../connected/refresh-scheduler.mjs";
 import { ensureDoctorCronJob } from "../cron/doctor-job.mjs";
 import { ensureApprovalDigestCronJob } from "../cron/approval-digest-job.mjs";
 import { ensureEvalCronJob } from "../cron/eval-job.mjs";
+import { armLiveE2eCronJob } from "../cron/live-e2e-job.mjs";
 import { startQueueWorker } from "../jobs/queue.mjs";
 import { gracefulShutdown } from "./shutdown.mjs";
 import { softReloadConfig } from "../config/reload.mjs";
@@ -1197,6 +1198,18 @@ export async function startGateway({ root, harness = false } = {}) {
     } catch (err) {
       console.warn("[xclaw] eval cron:", err.message);
     }
+  }
+  // Opt-in (`enabled === true`), not the doctor/eval `!== false` default.
+  // Missing / false / "true" / 1 stay unregistered so a stock gateway does
+  // not spawn Chromium or spend. armLiveE2eCronJob is the single reader.
+  try {
+    const liveJob = armLiveE2eCronJob(cfg, { root });
+    if (liveJob) {
+      const everyMs = liveJob.schedule?.everyMs || cfg.liveE2e?.cron?.everyMs || 86_400_000;
+      console.log(`[xclaw] live-e2e cron every ${everyMs}ms id=${liveJob.id}`);
+    }
+  } catch (err) {
+    console.warn("[xclaw] live-e2e cron:", err.message);
   }
   try {
     startQueueWorker(cfg);

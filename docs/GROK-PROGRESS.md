@@ -742,3 +742,16 @@ RAN: 72 tests (complete-gate + contract + resume + continuation +
 loop-stages) pass.
 UNVERIFIED: live model that lies then writes the file after reject;
 full npm test.
+
+## 2026-08-30 — 3.379.0 live-e2e cron on the gateway, opt-in
+
+STATUS: green
+DISCOVERED: `ensureLiveE2eCronJob` existed; doctor/eval wired at
+gateway boot; live-e2e was CLI-only (`live-e2e-schedule`). A JSON
+`"enabled": true` did nothing on the process that stays up.
+BUILT: `liveE2eCronShouldArm` (`=== true` only) + `armLiveE2eCronJob`
+called from gateway next to eval. `anchorKey: cron.liveE2e` so a 24h
+interval survives restarts. Profiles do not opt in.
+RAN: live-e2e-cron-boot + live-e2e-spawn + cron-job-cfg (hermetic).
+UNVERIFIED: a live gateway with `enabled: true` actually spawning
+the enforcement script; full npm test.

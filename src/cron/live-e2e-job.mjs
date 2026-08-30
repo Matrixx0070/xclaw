@@ -292,12 +292,11 @@ export async function runLiveE2eCheck(opts = {}) {
  * Map the `liveE2e.cron` block of xclaw.json onto the options this module
  * takes, so the mapping itself is testable.
  *
- * It was inline in bin/xclaw.mjs, where it cannot be exercised: the switch case
- * dynamically imports its own dependencies and calls loadConfig() itself. That
- * is how `enabled` came to be documented in docs/PROD_PRESET.md and read by
- * nobody — `ensureLiveE2eCronJob` honours `opts.enabled`, but the only caller
- * never passed it, so an operator who wrote `"enabled": false` still got the
- * job. Both sibling cron jobs wire theirs (src/gateway/index.mjs).
+ * CLI `live-e2e-schedule` is an explicit operator request, so `enabled`
+ * defaults on (`!== false`) and a documented `enabled: false` actually
+ * disables the job. The gateway is the opposite: it must not spend or
+ * spawn Chromium unless the operator wrote the boolean true — see
+ * `liveE2eCronShouldArm`.
  *
  * The caller spreads the whole return value rather than copying keys across,
  * so adding one here cannot be silently dropped in transit.
@@ -322,8 +321,40 @@ export function liveE2eCronOptionsFromConfig(cfg = {}, opts = {}) {
 }
 
 /**
+ * Gateway opt-in. Doctor/eval default on (`enabled !== false`). Live-e2e
+ * spawns Chromium and can spend, so a missing block, `false`, `"true"`, or
+ * `1` stay unarmed. Only the JSON boolean `true` arms the in-process job.
+ *
+ * @param {object} [cfg]
+ * @returns {boolean}
+ */
+export function liveE2eCronShouldArm(cfg = {}) {
+  return cfg?.liveE2e?.cron?.enabled === true;
+}
+
+/**
+ * Register the live-e2e cron from config when the gateway opt-in is set.
+ * Returns the job, or null when the job must stay unregistered.
+ * Does not start the scheduler — gateway boot already called `startCron(cfg)`.
+ *
+ * @param {object} [cfg]
+ * @param {object} [opts] forwarded to ensureLiveE2eCronJob (root, name, …)
+ * @returns {object|null}
+ */
+export function armLiveE2eCronJob(cfg = {}, opts = {}) {
+  if (!liveE2eCronShouldArm(cfg)) return null;
+  const cronOpts = liveE2eCronOptionsFromConfig(cfg);
+  return ensureLiveE2eCronJob({ cfg, ...cronOpts, ...opts });
+}
+
+/**
  * Register recurring live-e2e job on the in-process scheduler.
  * Default every 24h (nightly). Use everyMs for pre-release denser cadence.
+ *
+ * `anchorKey` is required for a 24h interval: handler jobs are not
+ * persisted, so every boot re-registers them. Without a durable stamp the
+ * clock resets and a gateway whose uptime is shorter than the interval
+ * never reaches the first run (live: eval suite, 2026-08-28).
  */
 export function ensureLiveE2eCronJob(opts = {}) {
   const everyMs = Math.max(300_000, opts.everyMs ?? 86_400_000); // min 5m, default 24h
@@ -343,6 +374,7 @@ export function ensureLiveE2eCronJob(opts = {}) {
     sessionKey: opts.sessionKey || null,
     payload: { kind: "live-e2e" },
     cfg: opts.cfg,
+    anchorKey: opts.anchorKey ?? "cron.liveE2e",
     handler: async () => {
       await runLiveE2eCheck({
         cfg: opts.cfg,
@@ -365,6 +397,8 @@ export default {
   runLiveE2eCheck,
   ensureLiveE2eCronJob,
   liveE2eCronOptionsFromConfig,
+  liveE2eCronShouldArm,
+  armLiveE2eCronJob,
   resolveRunBudget,
   defaultLogPath,
 };

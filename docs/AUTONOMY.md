@@ -48,6 +48,7 @@ List jobs: `GET /cron/jobs`
 - **Checkpoints** — `GET /checkpoints`, `POST /checkpoints/resume`
 - **Queue** — `POST /queue` (pass `workspace` for correct verify roots)
 - **Swarm** — `POST /swarm/run/stream` DAG with implement → verify
+- **Live e2e** — gateway arms the nightly check only when `liveE2e.cron.enabled === true` (boolean; Chromium spend). Missing/false stay off. CLI: `xclaw live-e2e` / `live-e2e-schedule`
 
 Doctor reports `autonomy.level` and `autonomy.heartbeat`.
 

@@ -22,6 +22,7 @@
 - **Kill:** `node bin/xclaw.mjs stop-all` · `sessions-active`.
 - **Resume:** gateway boot auto-resumes unfinished agent-run snapshots as objectives (kill/approval/budget stay put). `agent.autoResume:false` to opt out.
 - **Completion:** a create/write-with-text goal is not done until `jobs/verify` passes. `stopReason: unverified` is not success. `agent.verifyOnComplete:false` to opt out.
+- **Live e2e cron:** gateway arms it only when `liveE2e.cron.enabled === true`. Stock gateway stays off.
 - **Prod:** set `XCLAW_GATEWAY_TOKEN`; do not run exposed gateway with lab auto-approve.
 
 ## MCP (agent-loop native)

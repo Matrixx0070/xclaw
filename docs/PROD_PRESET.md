@@ -120,7 +120,13 @@ node bin/xclaw.mjs live-e2e
 
 ### In-process schedule (gateway must stay up)
 
-Default **every 24h**:
+The gateway registers the job **only** when `liveE2e.cron.enabled` is the
+boolean `true`. Doctor/eval default on; live-e2e does not — a stock
+gateway must not spawn Chromium. CLI `live-e2e-schedule` still arms on
+request (honours `enabled: false`).
+
+Default **every 24h** (anchored as `cron.liveE2e` so restarts do not
+reset the clock):
 
 ```bash
 node bin/xclaw.mjs live-e2e-schedule           # 86400000 ms
