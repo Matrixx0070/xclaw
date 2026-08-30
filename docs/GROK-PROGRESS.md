@@ -949,3 +949,23 @@ RAN: `node --test` store+resume+doctor → 26/26; `npm test` →
 `# tests 5015` `# fail 0` `# duration_ms 69054`.
 UNVERIFIED: GitHub `ci` on this SHA; live `GET /agent-runs?limit=20`
 includes `intel-symbol-locate` as `resumable: false` / `ok: false`.
+
+## 2026-08-30 — 3.476.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green (leftover in default 20; window flooded by missing-workdir)
+CLOSED UNVERIFIED from the 3.476.0 entry: GitHub `ci` / `install-e2e` /
+`eval-regression` / `ledger-guard` succeeded on `1ff28d2` (ci 33300337647
+1m34s, no web_search flake). Live after pm2 restart pid 3276851 created
+2026-08-30T07:55:51Z: `/version` 3.476.0 stale false, `/ready` ready true,
+webchat POST `{message}` → assistant `PONG`. Boot after 07:55:51Z emitted
+no `[xclaw:agent-runs] auto-resumed` line (last still 06:27:15
+obj_mtffg2yd_aaaad3). `GET /agent-runs?limit=20` n=20, leftover
+`2026-08-30T03-23-54-655Z_intel-symbol-locate` in window (`resumable:
+false`, `ok: false`, status maxTurns, updatedAt 04:17:33.558Z). not_ok_20
+= sandbox-escape-denied, intel-symbol-locate, campaign-static-site,
+campaign-svc-admin. Remaining 16 of 20 are `SESSION_WORKDIR_MISSING`
+(a4-G*/W* from 2026-08-19). `limit=400` n=293: error 101, not_ok 4,
+resumable 0, ok 188. Leftover stayed `maxTurns` with no `resumedAt` /
+`objectiveId`; `obj_mtffg2yd_aaaad3` stayed `awaiting_human`. NEXT: do
+not pin missing-workdir rows into the operator window — they crowd out
+newest ok runs after the 4 not-ok leftovers.
