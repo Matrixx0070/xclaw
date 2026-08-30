@@ -9,6 +9,10 @@ function errorResult(msg) {
   return { isError: true, content: [{ type: "text", text: String(msg) }] };
 }
 
+function hasUsdPrice(row) {
+  return Boolean(row) && typeof row === "object" && Number.isFinite(row.usd);
+}
+
 export function createFinanceQuoteTool({ fetchFn } = {}) {
   const doFetch = typeof fetchFn === "function" ? fetchFn : fetchWithRetry;
   return {
@@ -48,7 +52,9 @@ export function createFinanceQuoteTool({ fetchFn } = {}) {
             const j = await res.json().catch(() => ({}));
             if (!res.ok) return errorResult(j.error || j.message || `HTTP ${res.status}`);
             const bar = j.results?.[0];
-            if (!bar) return errorResult(`No data for ${sym}`);
+            if (!bar || typeof bar !== "object" || !Number.isFinite(bar.c)) {
+              return errorResult(`No data for ${sym}`);
+            }
             const lines = [
               `${sym} (Polygon prev day)`,
               `close: ${bar.c}`,
@@ -75,23 +81,27 @@ export function createFinanceQuoteTool({ fetchFn } = {}) {
         let url = `${base}/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
         let res = await doFetch(url, { headers, signal: AbortSignal.timeout(15_000) });
         if (!res.ok) return errorResult(`CoinGecko HTTP ${res.status}`);
-        let j = await res.json();
-        if (!j[id]) {
+        let j = await res.json().catch(() => null);
+        if (!j || typeof j !== "object") return errorResult("CoinGecko invalid JSON");
+        if (!hasUsdPrice(j[id])) {
+          if (j[id] != null) return errorResult(`No price for ${id}`);
           // search
           const s = await doFetch(`${base}/search?query=${encodeURIComponent(symbol)}`, {
             headers,
             signal: AbortSignal.timeout(15_000),
           });
           if (!s.ok) return errorResult(`CoinGecko search HTTP ${s.status}`);
-          const sj = await s.json();
+          const sj = await s.json().catch(() => null);
+          if (!sj || typeof sj !== "object") return errorResult("CoinGecko search invalid JSON");
           const coin = sj.coins?.[0];
           if (!coin) return errorResult(`No crypto match for ${symbol}`);
           url = `${base}/simple/price?ids=${encodeURIComponent(coin.id)}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`;
           res = await doFetch(url, { headers, signal: AbortSignal.timeout(15_000) });
           if (!res.ok) return errorResult(`CoinGecko HTTP ${res.status}`);
-          j = await res.json();
+          j = await res.json().catch(() => null);
+          if (!j || typeof j !== "object") return errorResult("CoinGecko invalid JSON");
           const row = j[coin.id];
-          if (!row) return errorResult(`No price for ${coin.id}`);
+          if (!hasUsdPrice(row)) return errorResult(`No price for ${coin.id}`);
           return textResult(
             `${coin.name} (${coin.symbol})\nid: ${coin.id}\nusd: ${row.usd}\n24h: ${row.usd_24h_change?.toFixed?.(2) ?? row.usd_24h_change}%\nmcap: ${row.usd_market_cap}`,
             { metadata: { provider: "coingecko", id: coin.id, row } }

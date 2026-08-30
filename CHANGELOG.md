@@ -1,3 +1,12 @@
+## 3.461.0
+
+### `finance_quote` does not treat a payload without a price as a quote
+
+CoinGecko `res.json()` had no catch, so 200 HTML threw `Unexpected token`.
+An empty `{bitcoin:{}}` row still printed `usd:undefined` as success, and
+Polygon `{results:[{}]}` printed `close:undefined`. json() is catch-empty;
+missing `usd` or close is `isError`.
+
 ## 3.460.0
 
 ### `x_thread_fetch` does not throw on HTTP 200 with missing data
