@@ -172,9 +172,11 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
   // default 20-row window never showed intel-symbol-locate even
   // after the classifier was honest (live: GET /agent-runs?limit=20
   // had 0 not-ok rows; limit=400 had 4, including that leftover).
-  // Then pin attention (resumable / not-ok / corrupt) into the
-  // window: live leftover sat at updatedAt rank 75, so newest-ok
-  // still hid it from limit=20 after 3.475.0.
+  // Then pin resumable / not-ok into the window: live leftover sat
+  // at updatedAt rank 75, so newest-ok still hid it from limit=20
+  // after 3.475.0. Do not pin missing-workdir / corrupt rows —
+  // live 3.476.0 put 16 SESSION_WORKDIR_MISSING into the default
+  // 20 after the 4 not-ok leftovers (101 of 293 at limit=400).
   const cap = Number(limit) > 0 ? Number(limit) : 30;
   const out = [];
   for (const f of names) {
@@ -208,7 +210,7 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
   const attention = [];
   const rest = [];
   for (const r of out) {
-    if (r.error || r.resumable || r.ok === false) attention.push(r);
+    if (r.resumable || r.ok === false) attention.push(r);
     else rest.push(r);
   }
   return [...attention, ...rest].slice(0, cap);

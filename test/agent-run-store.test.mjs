@@ -184,4 +184,41 @@ describe("agent run-store", () => {
     assert.equal(list[0].ok, false);
     assert.equal(list[0].resumable, false);
   });
+
+  it("list does not pin SESSION_WORKDIR_MISSING ahead of newer ok runs", async () => {
+    const isolated = { paths: { configDir: await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-runs-missing-")) } };
+    const wd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-wd-missing-"));
+    await saveAgentRun(isolated, {
+      sessionId: "newer_ok_uuid",
+      workingDir: wd,
+      status: "completed",
+      stopReason: "natural",
+    });
+    await saveAgentRun(isolated, {
+      sessionId: "2026-08-19T03-43-26-648Z_a4-G01-write-read",
+      workingDir: "/tmp/xclaw-eval/gone-workdir-does-not-exist",
+      status: "completed",
+      stopReason: "natural",
+    });
+    const dir = path.join(isolated.paths.configDir, "agent-runs");
+    const okFp = path.join(dir, "newer_ok_uuid.json");
+    const missingFp = path.join(dir, "2026-08-19T03-43-26-648Z_a4-G01-write-read.json");
+    const okRun = JSON.parse(await fs.readFile(okFp, "utf8"));
+    const missing = JSON.parse(await fs.readFile(missingFp, "utf8"));
+    okRun.updatedAt = "2026-08-30T07:43:43.475Z";
+    missing.updatedAt = "2026-08-19T03:43:26.648Z";
+    await fs.writeFile(okFp, JSON.stringify(okRun, null, 2));
+    await fs.writeFile(missingFp, JSON.stringify(missing, null, 2));
+    const list = await listAgentRuns(isolated, { limit: 1 });
+    assert.equal(list.length, 1);
+    assert.equal(
+      list[0].sessionId,
+      "newer_ok_uuid",
+      "missing-workdir must not fill limit=1 ahead of a newer ok run"
+    );
+    assert.equal(list[0].ok, true);
+    const both = await listAgentRuns(isolated, { limit: 2 });
+    const miss = both.find((r) => r.sessionId === "2026-08-19T03-43-26-648Z_a4-G01-write-read");
+    assert.equal(miss.error, "SESSION_WORKDIR_MISSING");
+  });
 });

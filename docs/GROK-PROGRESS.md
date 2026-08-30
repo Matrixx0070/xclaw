@@ -969,3 +969,16 @@ resumable 0, ok 188. Leftover stayed `maxTurns` with no `resumedAt` /
 `objectiveId`; `obj_mtffg2yd_aaaad3` stayed `awaiting_human`. NEXT: do
 not pin missing-workdir rows into the operator window — they crowd out
 newest ok runs after the 4 not-ok leftovers.
+
+## 2026-08-30 — 3.477.0 operator list does not pin missing-workdir rows (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: 3.476.0 pinned leftover into Control's default 20, then
+filled the rest with SESSION_WORKDIR_MISSING. Live: limit=20 error 16
+/ not-ok 4 / ok 0; limit=400 error 101 of 293 (a4-G*/W* from 2026-08-19).
+BUILT: `listAgentRuns` pins only `resumable` / `ok === false`. Missing
+workingDir and corrupt rows stay in newest-ok order among the rest.
+RAN: `node --test` store+resume+doctor → 27/27; `npm test` →
+`# tests 5016` `# fail 0` `# duration_ms 69244`.
+UNVERIFIED: GitHub `ci` on this SHA; live `GET /agent-runs?limit=20`
+includes leftover as not-ok and has 0 SESSION_WORKDIR_MISSING rows.

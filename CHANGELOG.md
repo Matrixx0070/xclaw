@@ -1,3 +1,14 @@
+## 3.477.0
+
+### Operator list does not pin missing-workdir rows
+
+After 3.476.0 pinned attention into Control's default 20, leftover
+`intel-symbol-locate` was in the window — and so were 16
+`SESSION_WORKDIR_MISSING` a4-G*/W* rows. Live: `limit=20` error 16 /
+not-ok 4 / ok 0; `limit=400` error 101 of 293. Missing workingDir and
+corrupt rows are no longer pinned. Resumable / not-ok leftovers still
+beat newer ok runs.
+
 ## 3.476.0
 
 ### Operator list pins attention rows into the window
