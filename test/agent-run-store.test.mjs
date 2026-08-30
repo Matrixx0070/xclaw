@@ -78,4 +78,39 @@ describe("agent run-store", () => {
     assert.equal(done.ok, true);
     assert.equal(done.resumable, false);
   });
+
+  it("list does not flag eval leftovers as resumable; owner interrupted still is", async () => {
+    const isolated = { paths: { configDir: await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-runs-eval-")) } };
+    const ownerWd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-wd-owner-"));
+    const evalRoot = path.join(os.tmpdir(), "xclaw-eval");
+    await fs.mkdir(evalRoot, { recursive: true });
+    const evalWd = await fs.mkdtemp(path.join(evalRoot, "leftover-"));
+    await saveAgentRun(isolated, {
+      sessionId: "eval_leftover_maxturns",
+      workingDir: evalWd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+    });
+    await saveAgentRun(isolated, {
+      sessionId: "owner_interrupted",
+      workingDir: ownerWd,
+      status: "interrupted",
+      stopReason: "segment",
+    });
+    const list = await listAgentRuns(isolated);
+    const leftover = list.find((r) => r.sessionId === "eval_leftover_maxturns");
+    const owner = list.find((r) => r.sessionId === "owner_interrupted");
+    assert.equal(leftover.resumable, false, "eval leftover must not be flagged resumable");
+    assert.equal(leftover.ok, false);
+    assert.equal(owner.resumable, true, "owner interrupted run must still be flagged resumable");
+  });
+
+  it("listAgentRuns uses isResumableAgentRun, not a re-derived heuristic", async () => {
+    const src = await fs.readFile(new URL("../src/agent/run-store.mjs", import.meta.url), "utf8");
+    assert.match(src, /isResumableAgentRun/);
+    assert.doesNotMatch(
+      src,
+      /run\.status === "active" \|\|[\s\S]*run\.status === "interrupted"/
+    );
+  });
 });

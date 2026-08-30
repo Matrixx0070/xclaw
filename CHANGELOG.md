@@ -1,3 +1,17 @@
+## 3.474.0
+
+### Operator list uses the same resume classifier as boot
+
+`listAgentRuns` re-derived `resumable` from status/stopReason and
+ignored the eval-dir skip shipped in 3.473.0. Live:
+`2026-08-30T03-23-54-655Z_intel-symbol-locate` stayed put on boot
+(`isResumableAgentRun` false) but Control and `xclaw runs list`
+still painted it unfinished / “auto-resume on gateway boot”. The
+operator summary now calls `isResumableAgentRun`. Control only
+claims auto-resume when that flag is true; maxTurns eval leftovers
+can still show as not-ok. Owner interrupted and maxTurns resumes
+are unchanged.
+
 ## 3.473.0
 
 ### Eval leftovers do not auto-resume as live missions

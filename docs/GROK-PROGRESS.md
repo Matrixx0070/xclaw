@@ -854,3 +854,30 @@ CLOSED UNVERIFIED from the 3.472.0 entry: GitHub `ci` succeeded on
 `/ready` ready true, webchat POST `{message}` → assistant `PONG`,
 telegram poller healthy writerLock pid=3157966. That restart is also
 what auto-started the eval leftover above.
+
+## 2026-08-30 — 3.473.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green
+CLOSED UNVERIFIED from the 3.473.0 entry: GitHub `ci` / `install-e2e` /
+`eval-regression` / `ledger-guard` succeeded on `80c194b`. Live after
+pm2 restart: `/version` 3.473.0 stale false, `/ready` ready true,
+webchat POST `{message}` → assistant `PONG`. Boot after 07:01:28Z
+emitted no `[xclaw:agent-runs] auto-resumed` line.
+`intel-symbol-locate` stayed `maxTurns` with no `resumedAt` /
+`objectiveId`; `obj_mtffg2yd_aaaad3` stayed `awaiting_human`;
+`new_objectives_since_restart` 0.
+
+## 2026-08-30 — 3.474.0 operator list uses the same resume classifier (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: v3.473.0 skipped eval leftovers in `isResumableAgentRun`
+but `listAgentRuns` still re-derived `resumable` from status/stopReason.
+Live mismatch: `intel-symbol-locate` classifier false, operator list
+true. Control claimed “auto-resume on gateway boot”.
+BUILT: `listAgentRuns` calls `isResumableAgentRun` via dynamic import
+(run-resume already imports run-store). Control meta only claims
+auto-resume when `resumable` is true; not-ok eval leftovers stay put.
+RAN: `node --test` store+resume+doctor → 24/24; `npm test` →
+`# tests 5013` `# fail 0` `# duration_ms 68402`.
+UNVERIFIED: GitHub `ci` on this SHA; live `xclaw runs list` /
+Control after restart showing `intel-symbol-locate` not resumable.

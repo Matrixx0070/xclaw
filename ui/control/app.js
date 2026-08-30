@@ -215,11 +215,16 @@ async function loadAgentRuns() {
     const data = await getJSON("/agent-runs?limit=20");
     const list = data.runs || [];
     const meta = $("agentRunsMeta");
-    const unfinished = list.filter((r) => r.resumable || r.ok === false).length;
+    const resumable = list.filter((r) => r.resumable).length;
+    const notOk = list.filter((r) => r.ok === false && !r.resumable).length;
     if (meta) {
-      meta.textContent = unfinished
-        ? `${unfinished} unfinished snapshot(s) — auto-resume on gateway boot`
-        : "No unfinished snapshots.";
+      if (resumable) {
+        meta.textContent = `${resumable} unfinished snapshot(s) — auto-resume on gateway boot`;
+      } else if (notOk) {
+        meta.textContent = `${notOk} snapshot(s) not ok — stay put (not auto-resumed)`;
+      } else {
+        meta.textContent = "No unfinished snapshots.";
+      }
     }
     table.querySelector("tbody").innerHTML =
       list

@@ -146,6 +146,19 @@ export async function loadAgentRun(cfg, sessionId) {
   return { ok: true, run, path: fp };
 }
 
+let _isResumableAgentRun;
+
+async function resumableFlag(run) {
+  // Dynamic import: run-resume.mjs already imports this module. A static
+  // import here would cycle. Boot/resume already go through the classifier;
+  // the operator list must not re-derive a second heuristic (live: eval
+  // leftover intel-symbol-locate listed resumable after v3.473.0 skipped it).
+  if (!_isResumableAgentRun) {
+    ({ isResumableAgentRun: _isResumableAgentRun } = await import("./run-resume.mjs"));
+  }
+  return _isResumableAgentRun(run);
+}
+
 export async function listAgentRuns(cfg, { limit = 30 } = {}) {
   const dir = runsDir(cfg);
   let names = [];
@@ -161,14 +174,7 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
     const loaded = await loadAgentRun(cfg, id);
     if (loaded.ok) {
       const run = loaded.run;
-      const resumable =
-        !run.resumedAt &&
-        !run.objectiveId &&
-        (run.status === "active" ||
-          run.status === "interrupted" ||
-          run.status === "maxTurns" ||
-          run.stopReason === "maxTurns" ||
-          run.stopReason === "segment");
+      const resumable = await resumableFlag(run);
       const ok =
         run.status === "resumed" ||
         (run.status !== "active" &&

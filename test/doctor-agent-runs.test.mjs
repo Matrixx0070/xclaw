@@ -13,6 +13,12 @@ describe("doctor sees unfinished agent-runs", () => {
     assert.match(src, /listResumableAgentRuns/);
   });
 
+  it("Control does not claim auto-resume for not-ok-only snapshots", () => {
+    const src = fs.readFileSync(new URL("../ui/control/app.js", import.meta.url), "utf8");
+    assert.match(src, /stay put \(not auto-resumed\)/);
+    assert.match(src, /list\.filter\(\(r\) => r\.resumable\)/);
+  });
+
   it("an interrupted snapshot shows up as resumable for the probe", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-doc-runs-"));
     const wd = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-doc-wd-"));

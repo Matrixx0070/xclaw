@@ -154,8 +154,11 @@ runs are promoted into an objective with an in-flight warning so the
 next segment verifies disk before rewriting. Kill, approval, and budget
 stops stay put. Eval leftovers whose `workingDir` is under
 `tmp/xclaw-eval` also stay put — scored eval trees are not owner
-missions. Cap: `agent.autoResumeMax` (default 3). Age: 48h.
-Opt out: `agent.autoResume: false`.
+missions. `xclaw runs list`, Control `/agent-runs`, and doctor
+`agentRuns.attention` use that same classifier (`isResumableAgentRun`);
+they do not re-derive resumable from status alone. Cap:
+`agent.autoResumeMax` (default 3). Age: 48h. Opt out:
+`agent.autoResume: false`.
 
 
 ## Telegram channel
