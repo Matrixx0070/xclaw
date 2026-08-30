@@ -1,3 +1,12 @@
+## 3.454.0
+
+### `view_x_video` does not treat a non-JPEG dest as a frame
+
+ffprobe non-zero still continued if duration/streams parsed from
+error JSON, and any file ffmpeg left behind counted as a frame.
+Probe failure is now `isError`. Extracted dests must be JPEG
+(`FF D8`, ≥100 bytes).
+
 ## 3.453.0
 
 ### `office_convert` leftover dest is not this-call success

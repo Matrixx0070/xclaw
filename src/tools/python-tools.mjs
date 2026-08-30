@@ -147,10 +147,18 @@ export function createPythonSessionTool({ workingDir, cfg } = {}) {
 
       try {
         if (args.reset === true) {
-          await fetch(`${POOL_URL}/sessions/${encodeURIComponent(session)}/reset`, {
-            method: "POST",
-            signal: AbortSignal.timeout(30_000),
-          }).catch(() => {}); // 404 if the session never existed — fine, first run is fresh anyway
+          let rr;
+          try {
+            rr = await fetch(`${POOL_URL}/sessions/${encodeURIComponent(session)}/reset`, {
+              method: "POST",
+              signal: AbortSignal.timeout(30_000),
+            });
+          } catch (e) {
+            return errorResult(`kernel reset failed: ${e.message}`);
+          }
+          if (!rr.ok && rr.status !== 404) {
+            return errorResult(`kernel reset HTTP ${rr.status}`);
+          }
         }
 
         const r = await fetch(`${POOL_URL}/execute`, {

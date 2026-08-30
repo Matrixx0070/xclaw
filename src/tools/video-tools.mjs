@@ -14,6 +14,20 @@ function errorResult(msg) {
   return { isError: true, content: [{ type: "text", text: String(msg) }] };
 }
 
+/** ffmpeg -q:v JPEG. Tiny/HTML dests are not frames. */
+export function looksLikeJpegBytes(buf) {
+  return Boolean(buf && buf.length >= 100 && buf[0] === 0xff && buf[1] === 0xd8);
+}
+
+export async function videoFrameLanded(dest) {
+  try {
+    const buf = await fs.readFile(dest);
+    return looksLikeJpegBytes(buf) ? dest : null;
+  } catch {
+    return null;
+  }
+}
+
 function run(cmd, args, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? 120_000;
   return new Promise((resolve) => {
@@ -88,7 +102,7 @@ export function createViewXVideoTool({ workingDir } = {}) {
         meta = { raw: probe.stdout || probe.stderr };
       }
       const duration = Number(meta.format?.duration) || 0;
-      if (probe.code !== 0 && !duration && !(meta.streams || []).length) {
+      if (probe.code !== 0) {
         return errorResult(
           `ffprobe failed (is ffmpeg installed?): ${String(probe.stderr || probe.code).slice(0, 400)}`
         );
@@ -115,10 +129,10 @@ export function createViewXVideoTool({ workingDir } = {}) {
           ["-y", "-ss", String(tsec), "-i", p, "-frames:v", "1", "-q:v", "3", dest],
           { timeoutMs: 60_000 }
         );
-        try {
-          await fs.access(dest);
-          framePaths.push({ t: tsec, path: dest });
-        } catch {
+        const landed = await videoFrameLanded(dest);
+        if (landed) {
+          framePaths.push({ t: tsec, path: landed });
+        } else {
           lines.push(`frame ${i} failed: ${(r.stderr || "").slice(-200)}`);
         }
       }

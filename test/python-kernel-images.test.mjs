@@ -23,6 +23,9 @@ describe("saveKernelImages", () => {
   it("execute treats unsaved kernel images as isError", () => {
     const src = fs.readFileSync(new URL("../src/tools/python-tools.mjs", import.meta.url), "utf8");
     assert.match(src, /kernel returned images but none could be saved/);
+    assert.match(src, /kernel reset HTTP/);
+    const resetChunk = src.slice(src.indexOf("args.reset === true"), src.indexOf("/execute"));
+    assert.doesNotMatch(resetChunk, /\.catch\(\(\) => \{\}\)/);
     assert.ok(typeof createPythonSessionTool === "function");
   });
 });
