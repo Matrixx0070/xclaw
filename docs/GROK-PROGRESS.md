@@ -728,3 +728,17 @@ RAN: 28 persist/resume tests + 35 with objective/loop suites, all
 pass. Defaults parse (`autoResume true 3`).
 UNVERIFIED: live kill -9 of a real agent then gateway restart on
 this host; full npm test; false-completion on default chat (next).
+
+## 2026-08-30 — 3.378.0 Done is not done when the file is missing
+
+STATUS: green
+DISCOVERED: default loop stopReason natural = model stopped calling
+tools. Jobs/objectives already evidence-gated. README one-shot
+"Create /tmp/xclaw-hello.txt with text ok" could accept a lie.
+BUILT: `src/agent/complete-gate.mjs` derives file_contains from
+create/write-with-text goals; loop re-enters on fail; cap →
+`unverified` (not completed). Chat/questions untouched.
+RAN: 72 tests (complete-gate + contract + resume + continuation +
+loop-stages) pass.
+UNVERIFIED: live model that lies then writes the file after reject;
+full npm test.

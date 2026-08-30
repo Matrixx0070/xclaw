@@ -1,3 +1,24 @@
+## 3.378.0
+
+### "Done." is not done when the file is missing
+
+The default agent loop treated a tool-free assistant reply as
+completion (`stopReason: natural`). That is correct for chat. It is
+wrong for `Create /tmp/xclaw-hello.txt with text ok` — the README
+one-shot — where a model saying "Done." with no file was accepted.
+
+Jobs and objectives already refuse unverified success. The default
+loop now runs the same `jobs/verify.mjs` checks: it derives a
+`file_contains` from a create/write-with-text goal (or uses an
+explicit `verify[]`). A failing check re-enters the loop (same cap
+as on_stop). Hitting the cap sets `stopReason: unverified`, which is
+not `completed`. Questions still finish naturally. Opt out:
+`agent.verifyOnComplete: false`.
+
+Hermetic proof: a stub that only says "Done." against a missing file
+stops as `unverified`; the same stub against a matching file stops as
+`natural`; "what is 2+2?" is unchanged.
+
 ## 3.377.0
 
 ### A crashed run is a mission, not a tombstone

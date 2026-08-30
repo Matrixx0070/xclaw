@@ -258,6 +258,7 @@ describe("loop stage: stop-reason priority chain", () => {
     assert.equal(computeStopReason({ ...none, toolHaltStop: true }), "policy");
     assert.equal(computeStopReason({ ...none, budgetStop: true }), "budget");
     assert.equal(computeStopReason({ ...none, maxTurnsStop: true }), "maxTurns");
+    assert.equal(computeStopReason({ ...none, unverifiedStop: true }), "unverified");
   });
 
   it("priority: earlier causes win when several flags are set", () => {

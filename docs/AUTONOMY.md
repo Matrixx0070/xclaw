@@ -136,6 +136,12 @@ durable objective on channels, webchat, and the CLI (CLI awaits the
 mission so the process does not exit mid-work). Disable with
 `objectives.autoPromote: false`.
 
+A tool-free "Done." is not completion when the goal named a file (or
+the caller passed `verify[]`). The loop runs `jobs/verify.mjs` and
+re-enters on failure (`stopReason: unverified` at cap). Chat without
+a derivable check is unchanged. `agent.verifyOnComplete: false` to
+opt out.
+
 Gateway boot auto-resumes unfinished **agent-run snapshots** the same
 way it already resumes interrupted objectives: `active` / `maxTurns`
 runs are promoted into an objective with an in-flight warning so the

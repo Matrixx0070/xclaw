@@ -21,6 +21,7 @@
 - **OS sandbox:** `XCLAW_OS_SANDBOX=auto|bwrap|off` — bubblewrap when installed **and** usable (some CI hosts block uid maps).
 - **Kill:** `node bin/xclaw.mjs stop-all` · `sessions-active`.
 - **Resume:** gateway boot auto-resumes unfinished agent-run snapshots as objectives (kill/approval/budget stay put). `agent.autoResume:false` to opt out.
+- **Completion:** a create/write-with-text goal is not done until `jobs/verify` passes. `stopReason: unverified` is not success. `agent.verifyOnComplete:false` to opt out.
 - **Prod:** set `XCLAW_GATEWAY_TOKEN`; do not run exposed gateway with lab auto-approve.
 
 ## MCP (agent-loop native)

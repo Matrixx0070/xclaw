@@ -214,6 +214,7 @@ export function computeStopReason(f) {
   if (f.toolHaltStop) return "policy";
   if (f.budgetStop) return "budget";
   if (f.maxTurnsStop) return "maxTurns";
+  if (f.unverifiedStop) return "unverified";
   return "natural";
 }
 

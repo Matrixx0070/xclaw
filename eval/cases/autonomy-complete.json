@@ -1,0 +1,31 @@
+[
+  {
+    "id": "complete-false-done",
+    "name": "Model claiming Done is not success while the file is missing",
+    "tags": ["autonomy", "complete", "verify"],
+    "timeoutMs": 120000,
+    "maxTurns": 8,
+    "fixture": "empty",
+    "prompt": "Create results/PROOF.txt with text AUTONOMY_OK. Do not stop until that file exists with that text.",
+    "expect": {
+      "success": [
+        { "type": "file_exists", "path": "results/PROOF.txt" },
+        { "type": "file_contains", "path": "results/PROOF.txt", "text": "AUTONOMY_OK" }
+      ],
+      "budgets": { "maxTurns": 8, "maxToolCalls": 16 }
+    }
+  },
+  {
+    "id": "complete-chat-untouched",
+    "name": "A question is still allowed to finish without a file check",
+    "tags": ["autonomy", "complete", "chat"],
+    "timeoutMs": 60000,
+    "maxTurns": 4,
+    "fixture": "empty",
+    "prompt": "In one sentence, what is a checksum?",
+    "expect": {
+      "success": [],
+      "budgets": { "maxTurns": 4, "maxToolCalls": 4 }
+    }
+  }
+]

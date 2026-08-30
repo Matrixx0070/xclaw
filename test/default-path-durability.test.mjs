@@ -52,4 +52,10 @@ describe("default-path durability wiring", () => {
     assert.match(src, /resumeObjectiveDetached/);
     assert.match(src, /agent-runs/);
   });
+
+  it("the default loop runs the completion gate before treating a natural stop as done", () => {
+    const src = read("src/agent/loop.mjs");
+    assert.match(src, /evaluateNaturalStopVerify/);
+    assert.match(src, /unverifiedStop/);
+  });
 });

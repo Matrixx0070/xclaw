@@ -51,6 +51,7 @@ import { stampCostBlock } from "./cost-receipt.mjs";
 import { getSharedApprovalGate } from "../security/approvals.mjs";
 import { checkLoopCostBudget, checkJobCostBudget } from "../tokens/loop-cost-check.mjs";
 import { saveAgentRun, resolveRunPersistId } from "./run-store.mjs";
+import { evaluateNaturalStopVerify } from "./complete-gate.mjs";
 import { partitionToolCalls, runToolBatches, resolveMaxParallel } from "./tool-concurrency.mjs";
 import {
   appendTranscript,
@@ -187,6 +188,9 @@ export async function runAgentLoop(options) {
     /** Inbound-channel context (spec §16.3): { channel, messageId,
      *  adapter: { react } } — gates the `react` tool registration */
     channelContext = null,
+    /** Optional explicit verify[] (jobs/verify.mjs shape). Also derived
+     *  from a file-create goal. Opt out: agent.verifyOnComplete:false. */
+    verify: verifyOpt = null,
   } = options;
   const transcriptId =
     chatSessionId || options.conversationId || chatId || null;
@@ -901,6 +905,7 @@ export async function runAgentLoop(options) {
   let naturalStop = false;
   let budgetStop = false;
   let maxTurnsStop = false;
+  let unverifiedStop = false;
   let stopBlocks = 0;
   const stopBlockCap = Number.isFinite(Number(cfg.hooks?.stopBlockCap))
     ? Number(cfg.hooks.stopBlockCap)
@@ -1826,6 +1831,45 @@ export async function runAgentLoop(options) {
       !lastPendingApproval &&
       !signal?.aborted
     ) {
+      // Evidence gate: a tool-free "Done." is not completion when the goal
+      // named a file (or the caller passed verify[]). Re-enter the loop so
+      // the model can actually satisfy the checks. Chat without a check is
+      // unchanged. Cap: same stopBlockCap as on_stop (default 2).
+      try {
+        const vg = await evaluateNaturalStopVerify({
+          naturalStop: true,
+          cfg,
+          workingDir,
+          userMessage,
+          verify: verifyOpt || options.verify || cfg.agent?.verify || null,
+        });
+        if (vg.reject) {
+          onEvent({
+            type: "verify",
+            phase: "reject",
+            stopBlocks,
+            checks: vg.checks,
+            results: vg.result?.results,
+          });
+          if (stopBlocks < stopBlockCap) {
+            stopBlocks += 1;
+            messages.push({
+              role: "user",
+              content: vg.notice,
+            });
+            finalText = "";
+            naturalStop = false;
+            continue stopCycle;
+          }
+          unverifiedStop = true;
+        }
+      } catch (verr) {
+        onEvent({
+          type: "verify",
+          phase: "error",
+          message: String(verr?.message || verr),
+        });
+      }
       const sr = await hooks.executeAll("on_stop", {
         text: finalText,
         turns,
@@ -2135,6 +2179,7 @@ export async function runAgentLoop(options) {
     toolHaltStop,
     budgetStop,
     maxTurnsStop,
+    unverifiedStop,
   });
 
   // Feature 2 — durable snapshot for resume
