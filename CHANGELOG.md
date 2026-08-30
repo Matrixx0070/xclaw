@@ -1,3 +1,12 @@
+## 3.440.0
+
+### `browser_pdf` does not claim success with an HTML snapshot
+
+The tool never printed a PDF (`printPdf` is unused on the computer
+server) but still returned `Saved HTML snapshot` as success. Missing
+PDF is now `isError`. If a `>=100` byte `.pdf` is already at `out`,
+that is success. HTML may still be written as a recovery hint.
+
 ## 3.439.0
 
 ### `browser_screenshot` does not succeed without an image file

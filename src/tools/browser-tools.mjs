@@ -399,7 +399,7 @@ export function createBrowserPdfTool(ctx = {}) {
         });
         // Save HTML fallback
         const texts = (result?.content || []).filter((c) => c.type === "text").map((c) => c.text);
-        const htmlPath = dest.replace(/\\.pdf$/, ".html");
+        const htmlPath = dest.replace(/\.pdf$/i, ".html");
         // fetch page html
         const htmlRes = await tabCall(ctx, {
           tabId: args.tabId,
@@ -407,16 +407,26 @@ export function createBrowserPdfTool(ctx = {}) {
           waitTime: 0.2,
         });
         const htmlTexts = (htmlRes?.content || []).filter((c) => c.type === "text").map((c) => c.text);
+        let destBytes = 0;
+        try {
+          destBytes = (await fs.stat(dest)).size;
+        } catch {
+          destBytes = 0;
+        }
+        if (destBytes >= 100) {
+          return textResult(`PDF saved: ${dest} (${destBytes} bytes)`, {
+            metadata: { pdfPath: dest, bytes: destBytes },
+          });
+        }
         if (htmlTexts[0] && htmlTexts[0].includes("<")) {
           await fs.writeFile(htmlPath, htmlTexts[0]);
-          return textResult(
-            `Saved HTML snapshot: ${htmlPath}\\nConvert with office_convert format=pdf if needed.\\n${texts.join("\\n").slice(0, 500)}`,
-            { metadata: { htmlPath, requestedPdf: dest } }
+          return errorResult(
+            `PDF not produced (computer has no printPdf). HTML snapshot: ${htmlPath}. Convert with office_convert format=pdf if needed.`
           );
         }
-        return textResult(texts.join("\\n") || JSON.stringify(result).slice(0, 4000), {
-          metadata: { requestedPdf: dest },
-        });
+        return errorResult(
+          `PDF not produced${texts[0] ? ": " + String(texts[0]).slice(0, 300) : ""}`
+        );
       } catch (e) {
         return errorResult(e.message);
       }
