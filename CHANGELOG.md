@@ -1,3 +1,13 @@
+## 3.417.0
+
+### Computer server and Ollama daemon join the stop-all registry
+
+`startComputer` (non-foreground) and `ensureDaemon` spawn detached
+processes. If `stopComputer` misses, they survive `stop-all`. They
+now `registerBackgroundPid` (`computer-server`, `ollama-serve`).
+Ollama is only registered when XClaw started it (not if it was
+already up). The gateway daemon is still not registered.
+
 ## 3.416.0
 
 ### Managed Chrome and mitmproxy join the stop-all registry

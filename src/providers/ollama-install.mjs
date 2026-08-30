@@ -86,6 +86,13 @@ export async function ensureDaemon({ base = LOCAL_BASE, onLog = () => {} } = {})
   try {
     const child = spawn("ollama", ["serve"], { detached: true, stdio: "ignore" });
     child.unref();
+    if (child.pid) {
+      import("../computer/modules/bash-tool.mjs")
+        .then((m) =>
+          m.registerBackgroundPid(child.pid, { kind: "ollama-serve" })
+        )
+        .catch(() => {});
+    }
   } catch (e) {
     return { ok: false, error: `could not spawn ollama serve: ${e.message}` };
   }

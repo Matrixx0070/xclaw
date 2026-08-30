@@ -266,6 +266,13 @@ export async function startComputer({ root, foreground = false } = {}) {
     detached: !foreground,
   });
   if (!foreground) child.unref();
+  if (child.pid) {
+    import("./modules/bash-tool.mjs")
+      .then((m) =>
+        m.registerBackgroundPid(child.pid, { kind: "computer-server" })
+      )
+      .catch(() => {});
+  }
 
   child.on("exit", (code, signal) => {
     console.log(`[xclaw] Computer exited code=${code} signal=${signal}`);

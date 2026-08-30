@@ -30,6 +30,21 @@ describe("xclaw_bash codes", () => {
     assert.match(mitm, /mitmproxy/);
   });
 
+  it("computer-server and ollama-serve register PIDs for stop-all", () => {
+    const mgr = fs.readFileSync(
+      new URL("../src/computer/manager.mjs", import.meta.url),
+      "utf8"
+    );
+    const ollama = fs.readFileSync(
+      new URL("../src/providers/ollama-install.mjs", import.meta.url),
+      "utf8"
+    );
+    assert.match(mgr, /registerBackgroundPid/);
+    assert.match(mgr, /computer-server/);
+    assert.match(ollama, /registerBackgroundPid/);
+    assert.match(ollama, /ollama-serve/);
+  });
+
   it("normalizes ms to seconds", () => {
     assert.equal(normalizeBashTimeoutSeconds(30000), 30);
     assert.equal(normalizeBashTimeoutSeconds(5), 5);
