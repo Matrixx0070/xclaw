@@ -140,6 +140,36 @@ describe("withBackoff", () => {
     assert.equal(n, 2);
     assert.equal(used, true);
   });
+
+  it("awaits async onRetry before the next attempt", async () => {
+    const order = [];
+    let n = 0;
+    const out = await withBackoff(
+      async () => {
+        n += 1;
+        order.push("call" + n);
+        if (n < 2) {
+          const e = new Error("econnrefused");
+          e.code = "ECONNREFUSED";
+          throw e;
+        }
+        return "ok";
+      },
+      {
+        retries: 3,
+        baseMs: 1,
+        maxDelayMs: 5,
+        strategy: "none",
+        onRetry: async () => {
+          await new Promise((r) => setTimeout(r, 15));
+          order.push("retry");
+        },
+      }
+    );
+    assert.equal(out, "ok");
+    assert.deepEqual(order, ["call1", "retry", "call2"]);
+  });
+
   it("does not retry permanent errors", async () => {
     await assert.rejects(
       () =>

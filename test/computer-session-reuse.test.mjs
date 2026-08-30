@@ -106,6 +106,7 @@ describe("session reuse always probes liveness", () => {
       /if \(cached\?\.tools\) \{[\s\S]{0,80}return hit\.sessionId/
     );
     assert.match(src, /Always fetch/);
+    assert.match(src, /ensureComputer/);
     assert.doesNotMatch(
       src,
       /if \(hit\?\.tools\) \{[\s\S]{0,80}return hit\.tools/

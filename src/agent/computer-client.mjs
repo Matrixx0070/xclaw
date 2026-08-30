@@ -176,11 +176,23 @@ export function createComputerClient(cfg) {
       ...backoffOpts,
       signal,
       shouldRetry: isTransientError,
-      onRetry: (info) => {
+      onRetry: async (info) => {
         if (cfg.retry?.log !== false) {
           console.warn(
             `[xclaw] computer retry ${info.attempt}/${info.retries} after ${info.delayMs}ms: ${info.error?.message || info.error}`
           );
+        }
+        const down =
+          info.error?.code === "ECONNREFUSED" ||
+          info.error?.code === "ETIMEDOUT" ||
+          /Computer unreachable/i.test(String(info.error?.message || ""));
+        if (down && !cfg.computer?.remoteUrl) {
+          try {
+            const { ensureComputer } = await import("../computer/ensure.mjs");
+            await ensureComputer(cfg, { log: false, attempts: 1 });
+          } catch {
+            /* next attempt still runs */
+          }
         }
       },
     });

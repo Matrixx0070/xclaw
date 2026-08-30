@@ -376,15 +376,17 @@ export async function withBackoff(fn, opts = {}) {
       if (!canRetry) throw err;
       const ra = getRetryAfterMs(err);
       const waited = await backoff.sleep(attempt, signal, err);
-      onRetry?.({
-        attempt: attempt + 1,
-        retries,
-        error: err,
-        delayMs: waited,
-        strategy: backoff.strategy,
-        retryAfterMs: ra,
-        usedRetryAfter: ra != null && backoff.respectRetryAfter,
-      });
+      await Promise.resolve(
+        onRetry?.({
+          attempt: attempt + 1,
+          retries,
+          error: err,
+          delayMs: waited,
+          strategy: backoff.strategy,
+          retryAfterMs: ra,
+          usedRetryAfter: ra != null && backoff.respectRetryAfter,
+        })
+      );
     }
   }
   throw lastErr;

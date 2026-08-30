@@ -1,3 +1,13 @@
+## 3.420.0
+
+### Computer retries start the computer, not only the HTTP call
+
+Transient computer errors already used jittered backoff. `onRetry`
+was not awaited and never called `ensureComputer`, so ECONNREFUSED
+retried against a dead port. `withBackoff` now awaits `onRetry`.
+The computer client starts a local computer (never a remote one)
+before the next attempt.
+
 ## 3.419.0
 
 ### `listTools` fetches; it does not serve a dead session from cache
