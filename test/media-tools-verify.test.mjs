@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createOcrTool, createOfficeConvertTool, looksLikeConvertedDocument } from "../src/tools/media-tools.mjs";
+import {
+  createOcrTool,
+  createOfficeConvertTool,
+  looksLikeConvertedDocument,
+  officeOutputThisCall,
+} from "../src/tools/media-tools.mjs";
 
 describe("media tools do not claim success without output", () => {
   it("ocr missing input is isError", async () => {
@@ -31,6 +36,17 @@ describe("media tools do not claim success without output", () => {
     assert.match(src, /tesseract reported success but output file missing/);
     assert.match(src, /identify and magika both failed/);
     assert.match(src, /not a \$\{outExt\} document/);
+    assert.match(src, /dest was not written this call/);
+  });
+
+  it("officeOutputThisCall rejects leftover dest", () => {
+    const leftover = { size: 200, mtimeMs: 1000 };
+    assert.equal(officeOutputThisCall(leftover, leftover), false);
+    assert.equal(officeOutputThisCall(leftover, { size: 200, mtimeMs: 1000 }), false);
+    assert.equal(officeOutputThisCall(leftover, { size: 200, mtimeMs: 1001 }), true);
+    assert.equal(officeOutputThisCall(leftover, { size: 201, mtimeMs: 1000 }), true);
+    assert.equal(officeOutputThisCall(null, { size: 200, mtimeMs: 1 }), true);
+    assert.equal(officeOutputThisCall(null, { size: 8, mtimeMs: 1 }), false);
   });
 
   it("looksLikeConvertedDocument rejects tiny and wrong-magic files", () => {

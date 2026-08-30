@@ -1,3 +1,12 @@
+## 3.453.0
+
+### `office_convert` leftover dest is not this-call success
+
+soffice exit 0 still treated an existing dest as converted, so a
+prior PDF at the expected path counted as this call. Dest mtime must
+advance or size must change, and the bytes still have to look like
+the requested format.
+
 ## 3.452.0
 
 ### `office_convert` does not treat a 1-byte dest as a PDF

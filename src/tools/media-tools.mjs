@@ -129,6 +129,13 @@ export function looksLikeConvertedDocument(buf, convertTo) {
   return buf.length >= 32;
 }
 
+/** Leftover dest from a prior convert is not this call's output. */
+export function officeOutputThisCall(before, after) {
+  if (!after || after.size < 32) return false;
+  if (!before) return true;
+  return after.size !== before.size || Number(after.mtimeMs) > Number(before.mtimeMs);
+}
+
 export function createOfficeConvertTool({ workingDir, cfg } = {}) {
   return {
     name: "office_convert",
@@ -196,19 +203,32 @@ export function createOfficeConvertTool({ workingDir, cfg } = {}) {
           args.push(`--accept=${unoUrl.includes(";") ? unoUrl : unoUrl + ";urp;StarOffice.ComponentContext"}`);
         }
         args.push("--convert-to", convertTo, "--outdir", outDir, p);
+        const outExt = convertTo.split(":")[0];
+        const base = path.basename(p, path.extname(p));
+        const expected = path.join(outDir, `${base}.${outExt}`);
+        let before = null;
+        try {
+          const st = await fs.stat(expected);
+          before = { size: st.size, mtimeMs: st.mtimeMs };
+        } catch {
+          before = null;
+        }
         const r = await run(soffice, args, { timeoutMs: 180_000 });
         if (r.code !== 0) {
           return errorResult(r.stderr || r.stdout || "soffice convert failed");
         }
-        const outExt = convertTo.split(":")[0];
-        const base = path.basename(p, path.extname(p));
-        const expected = path.join(outDir, `${base}.${outExt}`);
         let exists = false;
         let size = 0;
         try {
+          const st = await fs.stat(expected);
           const raw = await fs.readFile(expected);
           exists = raw.length > 0;
           size = raw.length;
+          if (!officeOutputThisCall(before, { size: st.size, mtimeMs: st.mtimeMs })) {
+            return errorResult(
+              `soffice exited 0 but dest was not written this call: ${expected}`
+            );
+          }
           if (!looksLikeConvertedDocument(raw, convertTo)) {
             return errorResult(
               `soffice output is not a ${outExt} document (${raw.length} bytes): ${expected}`
