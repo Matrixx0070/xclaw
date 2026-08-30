@@ -259,7 +259,8 @@ export function createOfficeConvertTool({ workingDir, cfg } = {}) {
   };
 }
 
-export function createViewImageTool({ workingDir }) {
+export function createViewImageTool({ workingDir, fetchFn } = {}) {
+  const doFetch = typeof fetchFn === "function" ? fetchFn : fetch;
   return {
     name: "view_image",
     description:
@@ -314,7 +315,7 @@ export function createViewImageTool({ workingDir }) {
             ].filter(Boolean);
             let visionOk = false;
             for (const model of visionModels) {
-              const res = await fetch("https://api.x.ai/v1/chat/completions", {
+              const res = await doFetch("https://api.x.ai/v1/chat/completions", {
                 method: "POST",
                 headers: {
                   Authorization: `Bearer ${key}`,
@@ -336,7 +337,8 @@ export function createViewImageTool({ workingDir }) {
                 signal: AbortSignal.timeout(60_000),
               });
               if (res.ok) {
-                const j = await res.json();
+                const j = await res.json().catch(() => null);
+                if (!j) continue;
                 const desc = j.choices?.[0]?.message?.content;
                 if (desc) {
                   lines.push(`vision (${model}):`, desc);
@@ -347,7 +349,7 @@ export function createViewImageTool({ workingDir }) {
             }
             if (!visionOk) lines.push("vision: no successful model response");
           } catch (e) {
-            lines.push(`vision: ${e.message}`);
+            lines.push(`vision: failed (${e.message})`);
           }
         }
         return textResult(lines.join("\n"));

@@ -36,6 +36,7 @@ describe("media tools do not claim success without output", () => {
     assert.match(src, /tesseract reported success but output file missing/);
     assert.match(src, /identify and magika both failed/);
     assert.match(src, /not a \$\{outExt\} document/);
+    assert.match(src, /res\.json\(\)\.catch\(\(\) => null\)/);
     assert.match(src, /dest was not written this call/);
   });
 

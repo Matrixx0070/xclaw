@@ -1,3 +1,13 @@
+## 3.468.0
+
+### `view_image` does not treat a 200 HTML vision body as a caption
+
+xAI vision `res.json()` on 200 HTML threw and was appended as
+`vision: Unexpected token` while identify/magika still returned
+success. Invalid JSON is skipped; the vision line is
+`no successful model response` or `failed (...)`, never a parse error
+as a caption.
+
 ## 3.467.0
 
 ### `search_images` failed catalog may list Unsplash as tried
