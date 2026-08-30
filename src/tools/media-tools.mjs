@@ -117,6 +117,18 @@ export function createOcrTool({ workingDir }) {
   };
 }
 
+export function looksLikeConvertedDocument(buf, convertTo) {
+  if (!buf || buf.length < 32) return false;
+  const fmt = String(convertTo || "").split(":")[0].toLowerCase();
+  const s = Buffer.from(buf.subarray(0, 16)).toString("latin1");
+  if (fmt === "pdf") return s.startsWith("%PDF");
+  if (fmt === "html" || fmt === "xhtml") {
+    return /<(html|!doctype)/i.test(Buffer.from(buf.subarray(0, 200)).toString("utf8"));
+  }
+  if (["docx", "xlsx", "pptx", "odt", "ods", "odp"].includes(fmt)) return s.startsWith("PK");
+  return buf.length >= 32;
+}
+
 export function createOfficeConvertTool({ workingDir, cfg } = {}) {
   return {
     name: "office_convert",
@@ -194,9 +206,14 @@ export function createOfficeConvertTool({ workingDir, cfg } = {}) {
         let exists = false;
         let size = 0;
         try {
-          const st = await fs.stat(expected);
-          exists = st.size > 0;
-          size = st.size;
+          const raw = await fs.readFile(expected);
+          exists = raw.length > 0;
+          size = raw.length;
+          if (!looksLikeConvertedDocument(raw, convertTo)) {
+            return errorResult(
+              `soffice output is not a ${outExt} document (${raw.length} bytes): ${expected}`
+            );
+          }
         } catch {
           /* */
         }

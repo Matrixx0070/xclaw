@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createOcrTool, createOfficeConvertTool } from "../src/tools/media-tools.mjs";
+import { createOcrTool, createOfficeConvertTool, looksLikeConvertedDocument } from "../src/tools/media-tools.mjs";
 
 describe("media tools do not claim success without output", () => {
   it("ocr missing input is isError", async () => {
@@ -30,5 +30,13 @@ describe("media tools do not claim success without output", () => {
     assert.match(src, /soffice exited 0 but output missing/);
     assert.match(src, /tesseract reported success but output file missing/);
     assert.match(src, /identify and magika both failed/);
+    assert.match(src, /not a \$\{outExt\} document/);
+  });
+
+  it("looksLikeConvertedDocument rejects tiny and wrong-magic files", () => {
+    assert.equal(looksLikeConvertedDocument(Buffer.from("x"), "pdf"), false);
+    assert.equal(looksLikeConvertedDocument(Buffer.from("%PDF-1.4" + "x".repeat(40)), "pdf"), true);
+    assert.equal(looksLikeConvertedDocument(Buffer.from("PK" + "x".repeat(40)), "docx"), true);
+    assert.equal(looksLikeConvertedDocument(Buffer.from("not a pdf" + "x".repeat(40)), "pdf"), false);
   });
 });

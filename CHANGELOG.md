@@ -1,3 +1,12 @@
+## 3.452.0
+
+### `office_convert` does not treat a 1-byte dest as a PDF
+
+soffice exit 0 plus `size > 0` was enough. A 1-byte file still
+looked converted. `looksLikeConvertedDocument` now requires PDF
+`%PDF`, Office/ODF `PK`, or HTML `<html`/`<!doctype`, and at least
+32 bytes.
+
 ## 3.451.0
 
 ### `grep` engine failure with stdout is not matches
