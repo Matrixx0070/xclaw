@@ -914,3 +914,23 @@ RAN: `node --test` store+resume+doctor → 25/25; `npm test` →
 `# tests 5014` `# fail 0` `# duration_ms 69822`.
 UNVERIFIED: GitHub `ci` on this SHA; live `GET /agent-runs?limit=20`
 includes `intel-symbol-locate` as `resumable: false` / `ok: false`.
+
+## 2026-08-30 — 3.475.0 GitHub ci + live drive now verified (Claude)
+
+STATUS: green (sort live; leftover still outside default window)
+CLOSED UNVERIFIED from the 3.475.0 entry: GitHub `ci` / `install-e2e` /
+`eval-regression` / `ledger-guard` succeeded on `6dae4b9` (ci 33299746772
+1m43s, no web_search flake). Live after pm2 restart pid 3255831 created
+2026-08-30T07:43:17Z: `/version` 3.475.0 stale false, `/ready` ready true,
+webchat POST `{message}` → assistant `PONG`. Boot after 07:43:17Z emitted
+no `[xclaw:agent-runs] auto-resumed` line (last still 06:27:15
+obj_mtffg2yd_aaaad3). `GET /agent-runs?limit=400` n=292, `updatedAt_desc`
+true, filename_eq_actual false. Leftover
+`2026-08-30T03-23-54-655Z_intel-symbol-locate` rank 75
+(`resumable: false`, `ok: false`, updatedAt 04:17:33.558Z);
+75 newer rows, so `limit=20` still omits it (not_ok_only_20 empty;
+not_ok_only_400_n 4). Doctor `agentRuns.attention: no unfinished
+agent-run snapshots`. Leftover stayed `maxTurns` with no `resumedAt` /
+`objectiveId`; `obj_mtffg2yd_aaaad3` stayed `awaiting_human`;
+`n_objectives` 23 unchanged. NEXT: pin attention rows into the
+operator window so Control's default 20 still shows not-ok leftovers.
