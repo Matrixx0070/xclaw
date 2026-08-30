@@ -13,6 +13,20 @@ function errorResult(msg) {
   return { isError: true, content: [{ type: "text", text: String(msg) }] };
 }
 
+/** HTTP helper: 2xx is success text; 4xx/5xx is isError with the same body. */
+export function httpStatusResult(res, text, extraMeta = {}) {
+  const payload = `HTTP ${res.status}\n${String(text || "").slice(0, 50_000)}`;
+  const metadata = { status: res.status, ...extraMeta };
+  if (!res.ok) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: payload }],
+      metadata,
+    };
+  }
+  return textResult(payload, { metadata });
+}
+
 async function neuralTts(text, out, voice) {
   const key =
     process.env.TTS_API_KEY || process.env.OPENAI_API_KEY || process.env.XAI_API_KEY;
@@ -187,10 +201,10 @@ export function createCallConnectedToolTool(ctx = {}) {
           }
         }
         const text = await res.text();
-        return textResult(
-          `HTTP ${res.status}\n${text.slice(0, 50_000)}`,
-          { metadata: { status: res.status, path: pth, refreshed: Boolean(tok.refreshed) } }
-        );
+        return httpStatusResult(res, text, {
+          path: pth,
+          refreshed: Boolean(tok.refreshed),
+        });
       }
 
       if (name === "connected_http") {
@@ -210,9 +224,7 @@ export function createCallConnectedToolTool(ctx = {}) {
           signal: AbortSignal.timeout(60_000),
         });
         const text = await res.text();
-        return textResult(`HTTP ${res.status}\n${text.slice(0, 50_000)}`, {
-          metadata: { status: res.status, appId },
-        });
+        return httpStatusResult(res, text, { appId });
       }
 
       return errorResult(`Unknown connected tool: ${name}`);

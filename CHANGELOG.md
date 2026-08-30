@@ -1,3 +1,12 @@
+## 3.431.0
+
+### GitHub and connected HTTP do not treat 404 as success
+
+`github_request` and `connected_http` always returned `textResult`
+with `HTTP ${status}` in the body. A 404 still looked like a
+successful tool. Shared `httpStatusResult` now sets `isError` when
+`!res.ok`. 2xx is unchanged.
+
 ## 3.430.0
 
 ### `voice_speak` does not claim audio when only a transcript landed
