@@ -135,9 +135,9 @@ id. Opt out with `persistRun: false`.
 
 A turn-cap cutoff (`stopReason === "maxTurns"`) auto-promotes into a
 durable objective on Telegram, Discord (MESSAGE + `/ask`), Slack, email,
-webchat, voice `/ws/voice`, the TUI, and the CLI (CLI awaits the mission
-so the process does not exit mid-work; voice, TUI, and channels leave it
-detached). Disable with `objectives.autoPromote: false`.
+webchat, voice `/ws/voice`, the voice TUI, the TUI, and the CLI (CLI
+awaits the mission so the process does not exit mid-work; voice, TUI,
+and channels leave it detached). Disable with `objectives.autoPromote: false`.
 
 A tool-free "Done." is not completion when the goal named a file (or
 the caller passed `verify[]`). The loop runs `jobs/verify.mjs` and

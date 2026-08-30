@@ -1404,3 +1404,24 @@ RAN:
 - Webchat POST /channel/webchat/message `{"message":"ping 3.487.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `75b554b5-f719-445e-9515-8a45f50aeb51` stopReason=natural. telegram writerLock held by live pid=3628866. discord enabled=false. slack enabled=false. email enabled=false.
 UNVERIFIED: live email turn-cap → mission (source pin only; a live email turn would mean a real agent loop; live email is enabled=false). Live Slack / Discord `/ask` / TUI / voice WS turn-cap → mission remain source-pinned from 3.486.0 / 3.485.0 / 3.484.0 / 3.483.0. Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0.
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, Discord `/ask`, Slack, or email. Do not auto-promote HTTP POST /agent/run.
+
+## 2026-08-30 — 3.488.0 Voice TUI auto-promotes a turn-cap cutoff
+
+STATUS: green (local hermetic)
+DISCOVERED: Webchat, processInbound, voice `/ws/voice`, the TUI, Discord
+`/ask`, Slack, email, and CLI `xclaw agent` already call
+`autoPromoteIfNeeded` when `stopReason === "maxTurns"`. Voice TUI
+preferAgent called `runJob` then printed/spoke the truncated reply — a
+cutoff never became a mission. Distinct from closed `/ws/voice`.
+`runJob` already persistRun by default. HTTP POST `/agent/run`
+auto-promote is caller-owned stopReason, not this slice. Do not mint
+persistRun:true. Voice listen is a sibling, not this slice. Command-intent
+early continue has no agent turn and stays unpromoted.
+BUILT: Voice TUI preferAgent path now calls `autoPromoteIfNeeded` +
+`formatPromotedReply` after `runJob` (detached notify into the
+transcript). Session id `voice-tui_${…}` minted for identity. Source-contract
+pin in `test/default-path-durability.test.mjs` (one `it()`, not three).
+RAN: node --test test/default-path-durability.test.mjs → # tests 18 # pass 18 # fail 0 # duration_ms 64.999324; npm test (hermetic) → # tests 5033 # pass 5033 # fail 0 # duration_ms 70592.693712
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart proving leftover
+stay-put. Live voice TUI turn-cap → mission is source-pinned, not driven
+(a live voice TUI turn would mean a real agent loop).

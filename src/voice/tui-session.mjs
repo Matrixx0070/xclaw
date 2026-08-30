@@ -99,6 +99,7 @@ export async function runVoiceTui(cfg = {}, opts = {}) {
   }
 
   const history = [];
+  const sessionId = `voice-tui_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -170,6 +171,51 @@ export async function runVoiceTui(cfg = {}, opts = {}) {
           autoApprove: cfg.security?.autoApprove ?? true,
         });
         reply = String(job.text || job.error || "(no reply)").slice(0, 2000);
+        // Same auto-promote as /ws/voice and the TUI: a turn-cap cutoff is an
+        // execution constraint, not completion. Voice TUI used runJob (already
+        // persistRun by default) then printed/spoke the truncated reply.
+        // Distinct from closed /ws/voice. Do not mint persistRun.
+        // Voice TUI stays alive, so the mission is detached (not CLI awaitRun).
+        if (cfg.objectives?.enabled !== false) {
+          try {
+            const { autoPromoteIfNeeded, formatPromotedReply } = await import(
+              "../channels/runtime.mjs"
+            );
+            const { replyWithAgent } = await import("../channels/base.mjs");
+            const promo = await autoPromoteIfNeeded({
+              text: userText,
+              inbound: {
+                channel: "voice-tui",
+                chatId: sessionId,
+                userId: sessionId,
+                identity: `voice-tui:${sessionId}`,
+              },
+              cfg,
+              workingDir: process.cwd(),
+              replyWithAgent,
+              onEvent: (e) => {
+                if (e?.type === "objective" && e.phase === "promote_error") {
+                  console.log("(promote failed)", e.message || "error");
+                }
+              },
+              notify: async (t) => {
+                const notice = String(t || "").trim();
+                if (!notice) return;
+                console.log("xclaw>", notice);
+              },
+              turnResult: {
+                stopReason: job.stopReason,
+                text: job.text,
+                toolTrace: job.toolTrace,
+              },
+            });
+            if (promo) {
+              reply = formatPromotedReply(job.text, promo.id).slice(0, 2000);
+            }
+          } catch (err) {
+            console.log("(promote failed)", err.message || err);
+          }
+        }
       } catch (e) {
         console.log("(agent fallback)", e.message || e);
         const thought = await localThink(userText, cfg, { history });

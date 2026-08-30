@@ -238,4 +238,33 @@ describe("default-path durability wiring", () => {
       "Email named chatId already persists; do not mint persistRun:true"
     );
   });
+
+  it("Voice TUI auto-promotes a turn-cap cutoff without minting persistRun", () => {
+    const src = read("src/voice/tui-session.mjs");
+    const start = src.indexOf("export async function runVoiceTui");
+    assert.ok(start >= 0, "runVoiceTui not found");
+    const fn = src.slice(start);
+    const cmdContinue = fn.indexOf("continue;");
+    const promote = fn.indexOf("autoPromoteIfNeeded");
+    assert.ok(cmdContinue >= 0, "command-intent continue missing");
+    assert.ok(
+      promote > cmdContinue,
+      "auto-promote must be on the preferAgent path, after the command-intent continue"
+    );
+    assert.match(fn, /autoPromoteIfNeeded/);
+    assert.match(fn, /formatPromotedReply/);
+    assert.match(fn, /channel:\s*"voice-tui"/);
+    assert.match(fn, /notify:\s*async/);
+    assert.match(fn, /identity:\s*`voice-tui:\$\{sessionId\}`/);
+    const runStart = fn.indexOf("const job = await runJob(");
+    assert.ok(runStart >= 0, "runJob call not found in runVoiceTui");
+    const runEnd = fn.indexOf("});", runStart);
+    assert.ok(runEnd > runStart, "runJob call end not found");
+    const runBody = fn.slice(runStart, runEnd);
+    assert.ok(
+      !/persistRun:\s*true/.test(runBody),
+      "voice TUI runJob already persistRun by default; do not mint persistRun:true"
+    );
+  });
+
 });
