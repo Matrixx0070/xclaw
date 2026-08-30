@@ -261,6 +261,8 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
       job: jobMeta,
       suggestions: result.suggestions || [],
       turnState: result.turnState || null,
+      stopReason: result.stopReason || null,
+      ok: result.ok !== false,
       objective: promoted ? { id: promoted.id, promoted: true } : undefined,
       at: Date.now(),
     };
@@ -281,6 +283,7 @@ export async function handleWebChatMessage({ sessionId, message, cfg, onEvent, s
       suggestions: result.suggestions || [],
       turnState: result.turnState || null,
       stopReason: result.stopReason || null,
+      ok: result.ok !== false,
       objective: promoted ? { id: promoted.id, promoted: true } : undefined,
       events,
     };

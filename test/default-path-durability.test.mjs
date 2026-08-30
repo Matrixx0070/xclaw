@@ -27,6 +27,7 @@ describe("default-path durability wiring", () => {
     assert.match(src, /persistRun:\s*true/);
     assert.match(src, /autoPromoteIfNeeded/);
     assert.match(src, /formatPromotedReply/);
+    assert.match(src, /ok:\s*result\.ok !== false/);
   });
 
   it("gateway /agent/run and the stream persist when a session id is present", () => {

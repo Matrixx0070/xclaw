@@ -1,3 +1,12 @@
+## 3.384.0
+
+### WebChat result includes `ok` and `stopReason`
+
+Control/webchat painted the assistant text with no application
+verdict. After 3.382 the loop sets `ok: false` on unverified; that
+flag never left the HTTP handler. The webchat payload and the stored
+assistant message now carry `ok` and `stopReason`.
+
 ## 3.383.0
 
 ### Doctor warns on unfinished agent-run snapshots
