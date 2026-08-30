@@ -1,3 +1,12 @@
+## 3.425.0
+
+### `glob` / `grep` on a missing path is an error, not "no matches"
+
+A missing directory still returned success `(no matches)`, so the
+model could conclude the files did not exist. Both tools now
+`stat` the search root first. Missing path or glob-on-a-file is
+`isError`. A real empty tree still returns no matches.
+
 ## 3.424.0
 
 ### `web_search` does not treat a dead backend as "no results"

@@ -22,6 +22,18 @@ function errorResult(msg) {
   };
 }
 
+async function missingPathError(abs, { directory = false } = {}) {
+  try {
+    const st = await fs.stat(abs);
+    if (directory && !st.isDirectory()) {
+      return errorResult(`not a directory: ${abs}`);
+    }
+    return null;
+  } catch {
+    return errorResult(`path not found: ${abs}`);
+  }
+}
+
 function resolveUnder(root, p) {
   const abs = path.isAbsolute(p) ? path.normalize(p) : path.resolve(root, p);
   const rootAbs = path.resolve(root);
@@ -137,6 +149,8 @@ export function createGlobTool({ workingDir }) {
         ? resolveUnder(workingDir, args.path).abs
         : path.resolve(workingDir);
       const max = Math.min(Number(args.max) || 500, 2000);
+      const missing = await missingPathError(root, { directory: true });
+      if (missing) return missing;
 
       // Try rg --files + filter for speed
       const rg = await runCmd("rg", ["--files", "-g", pattern, root], {
@@ -186,6 +200,8 @@ export function createGrepTool({ workingDir }) {
         ? resolveUnder(workingDir, args.path).abs
         : path.resolve(workingDir);
       const max = Math.min(Number(args.max_matches) || 200, 1000);
+      const missing = await missingPathError(searchPath);
+      if (missing) return missing;
       const rgArgs = ["-n", "--no-heading", "--color", "never", "-m", String(max)];
       if (args.case_insensitive) rgArgs.push("-i");
       if (args.glob) {
