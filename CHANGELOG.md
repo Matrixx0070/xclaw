@@ -1,3 +1,12 @@
+## 3.416.0
+
+### Managed Chrome and mitmproxy join the stop-all registry
+
+Both are spawned detached/`unref`. `stopComputer` / `stopMitm` should
+reap them, but if those paths miss, sleepers survive `stop-all`. They
+now `registerBackgroundPid` (`chrome-managed`, `mitmproxy`) so the
+kill-switch is a backstop.
+
 ## 3.415.0
 
 ### Python kernel pool PIDs join the stop-all registry

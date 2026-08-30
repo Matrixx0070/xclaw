@@ -369,6 +369,11 @@ export async function startMitm(cfg = null, { log = console.log } = {}) {
   }
 
   await fsp.writeFile(pidPath, String(child.pid));
+  import("../computer/modules/bash-tool.mjs")
+    .then((m) =>
+      m.registerBackgroundPid(child.pid, { kind: "mitmproxy" })
+    )
+    .catch(() => {});
 
   // wait briefly for listen
   let listening = false;

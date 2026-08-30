@@ -15,6 +15,21 @@ describe("xclaw_bash codes", () => {
     assert.match(src, /python-kernel-pool/);
   });
 
+  it("managed Chrome and mitm register PIDs for stop-all", () => {
+    const chrome = fs.readFileSync(
+      new URL("../src/computer/chrome-session.mjs", import.meta.url),
+      "utf8"
+    );
+    const mitm = fs.readFileSync(
+      new URL("../src/browser/mitm.mjs", import.meta.url),
+      "utf8"
+    );
+    assert.match(chrome, /registerBackgroundPid/);
+    assert.match(chrome, /chrome-managed/);
+    assert.match(mitm, /registerBackgroundPid/);
+    assert.match(mitm, /mitmproxy/);
+  });
+
   it("normalizes ms to seconds", () => {
     assert.equal(normalizeBashTimeoutSeconds(30000), 30);
     assert.equal(normalizeBashTimeoutSeconds(5), 5);

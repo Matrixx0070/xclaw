@@ -212,6 +212,13 @@ export async function ensureChrome(opts = {}) {
     // Never let the browser child pin this process's event loop (the
     // unref'd-timer/child drain bug class): the exit hook still SIGTERMs it.
     child.unref();
+    if (child.pid) {
+      import("./modules/bash-tool.mjs")
+        .then((m) =>
+          m.registerBackgroundPid(child.pid, { kind: "chrome-managed" })
+        )
+        .catch(() => {});
+    }
     child.on("exit", () => {
       if (current && current.pid === child?.pid) current = null;
     });
