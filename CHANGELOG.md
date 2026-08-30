@@ -1,3 +1,12 @@
+## 3.451.0
+
+### `grep` engine failure with stdout is not matches
+
+v3.435.0 treated dual-engine failure as `isError` only when stdout was
+empty. An rg/grep exit 2 traceback on stdout was still returned as
+hits. Only exit 0/1 count as search results; other codes fall back,
+then `isError`.
+
 ## 3.450.0
 
 ### `file_type` does not treat `file` stderr as a MIME type

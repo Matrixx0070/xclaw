@@ -190,6 +190,11 @@ export function createGlobTool({ workingDir }) {
   };
 }
 
+/** rg/grep: 0 = hits, 1 = no matches. Other codes (and timeouts) are engine failure. */
+export function grepEngineOk(run) {
+  return Boolean(run) && !run.timedOut && (run.code === 0 || run.code === 1);
+}
+
 export function createGrepTool({ workingDir }) {
   return {
     name: "grep",
@@ -224,17 +229,17 @@ export function createGrepTool({ workingDir }) {
 
       const rg = await runCmd("rg", rgArgs, { cwd: workingDir, timeoutMs: 30_000 });
       if (rg.timedOut) return errorResult("grep timed out");
-      // rg exit 1 = no matches
-      if (rg.code !== 0 && rg.code !== 1 && !rg.stdout) {
-        // fallback grep
+      // rg exit 0 = hits, 1 = no matches; anything else is engine failure
+      // (do not treat a traceback on stdout as matches)
+      if (!grepEngineOk(rg)) {
         const gArgs = ["-R", "-n", "-E"];
         if (args.case_insensitive) gArgs.push("-i");
         gArgs.push(pattern, searchPath);
         const g = await runCmd("grep", gArgs, { cwd: workingDir, timeoutMs: 30_000 });
         if (g.timedOut) return errorResult("grep timed out");
-        if (g.code !== 0 && g.code !== 1 && !g.stdout) {
+        if (!grepEngineOk(g)) {
           return errorResult(
-            `grep failed (rg ${rg.code}, grep ${g.code}): ${(g.stderr || rg.stderr || "").slice(0, 300)}`
+            `grep failed (rg ${rg.code}, grep ${g.code}): ${(g.stderr || rg.stderr || g.stdout || rg.stdout || "").slice(0, 300)}`
           );
         }
         const lines = (g.stdout || "").split("\n").filter(Boolean).slice(0, max);
