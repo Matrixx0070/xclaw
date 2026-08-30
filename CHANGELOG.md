@@ -1,3 +1,15 @@
+## 3.472.0
+
+### Background bash liveness uses the canonical pid helper
+
+v3.410.0 waited on `kill(pid, 0)` before calling a background bash job
+started, then v3.411.0 added a local `pidAlive` that treated EPERM as
+dead. Both re-derived `src/shared/pid-alive.mjs`. `ci` has been red
+from v3.410.0 through v3.471.0 on that pin. Background start and
+stop-all now import `isPidAlive`. The react `channelContext` pin still
+requires both loop sites to pass it; it no longer demands the
+pre-`setSessionId` one-liner.
+
 ## 3.471.0
 
 ### Telegram photo/voice 200 HTML is not a successful send

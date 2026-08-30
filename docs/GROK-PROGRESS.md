@@ -803,3 +803,23 @@ BUILT: known basenames are whole tokens; optional `dir/` prefix.
 Duplicate delete matcher removed. How-to empty.
 RAN: 46 pass 0 fail (complete-gate, autonomy-contract, default-path-durability).
 UNVERIFIED: live lying-model then rewrite; full npm test.
+
+## 2026-08-30 — 3.472.0 background bash uses canonical pid-alive (Claude reverify)
+
+STATUS: green (local hermetic; GitHub `ci` was red v3.410.0→v3.471.0)
+DISCOVERED: Grok v3.410.0 (`953f767`) waited on `process.kill(pid, 0)`
+before BASH_BG_STARTED; v3.411.0 added a local `pidAlive` that treated
+EPERM as dead. `test/pid-alive-single-source.test.mjs` failed both.
+A third red was `test/react-tool.test.mjs` pinning a one-liner
+`createAllLocalTools({ workingDir, cfg, computer, sessionId, channelContext })`
+that v3.421.0 expanded with `setSessionId` — both sites already passed
+`channelContext`. Honesty-series commits (HTTP 200 HTML, leftover dest,
+engine failure, missing files) were not the `ci` red; install-e2e /
+eval-regression / ledger-guard stayed green.
+BUILT: bash-tool imports `isPidAlive` from `src/shared/pid-alive.mjs`
+(list + background-start). React pin still requires both loop sites to
+pass `channelContext`; no longer demands the one-liner.
+RAN: `node --test` pid-alive + react + bash-tool-codes → 36/36;
+`npm test` → `# tests 5008` `# fail 0` (exit 0).
+UNVERIFIED: GitHub `ci` on this SHA (skills smoke / p2 still to run on
+Actions); live gateway drive after merge.

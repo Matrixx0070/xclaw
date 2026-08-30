@@ -14,6 +14,7 @@ import {
 } from "../../security/spawn-enforce.mjs";
 import { wrapSpawnWithOsSandbox } from "../../security/os-sandbox.mjs";
 import { buildToolEnv } from "../../security/env-policy.mjs";
+import { isPidAlive } from "../../shared/pid-alive.mjs";
 
 
 const DEFAULT_TIMEOUT_SECONDS = 30;
@@ -21,16 +22,6 @@ const MAX_TIMEOUT_SECONDS = 120;
 
 /** PIDs we started with background:true — stop-all must be able to kill them. */
 const bgJobs = new Map();
-
-function pidAlive(pid) {
-  if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export function registerBackgroundPid(pid, meta = {}) {
   const n = Number(pid);
@@ -45,7 +36,7 @@ export function registerBackgroundPid(pid, meta = {}) {
 
 export function listBackgroundBash() {
   for (const pid of [...bgJobs.keys()]) {
-    if (!pidAlive(pid)) bgJobs.delete(pid);
+    if (!isPidAlive(pid)) bgJobs.delete(pid);
   }
   return [...bgJobs.entries()].map(([pid, meta]) => ({
     pid,
@@ -295,9 +286,7 @@ export async function executeBash(input = {}, ctx = {}) {
     }
     // Let an immediate-exit command actually die before we call it started.
     await new Promise((r) => setTimeout(r, 25));
-    try {
-      process.kill(spawned.pid, 0);
-    } catch {
+    if (!isPidAlive(spawned.pid)) {
       return {
         ok: false,
         pid: spawned.pid,

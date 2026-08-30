@@ -98,10 +98,11 @@ describe("react tool (spec §16.3)", () => {
     assert.match(read("../src/channels/base.mjs"), /\.\.\.\(channelContext \? \{ channelContext \} : \{\}\)/);
     assert.match(read("../src/agent/run-agent.mjs"), /channelContext: req\.channelContext \|\| null/);
     const loop = read("../src/agent/loop.mjs");
-    assert.equal(
-      (loop.match(/createAllLocalTools\(\{ workingDir, cfg, computer, sessionId, channelContext \}\)/g) || []).length,
-      2,
-      "both loop tool sites pass channelContext",
-    );
+    // Both sites must exist and both must pass channelContext. The call is
+    // multi-line (sessionId getter + setSessionId); do not pin a one-liner.
+    const calls = loop.match(/createAllLocalTools\(/g) || [];
+    assert.equal(calls.length, 2, "both loop tool sites pass channelContext");
+    const withCtx = loop.match(/createAllLocalTools\(\{[\s\S]*?channelContext[\s\S]*?\}\)/g) || [];
+    assert.equal(withCtx.length, 2, "both loop tool sites pass channelContext");
   });
 });
