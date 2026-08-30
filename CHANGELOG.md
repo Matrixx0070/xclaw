@@ -1,3 +1,12 @@
+## 3.447.0
+
+### Local TTS does not treat a 1-byte file as spoken audio
+
+`voice_speak` accepted any `size > 0` dest from espeak/piper, so an
+empty or garbage `.wav` was `Local TTS written`. Dest now has to look
+like WAV/MP3/Ogg (`RIFF/WAVE`, MPEG, ID3, OggS). Tiny/HTML/JSON is not
+audio.
+
 ## 3.446.0
 
 ### Glob walk failures and empty spawn text are not success

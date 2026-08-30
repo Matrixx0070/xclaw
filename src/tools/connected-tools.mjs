@@ -27,6 +27,29 @@ export function httpStatusResult(res, text, extraMeta = {}) {
   return textResult(payload, { metadata });
 }
 
+/** WAV/MP3/Ogg magic — reject empty, HTML, and JSON error bodies. */
+export function looksLikeAudioBytes(buf) {
+  if (!buf || buf.length < 44) return false;
+  const head = buf.subarray(0, 40).toString("latin1").trimStart().toLowerCase();
+  if (head.startsWith("{") || head.startsWith("[") || head.startsWith("<")) return false;
+  if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WAVE") {
+    return true;
+  }
+  if (buf.toString("ascii", 0, 4) === "OggS") return buf.length >= 100;
+  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return buf.length >= 100; // ID3
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return buf.length >= 100; // MPEG frame
+  return false;
+}
+
+export async function audioFileLanded(file) {
+  try {
+    const buf = await fs.readFile(file);
+    return looksLikeAudioBytes(buf) ? file : null;
+  } catch {
+    return null;
+  }
+}
+
 async function neuralTts(text, out, voice) {
   const key =
     process.env.TTS_API_KEY || process.env.OPENAI_API_KEY || process.env.XAI_API_KEY;
@@ -61,17 +84,11 @@ async function neuralTts(text, out, voice) {
       return null;
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 100) return null;
-    const head = buf.subarray(0, 40).toString("latin1").trimStart().toLowerCase();
-    if (head.startsWith("{") || head.startsWith("[") || head.startsWith("<")) {
-      return null;
-    }
+    if (!looksLikeAudioBytes(buf)) return null;
     await fs.mkdir(path.dirname(out), { recursive: true });
     const dest = out.endsWith(".mp3") || out.endsWith(".wav") ? out : out + ".mp3";
     await fs.writeFile(dest, buf);
-    const written = await fs.readFile(dest);
-    if (written.length !== buf.length) return null;
-    return dest;
+    return (await audioFileLanded(dest)) ? dest : null;
   } catch {
     return null;
   }
@@ -85,25 +102,17 @@ async function localTts(text, out) {
       c.on("close", (code) => resolve(code === 0));
       c.on("error", () => resolve(false));
     });
-  const landed = async (file) => {
-    try {
-      const st = await fs.stat(file);
-      return st.size > 0 ? file : null;
-    } catch {
-      return null;
-    }
-  };
   if (await tryCmd("espeak-ng", ["-w", out, text])) {
-    const hit = await landed(out);
+    const hit = await audioFileLanded(out);
     if (hit) return hit;
   }
   if (await tryCmd("espeak", ["-w", out, text])) {
-    const hit = await landed(out);
+    const hit = await audioFileLanded(out);
     if (hit) return hit;
   }
   // piper if present: echo text | piper --model x --output_file out
   if (await tryCmd("bash", ["-lc", `command -v piper >/dev/null && echo ${JSON.stringify(text)} | piper -m en_US-lessac-medium -f ${JSON.stringify(out)}`])) {
-    const hit = await landed(out);
+    const hit = await audioFileLanded(out);
     if (hit) return hit;
   }
   return null;
