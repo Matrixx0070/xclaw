@@ -95,14 +95,17 @@ async function ensurePool() {
 const stripAnsi = (s) => (s ? String(s).replace(/\x1b\[[0-9;]*m/g, "") : "");
 
 /** Persist base64 PNGs the kernel produced into the workspace; return paths. */
-async function saveImages(images, workingDir, session) {
+export async function saveKernelImages(images, workingDir, session) {
   const paths = [];
   for (let i = 0; i < images.length; i++) {
     try {
       const buf = Buffer.from(images[i], "base64");
+      if (buf.length < 32) continue;
       const name = `py_${session}_${Date.now()}_${i}.png`;
       const p = join(workingDir, name);
       await fs.writeFile(p, buf);
+      const written = await fs.readFile(p);
+      if (written.length !== buf.length) continue;
       paths.push(p);
     } catch {
       /* skip an unwritable image, keep the rest */
@@ -162,8 +165,11 @@ export function createPythonSessionTool({ workingDir, cfg } = {}) {
         const output = stripAnsi(j.output).trimEnd();
         const err = stripAnsi(j.error).trimEnd();
         const imgPaths = Array.isArray(j.images) && j.images.length
-          ? await saveImages(j.images, wd, session)
+          ? await saveKernelImages(j.images, wd, session)
           : [];
+        if (Array.isArray(j.images) && j.images.length && imgPaths.length === 0) {
+          return errorResult("kernel returned images but none could be saved to disk");
+        }
 
         const parts = [];
         if (output) parts.push(output);

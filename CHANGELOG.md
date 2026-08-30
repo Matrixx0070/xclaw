@@ -1,3 +1,12 @@
+## 3.432.0
+
+### Python kernel plots are not success if they never land on disk
+
+`saveImages` skipped write failures and the tool still returned
+success with an empty path list. Tiny payloads are skipped; files
+are re-read. If the kernel returned images and none saved, execute
+is `isError`.
+
 ## 3.431.0
 
 ### GitHub and connected HTTP do not treat 404 as success
