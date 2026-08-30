@@ -762,3 +762,15 @@ interval survives restarts. Profiles do not opt in.
 RAN: live-e2e-cron-boot + live-e2e-spawn + cron-job-cfg (hermetic).
 UNVERIFIED: a live gateway with `enabled: true` actually spawning
 the enforcement script; full npm test.
+
+## 2026-08-30 — 3.385.0 write-a-file containing TEXT still has to match
+
+STATUS: green
+DISCOVERED: eval smoke `Write a file hello.txt containing exactly:
+hello xclaw` then `Then stop.` derived nothing (required named/called;
+`.` could not span the closer line), so Done. was natural.
+BUILT: FILE_PREFIX allows `a file PATH`; CONTENT includes
+`whose first line is`; cleanExpectedText strips `exactly:` and
+Then-stop/When-done closers. How-to still empty.
+RAN: 31 pass 0 fail (complete-gate, autonomy-contract, default-path-durability).
+UNVERIFIED: live lying-model then rewrite; full npm test.

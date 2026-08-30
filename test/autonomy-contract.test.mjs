@@ -27,6 +27,12 @@ describe("autonomy contract (hermetic)", () => {
     assert.equal(c[0].type, "file_contains");
     assert.equal(computeStopReason({ unverifiedStop: true }), "unverified");
     assert.notEqual(terminalStatus("unverified"), "completed");
+    const smoke = deriveGoalVerifyChecks(
+      "Write a file hello.txt containing exactly: hello xclaw\nThen stop."
+    );
+    assert.equal(smoke[0].type, "file_contains");
+    assert.equal(smoke[0].path, "hello.txt");
+    assert.equal(smoke[0].text, "hello xclaw");
   });
 
   it("6 no-progress: repeated identical calls trip the loop guard", () => {

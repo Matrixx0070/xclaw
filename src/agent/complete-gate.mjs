@@ -14,6 +14,11 @@ import { runVerifyChecks } from "../jobs/verify.mjs";
 import { inferGoal } from "./turn-state.mjs";
 
 const PATH = "(?:\\/|\\.\\/)?[\\w./-]+\\.[A-Za-z0-9]+";
+// Optional "a/the file named/called" between the verb and the path so
+// "write a file hello.txt" matches the same way "write hello.txt" does.
+const FILE_PREFIX = "(?:(?:a|the)\\s+)?(?:file\\s+)?(?:(?:named|called)\\s+)?";
+const CONTENT =
+  "(?:with(?:\\s+text|\\s+contents)?|containing|that says|whose first line is)";
 const CHAT_LEAD =
   /^(what|why|how|when|where|who|explain|describe|list|tell|summarize|thanks)\b/i;
 const FILE_VERB = /^(create|write|save|put|touch|make)\b/i;
@@ -24,6 +29,21 @@ function stripWrap(s) {
     .replace(/^[\`'"]+|[\`'"]+$/g, "")
     .replace(/[.,;]+$/g, "")
     .trim();
+}
+
+/** Drop "exactly:" and trailing "Then stop." / "When done" task closers. */
+function cleanExpectedText(s) {
+  let t = stripWrap(s);
+  t = t.replace(/^exactly:?\s+/i, "");
+  const nl = t.search(/\r?\n/);
+  if (nl >= 0) {
+    const rest = t.slice(nl).trim();
+    if (/^(then stop|when done|do not\b|stop\.?$)/i.test(rest)) {
+      t = t.slice(0, nl);
+    }
+  }
+  t = t.replace(/\s+(?:then stop\.?|when done[,.]?.*)$/i, "");
+  return stripWrap(t);
 }
 
 function isChat(u, g) {
@@ -52,12 +72,12 @@ export function deriveGoalVerifyChecks(goal = "") {
 
   const createWith = u.match(
     new RegExp(
-      `\\b(?:create|write|save|put|make)\\s+(?:a\\s+file\\s+(?:named|called)\\s+)?[\`'"]?(${PATH})[\`'"]?\\s+(?:with(?:\\s+text|\\s+contents)?|containing|that says)\\s+[\`'"]?(.+?)[\`'"]?\\s*$`,
+      `\\b(?:create|write|save|put|make)\\s+${FILE_PREFIX}[\`'"]?(${PATH})[\`'"]?\\s+${CONTENT}\\s+(?:exactly:?\\s*)?[\`'"]?([\\s\\S]+?)[\`'"]?\\s*$`,
       "i"
     )
   );
   if (createWith) {
-    const text = stripWrap(createWith[2]);
+    const text = cleanExpectedText(createWith[2]);
     if (text) return [{ type: "file_contains", path: createWith[1], text }];
   }
 
@@ -77,7 +97,7 @@ export function deriveGoalVerifyChecks(goal = "") {
 
   const createOnly = u.match(
     new RegExp(
-      `\\b(?:create|write|save|touch|make|put)\\s+(?:a\\s+file\\s+(?:named|called)\\s+)?[\`'"]?(${PATH})[\`'"]?(?:\\s|$)`,
+      `\\b(?:create|write|save|touch|make|put)\\s+${FILE_PREFIX}[\`'"]?(${PATH})[\`'"]?(?:\\s|$)`,
       "i"
     )
   );

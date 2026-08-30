@@ -140,8 +140,9 @@ mission so the process does not exit mid-work). Disable with
 A tool-free "Done." is not completion when the goal named a file (or
 the caller passed `verify[]`). The loop runs `jobs/verify.mjs` and
 re-enters on failure (`stopReason: unverified` at cap). Create/write
-with text → `file_contains`; touch/create-path → `file_exists`. Chat
-and how-to questions still derive nothing. `agent.verifyOnComplete:
+with text → `file_contains` (including `write a file PATH containing
+TEXT` / `whose first line is`); touch/create-path → `file_exists`.
+Chat and how-to questions still derive nothing. `agent.verifyOnComplete:
 false` to opt out.
 
 Gateway boot auto-resumes unfinished **agent-run snapshots** the same

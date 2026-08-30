@@ -42,6 +42,41 @@ describe("deriveGoalVerifyChecks", () => {
     assert.equal(named[0].path, "hello.txt");
   });
 
+  it("eval smoke: write a file PATH containing exactly TEXT", () => {
+    const c = deriveGoalVerifyChecks(
+      "Write a file hello.txt containing exactly: hello xclaw\nThen stop."
+    );
+    assert.equal(c.length, 1);
+    assert.equal(c[0].type, "file_contains");
+    assert.equal(c[0].path, "hello.txt");
+    assert.equal(c[0].text, "hello xclaw");
+    const bare = deriveGoalVerifyChecks("create file notes.md containing hi");
+    assert.equal(bare[0].type, "file_contains");
+    assert.equal(bare[0].path, "notes.md");
+    assert.equal(bare[0].text, "hi");
+  });
+
+  it("eval smoke: create a file named PATH whose first line is TEXT", () => {
+    const c = deriveGoalVerifyChecks(
+      "In the current working directory, create a file named README.md whose first line is exactly: # Eval Project\nDo not create any other files. When done, stop."
+    );
+    assert.equal(c.length, 1);
+    assert.equal(c[0].type, "file_contains");
+    assert.equal(c[0].path, "README.md");
+    assert.equal(c[0].text, "# Eval Project");
+  });
+
+  it("how-to still derives nothing when the smoke phrasing is a question", () => {
+    assert.deepEqual(
+      deriveGoalVerifyChecks("how do I write a file hello.txt containing hello?"),
+      []
+    );
+    assert.deepEqual(
+      deriveGoalVerifyChecks("explain how to create a file named README.md"),
+      []
+    );
+  });
+
   it("CLI exit is nonzero for unverified / cutoff, zero for natural chat", () => {
     assert.equal(agentExitCode({ stopReason: "natural" }), 0);
     assert.equal(agentExitCode({ stopReason: "unverified" }), 1);
@@ -105,6 +140,31 @@ describe("evaluateNaturalStopVerify", () => {
       workingDir: os.tmpdir(),
     });
     assert.equal(r.reject, false);
+  });
+
+  it("smoke write-a-file rejects Done when hello.txt is missing", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-smoke-"));
+    const r = await evaluateNaturalStopVerify({
+      naturalStop: true,
+      userMessage:
+        "Write a file hello.txt containing exactly: hello xclaw\nThen stop.",
+      workingDir: dir,
+    });
+    assert.equal(r.reject, true);
+    assert.equal(r.result.ok, false);
+  });
+
+  it("smoke write-a-file accepts Done when hello.txt matches (not 'Then stop.')", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-smoke-ok-"));
+    fs.writeFileSync(path.join(dir, "hello.txt"), "hello xclaw\n");
+    const r = await evaluateNaturalStopVerify({
+      naturalStop: true,
+      userMessage:
+        "Write a file hello.txt containing exactly: hello xclaw\nThen stop.",
+      workingDir: dir,
+    });
+    assert.equal(r.reject, false);
+    assert.equal(r.result.ok, true);
   });
 });
 
@@ -189,6 +249,20 @@ describe("loop rejects a false Done on a file goal", () => {
     });
     assert.equal(out.stopReason, "unverified");
     assert.equal(out.ok, false);
+  });
+
+  it("write a file PATH containing TEXT is unverified when missing", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-cg-smoke-loop-"));
+    const out = await runAgentLoop({
+      cfg: CFG,
+      provider: doneProvider(),
+      userMessage:
+        "Write a file hello.txt containing exactly: hello xclaw\nThen stop.",
+      workingDir: dir,
+    });
+    assert.equal(out.stopReason, "unverified");
+    assert.equal(out.ok, false);
+    assert.equal(fs.existsSync(path.join(dir, "hello.txt")), false);
   });
 
   it("stopReason is natural when the named file already satisfies the check", async () => {

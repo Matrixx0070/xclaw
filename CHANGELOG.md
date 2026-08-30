@@ -1,3 +1,21 @@
+## 3.385.0
+
+### "Write a file PATH containing TEXT" is not done until the file matches
+
+v3.378/3.380 derived checks for `Create PATH with text X` and
+`write TEXT to PATH`. The eval smoke prompt is `Write a file
+hello.txt containing exactly: hello xclaw` then `Then stop.` — no
+`named`/`called`, plus `exactly:` and a closer line. That derived
+nothing, so a tool-free "Done." was `natural`.
+
+`a file PATH containing|whose first line is` now yields
+`file_contains`. `exactly:` and trailing `Then stop.` / `When done`
+are not part of the needle. How-to questions still derive nothing.
+
+Hermetic: both smoke prompts reject a missing file and accept a
+matching one; "how do I write a file hello.txt containing hello?"
+stays chat.
+
 ## 3.384.0
 
 ### WebChat result includes `ok` and `stopReason`
