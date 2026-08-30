@@ -1,3 +1,14 @@
+## 3.476.0
+
+### Operator list pins attention rows into the window
+
+After 3.475.0 sorted by `updatedAt`, Control's default 20-row window
+still hid `2026-08-30T03-23-54-655Z_intel-symbol-locate`. Live: leftover
+sat at rank 75 (`updatedAt` 04:17) behind 75 newer ok runs, so
+`GET /agent-runs?limit=20` had 0 not-ok rows while `limit=400` had 4.
+The list now pins resumable / not-ok / corrupt rows ahead of ok ones
+before applying the limit. Newest-ok order is unchanged among the rest.
+
 ## 3.475.0
 
 ### Operator list sorts by updatedAt, not filename

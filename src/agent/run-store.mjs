@@ -172,6 +172,9 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
   // default 20-row window never showed intel-symbol-locate even
   // after the classifier was honest (live: GET /agent-runs?limit=20
   // had 0 not-ok rows; limit=400 had 4, including that leftover).
+  // Then pin attention (resumable / not-ok / corrupt) into the
+  // window: live leftover sat at updatedAt rank 75, so newest-ok
+  // still hid it from limit=20 after 3.475.0.
   const cap = Number(limit) > 0 ? Number(limit) : 30;
   const out = [];
   for (const f of names) {
@@ -202,7 +205,13 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
     }
   }
   out.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
-  return out.slice(0, cap);
+  const attention = [];
+  const rest = [];
+  for (const r of out) {
+    if (r.error || r.resumable || r.ok === false) attention.push(r);
+    else rest.push(r);
+  }
+  return [...attention, ...rest].slice(0, cap);
 }
 
 export async function deleteAgentRun(cfg, sessionId) {

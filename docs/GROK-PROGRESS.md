@@ -934,3 +934,18 @@ agent-run snapshots`. Leftover stayed `maxTurns` with no `resumedAt` /
 `objectiveId`; `obj_mtffg2yd_aaaad3` stayed `awaiting_human`;
 `n_objectives` 23 unchanged. NEXT: pin attention rows into the
 operator window so Control's default 20 still shows not-ok leftovers.
+
+## 2026-08-30 — 3.476.0 operator list pins attention rows into the window (Claude)
+
+STATUS: green (local hermetic)
+DISCOVERED: after 3.475.0 sorted by `updatedAt`, Control's default
+20-row window still hid `intel-symbol-locate`. Live leftover sat at
+rank 75 (`updatedAt` 04:17) behind 75 newer ok runs, so
+`GET /agent-runs?limit=20` not-ok 0 while `limit=400` not-ok 4.
+BUILT: `listAgentRuns` pins resumable / not-ok / corrupt rows ahead
+of ok ones, then applies the limit. Newest-ok order among the rest
+is unchanged.
+RAN: `node --test` store+resume+doctor → 26/26; `npm test` →
+`# tests 5015` `# fail 0` `# duration_ms 69054`.
+UNVERIFIED: GitHub `ci` on this SHA; live `GET /agent-runs?limit=20`
+includes `intel-symbol-locate` as `resumable: false` / `ok: false`.

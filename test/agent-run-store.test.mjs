@@ -146,4 +146,42 @@ describe("agent run-store", () => {
       "filename reverse-lex would have picked job_* first"
     );
   });
+
+  it("list pins a not-ok leftover into the window ahead of newer ok runs", async () => {
+    const isolated = { paths: { configDir: await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-runs-pin-")) } };
+    const wd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-wd-pin-"));
+    const evalRoot = path.join(os.tmpdir(), "xclaw-eval");
+    await fs.mkdir(evalRoot, { recursive: true });
+    const evalWd = await fs.mkdtemp(path.join(evalRoot, "leftover-pin-"));
+    await saveAgentRun(isolated, {
+      sessionId: "newer_ok_uuid",
+      workingDir: wd,
+      status: "completed",
+      stopReason: "natural",
+    });
+    await saveAgentRun(isolated, {
+      sessionId: "2026-08-30T03-23-54-655Z_intel-symbol-locate",
+      workingDir: evalWd,
+      status: "maxTurns",
+      stopReason: "maxTurns",
+    });
+    const dir = path.join(isolated.paths.configDir, "agent-runs");
+    const okFp = path.join(dir, "newer_ok_uuid.json");
+    const leftoverFp = path.join(dir, "2026-08-30T03-23-54-655Z_intel-symbol-locate.json");
+    const okRun = JSON.parse(await fs.readFile(okFp, "utf8"));
+    const leftover = JSON.parse(await fs.readFile(leftoverFp, "utf8"));
+    okRun.updatedAt = "2026-08-30T07:43:43.475Z";
+    leftover.updatedAt = "2026-08-30T04:17:33.558Z";
+    await fs.writeFile(okFp, JSON.stringify(okRun, null, 2));
+    await fs.writeFile(leftoverFp, JSON.stringify(leftover, null, 2));
+    const list = await listAgentRuns(isolated, { limit: 1 });
+    assert.equal(list.length, 1);
+    assert.equal(
+      list[0].sessionId,
+      "2026-08-30T03-23-54-655Z_intel-symbol-locate",
+      "newest-ok would have filled limit=1 and hidden the leftover"
+    );
+    assert.equal(list[0].ok, false);
+    assert.equal(list[0].resumable, false);
+  });
 });

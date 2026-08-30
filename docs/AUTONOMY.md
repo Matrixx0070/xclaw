@@ -157,8 +157,9 @@ stops stay put. Eval leftovers whose `workingDir` is under
 missions. `xclaw runs list`, Control `/agent-runs`, and doctor
 `agentRuns.attention` use that same classifier (`isResumableAgentRun`);
 they do not re-derive resumable from status alone. The operator list
-sorts by `updatedAt` (not filename) before applying its row limit, so
-a timestamped leftover is not hidden behind `job_*` / `objective-*`.
+sorts by `updatedAt` (not filename), then pins resumable / not-ok /
+corrupt rows into the window before applying the row limit, so a
+leftover is not hidden behind newer ok runs or `job_*` / `objective-*`.
 Cap: `agent.autoResumeMax` (default 3). Age: 48h. Opt out:
 `agent.autoResume: false`.
 
