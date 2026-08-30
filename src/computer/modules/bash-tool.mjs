@@ -193,14 +193,60 @@ export async function executeBash(input = {}, ctx = {}) {
       stdio: ["ignore", logFd.fd, logFd.fd],
       env: spec.env,
     });
+    const spawned = await new Promise((resolve) => {
+      let done = false;
+      const finish = (err) => {
+        if (done) return;
+        done = true;
+        resolve({ err, pid: child.pid });
+      };
+      child.once("spawn", () => finish(null));
+      child.once("error", (e) => finish(e));
+    });
     child.unref();
     await logFd.close();
+    if (spawned.err || !spawned.pid) {
+      return {
+        ok: false,
+        pid: spawned.pid || null,
+        logFile,
+        stdout: "",
+        stderr: String(spawned.err?.message || "background spawn failed"),
+        timedOut: false,
+        interrupted: false,
+        spawnEnforced: Boolean(check.enforced),
+        osSandboxed,
+        netIsolated: Boolean(wrapped.netIsolated),
+        envPolicy: envPolicy.mode,
+        code: "BASH_BG_SPAWN_FAILED",
+      };
+    }
+    // Let an immediate-exit command actually die before we call it started.
+    await new Promise((r) => setTimeout(r, 25));
+    try {
+      process.kill(spawned.pid, 0);
+    } catch {
+      return {
+        ok: false,
+        pid: spawned.pid,
+        logFile,
+        stdout: "",
+        stderr: `Background PID ${spawned.pid} exited immediately. Log: ${logFile}`,
+        timedOut: false,
+        interrupted: false,
+        spawnEnforced: Boolean(check.enforced),
+        osSandboxed,
+        netIsolated: Boolean(wrapped.netIsolated),
+        envPolicy: envPolicy.mode,
+        code: "BASH_BG_DEAD",
+      };
+    }
     return {
       ok: true,
-      pid: child.pid,
+      pid: spawned.pid,
       logFile,
       stdout: "",
-      stderr: `Started in background (PID ${child.pid}). Log: ${logFile}`,
+      stderr: `Started in background (PID ${spawned.pid}). Log: ${logFile}`,
       timedOut: false,
       interrupted: false,
       spawnEnforced: Boolean(check.enforced),

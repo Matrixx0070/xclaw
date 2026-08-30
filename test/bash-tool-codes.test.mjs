@@ -58,6 +58,15 @@ describe("xclaw_bash codes", () => {
     await executeBash({ command: `kill ${r.pid} 2>/dev/null; kill -9 ${r.pid} 2>/dev/null; true`, timeout: 5 });
   });
 
+  it("background command that exits immediately is not BASH_BG_STARTED", async () => {
+    const r = await executeBash({ command: "exit 1", background: true });
+    assert.equal(r.ok, false);
+    assert.ok(
+      r.code === "BASH_BG_DEAD" || r.code === "BASH_BG_SPAWN_FAILED",
+      r.code
+    );
+  });
+
   it("output truncated code", async () => {
     // ~2.2MB of 'x' — over the 2_000_000 char keep limit
     const r = await executeBash({

@@ -1,3 +1,13 @@
+## 3.410.0
+
+### Background bash is not success until the PID is actually alive
+
+`background: true` returned `ok: true` / `BASH_BG_STARTED` as soon as
+`spawn()` returned a pid. A command that cannot start or exits
+immediately still looked started. The tool now waits for the spawn
+event, then `kill(pid, 0)`. Immediate death is `BASH_BG_DEAD`; spawn
+errors are `BASH_BG_SPAWN_FAILED`.
+
 ## 3.409.0
 
 ### File write/edit re-read the disk before claiming success
