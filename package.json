@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.491.0",
+  "version": "3.492.0",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "bin": {
@@ -88,7 +88,9 @@
     "CHANGELOG.md",
     "deploy/",
     "SECURITY.md",
-    "LICENSE"
+    "LICENSE",
+    ".env.example",
+    "THIRD_PARTY.md"
   ],
   "engines": {
     "node": ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"

@@ -1,3 +1,31 @@
+## 3.492.0
+
+### Vendor-shipment analog docs (not an Electron/OpenClaw surface)
+
+The six-item vendor checklist named pnpm, ESLint, Electron `.exe`/`.dmg`,
+`BRAVE_SEARCH_API_KEY`, Tavily, Docker/Wasm skill jails, WeChat QR, and
+Feishu. Those are not this product. Existing CI
+(`.github/workflows/ci.yml` — npm, `node --test`, `ci-gate.mjs`, Node
+22.22/24.15) and the MIT `LICENSE` stay as they are.
+
+This slice fills the real analog gaps:
+
+- `.env.example` — names this repo actually reads (`BRAVE_API_KEY`,
+  `XCLAW_OS_SANDBOX`, channel tokens). `.gitignore` now un-ignores it
+  (`!.env.example`) so the `.env.*` glob does not drop the template.
+- `docs/CHANNEL_RECOVERY.md` — Telegram 409 / writer lock, Slack
+  heartbeat, Discord opcode 7/9, email IMAP, SQLite WAL
+  backup/restore of `control.sqlite` / `main.sqlite` / `agent.sqlite`
+  / `sessions.json`.
+- `docs/OS_SANDBOX.md` — bubblewrap enablement, `netnsDegraded`
+  honesty. Not Docker, not Wasm.
+- `THIRD_PARTY.md` — SPDX for optional `opusscript` / `werift`;
+  sqlite-vec is not shipped.
+
+Pinned by `test/vendor-shipment-docs.test.mjs`. This slice does not
+invert default-path durability, does not mint `persistRun: true` on
+voice / TUI / channels, and does not auto-promote HTTP `POST /agent/run`.
+
 ## 3.491.0
 
 ### Doctor live-soak evidence: truncated JSON is not a fault

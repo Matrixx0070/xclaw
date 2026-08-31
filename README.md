@@ -79,7 +79,7 @@ an empty prompt exits.
 
 ## Secrets
 
-Full checklist: [docs/SECRETS.md](./docs/SECRETS.md)
+Full checklist: [docs/SECRETS.md](./docs/SECRETS.md). Empty placeholders: [`.env.example`](./.env.example).
 
 
 - **Never commit** API keys, OAuth tokens, or GitHub PATs.
@@ -345,6 +345,10 @@ See [OPS.md](./OPS.md) and `deploy/`.
 | [docs/API.md](./docs/API.md) | HTTP / gateway API |
 | [docs/LONGRUN.md](./docs/LONGRUN.md) | Long-running objectives / mission architecture |
 | [docs/APPROVALS.md](./docs/APPROVALS.md) | Approval / plan binding |
+| [docs/OS_SANDBOX.md](./docs/OS_SANDBOX.md) | bubblewrap OS sandbox (`XCLAW_OS_SANDBOX`) |
+| [docs/CHANNEL_RECOVERY.md](./docs/CHANNEL_RECOVERY.md) | Channel disconnect + SQLite backup/restore |
+| [docs/SECRETS.md](./docs/SECRETS.md) | Env names this repo actually reads |
+| [THIRD_PARTY.md](./THIRD_PARTY.md) | SPDX inventory (optional deps) |
 | [docs/adr/0005-computer-engine-unification.md](./docs/adr/0005-computer-engine-unification.md) | Single computer engine (bundle retired) |
 | [docs/](./docs/) | Auth, swarm, eval notes (many specialized) |
 
@@ -354,4 +358,4 @@ Deep / historical design notes live under `docs/`—prefer this README + XCLAW.m
 
 ## License
 
-XClaw is licensed under the MIT License. See [LICENSE](./LICENSE).
+XClaw is licensed under the MIT License. See [LICENSE](./LICENSE). Third-party SPDX inventory: [THIRD_PARTY.md](./THIRD_PARTY.md).

@@ -52,5 +52,7 @@ xclaw skills install <proposal.md> --owner-approved
 2. `XCLAW_GATEWAY_TOKEN` set
 3. `xclaw doctor` — no `autoApprove` errors; `skills.install` gated
 4. Optional: `XCLAW_COMMIT_GATES=1` `XCLAW_FABRIC_ENFORCE=1`
-5. Optional: install `bubblewrap` for OS sandbox
+5. Optional: install `bubblewrap` for OS sandbox — [docs/OS_SANDBOX.md](./docs/OS_SANDBOX.md)
 6. Rotate any secrets that ever appeared outside the host
+
+Env template: [`.env.example`](./.env.example). Channel + SQLite recovery: [docs/CHANNEL_RECOVERY.md](./docs/CHANNEL_RECOVERY.md). SPDX: [THIRD_PARTY.md](./THIRD_PARTY.md).
