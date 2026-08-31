@@ -80,13 +80,21 @@ export async function listSoakJobs(opts = {}) {
     const jobs = [];
     for (const e of ents) {
       if (!e.isDirectory()) continue;
-      const cp = await loadSoakCheckpoint(e.name, opts);
-      jobs.push({
-        jobId: e.name,
-        turns: cp.turns,
-        usedUsd: cp.usedUsd,
-        updatedAt: cp.updatedAt,
-      });
+      try {
+        const cp = await loadSoakCheckpoint(e.name, opts);
+        jobs.push({
+          jobId: e.name,
+          turns: cp.turns,
+          usedUsd: cp.usedUsd,
+          updatedAt: cp.updatedAt,
+        });
+      } catch {
+        // Truncated / unreadable checkpoint.json is not a listing fault.
+        // doctorHorizon({}) lists checkout cwd with no isolated base.
+        // loadSoakCheckpoint itself still throws — it is spend
+        // authority for runHorizonLive. Class 10: no sample is not a
+        // fault.
+      }
     }
     return jobs.sort((a, b) =>
       String(b.updatedAt).localeCompare(String(a.updatedAt))

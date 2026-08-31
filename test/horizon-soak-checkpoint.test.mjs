@@ -7,6 +7,7 @@ import {
   saveSoakCheckpoint,
   loadSoakCheckpoint,
   listSoakJobs,
+  jobDir,
 } from "../src/eval/horizon-soak-checkpoint.mjs";
 import {
   resetSoakResumeMetrics,
@@ -66,7 +67,27 @@ describe("horizon soak checkpoint", () => {
     assert.ok(cp2.turns >= 1);
   });
 
-  it("doctor lists soak jobs", async () => {
+  it("truncated checkpoint is skipped by list; load still throws", async () => {
+    const base = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-soak-trunc-"));
+    const dir = jobDir("job-trunc", base);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "checkpoint.json"),
+      '{"jobId":"job-trunc","turns":'
+    );
+    await assert.rejects(
+      () => loadSoakCheckpoint("job-trunc", { base }),
+      (e) => e instanceof SyntaxError
+    );
+    const jobs = await listSoakJobs({ base });
+    assert.ok(Array.isArray(jobs));
+    assert.equal(
+      jobs.some((j) => j.jobId === "job-trunc"),
+      false
+    );
+  });
+
+  it("doctor lists soak jobs without throwing on checkout evidence", async () => {
     const d = await doctorHorizon({});
     assert.ok(Array.isArray(d.soakJobs));
     assert.equal(typeof d.soakJobCount, "number");

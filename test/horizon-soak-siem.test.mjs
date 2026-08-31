@@ -86,7 +86,21 @@ describe("horizon soak siem", () => {
     assert.ok(evs.some((e) => e.type === "lease_denied"));
   });
 
-  it("doctor reports siem metrics", async () => {
+  it("truncated jsonl line is skipped; remaining events still read", async () => {
+    const base = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-siem-trunc-"));
+    const cfg = { soak: { hmacSecret: "k" } };
+    await appendSoakEvent({ type: "resume", jobId: "j-ok" }, { base, cfg });
+    const fp = path.join(base, ".xclaw", "soak-siem", "events.jsonl");
+    await fs.appendFile(fp, '{"type":"resume","jobId":"j-trunc"\n', "utf8");
+    const evs = await readSoakEvents({ base });
+    assert.ok(evs.some((e) => e.jobId === "j-ok"));
+    assert.equal(
+      evs.some((e) => e.jobId === "j-trunc"),
+      false
+    );
+  });
+
+  it("doctor reports siem metrics without throwing on checkout evidence", async () => {
     const d = await doctorHorizon({});
     assert.ok(d.metricsSiem);
     assert.equal(typeof d.siemHmacFail, "number");

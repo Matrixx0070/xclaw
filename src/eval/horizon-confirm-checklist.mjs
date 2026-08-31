@@ -46,9 +46,12 @@ export async function readChecklistResult(opts = {}) {
   try {
     const j = JSON.parse(await fsp.readFile(fp, "utf8"));
     return { ok: true, path: fp, result: j };
-  } catch (e) {
-    if (e && e.code === "ENOENT") return { ok: false, path: fp, result: null };
-    throw e;
+  } catch {
+    // Same catch class as readLiveSoakReport / readLastScorecard:
+    // truncated / empty checkout evidence must not throw. Class 10:
+    // no sample is not a fault. doctorHorizon uses in-memory
+    // lastChecklist(); this disk reader still shares the evidence dir.
+    return { ok: false, path: fp, result: null };
   }
 }
 

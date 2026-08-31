@@ -121,10 +121,19 @@ export async function readSoakEvents(opts = {}) {
   const fp = soakSiemLogPath(opts);
   try {
     const raw = await fsp.readFile(fp, "utf8");
-    return raw
-      .split("\n")
-      .filter(Boolean)
-      .map((l) => JSON.parse(l));
+    const events = [];
+    for (const l of raw.split("\n")) {
+      if (!l) continue;
+      try {
+        events.push(JSON.parse(l));
+      } catch {
+        // Truncated / garbage JSONL line is not a fault.
+        // doctorHorizon({}) reads checkout cwd with no isolated base.
+        // Crash-mid-append leaves a partial last line; Class 10: no
+        // sample is not a fault. Valid prior lines still count.
+      }
+    }
+    return events;
   } catch (e) {
     if (e && e.code === "ENOENT") return [];
     throw e;

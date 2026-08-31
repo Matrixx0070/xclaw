@@ -1532,3 +1532,39 @@ RAN:
 - Webchat POST /channel/webchat/message `{"message":"ping 3.491.0 live-drive — reply with the single word PONG and nothing else"}` → ok=true text=PONG model=grok-4.6 sessionId `1af00aec-cfd4-4fe4-910b-195456724978` stopReason=natural. telegram writerLock held by live pid=3800483 at 2026-08-30T20:34:21.265Z host=srv1474168; gateway.log `[telegram] writer lock ok pid=3800483` then long-poll starting @xxclaw_bot. discord enabled=false. slack enabled=false. email enabled=false.
 UNVERIFIED: live `runs resume --gateway` against the live pid (dead-port e2e + source pin only; a live resume would stamp a real snapshot). A rejecting POST after a successful probe is still TOCTOU. Live voice listen / voice TUI / email / Slack / Discord `/ask` / TUI / voice WS turn-cap → mission remain source-pinned from 3.489.0 / 3.488.0 / 3.487.0 / 3.486.0 / 3.485.0 / 3.484.0 / 3.483.0. Live POST /objectives and live automation tick continuation opt-outs remain source-pinned from 3.481.0 / 3.482.0. `lastPollOkAt` not present on this lock file (pid/at/host only).
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, Discord `/ask`, Slack, email, voice TUI, or voice listen. Do not auto-promote HTTP POST /agent/run. Do not stamp `runs resume --gateway` before GET `/health`.
+
+## 2026-08-31 — 3.492.0 vendor analog docs (not an Electron/OpenClaw surface)
+
+STATUS: green (local hermetic; GitHub `ci` UNVERIFIED — not pushed)
+DISCOVERED: Vendor checklist named pnpm, ESLint, Electron `.exe`/`.dmg`,
+`BRAVE_SEARCH_API_KEY`, Tavily, Docker/Wasm skill jails, WeChat QR, and
+Feishu. Those are not this product. Existing CI (`.github/workflows/ci.yml`)
+and MIT `LICENSE` stay as they are.
+BUILT: `.env.example` + `!.env.example`; `docs/CHANNEL_RECOVERY.md`;
+`docs/OS_SANDBOX.md`; `THIRD_PARTY.md`; SECRETS/README/SECURITY pointers;
+`test/vendor-shipment-docs.test.mjs`. Did not recreate `ci.yml` or
+`LICENSE`. Did not add Electron CI.
+RAN: pin + hermetic `# fail 0` at ship (`46baed6`). Ledger entry written
+retroactively with 3.493.0 — 3.492.0 committed without an append.
+UNVERIFIED: GitHub `ci` on `46baed6`; live Telegram 409 / Slack heartbeat /
+Discord resume / SQLite restore (docs only).
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, Discord `/ask`, Slack, email, voice TUI, or voice listen. Do not auto-promote HTTP POST /agent/run. Do not stamp `runs resume --gateway` before GET `/health`.
+
+## 2026-08-31 — 3.493.0 Doctor soak SIEM / checkpoint listing: truncated JSON is not a fault
+
+STATUS: green (local hermetic pin)
+DISCOVERED: Class 56 closed `readLiveSoakReport` / `readLastScorecard`.
+The same `doctorHorizon({})` path still called `readSoakEvents({})` and
+`listSoakJobs({})` with no isolated `base`. A truncated JSONL line in
+`.xclaw/soak-siem/events.jsonl` or a truncated
+`.xclaw/soak/<id>/checkpoint.json` threw `SyntaxError` through every
+test that probes doctor with `{}`. Same flake class as GitHub ci
+33331581979 on live-report.
+BUILT: `readSoakEvents` skips unparseable JSONL lines; valid prior events
+still count. `listSoakJobs` skips a job whose `checkpoint.json` is
+unreadable. `readChecklistResult` matches the live-report catch-all.
+`loadSoakCheckpoint` still throws on garbage — it is spend authority for
+`runHorizonLive`. Fail-soft there would reset `usedUsd` to 0.
+RAN: node --test test/horizon-soak-siem.test.mjs test/horizon-soak-checkpoint.test.mjs test/horizon-confirm-checklist.test.mjs test/horizon-live-report.test.mjs test/horizon-scorecard.test.mjs test/doctor-horizon.test.mjs → # tests 28 # pass 28 # fail 0 # duration_ms 722.241489; npm test (hermetic) → # tests 5061 # pass 5061 # fail 0 # duration_ms 69882.327843
+UNVERIFIED: GitHub `ci` on this SHA; live gateway restart leftover stay-put.
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, Discord `/ask`, Slack, email, voice TUI, or voice listen. Do not auto-promote HTTP POST /agent/run. Do not stamp `runs resume --gateway` before GET `/health`.

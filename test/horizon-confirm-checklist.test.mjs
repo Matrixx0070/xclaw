@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -8,6 +10,7 @@ import {
   resetChecklistMetrics,
   getChecklistOk,
   readChecklistResult,
+  checklistEvidencePath,
 } from "../src/eval/horizon-confirm-checklist.mjs";
 import { doctorHorizon } from "../src/cli/doctor-horizon.mjs";
 
@@ -66,6 +69,17 @@ describe("confirm-live checklist", () => {
       { encoding: "utf8", cwd: root, env }
     );
     assert.equal(r.status, 2, r.stderr || r.stdout);
+  });
+
+  it("truncated checklist evidence is not a throw", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-ck-"));
+    const fp = checklistEvidencePath(base);
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.writeFileSync(fp, '{"ok":tru');
+    const r = await readChecklistResult({ base });
+    assert.equal(r.ok, false);
+    assert.equal(r.result, null);
+    assert.equal(r.path, fp);
   });
 
   it("doctor exposes lastChecklist", async () => {

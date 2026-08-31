@@ -1,3 +1,28 @@
+## 3.493.0
+
+### Doctor soak SIEM / checkpoint listing: truncated JSON is not a fault
+
+Class 56 closed `readLiveSoakReport` / `readLastScorecard`. The same
+`doctorHorizon({})` path still called `readSoakEvents({})` and
+`listSoakJobs({})` with no isolated `base`. A truncated JSONL line in
+`.xclaw/soak-siem/events.jsonl` or a truncated
+`.xclaw/soak/<id>/checkpoint.json` threw `SyntaxError` through every
+test that probes doctor with `{}`.
+
+- `readSoakEvents` skips unparseable JSONL lines; valid prior events
+  still count. ENOENT still returns `[]`.
+- `listSoakJobs` skips a job whose `checkpoint.json` is unreadable.
+  `loadSoakCheckpoint` itself still throws — it is spend authority for
+  `runHorizonLive`. Fail-soft there would reset `usedUsd` to 0.
+- `readChecklistResult` matches the live-report catch-all (same
+  `.xclaw-evidence/` dir). `doctorHorizon` still uses in-memory
+  `lastChecklist()`.
+
+Tests pin truncated JSONL / checkpoint / checklist under an isolated
+`base`. This slice does not invert default-path durability, does not
+mint `persistRun: true` on voice / TUI / channels, and does not
+auto-promote HTTP `POST /agent/run`.
+
 ## 3.492.0
 
 ### Vendor-shipment analog docs (not an Electron/OpenClaw surface)
