@@ -1,3 +1,25 @@
+## 3.494.0
+
+### Telegram writer-lock touch does not overwrite a stolen lock
+
+`acquireTelegramWriterLock().touch()` wrote the in-memory payload after
+unbounded `getUpdates` (`onTouchLock`) without re-reading. Process A
+holds the lock, the poll hangs past `staleMs` (120s), process B
+reclaims, A's hung poll returns and `touch()` overwrites B — two
+processes on `getUpdates` for one token. Same class as queue cancel
+overwritten by a long-running writer. `release()` already re-read pid
+before unlink.
+
+- `touch()` re-reads the lock file and writes only if `cur.pid ===
+  process.pid`; otherwise no-op.
+- Pin: acquire under an isolated lockPath, overwrite with another pid,
+  `touch()`, thief still owns the file. Happy-path touch still
+  refreshes `at`.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.493.0
 
 ### Doctor soak SIEM / checkpoint listing: truncated JSON is not a fault

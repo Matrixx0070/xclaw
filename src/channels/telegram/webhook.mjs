@@ -116,7 +116,13 @@ export function acquireTelegramWriterLock(opts = {}) {
         }
       },
       touch() {
+        // Re-read before write. A hung getUpdates can return after staleMs
+        // and another process has already reclaimed; stamping our in-memory
+        // payload over theirs puts two processes on getUpdates for one token.
+        // Same ownership check as release().
         try {
+          const cur = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+          if (cur.pid !== process.pid) return;
           payload.at = new Date().toISOString();
           fs.writeFileSync(lockPath, JSON.stringify(payload, null, 2), "utf8");
         } catch {

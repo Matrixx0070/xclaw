@@ -186,6 +186,51 @@ describe("acquireTelegramWriterLock: a remote holder is not judged by a local pi
       assert.equal(r.ok, true);
     });
   });
+
+  test("touch does not overwrite a lock another pid has since taken", () => {
+    // Same class as queue cancel overwritten by a long-running writer:
+    // process A holds the lock, getUpdates hangs past staleMs, B reclaims,
+    // A's hung poll returns and touch() must not stamp A's payload over B.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-wlock-touch-"));
+    const lockPath = path.join(dir, "telegram-writer.lock");
+    try {
+      const a = acquireTelegramWriterLock({ lockPath, staleMs: STALE_MS });
+      assert.equal(a.ok, true);
+      const thief = {
+        pid: DEAD,
+        at: new Date().toISOString(),
+        host: os.hostname(),
+      };
+      fs.writeFileSync(lockPath, JSON.stringify(thief, null, 2), "utf8");
+      a.touch();
+      const still = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+      assert.equal(still.pid, DEAD, "touch() stole the lock back from the thief");
+      assert.equal(still.host, os.hostname());
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("touch still refreshes at while we own the lock", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-wlock-touch-ok-"));
+    const lockPath = path.join(dir, "telegram-writer.lock");
+    try {
+      const a = acquireTelegramWriterLock({ lockPath, staleMs: STALE_MS });
+      assert.equal(a.ok, true);
+      const before = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+      assert.equal(before.pid, process.pid);
+      a.touch();
+      const after = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+      assert.equal(after.pid, process.pid);
+      assert.equal(after.host, os.hostname());
+      assert.ok(
+        Date.parse(after.at) >= Date.parse(before.at),
+        "touch() must refresh at while we still own the lock"
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("doctor does not claim liveness it cannot test", () => {
