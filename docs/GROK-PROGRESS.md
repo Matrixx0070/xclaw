@@ -1991,3 +1991,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/missions-config-dir.test.mjs test/missions.test.mjs → # tests 12 # pass 12 # fail 0 # duration_ms 2089.196588; npm test (hermetic) → # tests 5302 # pass 5302 # fail 0 # duration_ms 77197.975947
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-01 — 3.537.0 xAI credentials follow paths.configDir
+
+LOCKED: `src/auth/xai.mjs` `credPath` still homed while production writers `saveCredentials(cfg)` via `loginWithApiKey(cfg)` at auth/profiles.mjs and cli/auth-legacy-cli.mjs; `loginWithOAuth(cfg)` at cli/auth-legacy-cli.mjs and cli/providers-cli.mjs; `refreshOAuthToken(cfg)` from resolveXaiToken already had cfg. Same class as v3.297.0 / v3.536.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `credentials.json`; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Keep `os` for Grok CLI cache at `~/.grok/auth.json` (not this store). Did not rewrite settleAfterCredsRefresh / loginWithOAuth / refreshOAuthToken aggregation. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `saveCredentials` still returns `null` without persisting (do not `mkdir(null)`). `loadCredentials` returns `{}`. `logout` is a no-op. Production writers always have configDir, so live persist is not dropped. Keep reading the Grok CLI cache. Exported `credentialsPath`; `function credPath` wraps it.
+
+RAN: node --test test/xai-credentials-config-dir.test.mjs test/xai-auth.test.mjs test/xai-credentials-file-mode.test.mjs test/xai-creds-settle.test.mjs → # tests 17 # pass 17 # fail 0 # duration_ms 2181.132435; npm test (hermetic) → # tests 5307 # pass 5307 # fail 0 # duration_ms 82442.672478
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

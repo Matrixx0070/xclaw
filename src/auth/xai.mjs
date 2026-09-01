@@ -6,6 +6,24 @@
  *  1. API key store (recommended / supported)
  *  2. Session / access token from env or Grok CLI cache
  *  3. Optional OAuth2 PKCE when XCLAW_XAI_OAUTH_CLIENT_ID is configured
+ *
+ * credentials.json belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * credentials.json, so instance B overwrote instance A's xAI key — and the
+ * suite wrote into the operator's real `~/.xclaw/credentials.json`.
+ *
+ * Production writers (`saveCredentials(cfg)` via `loginWithApiKey(cfg)` at
+ * auth/profiles.mjs and cli/auth-legacy-cli.mjs; `loginWithOAuth(cfg)` at
+ * cli/auth-legacy-cli.mjs and cli/providers-cli.mjs; `refreshOAuthToken(cfg)`
+ * from resolveXaiToken) already had cfg in scope. `loadConfig()` stamps
+ * `paths.configDir` unconditionally (config/load.mjs:187), so a cfg without
+ * one is never a real caller. Such a path is `null` rather than guessing at
+ * the home dir. Same shape as `missionsStoreDir`. Honour existing
+ * `XCLAW_CONFIG_DIR`. `saveCredentials` still returns `null` without
+ * persisting. `loadCredentials` returns `{}`. `logout` is a no-op.
+ * Do not `mkdir(null)`. Keep reading the Grok CLI cache at
+ * `~/.grok/auth.json` (that is not this store).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -14,14 +32,24 @@ import crypto from "node:crypto";
 import http from "node:http";
 import { URL } from "node:url";
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function credentialsPath(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "credentials.json") : null;
+}
+
 function credPath(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "credentials.json");
+  return credentialsPath(cfg);
 }
 
 export async function loadCredentials(cfg) {
+  const fp = credPath(cfg);
+  if (!fp) return {};
   try {
-    return JSON.parse(await fs.readFile(credPath(cfg), "utf8"));
+    return JSON.parse(await fs.readFile(fp, "utf8"));
   } catch {
     return {};
   }
@@ -29,6 +57,7 @@ export async function loadCredentials(cfg) {
 
 export async function saveCredentials(cfg, data) {
   const fp = credPath(cfg);
+  if (!fp) return null;
   await fs.mkdir(path.dirname(fp), { recursive: true });
   await fs.writeFile(fp, JSON.stringify(data, null, 2), { mode: 0o600 });
   try {
@@ -40,12 +69,14 @@ export async function saveCredentials(cfg, data) {
 }
 
 async function readCredentialsOrNull(cfg) {
+  const fp = credPath(cfg);
+  if (!fp) return null;
   try {
-    return JSON.parse(await fs.readFile(credPath(cfg), "utf8"));
+    return JSON.parse(await fs.readFile(fp, "utf8"));
   } catch (e) {
     if (e && e.code === "ENOENT") return null;
     try {
-      await fs.access(credPath(cfg));
+      await fs.access(fp);
       return {};
     } catch {
       return null;
@@ -133,8 +164,10 @@ export async function loginWithApiKey(cfg, apiKey) {
 }
 
 export async function logout(cfg) {
+  const fp = credPath(cfg);
+  if (!fp) return { ok: true };
   try {
-    await fs.unlink(credPath(cfg));
+    await fs.unlink(fp);
   } catch {
     /* */
   }

@@ -1,3 +1,28 @@
+## 3.537.0
+
+### xAI credentials follow paths.configDir
+
+`credPath()` resolved `~/.xclaw/credentials.json` from
+`os.homedir()` while production writers (`saveCredentials(cfg)` via
+`loginWithApiKey(cfg)` at auth/profiles.mjs and cli/auth-legacy-cli.mjs;
+`loginWithOAuth(cfg)` at cli/auth-legacy-cli.mjs and
+cli/providers-cli.mjs; `refreshOAuthToken(cfg)` from resolveXaiToken)
+already had cfg in scope. `loadConfig()` stamps `paths.configDir`
+unconditionally, so the resolver still homed via the leftover
+`os.homedir()` fallback. Two instances on one host with different
+`paths.configDir` shared one credentials.json; the suite wrote the
+operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.536.0 `missions/`. Honour existing `XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `saveCredentials` still returns `null` without persisting (do not
+  `mkdir(null)`). `loadCredentials` returns `{}`. `logout` is a no-op.
+  Production writers always have configDir, so live persist is not
+  dropped. Keep reading the Grok CLI cache at `~/.grok/auth.json`.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.536.0
 
 ### Missions follow paths.configDir
