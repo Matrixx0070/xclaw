@@ -8,22 +8,42 @@
  *
  * Reuses the PKCE primitives from the provider OAuth engine — same machinery
  * that runs the Anthropic/xAI logins.
+ *
+ * mcp-oauth.json belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * grant store, so instance B's MCP servers used instance A's tokens —
+ * and the suite wrote into the operator's real `~/.xclaw/mcp-oauth.json`.
+ *
+ * Production writers (`storeMcpGrant(cfg)` / `dropMcpGrant(cfg)` at
+ * gateway/routes/mcp.mjs completeOAuthFlow / DELETE /mcp/oauth) already
+ * had cfg in scope. `loadConfig()` stamps `paths.configDir`
+ * unconditionally (config/load.mjs:187), so a cfg without one is never a
+ * real caller. Such a path is `null` rather than guessing at the home
+ * dir. Same shape as `lastDrainPath`. Honour existing `XCLAW_CONFIG_DIR`.
+ * `saveMcpOAuthStore` no-ops a null path (do not `mkdir(null)` /
+ * `path.dirname(null)`). `loadMcpOAuthStore` returns `{}`.
  */
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { pkcePair, randomOAuthState } from "../auth/anthropic-oauth.mjs";
 
 const STORE_FILE = "mcp-oauth.json";
 
-function storePath(cfg = {}) {
-  const dir = cfg.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(dir, STORE_FILE);
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function storePath(cfg = {}) {
+  const dir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return dir ? path.join(dir, STORE_FILE) : null;
 }
 
 export function loadMcpOAuthStore(cfg = {}) {
+  const p = storePath(cfg);
+  if (!p) return {};
   try {
-    return JSON.parse(fs.readFileSync(storePath(cfg), "utf8"));
+    return JSON.parse(fs.readFileSync(p, "utf8"));
   } catch {
     return {};
   }
@@ -31,6 +51,7 @@ export function loadMcpOAuthStore(cfg = {}) {
 
 export function saveMcpOAuthStore(cfg, store) {
   const p = storePath(cfg);
+  if (!p) return;
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, JSON.stringify(store, null, 2), { mode: 0o600 });
   try {

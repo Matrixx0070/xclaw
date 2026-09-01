@@ -1,3 +1,25 @@
+## 3.522.0
+
+### MCP OAuth store follows paths.configDir
+
+`storePath()` resolved `~/.xclaw/mcp-oauth.json` from
+`os.homedir()` while production writers (`storeMcpGrant(cfg)` /
+`dropMcpGrant(cfg)` at gateway/routes/mcp.mjs completeOAuthFlow /
+DELETE /mcp/oauth) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via
+the leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one mcp-oauth.json; the suite wrote
+the operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.521.0 `last-drain.json`. Honour existing `XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `saveMcpOAuthStore` no-ops a null path (do not `mkdir(null)` /
+  `path.dirname(null)`). `loadMcpOAuthStore` returns `{}`. Production
+  writers always have configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.521.0
 
 ### Last drain follows paths.configDir
