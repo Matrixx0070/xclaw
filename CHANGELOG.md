@@ -1,3 +1,31 @@
+## 3.495.0
+
+### Completing-segment done does not overwrite a stop that landed on disk
+
+`/objective stop` and `POST /objectives/:id/stop` set a disk flag
+(`stopRequested`); they do not change `status`. Loop-top already
+re-read the flag between segments. A completing segment (natural
+`done`, verifier `runSegment`, deterministic verify gate, crash →
+`interrupted`) saved `status=done` / `interrupted` without checking
+the flag — same class as queue cancel overwritten by a long-running
+writer. Channel copy says halt at the next segment boundary with
+state preserved; a done save is not that halt.
+
+- `honorStopIfRequested` re-reads disk, copies the flag, stamps
+  `stopped`, saves. Merge this segment's state first so a stop
+  preserves progress.
+- Called at loop-top, after every segment (before any done path),
+  after `runDeterministicChecks`, after the verifier `runSegment`,
+  and on the crash path before `interrupted`.
+- Gate returns `"stopped"`; all four done-path callers return on it.
+- Pin: stop during a completing natural-stop/`done` segment →
+  `stopped` not `done`, progress preserved. Stop during a crash →
+  `stopped` not `interrupted`. Existing continue-segment pin stays.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.494.0
 
 ### Telegram writer-lock touch does not overwrite a stolen lock

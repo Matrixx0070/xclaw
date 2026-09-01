@@ -577,13 +577,37 @@ async function runObjectiveInner(cfg, opts = {}) {
     ? `The owner answered your question: "${pendingAnswer.slice(0, 500)}". Incorporate it and continue.`
     : null;
 
+  // Same class as queue settleAfterRun: a /objective stop lands on DISK
+  // while a segment / verify gate / verifier runs. Re-read before any
+  // terminal write so a completing-segment `done` cannot overwrite it.
+  async function honorStopIfRequested() {
+    try {
+      const onDisk = await loadObjective(cfg, obj.id);
+      if (onDisk?.stopRequested) obj.stopRequested = true;
+    } catch {
+      /* best-effort re-read; in-memory flag still counts */
+    }
+    if (!obj.stopRequested) return null;
+    obj.status = "stopped";
+    await saveObjective(cfg, obj);
+    ledgerEvent(cfg, obj, "objective_stopped", {});
+    await notify(
+      `🛑 Mission ${obj.id} stopped at your request. State is preserved — /objective resume to continue.`,
+      { kind: "stopped" }
+    );
+    return { status: obj.status, id: obj.id, objective: obj };
+  }
+
   /**
    * E-A: every done-path calls this before completing. Returns null when the
    * mission may close (verdict recorded), "continue" when a deterministic
-   * failure was fed back as a directive, "escalated" when the cap is spent.
+   * failure was fed back as a directive, "escalated" when the cap is spent,
+   * "stopped" when the operator halted during the unbounded verify checks.
    */
   const deterministicGate = async (fallbackVerdict, { finalAnswer = null } = {}) => {
     const gate = await runDeterministicChecks(obj);
+    const haltedGate = await honorStopIfRequested();
+    if (haltedGate) return "stopped";
     if (gate.ok) {
       const checks = Array.isArray(obj.verify) ? obj.verify : [];
       // "Trusted" = operator-provided (api / no source stamp) or
@@ -677,14 +701,8 @@ async function runObjectiveInner(cfg, opts = {}) {
       await saveObjective(cfg, obj);
       return { status: obj.status, id: obj.id, objective: obj };
     }
-    const fresh = await loadObjective(cfg, obj.id);
-    if (obj.stopRequested || fresh?.stopRequested) {
-      obj.status = "stopped";
-      await saveObjective(cfg, obj);
-      ledgerEvent(cfg, obj, "objective_stopped", {});
-      await notify(`🛑 Mission ${obj.id} stopped at your request. State is preserved — /objective resume to continue.`, { kind: "stopped" });
-      return { status: obj.status, id: obj.id, objective: obj };
-    }
+    const haltedTop = await honorStopIfRequested();
+    if (haltedTop) return haltedTop;
     if (obj.totals.segments >= maxSegments) {
       obj.status = "paused_budget";
       await saveObjective(cfg, obj);
@@ -750,6 +768,8 @@ async function runObjectiveInner(cfg, opts = {}) {
         error: String(e?.message || e).slice(0, 300),
         recovery: ctr.recoveries < RECOVERY_CAP ? "retrying segment" : "paused for operator",
       });
+      const haltedCrash = await honorStopIfRequested();
+      if (haltedCrash) return haltedCrash;
       if (ctr.recoveries < RECOVERY_CAP) {
         ctr.recoveries += 1;
         await saveObjective(cfg, obj);
@@ -763,15 +783,6 @@ async function runObjectiveInner(cfg, opts = {}) {
     }
 
     obj.inFlightSegment = null;
-    // A /objective stop lands on DISK while the segment runs — our in-memory
-    // copy would clobber it on the next save (the automations lost-update
-    // class). Re-sync the flag before any post-segment save.
-    try {
-      const onDisk = await loadObjective(cfg, obj.id);
-      if (onDisk?.stopRequested) obj.stopRequested = true;
-    } catch {
-      /* best-effort */
-    }
 
     const text = String(seg?.text || "");
     const update = parseStateBlock(text);
@@ -792,7 +803,15 @@ async function runObjectiveInner(cfg, opts = {}) {
     if (update) {
       mergeStateUpdate(obj, update);
       ctr.missingStateRetries = 0;
-    } else {
+    }
+    // Merge first so a stop preserves this segment's work, then halt. A
+    // completing-segment `done` used to save after this copy without
+    // checking the flag — same class as queue cancel overwritten by a
+    // long-running writer.
+    const haltedSeg = await honorStopIfRequested();
+    if (haltedSeg) return haltedSeg;
+
+    if (!update) {
       // No parseable state block. Distinguish the model CHOOSING to end its
       // turn (stopReason "natural"/"hook") from the runtime CUTTING IT OFF
       // ("maxTurns"/"budget"/"guard"). A natural stop with a substantive
@@ -827,7 +846,7 @@ async function runObjectiveInner(cfg, opts = {}) {
               "(no final prose — completion earned by deterministic verify checks)",
           });
           if (g === "continue") continue;
-          if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
+          if (g === "escalated" || g === "stopped") return { status: obj.status, id: obj.id, objective: obj };
         }
         obj.status = "done";
         obj.finalAnswer = (prose || "(deterministic verify checks passed)").slice(0, 12000);
@@ -878,7 +897,7 @@ async function runObjectiveInner(cfg, opts = {}) {
               "(no final prose — completion earned by deterministic verify checks)",
           });
           if (g === "continue") continue;
-          if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
+          if (g === "escalated" || g === "stopped") return { status: obj.status, id: obj.id, objective: obj };
         }
         obj.status = "done";
         obj.finalAnswer = (prose || "(deterministic verify checks passed)").slice(0, 12000);
@@ -930,6 +949,10 @@ ${(prose || "(empty)").slice(0, 1200)}
             objectiveId: obj.id,
             segment: n + 1,
           });
+          // Stop can land during this unbounded verify segment, which is AFTER
+          // the post-segment halt. Re-read before any done / continue save.
+          const haltedVerify = await honorStopIfRequested();
+          if (haltedVerify) return haltedVerify;
           const vText = vSeg?.text || "";
           const vUpdate = parseStateBlock(vText);
           obj.totals.segments += 1;
@@ -948,7 +971,7 @@ ${(prose || "(empty)").slice(0, 1200)}
                 finalAnswer: prose || stripStateBlocks(vText).trim() || "Verified complete.",
               });
               if (g === "continue") continue;
-              if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
+              if (g === "escalated" || g === "stopped") return { status: obj.status, id: obj.id, objective: obj };
             }
             obj.status = "done";
             obj.finalAnswer =
@@ -997,7 +1020,12 @@ ${missing || JSON.stringify(vUpdate).slice(0, 800)}`;
       }
       // Genuine cutoff (maxTurns/budget/guard) or empty output → pause
       // resumable, with the model's actual answer surfaced (never a bare
-      // "lost state" error).
+      // "lost state" error). Stop can land while a throwing verifier
+      // runs — that path never reached haltedVerify.
+      {
+        const haltedCutoff = await honorStopIfRequested();
+        if (haltedCutoff) return haltedCutoff;
+      }
       obj.status = "awaiting_human";
       if (prose) obj.finalAnswer = (prose || "(deterministic verify checks passed)").slice(0, 12000);
       obj.humanQuestion =
@@ -1082,7 +1110,7 @@ ${missing || JSON.stringify(vUpdate).slice(0, 800)}`;
       {
         const g = await deterministicGate("unverified", { finalAnswer: stripStateBlocks(text) });
         if (g === "continue") continue;
-        if (g === "escalated") return { status: obj.status, id: obj.id, objective: obj };
+        if (g === "escalated" || g === "stopped") return { status: obj.status, id: obj.id, objective: obj };
       }
       obj.status = "done";
       obj.finalAnswer = stripStateBlocks(text).slice(0, 12000) || "(mission complete)";

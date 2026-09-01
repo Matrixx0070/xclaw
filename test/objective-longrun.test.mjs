@@ -391,6 +391,65 @@ describe("long-run orchestrator — the 20-30-tool-call failure, reproduced and 
     await fs.rm(cfg._dir, { recursive: true, force: true });
   });
 
+  it("stop during a completing done segment does not stamp done", async () => {
+    // Same class as queue cancel overwritten by a long-running writer:
+    // POST /objectives/:id/stop lands on disk while the completing segment
+    // runs; the done save must not overwrite the flag. cfgTmp has
+    // requireChecked:false so the gate will not hold-for-human.
+    const cfg = await cfgTmp();
+    let calls = 0;
+    let id;
+    const out = await runObjective(cfg, {
+      objective: "x",
+      runSegment: async (a) => {
+        id = a.objectiveId;
+        calls += 1;
+        const o = await loadObjective(cfg, id);
+        o.stopRequested = true;
+        await saveObjective(cfg, o);
+        return {
+          text: block({ status: "done", progress: ["finished the work"] }),
+          turns: 3,
+          toolTrace: fakeTrace(2),
+          stopReason: "natural",
+        };
+      },
+    });
+    assert.equal(out.status, "stopped", "completing-segment done overwrote stop");
+    assert.equal(calls, 1);
+    const saved = await loadObjective(cfg, out.id);
+    assert.equal(saved.status, "stopped");
+    assert.equal(saved.stopRequested, true);
+    assert.ok(
+      saved.progress.includes("finished the work"),
+      "stop must preserve this segment's progress"
+    );
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+  });
+
+  it("stop during a crashing segment does not stamp interrupted", async () => {
+    const cfg = await cfgTmp();
+    let calls = 0;
+    let id;
+    const out = await runObjective(cfg, {
+      objective: "x",
+      notify: async () => {},
+      runSegment: async (a) => {
+        id = a.objectiveId;
+        calls += 1;
+        const o = await loadObjective(cfg, id);
+        o.stopRequested = true;
+        await saveObjective(cfg, o);
+        throw new Error("provider melted");
+      },
+    });
+    assert.equal(out.status, "stopped", "crash path stamped interrupted over stop");
+    assert.equal(calls, 1, "stop must halt before the recovery retry");
+    const saved = await loadObjective(cfg, out.id);
+    assert.equal(saved.status, "stopped");
+    await fs.rm(cfg._dir, { recursive: true, force: true });
+  });
+
   it("interrupted objective resumes with a reconcile directive", async () => {
     const cfg = await cfgTmp();
     const obj = newObjective({ objective: "long thing" });
