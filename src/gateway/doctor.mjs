@@ -148,7 +148,7 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
   }
 
 // pairing
-  const pairing = createPairingStore({});
+  const pairing = createPairingStore({ cfg });
   const tgP = pairing.listPending("telegram").length;
   const tgA = pairing.listApproved("telegram").length;
   const dcP = pairing.listPending("discord").length;

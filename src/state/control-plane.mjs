@@ -6,8 +6,8 @@
  * current-version file that is missing a stable table, migrate v1 → v2 by
  * CREATE TABLE IF NOT EXISTS only (never DROP a populated table to "fix"
  * a mismatch). Absorb of pairing.json is explicit and is NOT run from open
- * — live telegram/discord still read ~/.xclaw/pairing.json through
- * createPairingStore. First-open of a missing file takes the same exclusive
+ * — live telegram/discord still read pairing.json through
+ * createPairingStore (paths.pairingFile / paths.configDir). First-open of a missing file takes the same exclusive
  * coordinator as cron import (spec §11.24) then drops it before the kit
  * open — BEGIN EXCLUSIVE on the coordinator handle blocks a second
  * DatabaseSync. After the file exists, later opens skip the lock. Delivery
@@ -24,6 +24,7 @@ import { tryTakeExclusiveLock } from "../persist/engine-load.mjs";
 import { isSqlCorruptionError } from "../persist/atomic-work.mjs";
 import { quarantineSqlFile, refuseNotADatabase } from "../persist/sql-quarantine.mjs";
 import { addColumnIfMissing } from "../persist/add-column.mjs";
+import { resolvePairingStorePath } from "../pairing/pairing-store.mjs";
 
 export const CONTROL_SCHEMA_VERSION = 2;
 
@@ -172,11 +173,10 @@ export function controlPlaneFile(cfg) {
 }
 
 export function pairingJsonFile(cfg) {
-  return (
-    cfg?.paths?.pairingFile ||
-    process.env.XCLAW_PAIRING_FILE ||
-    path.join(os.homedir(), ".xclaw", "pairing.json")
-  );
+  // Same resolver as createPairingStore. Two resolvers that disagreed
+  // meant doctor-fix absorb missed the live file (or absorbed the
+  // operator's). No home fallback — loadConfig stamps paths.configDir.
+  return resolvePairingStorePath(cfg);
 }
 
 export function readSchemaVersion(db, key = "control") {

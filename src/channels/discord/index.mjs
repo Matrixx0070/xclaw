@@ -36,7 +36,7 @@ export function createDiscordChannel(cfg) {
   const policy = createChannelPolicy(cfg);
   const dmPolicy = conf.dmPolicy || "pairing";
   const rateLimiter = createRateLimiter(conf.rateLimit || cfg.channels?.rateLimit || {});
-    const pairing = createPairingStore({ storePath: conf.pairingStorePath });
+    const pairing = createPairingStore({ storePath: conf.pairingStorePath, cfg });
   let messagesHandled = 0;
   let lastError = null;
   let lastOkAt = null;

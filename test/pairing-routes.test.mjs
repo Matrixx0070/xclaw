@@ -10,13 +10,17 @@ import os from "node:os";
 // dispatches both /security/* AND /pairing/* to that module.
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "xclaw-pairing-"));
 const SAVED_HOME = process.env.HOME;
+const SAVED_PAIRING_FILE = process.env.XCLAW_PAIRING_FILE;
 process.env.HOME = TMP;
+delete process.env.XCLAW_PAIRING_FILE;
 
 const { tryHandleSecurityRoute } = await import("../src/gateway/routes/security.mjs");
 const { createPairingStore } = await import("../src/pairing/pairing-store.mjs");
 
 after(() => {
   process.env.HOME = SAVED_HOME;
+  if (SAVED_PAIRING_FILE === undefined) delete process.env.XCLAW_PAIRING_FILE;
+  else process.env.XCLAW_PAIRING_FILE = SAVED_PAIRING_FILE;
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
@@ -26,7 +30,7 @@ function call(p, method, body) {
     p, method,
     req: { headers: {}, url: p + (method === "GET" ? "?channel=telegram" : "") },
     res: {},
-    cfg: {},
+    cfg: { paths: { configDir: TMP } },
     approvalGate: null,
     json: (_r, c, payload) => { status = c; out = payload; },
     readBody: async () => body || {},
@@ -43,7 +47,7 @@ describe("pairing routes", () => {
   });
 
   it("approve → listed as approved → revoke removes", async () => {
-    const store = createPairingStore({});
+    const store = createPairingStore({ cfg: { paths: { configDir: TMP } } });
     const req = store.upsertPairingRequest({ channel: "telegram", id: "555", meta: {} });
     assert.ok(req.code);
 

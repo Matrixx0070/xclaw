@@ -1,3 +1,33 @@
+## 3.507.0
+
+### Pairing store follows paths.configDir
+
+`defaultStorePath()` resolved `~/.xclaw/pairing.json` from `os.homedir()`
+while production `createPairingStore({})` at gateway boot, security
+pairing routes (recreate per request — the file is the only shared
+state), doctor, and CLI already had cfg in scope and did not thread it.
+Two instances on one host shared a single pairing.json; the suite wrote
+the operator's real `~/.xclaw/pairing.json`. Same class as v3.297.0
+`alert-state.json` and v3.506.0 PagerDuty webhook history.
+
+- Honour `opts.storePath` then `paths.pairingFile` then
+  `XCLAW_PAIRING_FILE` then `paths.configDir`. No configDir → in-memory
+  only, `storePath: null`. No home fallback.
+- `pairingJsonFile` is the same resolver so doctor-fix absorb cannot
+  miss the live file. `absorbPairingJson` already no-ops a null path.
+- Gateway boot, security pairing routes, doctor, CLI (`loadConfig`),
+  telegram, and discord thread cfg. Empty `storePath` still lands in
+  configDir.
+- Pin: configDir write never touches home; explicit pairingFile wins;
+  opts.storePath wins over both; no-configDir names no file and never
+  writes home. Existing approve/revoke/404 pins stay. Route test now
+  passes `paths.configDir`.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`. Sessions / usage-tracker homedir remainders
+are siblings, not this slice.
+
 ## 3.506.0
 
 ### PagerDuty webhook history follows paths.configDir

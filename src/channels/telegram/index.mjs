@@ -97,6 +97,7 @@ export function createTelegramChannel(cfg) {
   const rateLimiter = createRateLimiter(conf.rateLimit || cfg.channels?.rateLimit || {});
   const pairing = createPairingStore({
     storePath: conf.pairingStorePath,
+    cfg,
   });
 
   /** poll (default) | webhook */

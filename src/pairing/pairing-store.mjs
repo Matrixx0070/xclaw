@@ -5,15 +5,40 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import os from "node:os";
 
 export const CHANNEL_PAIRING_PENDING_TTL_MS = 60 * 60 * 1000;
 export const CHANNEL_PAIRING_PENDING_MAX = 3;
 const PAIRING_CODE_LENGTH = 8;
 const PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-function defaultStorePath() {
-  return path.join(os.homedir(), ".xclaw", "pairing.json");
+/**
+ * Pairing.json belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * pairing.json, so instance B's approve/revoke mixed with instance A's —
+ * and the suite wrote into the operator's real `~/.xclaw/pairing.json`.
+ * `test/pairing-routes.test.mjs` HOME-overrode because of this — that
+ * override is evidence of the leak, not a fix.
+ *
+ * Production `createPairingStore({})` at gateway boot, security pairing
+ * routes (recreate per request — the file is the only shared state),
+ * doctor, and CLI already had cfg in scope and did not thread it.
+ * Telegram/Discord already pass `storePath`; an undefined storePath still
+ * fell through to home.
+ *
+ * `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller.
+ * Such a store stays in memory and reports `storePath: null` rather than
+ * guessing at the home dir. Same shape as `defaultStatePath` in
+ * alerts.mjs. Explicit `paths.pairingFile` / `XCLAW_PAIRING_FILE` /
+ * `opts.storePath` still win.
+ */
+export function resolvePairingStorePath(cfg) {
+  const explicit = cfg?.paths?.pairingFile;
+  if (typeof explicit === "string" && explicit) return explicit;
+  if (process.env.XCLAW_PAIRING_FILE) return process.env.XCLAW_PAIRING_FILE;
+  const dir = cfg?.paths?.configDir;
+  return dir ? path.join(dir, "pairing.json") : null;
 }
 
 function generateCode() {
@@ -26,15 +51,21 @@ function generateCode() {
   return code;
 }
 
+function emptyState() {
+  return { channels: {} };
+}
+
 function loadState(storePath) {
+  if (!storePath) return emptyState();
   try {
     return JSON.parse(fs.readFileSync(storePath, "utf8"));
   } catch {
-    return { channels: {} };
+    return emptyState();
   }
 }
 
 function saveState(storePath, state) {
+  if (!storePath) return;
   fs.mkdirSync(path.dirname(storePath), { recursive: true });
   fs.writeFileSync(storePath, JSON.stringify(state, null, 2));
 }
@@ -57,16 +88,27 @@ function prune(pending, nowMs) {
 
 /**
  * Create pairing store.
- * @param {{ storePath?: string }} opts
+ * @param {{ storePath?: string, cfg?: object }} opts
  */
 export function createPairingStore(opts = {}) {
-  const storePath = opts.storePath || defaultStorePath();
+  const storePath =
+    (typeof opts.storePath === "string" && opts.storePath) ||
+    resolvePairingStorePath(opts.cfg || opts);
+  // No file to own it: keep the snapshot on this instance. A second
+  // createPairingStore({}) does not share state — that is the point of
+  // refusing the home fallback. Production callers always have configDir.
+  let memory = emptyState();
 
   function read() {
+    if (!storePath) return memory;
     return loadState(storePath);
   }
 
   function write(state) {
+    if (!storePath) {
+      memory = state;
+      return;
+    }
     saveState(storePath, state);
   }
 

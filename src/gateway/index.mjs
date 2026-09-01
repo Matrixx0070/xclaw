@@ -1262,7 +1262,7 @@ export async function startGateway({ root, harness = false } = {}) {
   const approvalGate = resetSharedApprovalGate(cfg);
   const mcpClient = createMcpClient({ getServers: () => cfg.mcp?.servers || [], cfg });
   const mcpServer = createMcpServer({ cfg });
-  const pairingStore = createPairingStore({});
+  const pairingStore = createPairingStore({ cfg });
   const gatewayAuth = createGatewayAuth(cfg);
   resetSharedAlerter(cfg);
 

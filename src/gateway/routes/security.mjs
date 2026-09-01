@@ -35,13 +35,15 @@ export async function tryHandleSecurityRoute({
 }) {
   // Channel pairing (the control UI's Pairing panel called these since it
   // shipped — the routes never existed; 5th dead-route family found by the
-  // endpoint sweep). The store is file-backed (~/.xclaw), so this instance
-  // shares state with the channels' own pairing flows.
+  // endpoint sweep). The store is file-backed under paths.configDir /
+  // paths.pairingFile, so this instance shares state with the channels'
+  // own pairing flows. Recreated per request — the file is the only
+  // shared state. Empty opts plus HOME-override was the leak.
   if (p === "/pairing/pending" && method === "GET") {
     const url = new URL(req.url || p, "http://local");
     const channel = url.searchParams.get("channel") || "telegram";
     const { createPairingStore } = await import("../../pairing/pairing-store.mjs");
-    const store = createPairingStore({});
+    const store = createPairingStore({ cfg });
     json(res, 200, {
       ok: true,
       channel,
@@ -57,7 +59,7 @@ export async function tryHandleSecurityRoute({
       return true;
     }
     const { createPairingStore } = await import("../../pairing/pairing-store.mjs");
-    const out = createPairingStore({}).approve(body.channel, String(body.code));
+    const out = createPairingStore({ cfg }).approve(body.channel, String(body.code));
     json(res, out.ok ? 200 : 404, out);
     return true;
   }
@@ -68,7 +70,7 @@ export async function tryHandleSecurityRoute({
       return true;
     }
     const { createPairingStore } = await import("../../pairing/pairing-store.mjs");
-    json(res, 200, createPairingStore({}).revoke(body.channel, String(body.senderId)));
+    json(res, 200, createPairingStore({ cfg }).revoke(body.channel, String(body.senderId)));
     return true;
   }
 

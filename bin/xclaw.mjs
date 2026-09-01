@@ -1240,8 +1240,10 @@ Enable with seats.enabled: true in config`);
     }
 
     case "pairing": {
+      const { loadConfig } = await import("../src/config/load.mjs");
       const { createPairingStore } = await import("../src/pairing/pairing-store.mjs");
-      const store = createPairingStore({});
+      const cfg = await loadConfig();
+      const store = createPairingStore({ cfg });
       const sub = args[1];
       if (sub === "list") {
         const ch = args[2] || "telegram";
