@@ -1871,3 +1871,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/queue-config-dir.test.mjs test/job-queue.test.mjs test/queue-abandon.test.mjs test/queue-cancel.test.mjs test/queue-priority.test.mjs test/queue-enqueue-fields.test.mjs test/queue-cli-owner.test.mjs test/queue-clip-census.test.mjs test/queue-depth-count.test.mjs test/queue-governor-release.test.mjs test/queue-pause.test.mjs test/queue-retry.test.mjs test/queue-stats.test.mjs test/admission-bound-race.test.mjs test/batch-queue.test.mjs test/shutdown.test.mjs → # tests 85 # pass 85 # fail 0 # duration_ms 2090.805693; npm test (hermetic) → # tests 5252 # pass 5252 # fail 0 # duration_ms 78394.461867
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.
+
+## 2026-09-01 — 3.527.0 Job history follows paths.configDir
+
+LOCKED: `src/jobs/history.mjs` `jobsDir` still homed while production writers `recordJob(cfg)` at jobs/job.mjs:383 and jobs/queue.mjs:464 already had cfg. Same class as v3.297.0 / v3.526.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `jobs/`; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Did not rewrite slim/receipt/hash/quota.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `ensureJobsDir` no-ops a null path (do not `mkdir(null)`). `listJobs` returns `[]`. `recordJob` still stamps the in-memory job without persisting. `getJob` returns null. Production writers always have configDir, so live persist is not dropped. Removed `os` import.
+
+RAN: node --test test/jobs-history-config-dir.test.mjs test/jobs-history.test.mjs test/history-receipt-metrics.test.mjs test/history-stamp-receipt.test.mjs test/job-history-hash.test.mjs test/quota-hard-circuit-history.test.mjs test/quota-hard-circuit-receipt.test.mjs test/stamp-job-tool-hash.test.mjs test/doctor-receipt-metrics.test.mjs → # tests 19 # pass 19 # fail 0 # duration_ms 174.321929; npm test (hermetic) → # tests 5257 # pass 5257 # fail 0 # duration_ms 78368.537796
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.

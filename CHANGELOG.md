@@ -1,3 +1,26 @@
+## 3.527.0
+
+### Job history follows paths.configDir
+
+`jobsDir()` resolved `~/.xclaw/jobs` from
+`os.homedir()` while production writers (`recordJob(cfg)`
+at jobs/job.mjs and jobs/queue.mjs) already had cfg
+in scope. `loadConfig()` stamps `paths.configDir` unconditionally,
+so the resolver still homed via the leftover `os.homedir()` fallback.
+Two instances on one host with different `paths.configDir` shared one
+history; the suite wrote the operator's real `~/.xclaw`. Same class as
+v3.297.0 `alert-state.json` and v3.526.0 `job-queue`. Honour
+existing `XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `ensureJobsDir` no-ops a null path (do not `mkdir(null)`). `listJobs`
+  returns `[]`. `recordJob` still stamps the in-memory job without
+  persisting. `getJob` returns null. Production writers always have
+  configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.526.0
 
 ### Job queue follows paths.configDir

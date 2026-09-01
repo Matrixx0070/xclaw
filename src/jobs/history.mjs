@@ -1,21 +1,40 @@
 /**
- * Persistent job history under ~/.xclaw/jobs/
+ * Persistent job history under <configDir>/jobs/.
+ *
+ * jobs/ belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * history, so instance B listed instance A's jobs — and the suite wrote
+ * into the operator's real `~/.xclaw/jobs/`.
+ *
+ * Production writers (`recordJob(cfg)` at jobs/job.mjs and jobs/queue.mjs)
+ * already had cfg in scope. `loadConfig()` stamps `paths.configDir`
+ * unconditionally (config/load.mjs:187), so a cfg without one is never a
+ * real caller. Such a path is `null` rather than guessing at the home dir.
+ * Same shape as `queueDir`. Honour existing `XCLAW_CONFIG_DIR`.
+ * `ensureJobsDir` no-ops a null path (do not `mkdir(null)`). `listJobs`
+ * returns `[]`. `recordJob` still stamps the in-memory job without
+ * persisting. `getJob` returns null.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { buildToolHashChain } from "../agent/tool-hash-chain.mjs";
 import { buildReceiptMetrics, stampReceiptMetrics } from "./receipt-metrics.mjs";
 import { ensureQuotaHardCircuitOnJob } from "./receipt-collector.mjs";
 import { mergeReceiptSnapshotIntoJob } from "./history-receipt.mjs";
 
-export function jobsDir(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "jobs");
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function jobsDir(cfg = {}) {
+  const dir = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return dir ? path.join(dir, "jobs") : null;
 }
 
 export async function ensureJobsDir(cfg) {
   const dir = jobsDir(cfg);
+  if (!dir) return null;
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
@@ -66,6 +85,7 @@ export async function recordJob(cfg, job) {
   slim.toolHashVersion = chain.version;
   job.toolHashTip = chain.tip;
   job.toolHashVersion = chain.version;
+  if (!dir) return { path: null, slim };
   const fp = path.join(dir, `${job.id}.json`);
   await fs.writeFile(fp, JSON.stringify({ ...slim, evidence: job.evidence || [], verify: job.verify || null }, null, 2));
   const indexPath = path.join(dir, "index.jsonl");
@@ -79,6 +99,7 @@ export async function recordJob(cfg, job) {
  */
 export async function listJobs(cfg, opts = {}) {
   const dir = await ensureJobsDir(cfg);
+  if (!dir) return [];
   const indexPath = path.join(dir, "index.jsonl");
   let lines = [];
   try {
@@ -105,6 +126,7 @@ export async function listJobs(cfg, opts = {}) {
 
 export async function getJob(cfg, id) {
   const dir = await ensureJobsDir(cfg);
+  if (!dir) return null;
   const fp = path.join(dir, `${id}.json`);
   try {
     return JSON.parse(await fs.readFile(fp, "utf8"));
