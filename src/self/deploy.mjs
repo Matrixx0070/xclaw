@@ -184,6 +184,30 @@ export function isActionableIntent(intent) {
 }
 
 /**
+ * Same class as queue settleAfterRun: `requestDeploy` (gateway, on self-mission
+ * merge) replaces ~/.xclaw/self-deploy.json while `runDeployOnce` is inside
+ * unbounded `restartGateway` / `healthOk`. The in-memory intent's terminal
+ * write must not wipe the newer pending deploy — and must not
+ * `git reset --hard` a merge that landed while we were polling.
+ *
+ * Identity is missionId (and mergeCommit when both sides have one).
+ * Missing file → do not resurrect. Different mission → leave it.
+ */
+export function settleAfterDeploy(held, onDisk) {
+  if (!onDisk) return null;
+  if (!held) return null;
+  if (onDisk.missionId !== held.missionId) return null;
+  if (
+    held.mergeCommit &&
+    onDisk.mergeCommit &&
+    onDisk.mergeCommit !== held.mergeCommit
+  ) {
+    return null;
+  }
+  return held;
+}
+
+/**
  * Should the rollback rescue uncommitted work before `git reset --hard`?
  *
  * Only when `git status` actually RAN. Grading the output alone treats git's
@@ -238,6 +262,25 @@ export async function runDeployOnce(cfg) {
   const health = await healthOk(cfg, cfg.self?.health || {}, intent.mergeCommit);
   intent.healthChecks = health.checks.slice(-10);
 
+  // Re-read before any terminal write or git reset. requestDeploy can replace
+  // the slot while restart/health run; writing healthy/rolled_back over a
+  // newer pending deploy (or resetting that merge) is the same class as
+  // queue cancel overwritten by a long-running writer.
+  const settled = settleAfterDeploy(intent, await readIntent(cfg));
+  if (!settled) {
+    // Slot is a different mission (or gone). Do not write, do not
+    // markKnownGood (would rewind HEAD's known-good past a newer merge),
+    // do not git reset. The old mission can still be noted if health passed.
+    if (health.ok) {
+      await markMission(cfg, intent.missionId, "deployed", `deployed ${String(intent.mergeCommit).slice(0, 10)} — health OK (slot superseded)`);
+      ledgerDeploy(cfg, intent.missionId, { phase: "deployed", commit: intent.mergeCommit, superseded: true });
+      await alertOwner(cfg, "deployed", `mission ${intent.missionId} live on ${String(intent.mergeCommit).slice(0, 10)} — health OK`, intent);
+    } else {
+      ledgerDeploy(cfg, intent.missionId, { phase: "superseded", reason: "newer_intent" });
+    }
+    return intent;
+  }
+
   if (health.ok) {
     intent.state = "healthy";
     intent.resolvedAt = new Date().toISOString();
@@ -261,9 +304,20 @@ export async function runDeployOnce(cfg) {
   if (shouldStashBeforeReset(dirty)) {
     await runProcess("git", ["-C", intent.repoDir, "stash", "push", "-u", "-m", `xclaw-rollback-rescue ${intent.missionId}`], { timeoutMs: DEPLOY_TIMEOUT_MS, cfg });
   }
+  // status/stash are unbounded. Re-read immediately before the hard reset
+  // so a requestDeploy that landed during them is not destroyed.
+  if (!settleAfterDeploy(intent, await readIntent(cfg))) {
+    ledgerDeploy(cfg, intent.missionId, { phase: "superseded", reason: "newer_intent" });
+    return intent;
+  }
   const reset = await runProcess("git", ["-C", intent.repoDir, "reset", "--hard", target], { timeoutMs: DEPLOY_TIMEOUT_MS, cfg });
   await restartGateway(cfg);
   const health2 = await healthOk(cfg, cfg.self?.health || {}, target);
+  const settledRollback = settleAfterDeploy(intent, await readIntent(cfg));
+  if (!settledRollback) {
+    ledgerDeploy(cfg, intent.missionId, { phase: "superseded", reason: "newer_intent" });
+    return intent;
+  }
   intent.state = health2.ok ? "rolled_back" : "failed";
   intent.resolvedAt = new Date().toISOString();
   await writeIntent(cfg, intent);

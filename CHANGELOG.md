@@ -1,3 +1,33 @@
+## 3.496.0
+
+### Self-deploy does not overwrite a newer pending intent after restart/health
+
+`runDeployOnce` held the in-memory intent across unbounded `restartGateway`
+and `healthOk` (default ~30s+, live much longer) then wrote
+healthy/rolled_back without re-reading. `requestDeploy` (gateway,
+`mergeMission` for profile `self`) can replace `~/.xclaw/self-deploy.json`
+while the watcher is polling. Writing the old mission over a newer pending
+slot — or `git reset --hard` to the old prevKnownGood — is the same class
+as queue cancel overwritten by a long-running writer.
+
+- `settleAfterDeploy(held, onDisk)`: missing file → null (do not
+  resurrect); different `missionId` → null; both sides have
+  `mergeCommit` and they differ → null; else return held.
+- Re-read after first health (before any terminal write or git
+  mutation). Re-read again immediately before `git reset --hard`
+  (status/stash are unbounded). Re-read after rollback health2
+  before writing rolled_back/failed.
+- Superseded-healthy: markMission/ledger/alert for THIS mission;
+  do not write the slot; do not `markKnownGood` (would rewind
+  HEAD's known-good past a newer merge).
+- Superseded-unhealthy: ledger only; no reset.
+- Pin: concurrent `requestDeploy` during health leaves the newer
+  pending on disk. Existing A4 healthy/failed pins stay.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.495.0
 
 ### Completing-segment done does not overwrite a stop that landed on disk
