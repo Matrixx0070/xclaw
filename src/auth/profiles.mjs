@@ -294,6 +294,45 @@ function parseExpiresAtMs(expiresAt) {
   return null;
 }
 
+/**
+ * Re-read after unbounded refresh fetch. removeProfile / loginApiKey /
+ * loginToken / clearAllProfiles are concurrent writers of the same
+ * auth-profiles.json. Save of the stale whole-store snapshot must not
+ * resurrect a removed profile — or overwrite a concurrent api_key.
+ *
+ * missing heldStore → null
+ * missing onDisk → null (do not resurrect the file)
+ * missing heldStore.profiles[id] → null
+ * missing onDisk.profiles[id] → null (this profile was removed)
+ * onDisk mode is a non-oauth replacement → null
+ * else overlay heldStore.profiles[id] onto onDisk so other-profile
+ * removes / logins survive
+ */
+export function settleAfterProfileRefresh(heldStore, onDisk, profileId) {
+  if (!heldStore) return null;
+  if (!onDisk) return null;
+  if (!heldStore.profiles?.[profileId]) return null;
+  if (!onDisk.profiles?.[profileId]) return null;
+  const diskMode = onDisk.profiles[profileId].mode;
+  if (diskMode && diskMode !== "oauth") return null;
+  return {
+    ...onDisk,
+    profiles: {
+      ...onDisk.profiles,
+      [profileId]: heldStore.profiles[profileId],
+    },
+  };
+}
+
+async function persistRefreshedProfile(cfg, store, id, profile) {
+  store.profiles[id] = profile;
+  const onDisk = await loadProfiles(cfg);
+  const settled = settleAfterProfileRefresh(store, onDisk, id);
+  if (!settled) return null;
+  await saveProfiles(cfg, settled);
+  return profile;
+}
+
 export async function credentialFromProfile(cfg, profile, store, profileIdStr) {
   if (!profile) return null;
   if (profile.mode === "api_key" && profile.apiKey) {
@@ -308,6 +347,15 @@ export async function credentialFromProfile(cfg, profile, store, profileIdStr) {
       if (profile.refreshToken) {
         try {
           const refreshed = await refreshProfileOAuth(cfg, store, profileIdStr, profile);
+          if (!refreshed?.accessToken) {
+            return {
+              token: null,
+              source: `profile:${profileIdStr}`,
+              mode: "oauth",
+              profileId: profileIdStr,
+              error: "oauth token expired",
+            };
+          }
           return {
             token: refreshed.accessToken,
             source: `profile:${profileIdStr}:refresh`,
@@ -352,7 +400,7 @@ export async function credentialFromProfile(cfg, profile, store, profileIdStr) {
  * profile, which either 400'd or, combined with the expiry-check bug above,
  * never even ran).
  */
-async function refreshProfileOAuth(cfg, store, id, profile) {
+export async function refreshProfileOAuth(cfg, store, id, profile) {
   if (profile.provider === "anthropic") {
     // Lazy import: anthropic-oauth.mjs imports from this module.
     const { refreshAnthropicOAuthToken } = await import("./anthropic-oauth.mjs");
@@ -367,9 +415,7 @@ async function refreshProfileOAuth(cfg, store, id, profile) {
     if (out.refreshToken) profile.refreshToken = out.refreshToken;
     profile.expiresAt = out.expiresAt;
     profile.updatedAt = new Date().toISOString();
-    store.profiles[id] = profile;
-    await saveProfiles(cfg, store);
-    return profile;
+    return persistRefreshedProfile(cfg, store, id, profile);
   }
 
   const tokenUrl =
@@ -400,9 +446,7 @@ async function refreshProfileOAuth(cfg, store, id, profile) {
     profile.expiresAt = new Date(Date.now() + Number(tok.expires_in) * 1000).toISOString();
   }
   profile.updatedAt = new Date().toISOString();
-  store.profiles[id] = profile;
-  await saveProfiles(cfg, store);
-  return profile;
+  return persistRefreshedProfile(cfg, store, id, profile);
 }
 
 /**

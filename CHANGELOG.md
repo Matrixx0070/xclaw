@@ -1,3 +1,36 @@
+## 3.503.0
+
+### refreshProfileOAuth does not overwrite a concurrent remove
+
+`refreshProfileOAuth` held the whole `auth-profiles.json` store across
+unbounded `fetch` of the token endpoint then `saveProfiles` without
+re-reading. `removeProfile` / `loginApiKey` / `loginToken` /
+`clearAllProfiles` are concurrent writers of the same file. Writing the
+stale whole-store snapshot resurrects a removed profile or overwrites a
+concurrent `api_key`. Overlay keeps other-profile removes. Same class as
+queue cancel overwritten by a long-running writer. Sibling of 3.500.0
+`mcp-oauth.json` and 3.502.0 `credentials.json`.
+
+- `settleAfterProfileRefresh(heldStore, onDisk, profileId)`: missing
+  heldStore → null; missing onDisk → null (do not resurrect the file);
+  missing heldStore.profiles[id] → null; missing onDisk.profiles[id] →
+  null (this profile was removed); on-disk mode is a non-oauth
+  replacement → null; else overlay heldStore.profiles[id] onto onDisk so
+  other-profile removes / logins survive.
+- Re-read immediately before `saveProfiles`. Return null from refresh if
+  settle is null. `credentialFromProfile` null-guards
+  `refreshed.accessToken`. Both anthropic and generic refresh branches
+  persist through `persistRefreshedProfile`. `removeProfile` /
+  `loginApiKey` unchanged.
+- Pin: remove during a 1s token-endpoint sleep leaves the profile gone;
+  remove of a different profile during refresh of A leaves A's new
+  tokens and B gone; concurrent `loginApiKey` on the same id keeps
+  `api_key`; `clearAllProfiles` during refresh leaves the file gone.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.502.0
 
 ### refreshOAuthToken does not overwrite a concurrent logout
