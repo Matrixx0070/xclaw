@@ -1,15 +1,41 @@
 /**
  * Durable workspace memory — survives jobs across sessions.
- * Store: ~/.xclaw/memory/<workspace-hash>/events.jsonl + MEMORY.md
+ * Store: <configDir>/memory/<workspace-hash>/events.jsonl + MEMORY.md
+ *
+ * memory/ belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * memory store, so instance B recalled instance A's workspace notes —
+ * and the suite wrote into the operator's real `~/.xclaw/memory/`.
+ *
+ * Production writers (`rememberJob(cfg)` at jobs/job.mjs:388,
+ * `appendMemory(cfg)` at recall/reflection, `loadDurableMemoryFile(cfg)`
+ * at agent/loop, `pruneMemoryWorkspaces(cfg)` at ops/maintenance) already
+ * had cfg in scope. `loadConfig()` stamps `paths.configDir`
+ * unconditionally (config/load.mjs:187), so a cfg without one is never a
+ * real caller. Such a path is `null` rather than guessing at the home dir.
+ * Same shape as `jobsDir`. Honour existing `XCLAW_CONFIG_DIR`.
+ * `appendMemory` still returns the in-memory event without persisting.
+ * `listMemory` returns `[]`. `loadDurableMemoryFile` returns null.
+ * `forgetMemory` returns `{ removed: 0, kept: 0 }`. `pruneMemoryWorkspaces`
+ * returns a zero census with `reason: "no_dir"`. Do not `mkdir(null)`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import { redactEvent, redactString } from "../security/redact-secrets.mjs";
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function memoryStoreDir(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "memory") : null;
+}
+
 function baseDir(cfg) {
-  return path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "memory");
+  return memoryStoreDir(cfg);
 }
 
 export function workspaceKey(workspacePath) {
@@ -20,19 +46,19 @@ export function workspaceKey(workspacePath) {
 
 export function memoryPaths(cfg, workspacePath) {
   const { key, path: ws } = workspaceKey(workspacePath);
-  const dir = path.join(baseDir(cfg), key);
+  const root = baseDir(cfg);
+  const dir = root ? path.join(root, key) : null;
   return {
     key,
     workspace: ws,
     dir,
-    jsonl: path.join(dir, "events.jsonl"),
-    md: path.join(dir, "MEMORY.md"),
+    jsonl: dir ? path.join(dir, "events.jsonl") : null,
+    md: dir ? path.join(dir, "MEMORY.md") : null,
   };
 }
 
 export async function appendMemory(cfg, workspacePath, event) {
   const p = memoryPaths(cfg, workspacePath);
-  await fs.mkdir(p.dir, { recursive: true });
   const line = redactEvent({
     at: new Date().toISOString(),
     // S7: every event gets a durable id — the addressable unit for
@@ -43,6 +69,8 @@ export async function appendMemory(cfg, workspacePath, event) {
       `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     ...event,
   });
+  if (!p.dir) return line;
+  await fs.mkdir(p.dir, { recursive: true });
   await fs.appendFile(p.jsonl, JSON.stringify(line) + "\n");
   // Bound the events log (audit 2026-08-23: unbounded growth, and every
   // append re-read the WHOLE file to rebuild memory.md). Rotation reuses the
@@ -94,6 +122,7 @@ export async function appendMemory(cfg, workspacePath, event) {
 
 export async function listMemory(cfg, workspacePath, { limit = 50 } = {}) {
   const p = memoryPaths(cfg, workspacePath);
+  if (!p.dir) return [];
   let raw = "";
   try {
     raw = await fs.readFile(p.jsonl, "utf8");
@@ -126,6 +155,7 @@ export async function rebuildMemoryMd(cfg, workspacePath) {
     if (it.proposal) lines.push(redactString("  - skill proposal: `" + it.proposal + "`"));
   }
   lines.push("");
+  if (!p.dir) return null;
   await fs.mkdir(p.dir, { recursive: true });
   await fs.writeFile(p.md, lines.join("\n"));
   return p.md;
@@ -133,6 +163,7 @@ export async function rebuildMemoryMd(cfg, workspacePath) {
 
 export async function loadDurableMemoryFile(cfg, workspacePath) {
   const p = memoryPaths(cfg, workspacePath);
+  if (!p.dir) return null;
   try {
     const content = await fs.readFile(p.md, "utf8");
     if (!content.trim()) return null;
@@ -183,6 +214,7 @@ export async function rememberJob(cfg, job, extra = {}) {
  */
 export async function forgetMemory(cfg, workspacePath, match = {}) {
   const p = memoryPaths(cfg, workspacePath);
+  if (!p.dir) return { removed: 0, kept: 0 };
   let raw = "";
   try {
     raw = await fs.readFile(p.jsonl, "utf8");
@@ -217,11 +249,6 @@ export async function forgetMemory(cfg, workspacePath, match = {}) {
   await fs.writeFile(p.jsonl, kept.length ? kept.join("\n") + "\n" : "");
   await rebuildMemoryMd(cfg, workspacePath);
   return { removed, kept: kept.length };
-}
-
-/** Where the whole store lives. Exported so retention can name it out loud. */
-export function memoryStoreDir(cfg) {
-  return baseDir(cfg);
 }
 
 const MEMORY_MD_PATH_RE = /^Path: `(.+)`$/m;
@@ -299,6 +326,10 @@ export async function pruneMemoryWorkspaces(cfg = {}, opts = {}) {
     prunedBytes: 0,
     reason: "ok",
   };
+  if (!dir) {
+    out.reason = "no_dir";
+    return out;
+  }
 
   let entries;
   try {

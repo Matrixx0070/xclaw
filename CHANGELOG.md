@@ -1,3 +1,29 @@
+## 3.529.0
+
+### Durable memory follows paths.configDir
+
+`baseDir()` resolved `~/.xclaw/memory` from
+`os.homedir()` while production writers (`rememberJob(cfg)`
+at jobs/job.mjs, `appendMemory(cfg)` at recall/reflection)
+already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via
+the leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one memory store; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.528.0 `checkpoints/`. Honour existing
+`XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `appendMemory` still returns the in-memory event without persisting
+  (do not `mkdir(null)`). `listMemory` returns `[]`.
+  `loadDurableMemoryFile` returns null. `forgetMemory` returns
+  `{ removed: 0, kept: 0 }`. `pruneMemoryWorkspaces` returns a zero
+  census with `reason: "no_dir"`. Production writers always have
+  configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.528.0
 
 ### Job checkpoints follow paths.configDir

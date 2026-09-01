@@ -1895,3 +1895,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/checkpoint-config-dir.test.mjs test/checkpoint.test.mjs test/checkpoint-schema-freeze.test.mjs test/resume-lock.test.mjs test/checkpoint-prune.test.mjs test/ops-maintenance-checkpoints.test.mjs test/checkpoint-quota-escalate.test.mjs test/checkpoint-circuit-roundtrip.test.mjs test/mid-run-checkpoint.test.mjs test/checkpoint-crash-resume.test.mjs test/checkpoint-tool-hash.test.mjs → # tests 38 # pass 38 # fail 0 # duration_ms 777.429397; npm test (hermetic) → # tests 5262 # pass 5262 # fail 0 # duration_ms 82677.96365
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.
+
+## 2026-09-01 — 3.529.0 Durable memory follows paths.configDir
+
+LOCKED: `src/memory/durable.mjs` `baseDir()` still homed while production writers `rememberJob(cfg)` at jobs/job.mjs:388, `appendMemory(cfg)` at recall/reflection, `loadDurableMemoryFile(cfg)` at agent/loop, `pruneMemoryWorkspaces(cfg)` at ops/maintenance already had cfg. Same class as v3.297.0 / v3.528.0.
+
+DISCOVERED: leftover `os.homedir()` fallback. Two instances on one host shared one `memory/`; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Did not rewrite redact/rotation/compact/forget matchers/orphan retention. cron/logs REJECTED (reader-home-by-design; existing pin asserts home fallback).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `appendMemory` still returns the in-memory event without persisting (do not `mkdir(null)`). `listMemory` returns `[]`. `loadDurableMemoryFile` returns null. `forgetMemory` returns `{ removed: 0, kept: 0 }`. `pruneMemoryWorkspaces` returns a zero census with `reason: "no_dir"`. `memoryPaths.dir/jsonl/md` are null. Production writers always have configDir, so live persist is not dropped. Removed `os` import. Exported `memoryStoreDir`; `function baseDir` wraps it.
+
+RAN: node --test test/durable-memory-config-dir.test.mjs test/memory-durable.test.mjs test/durable-memory-shape.test.mjs test/memory-md-redact.test.mjs test/memory-s7.test.mjs test/memory-workspace-retention.test.mjs test/memory-reflection.test.mjs test/recall.test.mjs test/job-verdict.test.mjs test/memory-soak-redact.test.mjs test/verification-hardening.test.mjs → # tests 41 # pass 41 # fail 0 # duration_ms 808.112525; npm test (hermetic) → # tests 5267 # pass 5267 # fail 0 # duration_ms 77807.05314
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
