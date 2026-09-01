@@ -139,6 +139,41 @@ describe("computer address reporting honours remoteUrl", () => {
     assert.match(body.detail, /ECONNREFUSED/);
   });
 
+  it("GET /computer/health does not hang forever on a silent upstream", async () => {
+    // Node fetch has no total-request timeout. A connection that opens and
+    // then never answers parked the route forever — same class as v3.290.0.
+    // AbortSignal.timeout unrefs its timer; a missing signal would otherwise
+    // let the suite exit with a pending promise. raceHang keeps the loop
+    // alive and surfaces HUNG instead of hanging the file.
+    function silentFetch(_url, init) {
+      return new Promise((_resolve, reject) => {
+        const sig = init?.signal;
+        if (!sig) return;
+        if (sig.aborted) return reject(sig.reason);
+        sig.addEventListener("abort", () => reject(sig.reason), { once: true });
+      });
+    }
+    async function raceHang(p, ms = 3_000) {
+      let timer;
+      const hang = new Promise((res) => {
+        timer = setTimeout(() => res("HUNG"), ms);
+      });
+      try {
+        return await Promise.race([p, hang]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    const out = await withFetch(silentFetch, () =>
+      raceHang(ops("/computer/health", cfgRemote(), { computerHealthTimeoutMs: 40 }))
+    );
+    assert.notEqual(out, "HUNG", "GET /computer/health never returned — unbounded fetch");
+    assert.equal(out.code, 502);
+    assert.equal(out.body.error, "computer unreachable");
+    assert.equal(out.body.upstream, `${REMOTE}/health`);
+    assert.match(String(out.body.detail), /abort|timeout/i);
+  });
+
   it("dashboard reports the address its `up` verdict was taken from", async () => {
     const d = await buildDashboard(cfgRemote());
     assert.equal(d.computer.url, REMOTE);
@@ -180,6 +215,16 @@ describe("computer address wiring (untestable-by-construction callers)", () => {
       s,
       /\$\{computerProbeHost\(cfg\)\}:\$\{cfg\.computer\.port\}/,
       "status still derives the computer address inline"
+    );
+  });
+
+  it("GET /computer/health fetch carries AbortSignal.timeout", () => {
+    const s = src("../src/gateway/routes/ops.mjs");
+    assert.match(s, /signal:\s*AbortSignal\.timeout\(timeoutMs\)/);
+    assert.doesNotMatch(
+      s,
+      /await fetch\(u\);/,
+      "GET /computer/health still fetches without a deadline"
     );
   });
 });

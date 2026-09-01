@@ -1,3 +1,26 @@
+## 3.505.0
+
+### GET /computer/health does not hang forever on a silent upstream
+
+Node `fetch` has no total-request timeout. `GET /computer/health` fetched the
+configured computer with no `AbortSignal`, so a hung upstream parked the
+gateway request forever. Same class as v3.290.0 Telegram `api()`. Gateway
+census: two `await fetch(` under `src/gateway/` — oauth-callback already
+times out 60s; this route was the remainder. Sibling health fetches already
+timeout (`capability-reach`, `python-tools`, `manager.probeHealth`, doctor
+`httpGet`).
+
+- `COMPUTER_HEALTH_TIMEOUT_MS = 3000`. Fetch carries
+  `AbortSignal.timeout`. `computerHealthTimeoutMs` is a test seam. Catch
+  still 502 names `upstream`.
+- Pin: silent fetch with 40ms seam returns 502 in bounded time, not HUNG.
+  Existing wrong-machine / 502-names-upstream pins stay. Source pin: no
+  `await fetch(u);`.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.504.0
 
 ### refreshAppToken does not overwrite a concurrent delete

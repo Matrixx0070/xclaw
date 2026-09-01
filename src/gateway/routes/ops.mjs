@@ -11,6 +11,9 @@
 import { computerBaseUrl, isComputerRunning } from "../../computer/manager.mjs";
 import { clientErrorStatus } from "../../shared/http-error.mjs";
 
+/** Bound for GET /computer/health. Node fetch has no total-request timeout. */
+export const COMPUTER_HEALTH_TIMEOUT_MS = 3_000;
+
 /**
  * @param {object} args — standard route args + webchatEnabled,
  *   channelManager (live), version {XCLAW_VERSION, XCLAW_PHASE}
@@ -28,6 +31,7 @@ export async function tryHandleOpsRoute({
   channelManager,
   XCLAW_VERSION,
   XCLAW_PHASE,
+  computerHealthTimeoutMs,
 }) {
   if ((p === "/report" || p === "/status/report") && method === "GET") {
     const { buildStatusReport } = await import("../report.mjs");
@@ -230,8 +234,12 @@ export async function tryHandleOpsRoute({
       // This route does not merely report the address — it FETCHES it and
       // returns that machine's body verbatim. Derived inline it answered with
       // a local squatter's health while the configured computer was remote.
+      // Node fetch has no total-request timeout: a hung computer parked the
+      // gateway request forever (same class as v3.290.0 Telegram api()).
       const u = `${computerBaseUrl(cfg)}/health`;
-      const r = await fetch(u);
+      const ms = Number(computerHealthTimeoutMs);
+      const timeoutMs = Number.isFinite(ms) && ms > 0 ? ms : COMPUTER_HEALTH_TIMEOUT_MS;
+      const r = await fetch(u, { signal: AbortSignal.timeout(timeoutMs) });
       const body = await r.json();
       json(res, r.status, body);
     } catch (e) {
