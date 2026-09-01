@@ -1,3 +1,25 @@
+## 3.532.0
+
+### Skill stats follow paths.configDir
+
+`statsPath()` resolved `~/.xclaw/skill-stats.json` from
+`os.homedir()` while production writers (`recordSkillOutcome(cfg)`
+at eval/runner.mjs) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via
+the leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one skill-stats.json; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.531.0 `eval-history.jsonl`. Honour existing
+`XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `recordSkillOutcome` still returns the in-memory stats without persisting
+  (do not `mkdir(null)`). `loadSkillStats` returns `{ version: 1, skills: {} }`.
+  Production writers always have configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.531.0
 
 ### Eval history follows paths.configDir
