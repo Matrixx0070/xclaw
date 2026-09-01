@@ -1,3 +1,26 @@
+## 3.517.0
+
+### Cost governor follows paths.configDir
+
+`governorLedgerPath()` resolved `~/.xclaw/cost-governor.json` from
+`os.homedir()` while production loop (`recordJobCost(cfg)`), queue,
+doctor, tokens routes, and role-router already had cfg in scope.
+`loadConfig()` stamps `paths.configDir` unconditionally and does not
+stamp `cost.governorPath`, so the resolver still homed. Two instances
+on one host with different `paths.configDir` shared one daily
+spend/pause latch; the suite wrote the operator's real `~/.xclaw`.
+Same class as v3.297.0 `alert-state.json` and v3.509.0
+`cost-ledger.jsonl`.
+
+- Honour `cost.governorPath` then `paths.configDir` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `saveLedger` / `withLedgerLock` no-op a null path (do not
+  `mkdir(null)` / `"null.lock"`). `loadLedger` returns emptyLedger.
+  In-memory spend/pause does not persist. Production callers always
+  have configDir, so live persistence is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; explicit `cost.governorPath` still wins.
+
 ## 3.516.0
 
 ### Truth/sense no-op a null mitm confdir

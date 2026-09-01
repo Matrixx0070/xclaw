@@ -1,9 +1,24 @@
 /**
  * Cost governor — soft/hard daily and per-job USD caps.
+ *
+ * cost-governor.json belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it
+ * from `os.homedir()` alone meant two instances on one host shared a
+ * single daily spend/pause latch, so instance B's jobs mixed with
+ * instance A's cap — and the suite wrote into the operator's real
+ * `~/.xclaw/cost-governor.json`.
+ *
+ * Production loop (`recordJobCost(cfg)`), queue, doctor, tokens routes,
+ * role-router, and fire-drill already had cfg in scope. `loadConfig()`
+ * stamps `paths.configDir` unconditionally (config/load.mjs:187), so a
+ * cfg without one is never a real caller. Such a path is `null` rather
+ * than guessing at the home dir. Same shape as `defaultLedgerPath` /
+ * `defaultStatePath`. Explicit `cost.governorPath` still wins.
+ * `saveLedger` / `withLedgerLock` no-op a null path (do not `mkdir(null)`
+ * / `"null.lock"`).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { getModelMeta } from "../providers/registry.mjs";
 import { stampJobCostEvent } from "../jobs/job-cost-attribution.mjs";
 
@@ -11,21 +26,34 @@ function dayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
-function ledgerPath(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "cost-governor.json");
+function emptyLedger() {
+  return { day: dayKey(), spentUsd: 0, jobs: 0, paused: false, events: [] };
+}
+
+/**
+ * Honour `cost.governorPath` then `paths.configDir` then null.
+ * No home fallback.
+ */
+export function governorLedgerPath(cfg) {
+  const explicit = cfg?.cost?.governorPath;
+  if (typeof explicit === "string" && explicit) return explicit;
+  const dir = cfg?.paths?.configDir;
+  return dir ? path.join(dir, "cost-governor.json") : null;
 }
 
 async function loadLedger(cfg) {
+  const fp = governorLedgerPath(cfg);
+  if (!fp) return emptyLedger();
   try {
-    return JSON.parse(await fs.readFile(ledgerPath(cfg), "utf8"));
+    return JSON.parse(await fs.readFile(fp, "utf8"));
   } catch {
-    return { day: dayKey(), spentUsd: 0, jobs: 0, paused: false, events: [] };
+    return emptyLedger();
   }
 }
 
 async function saveLedger(cfg, ledger) {
-  const fp = ledgerPath(cfg);
+  const fp = governorLedgerPath(cfg);
+  if (!fp) return;
   await fs.mkdir(path.dirname(fp), { recursive: true });
   const tmp = `${fp}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
   await fs.writeFile(tmp, JSON.stringify(ledger, null, 2));
@@ -34,7 +62,9 @@ async function saveLedger(cfg, ledger) {
 
 /** Exclusive lock for ledger read-modify-write (concurrent recordJobCost). */
 async function withLedgerLock(cfg, fn) {
-  const lockPath = ledgerPath(cfg) + ".lock";
+  const fp = governorLedgerPath(cfg);
+  if (!fp) return fn();
+  const lockPath = fp + ".lock";
   await fs.mkdir(path.dirname(lockPath), { recursive: true });
   const maxAttempts = 100;
   for (let i = 0; i < maxAttempts; i++) {
