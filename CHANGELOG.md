@@ -1,3 +1,27 @@
+## 3.513.0
+
+### Automations store follows paths.configDir
+
+`automationsPath()` resolved `~/.xclaw/automations.json` from
+`os.homedir()` while production `hydrateAutomations(cfg)` at gateway
+boot already had cfg in scope. `loadConfig()` stamps `paths.configDir`
+unconditionally and does not stamp `automationsFile`, so the resolver
+still homed. Two instances on one host with different
+`paths.configDir` shared one automations.json; the suite wrote the
+operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.512.0 gateway supervised state.
+
+- Honour `paths.automationsFile` then `XCLAW_AUTOMATIONS_FILE` then
+  `paths.configDir`. No configDir → `null`. No home fallback.
+- `loadStore` returns empty in-memory on a null path. `saveStore`
+  no-ops (do not `mkdir(null)`). `withStoreLock` mutates in-memory
+  without a lockfile (do not `path.dirname(null)` which would lock
+  cwd). Production already threads cfg so live still persists under
+  configDir (never drop the capability).
+- Pin: configDir write never touches home; explicit automationsFile
+  wins; env wins over configDir; no-configDir names no file and never
+  writes home; gateway still calls `hydrateAutomations(cfg)`.
+
 ## 3.512.0
 
 ### Gateway supervised state follows paths.configDir

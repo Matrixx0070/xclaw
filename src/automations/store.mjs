@@ -1,22 +1,26 @@
 /**
  * Persistent automation definitions + run results.
- * File: ~/.xclaw/automations.json (or cfg.paths)
+ *
+ * Honour `paths.automationsFile` then `XCLAW_AUTOMATIONS_FILE` then
+ * `paths.configDir` + `automations.json`. No configDir → null. No home
+ * fallback. Production `hydrateAutomations(cfg)` already threads cfg so
+ * live still persists under configDir.
  */
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { withFabricLock } from "../browser/fabric-lock.mjs";
 
-function defaultPath() {
-  return path.join(os.homedir(), ".xclaw", "automations.json");
-}
-
 export function automationsPath(cfg) {
-  return cfg?.paths?.automationsFile || process.env.XCLAW_AUTOMATIONS_FILE || defaultPath();
+  const explicit = cfg?.paths?.automationsFile;
+  if (typeof explicit === "string" && explicit) return explicit;
+  if (process.env.XCLAW_AUTOMATIONS_FILE) return process.env.XCLAW_AUTOMATIONS_FILE;
+  const dir = cfg?.paths?.configDir;
+  return dir ? path.join(dir, "automations.json") : null;
 }
 
 export function loadStore(cfg) {
   const fp = automationsPath(cfg);
+  if (!fp) return { version: 1, automations: [], results: [] };
   try {
     if (!fs.existsSync(fp)) {
       return { version: 1, automations: [], results: [] };
@@ -34,6 +38,7 @@ export function loadStore(cfg) {
 
 export function saveStore(cfg, store) {
   const fp = automationsPath(cfg);
+  if (!fp) return null;
   fs.mkdirSync(path.dirname(fp), { recursive: true });
   const tmp = fp + ".tmp";
   fs.writeFileSync(
@@ -69,6 +74,9 @@ export function saveStore(cfg, store) {
  * never across the caller's slow work, so a stuck/slow tick can't starve
  * unrelated store writers.
  *
+ * A null path (no configDir / explicit file / env) mutates in-memory
+ * without a lockfile. Do not `path.dirname(null)` which would lock cwd.
+ *
  * @param {object} cfg
  * @param {(store: object) => (object|void)} mutate — mutate the store
  *   in place (or return a replacement). Runs synchronously under lock.
@@ -76,6 +84,12 @@ export function saveStore(cfg, store) {
  */
 export async function withStoreLock(cfg, mutate) {
   const fp = automationsPath(cfg);
+  if (!fp) {
+    const store = loadStore(cfg);
+    const next = mutate(store) || store;
+    saveStore(cfg, next);
+    return next;
+  }
   return withFabricLock(
     () => {
       const store = loadStore(cfg);
