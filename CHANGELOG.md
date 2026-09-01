@@ -1,3 +1,33 @@
+## 3.509.0
+
+### Usage-tracker ledger follows paths.configDir
+
+`defaultLedgerPath()` resolved `~/.xclaw/cost-ledger.jsonl` from
+`os.homedir()` while production loop / maintenance / analytics /
+tokens route / CLI already had cfg in scope and did
+`cfg.tokens?.ledgerPath || defaultLedgerPath()` — when ledgerPath
+unset (normal), they homed. Two instances on one host shared a
+single ledger; the suite wrote the operator's real
+`~/.xclaw/cost-ledger.jsonl`. Same class as v3.297.0
+`alert-state.json`, v3.506.0 PagerDuty webhook history, v3.507.0
+pairing store, and v3.508.0 sessions persist.
+
+- Honour `tokens.ledgerPath` then `paths.configDir`. No configDir →
+  `null`. No home fallback. persistLedger already no-ops
+  `!ledgerPath`. `readCostLedger` treats a falsy path like ENOENT
+  (do not `readFile(null)`).
+- Keep the `ledger !== false` gate in loop.mjs (capability flag).
+  Callers become `defaultLedgerPath(cfg)` so unset `tokens.ledgerPath`
+  still lands in configDir. Maintenance skips a null target.
+- No `XCLAW_LEDGER_FILE` — callers use `tokens.ledgerPath` only.
+  `model-stats.mjs` already honours configDir; not this slice.
+- Pin: configDir write never touches home; explicit ledgerPath
+  wins; no-configDir names no file and never writes home.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.508.0
 
 ### Sessions persist follows paths.configDir

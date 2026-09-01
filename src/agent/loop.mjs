@@ -899,8 +899,7 @@ export async function runAgentLoop(options) {
     },
   };
   const ledgerPath =
-    cfg.tokens?.ledgerPath ||
-    (cfg.tokens?.ledger !== false ? defaultLedgerPath() : null);
+    cfg.tokens?.ledger !== false ? defaultLedgerPath(cfg) : null;
   const usageTracker = createUsageTracker({
     enabled: tokensEnabled,
     model: provider.model,

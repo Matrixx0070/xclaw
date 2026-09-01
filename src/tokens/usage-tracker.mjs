@@ -5,7 +5,6 @@
 import { normalizeUsage, estimateRequestTokens } from "./count.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 
 const TICKS_PER_USD = 10_000_000_000;
 
@@ -238,10 +237,25 @@ export function createUsageTracker({ enabled = true, model = null, ledgerPath = 
   };
 }
 
+function emptyLedgerAgg(ledgerPath) {
+  return {
+    path: ledgerPath,
+    runs: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    costUsd: 0,
+    costUsdFormatted: "$0",
+    rows: [],
+    totalRows: 0,
+  };
+}
+
 /**
  * Read JSONL cost ledger and aggregate.
+ * A null/empty path is ENOENT-style empty (do not `readFile(null)`).
  */
 export async function readCostLedger(ledgerPath, { since = null, limit = 50 } = {}) {
+  if (!ledgerPath) return emptyLedgerAgg(ledgerPath);
   try {
     const raw = await fs.readFile(ledgerPath, "utf8");
     const lines = raw.split("\n").filter(Boolean);
@@ -281,24 +295,35 @@ export async function readCostLedger(ledgerPath, { since = null, limit = 50 } = 
       totalRows: rows.length,
     };
   } catch (err) {
-    if (err.code === "ENOENT") {
-      return {
-        path: ledgerPath,
-        runs: 0,
-        promptTokens: 0,
-        completionTokens: 0,
-        costUsd: 0,
-        costUsdFormatted: "$0",
-        rows: [],
-        totalRows: 0,
-      };
-    }
+    if (err.code === "ENOENT") return emptyLedgerAgg(ledgerPath);
     throw err;
   }
 }
 
-export function defaultLedgerPath() {
-  return path.join(os.homedir(), ".xclaw", "cost-ledger.jsonl");
+/**
+ * cost-ledger.jsonl belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it
+ * from `os.homedir()` alone meant two instances on one host shared a
+ * single ledger, so instance B's cost mixed with instance A's — and the
+ * suite wrote into the operator's real `~/.xclaw/cost-ledger.jsonl`.
+ *
+ * Production loop / maintenance / analytics / tokens route / CLI already
+ * had cfg in scope and did `cfg.tokens?.ledgerPath || defaultLedgerPath()`
+ * — when ledgerPath unset (normal), they homed.
+ *
+ * `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller.
+ * Such a path is `null` rather than guessing at the home dir. Same
+ * shape as `defaultStatePath` in alerts.mjs / `resolvePairingStorePath`
+ * / `resolveSessionsPath`. Explicit `tokens.ledgerPath` still wins.
+ * persistLedger already no-ops `!ledgerPath`. No XCLAW_LEDGER_FILE —
+ * callers use `tokens.ledgerPath` only.
+ */
+export function defaultLedgerPath(cfg) {
+  const explicit = cfg?.tokens?.ledgerPath;
+  if (typeof explicit === "string" && explicit) return explicit;
+  const dir = cfg?.paths?.configDir;
+  return dir ? path.join(dir, "cost-ledger.jsonl") : null;
 }
 
 export { estimateRequestTokens, normalizeUsage, TICKS_PER_USD };

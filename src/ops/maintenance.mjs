@@ -97,7 +97,7 @@ const PROOF_BUNDLE_RE = /^proof_\d+\.json$/;
 
 // same resolution as the loop's persistLedger (loop.mjs ~L678)
 function costLedgerPath(cfg = {}) {
-  return cfg.tokens?.ledgerPath || defaultLedgerPath();
+  return defaultLedgerPath(cfg);
 }
 
 /**
@@ -213,6 +213,7 @@ export async function runOpsMaintenance(cfg = {}) {
     doctorLogPath(cfg),
   ];
   for (const p of targets) {
+    if (!p) continue;
     try {
       const r = await rotateJsonlIfOversize(p, { maxBytes, keepBytes });
       // Measurement first, action second: `sizes` holds every target on every

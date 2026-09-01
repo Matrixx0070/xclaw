@@ -111,7 +111,7 @@ export async function tryHandleTokensRoute({ p, method, req, res, url, cfg, json
   }
 
   if (p === "/tokens/cost" && method === "GET") {
-    const ledger = cfg.tokens?.ledgerPath || defaultLedgerPath();
+    const ledger = defaultLedgerPath(cfg);
     const since = url.searchParams.get("since");
     const limitRaw = url.searchParams.get("limit");
     const limit = limitRaw == null ? 50 : Number(limitRaw);

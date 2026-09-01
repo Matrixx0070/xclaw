@@ -34,7 +34,7 @@ function dayKey(iso) {
 }
 
 async function loadEntries(cfg, { provider = null, sinceMs = null } = {}) {
-  const ledger = cfg?.tokens?.ledgerPath || defaultLedgerPath();
+  const ledger = defaultLedgerPath(cfg);
   const agg = await readCostLedger(ledger, { limit: 0 }); // all rows for analytics
   const rows = agg.rows || [];
   const want = provider && provider !== "all" ? String(provider).toLowerCase() : null;

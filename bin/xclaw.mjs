@@ -2005,7 +2005,7 @@ Enable with seats.enabled: true in config`);
       const { loadConfig } = await import("../src/config/load.mjs");
       const { readCostLedger, defaultLedgerPath, formatUsd } = await import("../src/tokens/usage-tracker.mjs");
       const cfg = await loadConfig();
-      const ledger = cfg.tokens?.ledgerPath || defaultLedgerPath();
+      const ledger = defaultLedgerPath(cfg);
       const agg = await readCostLedger(ledger);
       console.log("XClaw cost ledger");
       console.log("=================");
