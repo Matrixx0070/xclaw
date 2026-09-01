@@ -1,3 +1,29 @@
+## 3.500.0
+
+### resolveMcpAccessToken does not overwrite a concurrent drop
+
+`resolveMcpAccessToken` held the whole MCP OAuth store across unbounded
+`refreshMcpToken` (network, AbortSignal.timeout 20s) then wrote the
+stale snapshot without re-reading. `dropMcpGrant` (CLI `xclaw mcp
+logout` and HTTP `DELETE /mcp/oauth`) persists a delete of the same
+file. Writing the stale store resurrects a revoked grant — and any
+other server dropped during the await, because save writes the whole
+file. Same class as queue cancel overwritten by a long-running writer.
+
+- `settleAfterMcpRefresh(heldStore, onDisk, serverName)`: missing
+  onDisk → null (do not resurrect); missing heldStore → null; missing
+  onDisk[serverName] → null (this server was dropped); else overlay
+  heldStore[serverName] onto onDisk so other-server drops survive.
+- Re-read immediately before `saveMcpOAuthStore`. Return null from
+  resolve if settle is null (caller must not use a just-revoked grant).
+- Pin: drop during a 1s token-endpoint sleep leaves the grant gone;
+  drop of a different server during refresh of A leaves A's new tokens
+  and B gone. Existing MCP oauth pins stay.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.499.0
 
 ### approveMergeProposal does not overwrite a concurrent reject

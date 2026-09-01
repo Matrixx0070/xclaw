@@ -38,6 +38,23 @@ export function saveMcpOAuthStore(cfg, store) {
   } catch {}
 }
 
+/**
+ * Re-read after unbounded refreshMcpToken. dropMcpGrant (CLI logout /
+ * DELETE /mcp/oauth) is a concurrent writer of the same file. Save of
+ * the stale whole-store snapshot must not resurrect a dropped grant.
+ *
+ * missing onDisk → null (do not resurrect the file)
+ * missing heldStore → null
+ * missing onDisk[serverName] → null (this server was dropped)
+ * else overlay heldStore[serverName] onto onDisk so other-server drops survive
+ */
+export function settleAfterMcpRefresh(heldStore, onDisk, serverName) {
+  if (!onDisk) return null;
+  if (!heldStore) return null;
+  if (!onDisk[serverName]) return null;
+  return { ...onDisk, [serverName]: heldStore[serverName] };
+}
+
 async function fetchJson(url, opts = {}) {
   const r = await fetch(url, {
     ...opts,
@@ -219,7 +236,10 @@ export async function resolveMcpAccessToken(cfg, serverName) {
   });
   entry.tokens = { ...next, refreshToken: next.refreshToken || tokens.refreshToken };
   store[serverName] = entry;
-  saveMcpOAuthStore(cfg, store);
+  const onDisk = loadMcpOAuthStore(cfg);
+  const settled = settleAfterMcpRefresh(store, onDisk, serverName);
+  if (!settled) return null;
+  saveMcpOAuthStore(cfg, settled);
   return entry.tokens.accessToken;
 }
 
