@@ -4,22 +4,42 @@
  * Identity: "slack:U01ABC", "telegram:123", "discord:99", "email:a@b.c"
  * Account:  "acc_<id>" shared vault key after link
  *
- * Store: ~/.xclaw/accounts/links.json
+ * accounts/ belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared one
+ * links.json / pairing.json, so instance B's /link mixed with instance
+ * A's — and the suite wrote into the operator's real `~/.xclaw/accounts`.
+ *
+ * Production channel commands (`createPairingCode(cfg)` /
+ * `consumePairingCode(cfg)` / `unlinkIdentity(cfg)`), auth-legacy CLI,
+ * and doctor already had cfg in scope. `loadConfig()` stamps
+ * `paths.configDir` unconditionally (config/load.mjs:187), so a cfg
+ * without one is never a real caller. Such a path is `null` rather than
+ * guessing at the home dir. Same shape as `governorLedgerPath` /
+ * `defaultLedgerPath`. Explicit `paths.accountsDir` still wins.
+ * `saveAccountStore` / `savePairing` no-op a null path (do not
+ * `mkdir(null)` / `path.join(null)`).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 
 const STORE_VERSION = 1;
 
-function accountsDir(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "accounts");
+/**
+ * Honour `paths.accountsDir` then `paths.configDir` then null.
+ * No home fallback.
+ */
+export function accountsDir(cfg) {
+  const explicit = cfg?.paths?.accountsDir;
+  if (typeof explicit === "string" && explicit) return explicit;
+  const dir = cfg?.paths?.configDir;
+  return dir ? path.join(dir, "accounts") : null;
 }
 
 function linksPath(cfg) {
-  return path.join(accountsDir(cfg), "links.json");
+  const dir = accountsDir(cfg);
+  return dir ? path.join(dir, "links.json") : null;
 }
 
 /**
@@ -59,8 +79,10 @@ function emptyStore() {
 }
 
 export async function loadAccountStore(cfg) {
+  const fp = linksPath(cfg);
+  if (!fp) return emptyStore();
   try {
-    const raw = await fs.readFile(linksPath(cfg), "utf8");
+    const raw = await fs.readFile(fp, "utf8");
     const data = JSON.parse(raw);
     if (!data.links) data.links = {};
     if (!data.accounts) data.accounts = {};
@@ -74,8 +96,9 @@ export async function loadAccountStore(cfg) {
 
 export async function saveAccountStore(cfg, data) {
   const dir = accountsDir(cfg);
-  await fs.mkdir(dir, { recursive: true });
   const fp = linksPath(cfg);
+  if (!dir || !fp) return null;
+  await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(fp, JSON.stringify(data, null, 2), { mode: 0o600 });
   try {
     await fs.chmod(fp, 0o600);
@@ -294,12 +317,15 @@ export async function getAccount(cfg, accountId) {
 const pairingMem = new Map();
 
 function pairingPath(cfg) {
-  return path.join(accountsDir(cfg), "pairing.json");
+  const dir = accountsDir(cfg);
+  return dir ? path.join(dir, "pairing.json") : null;
 }
 
 async function loadPairing(cfg) {
+  const fp = pairingPath(cfg);
+  if (!fp) return { codes: {} };
   try {
-    const raw = await fs.readFile(pairingPath(cfg), "utf8");
+    const raw = await fs.readFile(fp, "utf8");
     return JSON.parse(raw);
   } catch {
     return { codes: {} };
@@ -307,8 +333,10 @@ async function loadPairing(cfg) {
 }
 
 async function savePairing(cfg, data) {
-  await fs.mkdir(accountsDir(cfg), { recursive: true });
+  const dir = accountsDir(cfg);
   const fp = pairingPath(cfg);
+  if (!dir || !fp) return;
+  await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(fp, JSON.stringify(data, null, 2), { mode: 0o600 });
   try {
     await fs.chmod(fp, 0o600);

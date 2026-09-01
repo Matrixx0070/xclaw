@@ -1,3 +1,27 @@
+## 3.518.0
+
+### Account links follow paths.configDir
+
+`accountsDir()` resolved `~/.xclaw/accounts` from `os.homedir()` while
+production channel commands (`createPairingCode(cfg)` /
+`consumePairingCode(cfg)` / `unlinkIdentity(cfg)`), auth-legacy CLI, and
+doctor already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally and does not stamp `paths.accountsDir`,
+so the resolver still homed. Two instances on one host with different
+`paths.configDir` shared one `links.json` / `pairing.json`; the suite
+wrote the operator's real `~/.xclaw/accounts`. Same class as v3.297.0
+`alert-state.json` and v3.517.0 `cost-governor.json`.
+
+- Honour `paths.accountsDir` then `paths.configDir` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `saveAccountStore` / `savePairing` no-op a null path (do not
+  `mkdir(null)` / `path.join(null)`). `loadAccountStore` /
+  `loadPairing` return empty. In-memory create/link/pair does not
+  persist. Production callers always have configDir, so live
+  persistence is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; explicit `paths.accountsDir` still wins.
+
 ## 3.517.0
 
 ### Cost governor follows paths.configDir
