@@ -1883,3 +1883,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/jobs-history-config-dir.test.mjs test/jobs-history.test.mjs test/history-receipt-metrics.test.mjs test/history-stamp-receipt.test.mjs test/job-history-hash.test.mjs test/quota-hard-circuit-history.test.mjs test/quota-hard-circuit-receipt.test.mjs test/stamp-job-tool-hash.test.mjs test/doctor-receipt-metrics.test.mjs → # tests 19 # pass 19 # fail 0 # duration_ms 174.321929; npm test (hermetic) → # tests 5257 # pass 5257 # fail 0 # duration_ms 78368.537796
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.
+
+## 2026-09-01 — 3.528.0 Job checkpoints follow paths.configDir
+
+LOCKED: `src/jobs/checkpoint.mjs` `dir(cfg)` still homed while production writer `saveCheckpoint(cfg)` at jobs/job.mjs:393 already had cfg. Same class as v3.297.0 / v3.527.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `checkpoints/`; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Did not rewrite schema/migrate/classifyFailure/recoveryStrategy/resume/tool-hash/quota-circuit.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `saveCheckpoint` no-ops a null path (do not `mkdir(null)`). `listCheckpoints` returns `[]`. `loadCheckpoint` throws NOT_FOUND. `countCheckpoints` returns `{ total: 0, byStatus: {} }`. `pruneCheckpoints` returns `{ removed: 0, kept: 0, reason: "no_dir" }`. File lock on null is in-memory only. Production writers always have configDir, so live persist is not dropped. Removed `os` import. Exported `checkpointDir`; `function dir` wraps it.
+
+RAN: node --test test/checkpoint-config-dir.test.mjs test/checkpoint.test.mjs test/checkpoint-schema-freeze.test.mjs test/resume-lock.test.mjs test/checkpoint-prune.test.mjs test/ops-maintenance-checkpoints.test.mjs test/checkpoint-quota-escalate.test.mjs test/checkpoint-circuit-roundtrip.test.mjs test/mid-run-checkpoint.test.mjs test/checkpoint-crash-resume.test.mjs test/checkpoint-tool-hash.test.mjs → # tests 38 # pass 38 # fail 0 # duration_ms 777.429397; npm test (hermetic) → # tests 5262 # pass 5262 # fail 0 # duration_ms 82677.96365
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.

@@ -1,10 +1,26 @@
 /**
  * Job checkpoints for recovery / resume after transport or budget failures.
  * Mid-run snapshots + strategy-based recovery.
+ *
+ * checkpoints/ belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * checkpoint store, so instance B resumed instance A's jobs — and the
+ * suite wrote into the operator's real `~/.xclaw/checkpoints/`.
+ *
+ * Production writers (`saveCheckpoint(cfg)` at jobs/job.mjs:393) already
+ * had cfg in scope. `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller.
+ * Such a path is `null` rather than guessing at the home dir. Same shape
+ * as `jobsDir`. Honour existing `XCLAW_CONFIG_DIR`. `saveCheckpoint`
+ * no-ops a null path (do not `mkdir(null)`). `listCheckpoints` returns
+ * `[]`. `loadCheckpoint` throws NOT_FOUND. `countCheckpoints` returns
+ * `{ total: 0, byStatus: {} }`. `pruneCheckpoints` returns
+ * `{ removed: 0, kept: 0, reason: "no_dir" }`. File lock on null is
+ * in-memory only (same as `tryAcquireResumeLock` without cfg).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { runJob } from "./job.mjs";
 import { withBackoff } from "../utils/backoff.mjs";
 import { stampJobToolHash } from "./stamp-tool-hash.mjs";
@@ -105,14 +121,21 @@ export function migrateCheckpoint(doc) {
   return { receipt: next, migrated: true, from };
 }
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function checkpointDir(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "checkpoints") : null;
+}
+
 function dir(cfg) {
-  return path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "checkpoints");
+  return checkpointDir(cfg);
 }
 
 export async function saveCheckpoint(cfg, job) {
   const d = dir(cfg);
-  await fs.mkdir(d, { recursive: true });
-  const fp = path.join(d, `${job.id}.json`);
   // Stamp tool-hash tip for mid-run and final checkpoints (integrity on resume).
   const stamped = stampJobToolHash({
     ...job,
@@ -154,6 +177,9 @@ export async function saveCheckpoint(cfg, job) {
       null,
     receiptCollector: job.receiptCollector || null,
   };
+  if (!d) return null;
+  await fs.mkdir(d, { recursive: true });
+  const fp = path.join(d, `${job.id}.json`);
   const tmp = fp + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(slim, null, 2));
   await fs.rename(tmp, fp);
@@ -179,7 +205,13 @@ export async function loadCheckpoint(cfg, jobId) {
     err.code = RESUME_CODES.NOT_FOUND;
     throw err;
   }
-  const fp = path.join(dir(cfg), `${jobId}.json`);
+  const d = dir(cfg);
+  if (!d) {
+    const err = new Error(`checkpoint not found: ${jobId}`);
+    err.code = RESUME_CODES.NOT_FOUND;
+    throw err;
+  }
+  const fp = path.join(d, `${jobId}.json`);
   let raw;
   try {
     raw = await fs.readFile(fp, "utf8");
@@ -204,6 +236,7 @@ export async function loadCheckpoint(cfg, jobId) {
 
 export async function listCheckpoints(cfg, { limit = 20 } = {}) {
   const d = dir(cfg);
+  if (!d) return [];
   let files = [];
   try {
     files = (await fs.readdir(d)).filter((f) => f.endsWith(".json"));
@@ -244,6 +277,7 @@ export async function listCheckpoints(cfg, { limit = 20 } = {}) {
 export async function countCheckpoints(cfg) {
   const d = dir(cfg);
   const out = { total: 0, byStatus: {} };
+  if (!d) return out;
   let files = [];
   try {
     files = (await fs.readdir(d)).filter((f) => f.endsWith(".json"));
@@ -277,6 +311,7 @@ export async function pruneCheckpoints(cfg, opts = {}) {
   );
 
   const d = dir(cfg);
+  if (!d) return { removed: 0, kept: 0, reason: "no_dir" };
   let files = [];
   try {
     files = (await fs.readdir(d)).filter((f) => f.endsWith(".json"));
@@ -467,7 +502,9 @@ export async function markCheckpointResumed(cfg, jobId, { resumedBy, status = "r
 const resumeLocks = new Set();
 
 function lockPath(cfg, jobId) {
-  return path.join(dir(cfg), ".locks", `${String(jobId)}.lock`);
+  const d = dir(cfg);
+  if (!d) return null;
+  return path.join(d, ".locks", `${String(jobId)}.lock`);
 }
 
 export function tryAcquireResumeLock(jobId, cfg = null) {
@@ -480,6 +517,7 @@ export function tryAcquireResumeLock(jobId, cfg = null) {
 
 async function acquireFileLock(cfg, id, attempt = 0) {
   const fp = lockPath(cfg, id);
+  if (!fp) return true;
   const maxLockAttempts = 3;
   try {
     await fs.mkdir(path.dirname(fp), { recursive: true });
@@ -520,8 +558,10 @@ export async function releaseResumeLock(jobId, cfg = null) {
   const id = String(jobId || "");
   resumeLocks.delete(id);
   if (!cfg) return;
+  const fp = lockPath(cfg, id);
+  if (!fp) return;
   try {
-    await fs.unlink(lockPath(cfg, id));
+    await fs.unlink(fp);
   } catch {
     /* */
   }

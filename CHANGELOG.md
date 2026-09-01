@@ -1,3 +1,28 @@
+## 3.528.0
+
+### Job checkpoints follow paths.configDir
+
+`dir()` resolved `~/.xclaw/checkpoints` from
+`os.homedir()` while production writers (`saveCheckpoint(cfg)`
+at jobs/job.mjs) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via
+the leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one checkpoint store; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.527.0 `jobs/`. Honour existing
+`XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `saveCheckpoint` no-ops a null path (do not `mkdir(null)`).
+  `listCheckpoints` returns `[]`. `loadCheckpoint` throws NOT_FOUND.
+  `countCheckpoints` returns `{ total: 0, byStatus: {} }`.
+  `pruneCheckpoints` returns `{ removed: 0, kept: 0, reason: "no_dir" }`.
+  File lock on null is in-memory only. Production writers always have
+  configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.527.0
 
 ### Job history follows paths.configDir
