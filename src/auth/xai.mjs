@@ -39,6 +39,48 @@ export async function saveCredentials(cfg, data) {
   return fp;
 }
 
+async function readCredentialsOrNull(cfg) {
+  try {
+    return JSON.parse(await fs.readFile(credPath(cfg), "utf8"));
+  } catch (e) {
+    if (e && e.code === "ENOENT") return null;
+    try {
+      await fs.access(credPath(cfg));
+      return {};
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Re-read after unbounded refresh fetch. logout() (CLI `xclaw auth logout`
+ * via auth-legacy-cli) unlinks credentials.json. Save of the stale snapshot
+ * must not resurrect a revoked vault. Overlay oauth fields onto onDisk so a
+ * concurrent loginWithApiKey (xaiApiKey) survives.
+ *
+ * missing held → null
+ * missing onDisk + prior existed → null (logout won; do not resurrect)
+ * missing onDisk + no prior → held (first write)
+ * else overlay held oauth fields onto onDisk
+ */
+export function settleAfterCredsRefresh(held, onDisk, prior) {
+  if (!held) return null;
+  if (!onDisk) {
+    if (prior) return null;
+    return held;
+  }
+  return {
+    ...onDisk,
+    accessToken: held.accessToken,
+    refreshToken: held.refreshToken,
+    tokenType: held.tokenType,
+    expiresAt: held.expiresAt,
+    oauth: held.oauth,
+    updatedAt: held.updatedAt || onDisk.updatedAt,
+  };
+}
+
 export async function resolveXaiToken(cfg = {}) {
   if (cfg.agent?.apiKey) {
     return { token: cfg.agent.apiKey, source: "config.agent.apiKey" };
@@ -56,6 +98,9 @@ export async function resolveXaiToken(cfg = {}) {
       if (creds.refreshToken) {
         try {
           const refreshed = await refreshOAuthToken(cfg, creds);
+          if (!refreshed?.accessToken) {
+            return { token: null, source: "expired", error: "oauth token expired" };
+          }
           return { token: refreshed.accessToken, source: "oauth.refresh" };
         } catch {
           /* fall through */
@@ -267,7 +312,7 @@ export async function loginWithOAuth(cfg, opts = {}) {
   return { ok: true, path: fp, source: "oauth", expiresAt: creds.expiresAt };
 }
 
-async function refreshOAuthToken(cfg, creds) {
+export async function refreshOAuthToken(cfg, creds) {
   const tokenUrl =
     creds.oauth?.tokenUrl ||
     process.env.XCLAW_XAI_OAUTH_TOKEN_URL ||
@@ -279,6 +324,7 @@ async function refreshOAuthToken(cfg, creds) {
     refresh_token: creds.refreshToken,
     client_id: clientId,
   });
+  const prior = await readCredentialsOrNull(cfg);
   const r = await fetch(tokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -291,6 +337,9 @@ async function refreshOAuthToken(cfg, creds) {
   if (tok.expires_in) {
     creds.expiresAt = new Date(Date.now() + Number(tok.expires_in) * 1000).toISOString();
   }
-  await saveCredentials(cfg, creds);
-  return creds;
+  const onDisk = await readCredentialsOrNull(cfg);
+  const settled = settleAfterCredsRefresh(creds, onDisk, prior);
+  if (!settled) return null;
+  await saveCredentials(cfg, settled);
+  return settled;
 }

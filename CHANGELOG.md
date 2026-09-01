@@ -1,3 +1,61 @@
+## 3.502.0
+
+### refreshOAuthToken does not overwrite a concurrent logout
+
+`refreshOAuthToken` held the prior vault across unbounded `fetch` of the
+xAI token endpoint then `saveCredentials` of `credentials.json` without
+re-reading. `logout` (CLI `xclaw auth logout` via auth-legacy-cli)
+unlinks the same file. Writing the stale snapshot resurrects a revoked
+login. Overlay keeps a concurrent `loginWithApiKey` (`xaiApiKey`) on
+the same file. Same class as queue cancel overwritten by a long-running
+writer. Sibling of 3.501.0 `auth.json`.
+
+- `settleAfterCredsRefresh(held, onDisk, prior)`: missing held → null;
+  missing onDisk when a prior vault existed → null (logout won; do not
+  resurrect); missing onDisk with no prior → held (first write; RULE(m)
+  pin has no file yet); else overlay held oauth fields onto onDisk so a
+  concurrent `loginWithApiKey` survives.
+- Re-read immediately before `saveCredentials`. Return null from
+  refresh if settle is null. `resolveXaiToken` null-guards
+  `refreshed.accessToken`. `logout` unchanged.
+- Pin: logout during a 1s token-endpoint sleep leaves
+  `credentials.json` gone; concurrent `loginWithApiKey` during refresh
+  keeps `xaiApiKey`. Existing RULE(m) file-mode pin stays (first write
+  still allowed).
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
+## 3.502.0
+
+### refreshOAuthToken does not overwrite a concurrent logout
+
+`refreshOAuthToken` held the prior vault across unbounded `fetch` of the
+xAI token endpoint then `saveCredentials` of `credentials.json` without
+re-reading. `logout` (CLI `xclaw auth logout` via auth-legacy-cli)
+unlinks the same file. Writing the stale snapshot resurrects a revoked
+login. Overlay keeps a concurrent `loginWithApiKey` (`xaiApiKey`) on
+the same file. Same class as queue cancel overwritten by a long-running
+writer. Sibling of 3.501.0 `auth.json`.
+
+- `settleAfterCredsRefresh(held, onDisk, prior)`: missing held → null;
+  missing onDisk when a prior vault existed → null (logout won; do not
+  resurrect); missing onDisk with no prior → held (first write; RULE(m)
+  pin has no file yet); else overlay held oauth fields onto onDisk so a
+  concurrent `loginWithApiKey` survives.
+- Re-read immediately before `saveCredentials`. Return null from
+  refresh if settle is null. `resolveXaiToken` null-guards
+  `refreshed.accessToken`. `logout` unchanged.
+- Pin: logout during a 1s token-endpoint sleep leaves
+  `credentials.json` gone; concurrent `loginWithApiKey` during refresh
+  keeps `xaiApiKey`. Existing RULE(m) file-mode pin stays (first write
+  still allowed).
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.501.0
 
 ### refreshXaiToken does not overwrite a concurrent logout
