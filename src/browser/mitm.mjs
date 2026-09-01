@@ -8,12 +8,15 @@
  * Default listen: 127.0.0.1:4444
  *
  * Confdir layout:
- *   ~/.xclaw/mitm/          (or XCLAW_MITM_CONFDIR / package mitm-confdir)
+ *   <paths.configDir>/mitm/  (or XCLAW_MITM_CONFDIR / browser.mitm.confdir)
  *     addons.py
  *     flows.jsonl
  *     mitm.pid
  *     mitm.log
  *     (mitmproxy CA generated on first run)
+ *
+ * Honour XCLAW_MITM_CONFDIR then browser.mitm.confdir then paths.configDir.
+ * No configDir → null. No home fallback. Do not honour XCLAW_STATE_DIR.
  */
 
 import { spawn, execFile } from "node:child_process";
@@ -29,7 +32,6 @@ import { createRequire } from "node:module";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_CONFDIR = path.join(__dirname, "mitm-confdir");
 const HOME = process.env.HOME || os.homedir();
-const DEFAULT_CONFDIR = path.join(HOME, ".xclaw", "mitm");
 const DEFAULT_PORT = 4444;
 
 /** @returns {boolean} */
@@ -51,23 +53,26 @@ export function mitmPort(cfg = null) {
 }
 
 export function mitmConfdir(cfg = null) {
-  return (
-    process.env.XCLAW_MITM_CONFDIR ||
-    cfg?.browser?.mitm?.confdir ||
-    DEFAULT_CONFDIR
-  );
+  if (process.env.XCLAW_MITM_CONFDIR) return process.env.XCLAW_MITM_CONFDIR;
+  const explicit = cfg?.browser?.mitm?.confdir;
+  if (typeof explicit === "string" && explicit) return explicit;
+  const dir = cfg?.paths?.configDir;
+  return dir ? path.join(dir, "mitm") : null;
 }
 
 export function mitmPidPath(cfg = null) {
-  return path.join(mitmConfdir(cfg), "mitm.pid");
+  const dir = mitmConfdir(cfg);
+  return dir ? path.join(dir, "mitm.pid") : null;
 }
 
 export function mitmLogPath(cfg = null) {
-  return path.join(mitmConfdir(cfg), "mitm.log");
+  const dir = mitmConfdir(cfg);
+  return dir ? path.join(dir, "mitm.log") : null;
 }
 
 export function mitmFlowsPath(cfg = null) {
-  return path.join(mitmConfdir(cfg), "flows.jsonl");
+  const dir = mitmConfdir(cfg);
+  return dir ? path.join(dir, "flows.jsonl") : null;
 }
 
 /**
@@ -76,6 +81,7 @@ export function mitmFlowsPath(cfg = null) {
  */
 export async function ensureMitmConfdir(cfg = null) {
   const confdir = mitmConfdir(cfg);
+  if (!confdir) return null;
   await fsp.mkdir(confdir, { recursive: true });
 
   const destAddon = path.join(confdir, "addons.py");
@@ -116,8 +122,10 @@ export async function ensureMitmConfdir(cfg = null) {
 }
 
 export function readMitmPid(cfg = null) {
+  const pidPath = mitmPidPath(cfg);
+  if (!pidPath) return null;
   try {
-    const raw = fs.readFileSync(mitmPidPath(cfg), "utf8").trim();
+    const raw = fs.readFileSync(pidPath, "utf8").trim();
     const pid = Number(raw);
     return Number.isFinite(pid) ? pid : null;
   } catch {
@@ -212,7 +220,8 @@ export function mitmEnvFromConfig(cfg = null) {
   if (!isMitmEnabled(cfg)) return env;
   env.XCLAW_MITM = process.env.XCLAW_MITM || "true";
   env.XCLAW_MITM_PORT = String(mitmPort(cfg));
-  env.XCLAW_MITM_CONFDIR = mitmConfdir(cfg);
+  const confdir = mitmConfdir(cfg);
+  if (confdir) env.XCLAW_MITM_CONFDIR = confdir;
   if (process.env.XCLAW_MITMDUMP) env.XCLAW_MITMDUMP = process.env.XCLAW_MITMDUMP;
   if (process.env.XCLAW_MITM_INSECURE_CERTS) {
     env.XCLAW_MITM_INSECURE_CERTS = process.env.XCLAW_MITM_INSECURE_CERTS;
@@ -242,6 +251,9 @@ export async function waitForMitmReady(cfg = null, { timeoutMs = 15_000, needCa 
   }
   const port = mitmPort(cfg);
   const confdir = mitmConfdir(cfg);
+  if (!confdir) {
+    return { ok: false, reason: "no_confdir" };
+  }
   const start = Date.now();
   let listening = false;
   let ready = false;
@@ -290,6 +302,10 @@ export async function startMitm(cfg = null, { log = console.log } = {}) {
     return { ok: true, already: true, pid, port, listening: up };
   }
 
+  if (!mitmConfdir(cfg)) {
+    return { ok: false, reason: "no confdir — set paths.configDir or XCLAW_MITM_CONFDIR", code: "MITM_NO_CONFDIR" };
+  }
+
   const bin = await findMitmdump();
   if (!bin) {
     return {
@@ -300,6 +316,9 @@ export async function startMitm(cfg = null, { log = console.log } = {}) {
   }
 
   const confdir = await ensureMitmConfdir(cfg);
+  if (!confdir) {
+    return { ok: false, reason: "no confdir — set paths.configDir or XCLAW_MITM_CONFDIR", code: "MITM_NO_CONFDIR" };
+  }
   const port = mitmPort(cfg);
   const addon = path.join(confdir, "addons.py");
   const logPath = mitmLogPath(cfg);
@@ -401,6 +420,9 @@ export async function startMitm(cfg = null, { log = console.log } = {}) {
 export async function stopMitm(cfg = null, { log = console.log } = {}) {
   const pid = readMitmPid(cfg);
   const pidPath = mitmPidPath(cfg);
+  if (!pidPath) {
+    return { ok: true, stopped: false };
+  }
   if (!pid) {
     try {
       await fsp.unlink(pidPath);
@@ -445,8 +467,12 @@ export async function findMitmCaCert(cfg = null) {
     process.env.XCLAW_MITM_CONFDIR || cfg?.browser?.mitm?.confdir
   );
   const candidates = [
-    path.join(confdir, "mitmproxy-ca-cert.pem"),
-    path.join(confdir, "mitmproxy-ca.pem"),
+    ...(confdir
+      ? [
+          path.join(confdir, "mitmproxy-ca-cert.pem"),
+          path.join(confdir, "mitmproxy-ca.pem"),
+        ]
+      : []),
     ...(explicit
       ? []
       : [
@@ -507,8 +533,8 @@ export async function getMitmCaInfo(cfg = null) {
     spkiChromeFlag: spki ? `--ignore-certificate-errors-spki-list=${spki}` : null,
     ...fields,
     pemLength: pem ? pem.length : 0,
-    hasKey: await fileExists(path.join(confdir, "mitmproxy-ca.pem")),
-    p12Path: (await fileExists(path.join(confdir, "mitmproxy-ca.p12")))
+    hasKey: confdir ? await fileExists(path.join(confdir, "mitmproxy-ca.pem")) : false,
+    p12Path: confdir && (await fileExists(path.join(confdir, "mitmproxy-ca.p12")))
       ? path.join(confdir, "mitmproxy-ca.p12")
       : null,
   };
@@ -535,6 +561,9 @@ export async function ensureMitmCa(cfg = null, { log = console.log, timeoutMs = 
 
   // Need mitmdump to materialize CA into confdir
   const confdir = await ensureMitmConfdir(cfg);
+  if (!confdir) {
+    return { ok: false, reason: "no confdir — set paths.configDir or XCLAW_MITM_CONFDIR", code: "MITM_NO_CONFDIR" };
+  }
   const bin = await findMitmdump();
   if (!bin) {
     return {
@@ -594,6 +623,9 @@ export async function exportMitmCa(cfg = null, dest = null) {
     return { ok: false, reason: "no_ca", hint: "call ensureMitmCa() or start mitmdump once" };
   }
   const confdir = mitmConfdir(cfg);
+  if (!dest && !confdir) {
+    return { ok: false, reason: "no_confdir" };
+  }
   const outDir = dest
     ? (dest.endsWith(".pem") ? path.dirname(dest) : dest)
     : path.join(confdir, "export");
@@ -601,14 +633,16 @@ export async function exportMitmCa(cfg = null, dest = null) {
   const outPem = dest && dest.endsWith(".pem") ? dest : path.join(outDir, "xclaw-mitmproxy-ca-cert.pem");
   await fsp.copyFile(certPath, outPem);
   const result = { ok: true, certPath: outPem, source: certPath };
-  const p12 = path.join(confdir, "mitmproxy-ca.p12");
-  try {
-    await fsp.access(p12);
-    const outP12 = path.join(path.dirname(outPem), "xclaw-mitmproxy-ca.p12");
-    await fsp.copyFile(p12, outP12);
-    result.p12Path = outP12;
-  } catch {
-    /* no p12 */
+  if (confdir) {
+    const p12 = path.join(confdir, "mitmproxy-ca.p12");
+    try {
+      await fsp.access(p12);
+      const outP12 = path.join(path.dirname(outPem), "xclaw-mitmproxy-ca.p12");
+      await fsp.copyFile(p12, outP12);
+      result.p12Path = outP12;
+    } catch {
+      /* no p12 */
+    }
   }
   // Also write SPKI sidecar for Chrome flags
   const spki = await mitmCaSpkiHash(certPath);
@@ -854,6 +888,7 @@ export async function readMitmFlows(cfg = null, opts = {}) {
     sinceTs,
   } = opts || {};
   const p = mitmFlowsPath(cfg);
+  if (!p) return [];
   let rows = [];
   try {
     const text = await fsp.readFile(p, "utf8");
@@ -911,39 +946,44 @@ export async function mitmStatus(cfg = null) {
   const ca = await findMitmCaCert(cfg);
   let flowCount = 0;
   let lastFlowTs = null;
-  try {
-    const text = await fsp.readFile(mitmFlowsPath(cfg), "utf8");
-    const lines = text.trim().split("\n").filter(Boolean);
-    flowCount = lines.length;
-    if (lines.length) {
-      try {
-        lastFlowTs = JSON.parse(lines[lines.length - 1]).ts ?? null;
-      } catch {
-        /* */
+  const flowsPath = mitmFlowsPath(cfg);
+  if (flowsPath) {
+    try {
+      const text = await fsp.readFile(flowsPath, "utf8");
+      const lines = text.trim().split("\n").filter(Boolean);
+      flowCount = lines.length;
+      if (lines.length) {
+        try {
+          lastFlowTs = JSON.parse(lines[lines.length - 1]).ts ?? null;
+        } catch {
+          /* */
+        }
       }
+    } catch {
+      /* no flows yet */
     }
-  } catch {
-    /* no flows yet */
   }
   // Addon running() writes confdir/ready; stats.json holds counters
   let ready = false;
   let readyMeta = null;
   let stats = null;
-  try {
-    const raw = await fsp.readFile(path.join(confdir, "ready"), "utf8");
-    ready = true;
+  if (confdir) {
     try {
-      readyMeta = JSON.parse(raw.trim());
+      const raw = await fsp.readFile(path.join(confdir, "ready"), "utf8");
+      ready = true;
+      try {
+        readyMeta = JSON.parse(raw.trim());
+      } catch {
+        readyMeta = { raw: raw.trim() };
+      }
     } catch {
-      readyMeta = { raw: raw.trim() };
+      /* no ready file */
     }
-  } catch {
-    /* no ready file */
-  }
-  try {
-    stats = JSON.parse(await fsp.readFile(path.join(confdir, "stats.json"), "utf8"));
-  } catch {
-    /* */
+    try {
+      stats = JSON.parse(await fsp.readFile(path.join(confdir, "stats.json"), "utf8"));
+    } catch {
+      /* */
+    }
   }
   const bin = await findMitmdump();
   return {
@@ -972,6 +1012,7 @@ export async function mitmStatus(cfg = null) {
 
 export async function clearMitmFlows(cfg = null) {
   const p = mitmFlowsPath(cfg);
+  if (!p) return { ok: true, path: null };
   try {
     await fsp.writeFile(p, "");
     return { ok: true, path: p };

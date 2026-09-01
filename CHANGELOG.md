@@ -1,3 +1,30 @@
+## 3.515.0
+
+### MITM confdir follows paths.configDir
+
+`mitmConfdir()` resolved `~/.xclaw/mitm` from `os.homedir()` while
+production `startMitm(cfg)` at supervisor and browser-tools already
+had cfg in scope. `loadConfig()` stamps `paths.configDir`
+unconditionally and does not stamp `browser.mitm.confdir`, so the
+resolver still homed. Supervisor `loadMitmCfg()` is raw JSON without
+configDir, and `tick()` rotated `flows.jsonl` via `mitmConfdir()` with
+no cfg. Two instances on one host with different `paths.configDir`
+shared one mitm confdir (pid/log/flows/CA); the suite wrote the
+operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.514.0 control-plane sqlite.
+
+- Honour `XCLAW_MITM_CONFDIR` then `browser.mitm.confdir` then
+  `paths.configDir`. No configDir → `null`. No home fallback. Do not
+  honour `XCLAW_STATE_DIR` (seats/auth fallback).
+- `ensureMitmConfdir` / `startMitm` no-op a null path (do not
+  `mkdir(null)`). `stopMitm` / `clearMitmFlows` / `mitmStatus` skip a
+  null confdir. Supervisor stamps `paths.configDir` onto `loadMitmCfg`
+  and threads cfg into `tick` so live still persists under configDir
+  when MITM is on (never drop the capability).
+- Pin: configDir write never touches home; explicit confdir wins;
+  env wins over configDir; no-configDir names no dir and never writes
+  home; supervisor still stamps configDir and tick threads cfg.
+
 ## 3.514.0
 
 ### Control-plane sqlite follows paths.configDir

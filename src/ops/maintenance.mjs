@@ -227,19 +227,22 @@ export async function runOpsMaintenance(cfg = {}) {
   }
 
   const mt = cfg.ops?.maintenance || {};
-  const proofsDir = path.join(mitmConfdir(cfg), "proofs");
-  try {
-    out.dirs.push(
-      await pruneDirByAge(proofsDir, {
-        maxAgeMs:
-          (Number(mt.proofMaxAgeDays) > 0 ? Number(mt.proofMaxAgeDays) : DEFAULT_PROOF_MAX_AGE_DAYS) *
-          86_400_000,
-        keepMax: Number(mt.proofKeepMax) > 0 ? Number(mt.proofKeepMax) : DEFAULT_PROOF_KEEP_MAX,
-        match: PROOF_BUNDLE_RE,
-      })
-    );
-  } catch (e) {
-    out.errors.push({ target: proofsDir, error: e?.message || String(e) });
+  const confdir = mitmConfdir(cfg);
+  if (confdir) {
+    const proofsDir = path.join(confdir, "proofs");
+    try {
+      out.dirs.push(
+        await pruneDirByAge(proofsDir, {
+          maxAgeMs:
+            (Number(mt.proofMaxAgeDays) > 0 ? Number(mt.proofMaxAgeDays) : DEFAULT_PROOF_MAX_AGE_DAYS) *
+            86_400_000,
+          keepMax: Number(mt.proofKeepMax) > 0 ? Number(mt.proofKeepMax) : DEFAULT_PROOF_KEEP_MAX,
+          match: PROOF_BUNDLE_RE,
+        })
+      );
+    } catch (e) {
+      out.errors.push({ target: proofsDir, error: e?.message || String(e) });
+    }
   }
 
   // No override: pruneCheckpoints already reads cfg.checkpoints, and a second

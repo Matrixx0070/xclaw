@@ -183,11 +183,14 @@ function stopGateway() {
 }
 
 function loadMitmCfg() {
+  const configDir = path.dirname(CONFIG);
   try {
     const raw = JSON.parse(fs.readFileSync(CONFIG, "utf8"));
+    if (!raw.paths) raw.paths = {};
+    if (!raw.paths.configDir) raw.paths.configDir = configDir;
     return raw;
   } catch {
-    return null;
+    return { paths: { configDir } };
   }
 }
 
@@ -259,20 +262,23 @@ function startGateway() {
 async function tick() {
   // H0: keep MITM alive; recover if process died; rotate fat flow logs
   try {
-    if (isMitmEnabled()) {
-      const st = await mitmStatus();
+    const cfg = loadMitmCfg();
+    if (isMitmEnabled(cfg)) {
+      const st = await mitmStatus(cfg);
       if (st.enabled && !st.listening) {
         log("mitm was enabled but not listening — recovery restart");
-        await stopMitm(null, { log }).catch(() => {});
+        await stopMitm(cfg, { log }).catch(() => {});
       }
       await ensureMitm();
       // disk hygiene every tick when large
       try {
-        const confdir = mitmConfdir();
-        await rotateFileIfLarge(path.join(confdir, "flows.jsonl"), {
-          maxBytes: Number(process.env.XCLAW_MITM_FLOWS_MAX_BYTES) || 50 * 1024 * 1024,
-          keep: 3,
-        });
+        const confdir = mitmConfdir(cfg);
+        if (confdir) {
+          await rotateFileIfLarge(path.join(confdir, "flows.jsonl"), {
+            maxBytes: Number(process.env.XCLAW_MITM_FLOWS_MAX_BYTES) || 50 * 1024 * 1024,
+            keep: 3,
+          });
+        }
       } catch {
         /* */
       }
@@ -302,7 +308,7 @@ async function main() {
   ensureConfig();
   log(`supervisor start interval=${INTERVAL}ms port=${PORT} root=${ROOT}`);
   log(`apiKey=${Boolean(API_KEY)} telegram=${Boolean(TG_TOKEN)} owner=${OWNER || "—"}`);
-  log(`mitmEnabled=${isMitmEnabled()} mitmPort=${mitmPort()}`);
+  log(`mitmEnabled=${isMitmEnabled(loadMitmCfg())} mitmPort=${mitmPort(loadMitmCfg())}`);
   try {
     for (const ch of horizon0Checklist()) {
       log(`h0.${ch.id} ${ch.warn ? "WARN" : "ok"} ${ch.detail}`);

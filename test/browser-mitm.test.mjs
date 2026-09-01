@@ -62,10 +62,10 @@ describe("mitmPort / confdir", () => {
     delete process.env.XCLAW_MITM_PORT;
   });
 
-  it("confdir under .xclaw by default", () => {
+  it("confdir is null without configDir", () => {
     delete process.env.XCLAW_MITM_CONFDIR;
-    assert.ok(mitmConfdir().includes(".xclaw"));
-    assert.ok(mitmConfdir().includes("mitm"));
+    assert.equal(mitmConfdir(), null);
+    assert.equal(mitmConfdir({}), null);
   });
 });
 
