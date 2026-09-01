@@ -1026,6 +1026,25 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
   return mission;
 }
 
+/**
+ * Same class as queue settleAfterRun / settleAfterDeploy:
+ * rollbackMission persists rolled_back (and discards the worktree) while
+ * mergeMission is inside unbounded applyWorktreeMerge. merge is not in
+ * `running`, so abort is a no-op. The in-memory mission's terminal write
+ * must not overwrite rolled_back (or any other terminal) with
+ * done/deploying, and must not requestDeploy over a rolled-back mission.
+ *
+ * Missing file → null (do not resurrect). Terminal on disk → null.
+ * Else return held.
+ */
+export function settleAfterMerge(held, onDisk) {
+  if (!onDisk) return null;
+  if (!held) return null;
+  if (onDisk.id !== held.id) return null;
+  if (TERMINAL_STATUSES.has(onDisk.status)) return null;
+  return held;
+}
+
 /** Apply the verified worktree changes to the real repo (the gated step). */
 export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {}) {
   const mission = await loadMission(cfg, id);
@@ -1050,6 +1069,13 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
             cfg,
           },
   });
+  // Re-read before any terminal write or requestDeploy. rollbackMission
+  // persists rolled_back (and is not in `running`, so abort is a no-op)
+  // while applyWorktreeMerge runs.
+  const afterMerge = await loadMission(cfg, mission.id).catch(() => null);
+  if (!settleAfterMerge(mission, afterMerge)) {
+    return { mission: afterMerge || mission, merge: out };
+  }
   if (checkOnly) {
     mission.status = "merge_ready";
     addEvent(mission, "merge", `check-only: ${out.ok ? "clean" : out.error || out.code}`);
@@ -1074,6 +1100,13 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
         const { requestDeploy } = await import("../self/deploy.mjs");
         const { latestKnownGood } = await import("../git/timeline.mjs");
         const kg = await latestKnownGood(mission.repoDir).catch(() => null);
+        // latestKnownGood is unbounded. Re-read immediately before
+        // requestDeploy so a rollback that landed during it does not
+        // get a deploy intent.
+        const beforeDeploy = await loadMission(cfg, mission.id).catch(() => null);
+        if (!settleAfterMerge(mission, beforeDeploy)) {
+          return { mission: beforeDeploy || mission, merge: out };
+        }
         await requestDeploy(cfg, {
           missionId: mission.id,
           repoDir: mission.repoDir,
@@ -1134,6 +1167,13 @@ export async function mergeMission(cfg, id, { onEvent, checkOnly = false } = {})
     });
   } catch {
     /* notes are best-effort */
+  }
+  // setMissionRef / markKnownGood / intel notes are unbounded. Re-read
+  // immediately before the terminal write so a rollback that landed
+  // during them is not overwritten with done/deploying.
+  const beforeSave = await loadMission(cfg, mission.id).catch(() => null);
+  if (!settleAfterMerge(mission, beforeSave)) {
+    return { mission: beforeSave || mission, merge: out };
   }
   await saveMission(cfg, mission);
   try {

@@ -1,3 +1,31 @@
+## 3.497.0
+
+### mergeMission does not overwrite a concurrent rollback
+
+`mergeMission` held the in-memory mission across unbounded
+`applyWorktreeMerge` then wrote `done`/`deploying` without re-reading.
+`rollbackMission` persists `rolled_back` (and discards the worktree)
+while merge is in flight. Merge is not in `running`, so abort is a
+no-op. Writing done/deploying over rolled_back — or `requestDeploy`
+over a rolled-back mission — is the same class as queue cancel
+overwritten by a long-running writer.
+
+- `settleAfterMerge(held, onDisk)`: missing file → null (do not
+  resurrect); different `id` → null; on-disk in `TERMINAL_STATUSES`
+  (`done`/`rolled_back`/`deployed`/`deploy_rolled_back`) → null;
+  else return held.
+- Re-read after `applyWorktreeMerge` (before any terminal write or
+  `requestDeploy`). Re-read again immediately before `requestDeploy`
+  (`latestKnownGood` is unbounded). Re-read immediately before the
+  terminal `saveMission` (`setMissionRef`/`markKnownGood`/intel notes
+  are unbounded).
+- Pin: rollback during merge leaves `rolled_back` on disk. Existing
+  mission pins stay.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.496.0
 
 ### Self-deploy does not overwrite a newer pending intent after restart/health
