@@ -1,9 +1,22 @@
 /**
  * Shared cost ledger for swarm — reserve on spawn, settle on finish, daily hard cap.
+ *
+ * swarm-cost-ledger.json belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single daily
+ * swarm cap, so instance B's children mixed with instance A's budget — and
+ * the suite wrote into the operator's real `~/.xclaw/swarm-cost-ledger.json`.
+ *
+ * Production jobs (`reserveUsd(cfg)` / `settleUsd(cfg)`), doctor, stop-health,
+ * and eval smoke already had cfg in scope. `loadConfig()` stamps
+ * `paths.configDir` unconditionally (config/load.mjs:187), so a cfg without
+ * one is never a real caller. Such a path is `null` rather than guessing at
+ * the home dir. Same shape as `governorLedgerPath` / `accountsDir`. Honour
+ * existing `XCLAW_CONFIG_DIR`. `save` no-ops a null path (do not
+ * `mkdir(null)` / `path.dirname(null)`).
  */
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { acquireLease } from "./ledger-lease.mjs";
 import { acquireLeaseViaBackend } from "./lease-backend.mjs";
 
@@ -11,24 +24,32 @@ function dayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
+function emptyLedger() {
+  return { day: dayKey(), account: "default", reservedUsd: 0, spentUsd: 0, entries: [] };
+}
+
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
 export function ledgerPath(cfg = {}) {
-  const base =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
-  return path.join(base, "swarm-cost-ledger.json");
+  const dir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return dir ? path.join(dir, "swarm-cost-ledger.json") : null;
 }
 
 function load(cfg = {}) {
+  const fp = ledgerPath(cfg);
+  if (!fp) return emptyLedger();
   try {
-    return JSON.parse(fs.readFileSync(ledgerPath(cfg), "utf8"));
+    return JSON.parse(fs.readFileSync(fp, "utf8"));
   } catch {
-    return { day: dayKey(), account: "default", reservedUsd: 0, spentUsd: 0, entries: [] };
+    return emptyLedger();
   }
 }
 
 function save(cfg, data) {
   const fp = ledgerPath(cfg);
+  if (!fp) return;
   fs.mkdirSync(path.dirname(fp), { recursive: true });
   const tmp = fp + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));

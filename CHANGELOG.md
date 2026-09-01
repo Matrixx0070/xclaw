@@ -1,3 +1,26 @@
+## 3.519.0
+
+### Swarm ledger follows paths.configDir
+
+`ledgerPath()` resolved `~/.xclaw/swarm-cost-ledger.json` from
+`os.homedir()` while production jobs (`reserveUsd(cfg)` /
+`settleUsd(cfg)` at job.mjs), doctor, stop-health, and eval smoke
+already had cfg in scope. `loadConfig()` stamps `paths.configDir`
+unconditionally, so the resolver still homed via the leftover
+`os.homedir()` fallback. Two instances on one host with different
+`paths.configDir` shared one daily swarm cap; the suite wrote the
+operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.518.0 `accounts/`. Honour existing `XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `save()` no-ops a null path (do not `mkdir(null)` /
+  `path.dirname(null)`). `load()` returns empty. In-memory
+  reserve/settle does not persist. Production callers always have
+  configDir, so live persistence is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.518.0
 
 ### Account links follow paths.configDir
