@@ -66,6 +66,33 @@ async function writeTokens(tokenPath, data) {
 }
 
 /**
+ * Re-read after unbounded refresh fetch. logoutXai (CLI `xclaw auth logout`)
+ * unlinks the same auth.json. Save of the stale snapshot must not resurrect
+ * a revoked vault.
+ *
+ * missing held → null
+ * missing onDisk + prior existed → null (logout won; do not resurrect)
+ * missing onDisk + no prior → held (first write; RULE(m) pin has no file yet)
+ * onDisk refresh_token differs from prior → null (concurrent login/other refresh)
+ * else return held
+ */
+export function settleAfterXaiRefresh(held, onDisk, prior) {
+  if (!held) return null;
+  if (!onDisk) {
+    if (prior) return null;
+    return held;
+  }
+  if (
+    prior?.refresh_token &&
+    onDisk.refresh_token &&
+    onDisk.refresh_token !== prior.refresh_token
+  ) {
+    return null;
+  }
+  return held;
+}
+
+/**
  * Load auth — three Grok modes (priority):
  *  1) api key
  *  2) oauth (xclaw tokens / grok CLI)
@@ -163,6 +190,7 @@ export async function refreshXaiToken(tok, cfg = {}) {
   if (!tok?.refresh_token) {
     throw new Error("no refresh_token");
   }
+  const prior = await readJsonSafe(paths.tokenPath);
   const url = `${c.authHost.replace(/\/$/, "")}/oauth/token`;
   const body = new URLSearchParams({
     grant_type: "refresh_token",
@@ -180,7 +208,10 @@ export async function refreshXaiToken(tok, cfg = {}) {
   }
   const data = await res.json();
   const next = normalizeTokenResponse(data, tok);
-  await writeTokens(paths.tokenPath, next);
+  const onDisk = await readJsonSafe(paths.tokenPath);
+  const settled = settleAfterXaiRefresh(next, onDisk, prior);
+  if (!settled) return null;
+  await writeTokens(paths.tokenPath, settled);
   return next;
 }
 

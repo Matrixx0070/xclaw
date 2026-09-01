@@ -1,3 +1,27 @@
+## 3.501.0
+
+### refreshXaiToken does not overwrite a concurrent logout
+
+`refreshXaiToken` held the prior vault across unbounded `fetch` of the
+xAI token endpoint then `writeTokens` of `auth.json` without re-reading.
+`logoutXai` (CLI `xclaw auth logout`) unlinks the same file. Writing the
+stale snapshot resurrects a revoked login. Same class as queue cancel
+overwritten by a long-running writer.
+
+- `settleAfterXaiRefresh(held, onDisk, prior)`: missing held → null;
+  missing onDisk when a prior vault existed → null (logout won; do not
+  resurrect); missing onDisk with no prior → held (first write; RULE(m)
+  pin has no file yet); on-disk `refresh_token` differs from prior →
+  null (concurrent login); else return held.
+- Re-read immediately before `writeTokens`. Return null from refresh if
+  settle is null. `logoutXai` unchanged.
+- Pin: logout during a 1s token-endpoint sleep leaves `auth.json` gone.
+  Existing RULE(m) file-mode pin stays (first write still allowed).
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.500.0
 
 ### resolveMcpAccessToken does not overwrite a concurrent drop
