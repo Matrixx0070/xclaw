@@ -1,3 +1,28 @@
+## 3.534.0
+
+### Soak ledger follows paths.configDir
+
+`baseDir()` resolved `~/.xclaw/soak` from
+`os.homedir()` while production writers (`appendSoakRun(cfg)` /
+`appendFlake(cfg)` at scripts/soak-run.mjs and
+scripts/soak-multinight.mjs, both via `loadConfig()`) already had
+cfg in scope. `loadConfig()` stamps `paths.configDir`
+unconditionally, so the resolver still homed via the leftover
+`os.homedir()` fallback. Two instances on one host with different
+`paths.configDir` shared one soak/ directory; the suite wrote the
+operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.533.0 `eval-quarantine.json`. Honour existing
+`XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `appendSoakRun` / `appendFlake` still return the in-memory row without
+  persisting (do not `mkdir(null)`). `soakPaths.dir` is null.
+  `getSoakSummary` rebuilds in-memory. Production writers always have
+  configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.533.0
 
 ### Eval quarantine follows paths.configDir

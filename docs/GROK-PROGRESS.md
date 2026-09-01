@@ -1955,3 +1955,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/eval-quarantine-config-dir.test.mjs test/quarantine.test.mjs → # tests 7 # pass 7 # fail 0 # duration_ms 52.841424; npm test (hermetic) → # tests 5287 # pass 5287 # fail 0 # duration_ms 78293.475326
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-01 — 3.534.0 Soak ledger follows paths.configDir
+
+LOCKED: `src/eval/soak.mjs` `baseDir` still homed while production writers `appendSoakRun(cfg)` / `appendFlake(cfg)` at scripts/soak-run.mjs and scripts/soak-multinight.mjs (both via `loadConfig()`) already had cfg. Same class as v3.297.0 / v3.533.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `soak/` directory; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Did not rewrite redactEvent / rebuildSoakSummary aggregation. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `appendSoakRun` / `appendFlake` still return the in-memory row without persisting (do not `mkdir(null)`). `soakPaths.dir` is null. `getSoakSummary` rebuilds in-memory. Production writers always have configDir, so live persist is not dropped. Removed `os` import. Exported `soakStoreDir`; `function baseDir` wraps it.
+
+RAN: node --test test/soak-config-dir.test.mjs test/soak.test.mjs test/soak-multinight.test.mjs test/memory-soak-redact.test.mjs → # tests 9 # pass 9 # fail 0 # duration_ms 150.417938; npm test (hermetic) → # tests 5292 # pass 5292 # fail 0 # duration_ms 77361.58945
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

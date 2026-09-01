@@ -1,17 +1,43 @@
 /**
  * Soak run ledger + flake tracking (Phase K).
+ * Store: <configDir>/soak/{runs.jsonl,flakes.jsonl,summary.json}
+ *
+ * The soak ledger belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * soak/ directory, so instance B listed instance A's nights — and the suite
+ * wrote into the operator's real `~/.xclaw/soak`.
+ *
+ * Production writers (`appendSoakRun(cfg)` / `appendFlake(cfg)` at
+ * scripts/soak-run.mjs and scripts/soak-multinight.mjs, both via
+ * `loadConfig()`) already had cfg in scope. `loadConfig()` stamps
+ * `paths.configDir` unconditionally (config/load.mjs:187), so a cfg
+ * without one is never a real caller. Such a path is `null` rather than
+ * guessing at the home dir. Same shape as `evalQuarantinePath`. Honour
+ * existing `XCLAW_CONFIG_DIR`. `appendSoakRun` / `appendFlake` still
+ * return the in-memory row without persisting. `soakPaths.dir` is null.
+ * `getSoakSummary` rebuilds in-memory. Do not `mkdir(null)`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { redactEvent } from "../security/redact-secrets.mjs";
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function soakStoreDir(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "soak") : null;
+}
+
 function baseDir(cfg) {
-  return path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "soak");
+  return soakStoreDir(cfg);
 }
 
 export function soakPaths(cfg) {
   const d = baseDir(cfg);
+  if (!d) return { dir: null, runs: null, flakes: null, summary: null };
   return {
     dir: d,
     runs: path.join(d, "runs.jsonl"),
@@ -22,11 +48,12 @@ export function soakPaths(cfg) {
 
 export async function appendSoakRun(cfg, run) {
   const p = soakPaths(cfg);
-  await fs.mkdir(p.dir, { recursive: true });
   const row = redactEvent({
     at: new Date().toISOString(),
     ...run,
   });
+  if (!p.dir) return row;
+  await fs.mkdir(p.dir, { recursive: true });
   await fs.appendFile(p.runs, JSON.stringify(row) + "\n");
   await rebuildSoakSummary(cfg);
   return row;
@@ -34,8 +61,9 @@ export async function appendSoakRun(cfg, run) {
 
 export async function appendFlake(cfg, flake) {
   const p = soakPaths(cfg);
-  await fs.mkdir(p.dir, { recursive: true });
   const row = redactEvent({ at: new Date().toISOString(), ...flake });
+  if (!p.dir) return row;
+  await fs.mkdir(p.dir, { recursive: true });
   await fs.appendFile(p.flakes, JSON.stringify(row) + "\n");
   await rebuildSoakSummary(cfg);
   return row;
@@ -60,8 +88,30 @@ async function readJsonl(fp) {
   }
 }
 
+function emptySummary() {
+  return {
+    at: new Date().toISOString(),
+    nights: 0,
+    runs: 0,
+    totalCases: 0,
+    passed: 0,
+    failed: 0,
+    passRate: null,
+    flakes: 0,
+    flakeRate: null,
+    flakeBudgetOk: true,
+    lastRuns: [],
+    gate: {
+      minNights: Number(process.env.SOAK_MIN_NIGHTS || 3),
+      nightsOk: false,
+      passOk: null,
+    },
+  };
+}
+
 export async function rebuildSoakSummary(cfg) {
   const p = soakPaths(cfg);
+  if (!p.dir) return emptySummary();
   const runs = await readJsonl(p.runs);
   const flakes = await readJsonl(p.flakes);
   const totalCases = runs.reduce((s, r) => s + (r.total || 0), 0);
@@ -95,6 +145,7 @@ export async function rebuildSoakSummary(cfg) {
 
 export async function getSoakSummary(cfg) {
   const p = soakPaths(cfg);
+  if (!p.dir) return emptySummary();
   try {
     return JSON.parse(await fs.readFile(p.summary, "utf8"));
   } catch {
