@@ -1859,3 +1859,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/auth-refresh-status-config-dir.test.mjs test/doctor-auth-refresh.test.mjs test/doctor-auth-refresh-prod.test.mjs test/cost-preflight-auth-record.test.mjs → # tests 17 # pass 17 # fail 0 # duration_ms 108.418931; npm test (hermetic) → # tests 5247 # pass 5247 # fail 0 # duration_ms 76049.658889
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.
+
+## 2026-09-01 — 3.526.0 Job queue follows paths.configDir
+
+LOCKED: `src/jobs/queue.mjs` `queueDir` still homed while production writers `enqueueJob(cfg)` at channels/commands.mjs:217 and gateway/routes/eval-queue.mjs:146 already had cfg. Same class as v3.297.0 / v3.525.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `job-queue/`; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }` (queue-priority is resolvePriority-only, no disk). Did not rewrite admission/priority/abandoned/QUEUE_STATUSES.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `ensureDir` no-ops a null path (do not `mkdir(null)`). `listQueue` returns `[]`. `enqueueJob` still returns the record without persisting. `getQueueItem` returns null. `saveItem` no-ops. `clearCompletedQueue` returns `{ removed: 0 }`. Production writers always have configDir, so live persist is not dropped. Exported `queueDir`. Removed `os` import.
+
+RAN: node --test test/queue-config-dir.test.mjs test/job-queue.test.mjs test/queue-abandon.test.mjs test/queue-cancel.test.mjs test/queue-priority.test.mjs test/queue-enqueue-fields.test.mjs test/queue-cli-owner.test.mjs test/queue-clip-census.test.mjs test/queue-depth-count.test.mjs test/queue-governor-release.test.mjs test/queue-pause.test.mjs test/queue-retry.test.mjs test/queue-stats.test.mjs test/admission-bound-race.test.mjs test/batch-queue.test.mjs test/shutdown.test.mjs → # tests 85 # pass 85 # fail 0 # duration_ms 2090.805693; npm test (hermetic) → # tests 5252 # pass 5252 # fail 0 # duration_ms 78394.461867
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.

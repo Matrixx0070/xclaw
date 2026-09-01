@@ -1,3 +1,25 @@
+## 3.526.0
+
+### Job queue follows paths.configDir
+
+`queueDir()` resolved `~/.xclaw/job-queue` from
+`os.homedir()` while production writers (`enqueueJob(cfg)`
+at channels/commands and gateway/routes/eval-queue) already had cfg
+in scope. `loadConfig()` stamps `paths.configDir` unconditionally,
+so the resolver still homed via the leftover `os.homedir()` fallback.
+Two instances on one host with different `paths.configDir` shared one
+queue; the suite wrote the operator's real `~/.xclaw`. Same class as
+v3.297.0 `alert-state.json` and v3.525.0 `auth-refresh-status`. Honour
+existing `XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `ensureDir` no-ops a null path (do not `mkdir(null)`). `listQueue`
+  returns `[]`. `enqueueJob` still returns the record without persisting.
+  Production writers always have configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.525.0
 
 ### Auth-refresh status follows paths.configDir

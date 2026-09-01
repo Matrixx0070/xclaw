@@ -1,12 +1,26 @@
 /**
  * Multi-job queue — bounded concurrency with admission control (X1).
- * Jobs are persisted under ~/.xclaw/job-queue/
+ * Jobs are persisted under <configDir>/job-queue/.
+ *
+ * job-queue belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * queue, so instance B drained instance A's jobs — and the suite wrote
+ * into the operator's real `~/.xclaw/job-queue/`.
+ *
+ * Production writers (`enqueueJob(cfg)` at channels/commands and
+ * gateway/routes/eval-queue) already had cfg in scope. `loadConfig()`
+ * stamps `paths.configDir` unconditionally (config/load.mjs:187), so a
+ * cfg without one is never a real caller. Such a path is `null` rather
+ * than guessing at the home dir. Same shape as `lastDrainPath`. Honour
+ * existing `XCLAW_CONFIG_DIR`. `ensureDir` no-ops a null path (do not
+ * `mkdir(null)`). `listQueue` returns `[]`. `enqueueJob` still returns
+ * the record without persisting.
  *
  * cfg.queue: concurrency, maxDepth, maxWaitMs, maxConcurrencyCap
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { randomUUID } from "node:crypto";
 import { runJob, saveJobSummary } from "./job.mjs";
 import { recordJob } from "./history.mjs";
@@ -70,13 +84,18 @@ function agedPriority(item, now = Date.now()) {
   return base + bump;
 }
 
-function queueDir(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "job-queue");
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function queueDir(cfg = {}) {
+  const dir = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return dir ? path.join(dir, "job-queue") : null;
 }
 
 async function ensureDir(cfg) {
   const dir = queueDir(cfg);
+  if (!dir) return null;
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
@@ -228,6 +247,7 @@ export async function enqueueJob(cfg, item) {
     result: null,
     error: null,
   };
+  if (!dir) return rec;
   await fs.writeFile(path.join(dir, `${id}.json`), JSON.stringify(rec, null, 2));
   emitQueue({ kind: "enqueued", id, status: "queued", goal: rec.goal?.slice?.(0, 80) });
   kick(cfg);
@@ -236,6 +256,7 @@ export async function enqueueJob(cfg, item) {
 
 export async function listQueue(cfg, { limit = 50 } = {}) {
   const dir = await ensureDir(cfg);
+  if (!dir) return [];
   let files = [];
   try {
     files = (await fs.readdir(dir)).filter((f) => f.endsWith(".json"));
@@ -286,6 +307,7 @@ export async function countQueued(cfg) {
 
 export async function getQueueItem(cfg, id) {
   const dir = await ensureDir(cfg);
+  if (!dir) return null;
   try {
     return JSON.parse(await fs.readFile(path.join(dir, `${id}.json`), "utf8"));
   } catch {
@@ -295,6 +317,7 @@ export async function getQueueItem(cfg, id) {
 
 async function saveItem(cfg, rec) {
   const dir = await ensureDir(cfg);
+  if (!dir) return;
   await fs.writeFile(path.join(dir, `${rec.id}.json`), JSON.stringify(rec, null, 2));
 }
 
@@ -609,8 +632,8 @@ export async function retryFailedQueue(cfg) {
 }
 
 export async function clearCompletedQueue(cfg) {
-
   const dir = await ensureDir(cfg);
+  if (!dir) return { removed: 0 };
   // The whole queue, not a page of it: listQueue sorts queued first, so a
   // display-sized limit on a 500+ queued backlog hides every non-queued
   // record — stats saturate, sweeps no-op, and each reports a successful zero.
