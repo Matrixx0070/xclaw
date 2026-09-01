@@ -1,10 +1,25 @@
 /**
  * H2 — Propose skill drafts from repeated job/eval failures.
- * Does NOT auto-install; writes drafts under ~/.xclaw/skill-proposals/
+ * Store: <configDir>/skill-proposals/
+ *
+ * skill-proposals/ belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * skill-proposals/ directory, so instance B listed instance A's drafts —
+ * and the suite wrote into the operator's real `~/.xclaw/skill-proposals`.
+ *
+ * Production writers (`proposeSkillFromFailure(cfg)` at eval/runner.mjs:154
+ * and jobs/job.mjs:433; `proposeSkillFromSuccess(cfg)` at jobs/job.mjs:461)
+ * already had cfg in scope. `loadConfig()` stamps `paths.configDir`
+ * unconditionally (config/load.mjs:187), so a cfg without one is never a
+ * real caller. Such a path is `null` rather than guessing at the home dir.
+ * Same shape as `soakStoreDir`. Honour existing `XCLAW_CONFIG_DIR`.
+ * `proposeSkillFromFailure` / `proposeSkillFromSuccess` still return the
+ * in-memory draft without persisting. `listProposals` returns `[]`.
+ * Do not `mkdir(null)`. Keep honouring `paths.skillsDir` for install dest.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 
 
 /**
@@ -37,9 +52,23 @@ export function canInstallSkills(cfg = {}, opts = {}) {
   return { ok: true, reason: `profile_${profile}` };
 }
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function skillProposalsDir(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "skill-proposals") : null;
+}
+
 function proposalsDir(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "skill-proposals");
+  return skillProposalsDir(cfg);
+}
+
+function skillsRoot(cfg) {
+  if (cfg?.paths?.skillsDir) return cfg.paths.skillsDir;
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "skills") : null;
 }
 
 /**
@@ -53,7 +82,6 @@ function proposalsDir(cfg) {
  */
 export async function proposeSkillFromFailure(cfg, opts) {
   const dir = proposalsDir(cfg);
-  await fs.mkdir(dir, { recursive: true });
   const id = `${opts.caseId || "job"}_${Date.now().toString(36)}`;
   const name = `auto-${(opts.caseId || "task").replace(/[^a-z0-9-]/gi, "-").toLowerCase()}`.slice(0, 48);
 
@@ -94,13 +122,16 @@ ${String(opts.text || "").slice(0, 800)}
 \`\`\`
 `;
 
-  const fp = path.join(dir, `${id}.md`);
+  const fp = dir ? path.join(dir, `${id}.md`) : null;
+  if (!dir) return { id, name, path: fp, enabled: false };
+  await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(fp, body);
   return { id, name, path: fp, enabled: false };
 }
 
 export async function listProposals(cfg, limit = 20) {
   const dir = proposalsDir(cfg);
+  if (!dir) return [];
   let files = [];
   try {
     files = (await fs.readdir(dir)).filter((f) => f.endsWith(".md"));
@@ -130,6 +161,9 @@ export async function installProposal(cfg, proposalFile, opts = {}) {
     return { ok: false, installed: false, ...gate };
   }
   const dir = proposalsDir(cfg);
+  if (!dir && !path.isAbsolute(proposalFile || "")) {
+    return { ok: false, installed: false, reason: "no_config" };
+  }
   const fp = path.isAbsolute(proposalFile)
     ? proposalFile
     : path.join(dir, proposalFile);
@@ -139,13 +173,14 @@ export async function installProposal(cfg, proposalFile, opts = {}) {
   if (!/^---/m.test(body)) {
     throw new Error("proposal missing front matter");
   }
-  const skillsRoot =
-    cfg?.paths?.skillsDir ||
-    path.join(cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"), "skills");
+  const destRoot = skillsRoot(cfg);
+  if (!destRoot) {
+    return { ok: false, installed: false, reason: "no_config" };
+  }
   // name from front matter
   const nm = body.match(/^name:\s*(.+)$/m);
   const name = (nm ? nm[1].trim() : path.basename(fp, ".md")).replace(/[^a-zA-Z0-9._-]/g, "-");
-  const destDir = path.join(skillsRoot, name);
+  const destDir = path.join(destRoot, name);
   await fs.mkdir(destDir, { recursive: true });
   const dest = path.join(destDir, "SKILL.md");
   if (!opts.force) {
@@ -161,6 +196,7 @@ export async function installProposal(cfg, proposalFile, opts = {}) {
   // listed invited a second Install click, which errors with "already exists".
   let archived = null;
   try {
+    if (!dir) throw new Error("no_config");
     const installedDir = path.join(dir, "installed");
     await fs.mkdir(installedDir, { recursive: true });
     archived = path.join(installedDir, path.basename(fp));
@@ -173,9 +209,15 @@ export async function installProposal(cfg, proposalFile, opts = {}) {
 
 export async function rejectProposal(cfg, proposalFile, reason = "") {
   const dir = proposalsDir(cfg);
+  if (!dir && !path.isAbsolute(proposalFile || "")) {
+    return { path: null, reason: "no_config" };
+  }
   const fp = path.isAbsolute(proposalFile)
     ? proposalFile
     : path.join(dir, proposalFile);
+  if (!dir) {
+    return { path: null, reason: "no_config" };
+  }
   const rejected = path.join(dir, "rejected");
   await fs.mkdir(rejected, { recursive: true });
   const base = path.basename(fp);
@@ -201,7 +243,6 @@ export async function proposeSkillFromSuccess(cfg, opts = {}) {
   }
 
   const dir = proposalsDir(cfg);
-  await fs.mkdir(dir, { recursive: true });
   const id = `ok-${(opts.caseId || "job").replace(/[^a-z0-9-]/gi, "-")}_${Date.now().toString(36)}`.slice(0, 64);
   const name = `learned-${(opts.caseId || opts.goal || "task")
     .replace(/[^a-z0-9-]/gi, "-")
@@ -241,7 +282,9 @@ ${String(opts.text || "").slice(0, 800)}
 \`\`\`
 `;
 
-  const fp = path.join(dir, `${id}.md`);
+  const fp = dir ? path.join(dir, `${id}.md`) : null;
+  if (!dir) return { ok: true, id, name, path: fp, enabled: false };
+  await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(fp, body);
   return { ok: true, id, name, path: fp, enabled: false };
 }

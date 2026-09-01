@@ -1967,3 +1967,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/soak-config-dir.test.mjs test/soak.test.mjs test/soak-multinight.test.mjs test/memory-soak-redact.test.mjs → # tests 9 # pass 9 # fail 0 # duration_ms 150.417938; npm test (hermetic) → # tests 5292 # pass 5292 # fail 0 # duration_ms 77361.58945
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-01 — 3.535.0 Skill proposals follow paths.configDir
+
+LOCKED: `src/skills/propose.mjs` `proposalsDir` still homed while production writers `proposeSkillFromFailure(cfg)` at eval/runner.mjs:154 and jobs/job.mjs:433; `proposeSkillFromSuccess(cfg)` at jobs/job.mjs:461 already had cfg. Same class as v3.297.0 / v3.534.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `skill-proposals/` directory; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Two homes in one file (proposalsDir + skillsRoot). Keep honouring `paths.skillsDir` for install dest. Did not rewrite draft body templates. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `proposeSkillFromFailure` / `proposeSkillFromSuccess` still return the in-memory draft without persisting (do not `mkdir(null)`). `listProposals` returns `[]`. Keep honouring `paths.skillsDir`. Production writers always have configDir, so live persist is not dropped. Removed `os` import. Exported `skillProposalsDir`; `function proposalsDir` wraps it.
+
+RAN: node --test test/skill-proposals-config-dir.test.mjs test/skill-propose-install.test.mjs test/skills-propose.test.mjs test/skills-proposals-decide.test.mjs → # tests 13 # pass 13 # fail 0 # duration_ms 96.057849; npm test (hermetic) → # tests 5297 # pass 5297 # fail 0 # duration_ms 78003.600348
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
