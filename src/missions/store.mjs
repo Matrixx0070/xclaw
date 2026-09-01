@@ -3,10 +3,24 @@
  * One JSON file per mission under <configDir>/missions/, written atomically
  * (tmp + rename) after every transition so a crash/restart never loses more
  * than the in-flight step. Event log is bounded.
+ *
+ * missions/ belongs to the config dir that owns the instance, not to whoever's
+ * home dir the process happens to run under. Resolving it from `os.homedir()`
+ * alone meant two instances on one host shared a single missions/ directory,
+ * so instance B listed instance A's missions — and the suite wrote into the
+ * operator's real `~/.xclaw/missions`.
+ *
+ * Production writers (`saveMission(cfg)` at missions/engine.mjs and
+ * self/deploy.mjs:169) already had cfg in scope. `loadConfig()` stamps
+ * `paths.configDir` unconditionally (config/load.mjs:187), so a cfg without
+ * one is never a real caller. Such a path is `null` rather than guessing at
+ * the home dir. Same shape as `skillProposalsDir`. Honour existing
+ * `XCLAW_CONFIG_DIR`. `saveMission` still returns the in-memory mission
+ * without persisting. `listMissions` returns `[]`. `loadMission` returns
+ * `null`. Do not `mkdir(null)`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { randomUUID } from "node:crypto";
 
 const ACTIVE_STATUSES = new Set([
@@ -34,9 +48,17 @@ export const MISSION_STATUSES = [
   "deploy_rolled_back",
 ];
 
-function missionsDir(cfg = {}) {
-  const dir = cfg.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(dir, "missions");
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function missionsStoreDir(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "missions") : null;
+}
+
+function missionsDir(cfg) {
+  return missionsStoreDir(cfg);
 }
 
 // Mission ids are minted as msn_<base36>_<uuid8>; anything with path
@@ -47,12 +69,15 @@ const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 function fileFor(cfg, id) {
   const s = String(id);
   if (!ID_RE.test(s)) throw new Error("invalid mission id");
-  return path.join(missionsDir(cfg), `${s}.json`);
+  const dir = missionsDir(cfg);
+  if (!dir) return null;
+  return path.join(dir, `${s}.json`);
 }
 
 export async function saveMission(cfg, mission) {
   mission.updatedAt = new Date().toISOString();
   const fp = fileFor(cfg, mission.id);
+  if (!fp) return mission;
   await fs.mkdir(path.dirname(fp), { recursive: true });
   const tmp = fp + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(mission, null, 2));
@@ -62,23 +87,27 @@ export async function saveMission(cfg, mission) {
 
 export async function loadMission(cfg, id) {
   try {
-    return JSON.parse(await fs.readFile(fileFor(cfg, String(id)), "utf8"));
+    const fp = fileFor(cfg, String(id));
+    if (!fp) return null;
+    return JSON.parse(await fs.readFile(fp, "utf8"));
   } catch {
     return null;
   }
 }
 
 export async function listMissions(cfg, { limit = 50, status } = {}) {
+  const dir = missionsDir(cfg);
+  if (!dir) return [];
   let names;
   try {
-    names = (await fs.readdir(missionsDir(cfg))).filter((f) => f.endsWith(".json"));
+    names = (await fs.readdir(dir)).filter((f) => f.endsWith(".json"));
   } catch {
     return [];
   }
   const out = [];
   for (const n of names) {
     try {
-      const m = JSON.parse(await fs.readFile(path.join(missionsDir(cfg), n), "utf8"));
+      const m = JSON.parse(await fs.readFile(path.join(dir, n), "utf8"));
       if (status && m.status !== status) continue;
       out.push(m);
     } catch {

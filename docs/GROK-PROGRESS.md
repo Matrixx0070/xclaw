@@ -1979,3 +1979,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/skill-proposals-config-dir.test.mjs test/skill-propose-install.test.mjs test/skills-propose.test.mjs test/skills-proposals-decide.test.mjs → # tests 13 # pass 13 # fail 0 # duration_ms 96.057849; npm test (hermetic) → # tests 5297 # pass 5297 # fail 0 # duration_ms 78003.600348
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-01 — 3.536.0 Missions follow paths.configDir
+
+LOCKED: `src/missions/store.mjs` `missionsDir` still homed while production writers `saveMission(cfg)` at missions/engine.mjs and self/deploy.mjs:169 already had cfg. Same class as v3.297.0 / v3.535.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `missions/` directory; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Did not rewrite newMission / addEvent / reconcileInterrupted aggregation. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `saveMission` still returns the in-memory mission without persisting (do not `mkdir(null)`). `listMissions` returns `[]`. `loadMission` returns `null`. Production writers always have configDir, so live persist is not dropped. Removed `os` import. Exported `missionsStoreDir`; `function missionsDir` wraps it.
+
+RAN: node --test test/missions-config-dir.test.mjs test/missions.test.mjs → # tests 12 # pass 12 # fail 0 # duration_ms 2089.196588; npm test (hermetic) → # tests 5302 # pass 5302 # fail 0 # duration_ms 77197.975947
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
