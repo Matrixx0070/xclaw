@@ -1,3 +1,27 @@
+## 3.530.0
+
+### Memory preferences follow paths.configDir
+
+`memoryPath()` resolved `~/.xclaw/memory/preferences.md` from
+`os.homedir()` while production writers (`writePreferences(cfg)`
+at jobs/job.mjs, `writePreferences(cfg)` at agent/objective.mjs)
+already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via
+the leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one preferences.md; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.529.0 `memory/`. Honour existing
+`XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `writePreferences` still returns `{ ok: true, written: 0 }` without
+  persisting (do not `mkdir(null)`). `loadPreferences` returns `""`.
+  Production writers always have configDir, so live persist is not
+  dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.529.0
 
 ### Durable memory follows paths.configDir

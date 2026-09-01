@@ -1,13 +1,36 @@
 /**
  * R5 — Stable owner preference write-back (append-only MEMORY notes).
+ * Store: <configDir>/memory/preferences.md
+ *
+ * preferences.md belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * preferences file, so instance B loaded instance A's owner notes — and
+ * the suite wrote into the operator's real `~/.xclaw/memory/preferences.md`.
+ *
+ * Production writers (`writePreferences(cfg)` at jobs/job.mjs:476 and
+ * agent/objective.mjs:425) and the production reader (`loadPreferences(cfg)`
+ * at agent/loop.mjs:430) already had cfg in scope. `loadConfig()` stamps
+ * `paths.configDir` unconditionally (config/load.mjs:187), so a cfg without
+ * one is never a real caller. Such a path is `null` rather than guessing
+ * at the home dir. Same shape as `memoryStoreDir`. Honour existing
+ * `XCLAW_CONFIG_DIR`. `writePreferences` still returns `{ ok: true, written: 0 }`
+ * without persisting. `loadPreferences` returns `""`. Do not `mkdir(null)`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
+
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function preferencesPath(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "memory", "preferences.md") : null;
+}
 
 function memoryPath(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "memory", "preferences.md");
+  return preferencesPath(cfg);
 }
 
 /**
@@ -36,6 +59,7 @@ export async function writePreferences(cfg, hints = [], meta = {}) {
     return { ok: false, reason: "disabled" };
   }
   const fp = memoryPath(cfg);
+  if (!fp) return { ok: true, written: 0 };
   await fs.mkdir(path.dirname(fp), { recursive: true });
   let existing = "";
   try {
@@ -62,6 +86,7 @@ export async function writePreferences(cfg, hints = [], meta = {}) {
 
 export async function loadPreferences(cfg) {
   const fp = memoryPath(cfg);
+  if (!fp) return "";
   try {
     return await fs.readFile(fp, "utf8");
   } catch {

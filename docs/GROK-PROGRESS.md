@@ -1907,3 +1907,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/durable-memory-config-dir.test.mjs test/memory-durable.test.mjs test/durable-memory-shape.test.mjs test/memory-md-redact.test.mjs test/memory-s7.test.mjs test/memory-workspace-retention.test.mjs test/memory-reflection.test.mjs test/recall.test.mjs test/job-verdict.test.mjs test/memory-soak-redact.test.mjs test/verification-hardening.test.mjs → # tests 41 # pass 41 # fail 0 # duration_ms 808.112525; npm test (hermetic) → # tests 5267 # pass 5267 # fail 0 # duration_ms 77807.05314
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-01 — 3.530.0 Memory preferences follow paths.configDir
+
+LOCKED: `src/memory/preferences.mjs` `memoryPath` still homed while production writers `writePreferences(cfg)` at jobs/job.mjs:476 and agent/objective.mjs:425, and reader `loadPreferences(cfg)` at agent/loop.mjs:430, already had cfg. Same class as v3.297.0 / v3.529.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `memory/preferences.md`; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Did not rewrite extractPreferenceHints. cron/logs REJECTED (reader-home-by-design; existing pin asserts home fallback). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `writePreferences` still returns `{ ok: true, written: 0 }` without persisting (do not `mkdir(null)`). `loadPreferences` returns `""`. Production writers always have configDir, so live persist is not dropped. Removed `os` import. Exported `preferencesPath`; `function memoryPath` wraps it.
+
+RAN: node --test test/preferences-config-dir.test.mjs test/r5-learning.test.mjs test/memory-s7.test.mjs → # tests 12 # pass 12 # fail 0 # duration_ms 226.357644; npm test (hermetic) → # tests 5272 # pass 5272 # fail 0 # duration_ms 77901.864507
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
