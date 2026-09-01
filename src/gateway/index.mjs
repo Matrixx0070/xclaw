@@ -985,10 +985,9 @@ async function streamWebChatMessage(req, res, { message, sessionId, cfg, mode, v
  * absent — every existing deploy — startGateway behaves exactly as before.
  */
 async function startGatewaySupervised({ root, cfg }) {
-  const os = await import("node:os");
-  const { runGatewayLoop } = await import("./run-loop.mjs");
+  const { runGatewayLoop, defaultGatewayStateDir } = await import("./run-loop.mjs");
   const { applyCrashLoopGuard } = await import("./crash-guard.mjs");
-  const stateRoot = path.join(os.homedir(), ".xclaw");
+  const stateRoot = defaultGatewayStateDir({ cfg });
   const guard = applyCrashLoopGuard(stateRoot);
   if (guard.delayMs) {
     console.log(`[xclaw] crash-loop backoff: waiting ${guard.delayMs}ms before start`);

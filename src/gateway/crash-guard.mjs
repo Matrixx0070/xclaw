@@ -21,6 +21,14 @@ import path from "node:path";
 const WINDOW_MS = 15 * 60 * 1000;
 
 export function applyCrashLoopGuard(stateDir) {
+  // No configDir / explicit stateDir → skip the file (do not path.join(null)
+  // which would write gateway-crash-history.json in cwd). Production threads
+  // cfg so live still records under configDir. Dummy return keeps
+  // startGatewaySupervised's `applyCrashLoopGuard(stateRoot)` call intact
+  // (source pin) and start proceeding.
+  if (!stateDir) {
+    return { delayMs: 0, clear() {} };
+  }
   const file = path.join(stateDir, "gateway-crash-history.json");
   let history = [];
   try {

@@ -12,15 +12,44 @@
  * the supervisor restarts cleanly.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { isPidAlive } from "../shared/pid-alive.mjs";
 
 const DRAIN_MS = 15_000;
 const HARD_EXIT_GRACE_MS = 2_000;
 
+/**
+ * Supervised gateway state (crash-history + single-instance lock) belongs to
+ * the config dir that owns the instance, not to whoever's home dir the
+ * process happens to run under. Resolving it from `os.homedir()` alone meant
+ * two instances on one host with different `paths.configDir` shared one
+ * crash-history and one `tmp/gateway-*.lock`, so instance B could not start
+ * because A held it — and the suite wrote into the operator's real
+ * `~/.xclaw`.
+ *
+ * Production `startGatewaySupervised({ root, cfg })` already had cfg in
+ * scope and still homed. `lockPath` independently homed when `stateDir`
+ * was unset. `gateway.runLoop === true` is default-OFF, but when the flag
+ * is on this is the live leak. Same class as v3.297.0 alert-state.json /
+ * v3.511.0 telegram-writer.lock.
+ *
+ * `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller.
+ * Such a path is `null` rather than guessing at the home dir. Honour
+ * opts.stateDir then `paths.configDir`. No state-dir env is consulted
+ * here — `XCLAW_STATE_DIR` is a seats/auth fallback, not this lock.
+ * `acquireGatewayLock` no-ops a null path (do not `mkdir(null)`).
+ */
+export function defaultGatewayStateDir(opts = {}) {
+  const explicit = opts.stateDir;
+  if (typeof explicit === "string" && explicit) return explicit;
+  const dir = opts.cfg?.paths?.configDir;
+  return dir || null;
+}
+
 function lockPath(stateDir, port) {
-  const dir = path.join(stateDir || path.join(os.homedir(), ".xclaw"), "tmp");
+  if (!stateDir) return null;
+  const dir = path.join(stateDir, "tmp");
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, `gateway-${port || "default"}.lock`);
 }
@@ -32,8 +61,14 @@ function lockPath(stateDir, port) {
  * @param {(pid: number) => boolean} [opts.isAlive] seam for tests; EPERM
  *   cannot be provoked under a single-uid deployment.
  */
-export async function acquireGatewayLock({ stateDir, port, isAlive = isPidAlive } = {}) {
-  const file = lockPath(stateDir, port);
+export async function acquireGatewayLock({ stateDir, port, isAlive = isPidAlive, cfg } = {}) {
+  const resolved = defaultGatewayStateDir({ stateDir, cfg });
+  const file = lockPath(resolved, port);
+  // No configDir / explicit stateDir → skip the file (do not mkdir(null)).
+  // Production threads cfg so live still locks under configDir.
+  if (!file) {
+    return { file: null, skipped: true, async release() {} };
+  }
   if (fs.existsSync(file)) {
     const prev = Number(fs.readFileSync(file, "utf8").trim());
     // Fails CLOSED on an ambiguous signal error: reading a live holder as gone

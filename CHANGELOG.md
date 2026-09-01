@@ -1,3 +1,36 @@
+## 3.512.0
+
+### Gateway supervised state follows paths.configDir
+
+`startGatewaySupervised()` resolved `~/.xclaw` from `os.homedir()`
+while cfg was already in scope. `lockPath` independently homed when
+`stateDir` was unset. `gateway.runLoop === true` is default-OFF, but
+when the flag is on two instances on one host with different
+`paths.configDir` shared one crash-history and one
+`tmp/gateway-*.lock`; the suite wrote the operator's real `~/.xclaw`.
+Same class as v3.297.0 `alert-state.json` and v3.511.0
+telegram-writer.lock.
+
+- Honour `opts.stateDir` then `paths.configDir`. No configDir →
+  `null`. No home fallback. Do not honour `XCLAW_STATE_DIR` (seats/auth
+  fallback, not this lock). Do not invent a gateway state-dir env.
+- `acquireGatewayLock` no-ops a null path (`file: null`, `skipped:
+  true`, empty `release`) so start does not throw
+  `XCLAW_GATEWAY_LOCKED`. `applyCrashLoopGuard` no-ops a null
+  `stateDir` (do not `path.join(null)` which would write history in
+  cwd). Production threads cfg so live still locks under configDir
+  (never drop the capability).
+- Pin: configDir write never touches home; explicit stateDir wins;
+  no-configDir names no dir and never writes home; crash-guard null
+  is a no-op; supervised path still calls
+  `applyCrashLoopGuard(stateRoot)`.
+- `cua-retry-metrics.mjs` `metricsPath()` is a sibling, not this
+  slice.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.511.0
 
 ### Telegram writer lock follows paths.configDir
