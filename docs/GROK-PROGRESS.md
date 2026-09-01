@@ -2003,3 +2003,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/xai-credentials-config-dir.test.mjs test/xai-auth.test.mjs test/xai-credentials-file-mode.test.mjs test/xai-creds-settle.test.mjs → # tests 17 # pass 17 # fail 0 # duration_ms 2181.132435; npm test (hermetic) → # tests 5307 # pass 5307 # fail 0 # duration_ms 82442.672478
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-01 — 3.538.0 Computer supervisor files follow paths.configDir
+
+LOCKED: `src/computer/manager.mjs` `configDir` still homed while production writers `writePid` / `writeMeta` / `appendLog` via `startComputer` which `await loadConfig()` internally at computer/manager.mjs, gateway/index.mjs, computer/ensure.mjs, computer/watchdog.mjs; `stopComputer(cfg)` at session-control.mjs and gateway/index.mjs already had cfg. Same class as v3.297.0 / v3.537.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `computer.pid`; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Removed `os` import (only used by the leftover home fallback). Did not rewrite startComputer spawn / engine / MITM env. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `writePid` / `writeMeta` still no-op without persisting (do not `mkdir(null)`). `computerPidPath` / `computerMetaPath` / `computerLogPath` return `null`. Production writers always have configDir via `loadConfig()`, so live persist is not dropped. Exported `computerConfigDir`; `function configDir` wraps it. Exported `writePid` / `writeMeta` for the pin.
+
+RAN: node --test test/computer-config-dir.test.mjs test/computer-status.test.mjs test/computer-contract.test.mjs → # tests 14 # pass 14 # fail 0 # duration_ms 131.010888; npm test (hermetic) → # tests 5312 # pass 5312 # fail 0 # duration_ms 81260.698562
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

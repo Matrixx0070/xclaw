@@ -1,3 +1,28 @@
+## 3.538.0
+
+### Computer supervisor files follow paths.configDir
+
+`configDir()` resolved `~/.xclaw` from
+`os.homedir()` while production writers (`writePid` / `writeMeta` /
+`appendLog` via `startComputer` which `await loadConfig()` internally
+at computer/manager.mjs, gateway/index.mjs, computer/ensure.mjs,
+computer/watchdog.mjs; `stopComputer(cfg)` at session-control.mjs and
+gateway/index.mjs) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via the
+leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one computer.pid; the suite wrote
+the operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.537.0 `credentials.json`. Honour existing `XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `writePid` / `writeMeta` still no-op without persisting (do not
+  `mkdir(null)`). `computerPidPath` / `computerMetaPath` /
+  `computerLogPath` return `null`. Production writers always have
+  configDir via `loadConfig()`, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.537.0
 
 ### xAI credentials follow paths.configDir

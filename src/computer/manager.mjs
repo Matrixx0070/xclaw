@@ -4,6 +4,24 @@
  * The server manages its own Chrome internally; the manager's job is
  * process supervision by HTTP health plus wiring the native-source
  * bridges (hooks/motor/chrome-args + the A6 thin-server merge).
+ *
+ * computer.pid / computer.meta.json / logs/computer.log belong to the
+ * config dir that owns the instance, not to whoever's home dir the
+ * process happens to run under. Resolving them from `os.homedir()`
+ * alone meant two instances on one host shared a single computer.pid,
+ * so instance B overwrote instance A's supervisor state — and the
+ * suite wrote into the operator's real `~/.xclaw`.
+ *
+ * Production writers (`writePid` / `writeMeta` / `appendLog` via
+ * `startComputer` which `await loadConfig()` internally at
+ * computer/manager.mjs, gateway/index.mjs, computer/ensure.mjs,
+ * computer/watchdog.mjs; `stopComputer(cfg)` at session-control.mjs
+ * and gateway/index.mjs) already had cfg in scope. `loadConfig()`
+ * stamps `paths.configDir` unconditionally (config/load.mjs:187), so
+ * a cfg without one is never a real caller. Such a path is `null`
+ * rather than guessing at the home dir. Same shape as
+ * `credentialsPath`. Honour existing `XCLAW_CONFIG_DIR`. Writers
+ * no-op without persisting. Do not `mkdir(null)`.
  */
 import { spawn } from "node:child_process";
 import { mitmEnvFromConfig, isMitmEnabled } from "../browser/mitm.mjs";
@@ -12,7 +30,6 @@ import path from "node:path";
 import http from "node:http";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
-import os from "node:os";
 import { loadConfig } from "../config/load.mjs";
 import {
   resolveComputerEngine,
@@ -23,8 +40,17 @@ import {
 /** In-process child when we spawned it in this process */
 let child = null;
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function computerConfigDir(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base || null;
+}
+
 function configDir(cfg) {
-  return cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
+  return computerConfigDir(cfg);
 }
 
 export function computerProbeHost(cfg) {
@@ -41,15 +67,18 @@ export function computerBaseUrl(cfg) {
 }
 
 export function computerPidPath(cfg) {
-  return path.join(configDir(cfg), "computer.pid");
+  const dir = configDir(cfg);
+  return dir ? path.join(dir, "computer.pid") : null;
 }
 
 export function computerLogPath(cfg) {
-  return path.join(configDir(cfg), "logs", "computer.log");
+  const dir = configDir(cfg);
+  return dir ? path.join(dir, "logs", "computer.log") : null;
 }
 
 export function computerMetaPath(cfg) {
-  return path.join(configDir(cfg), "computer.meta.json");
+  const dir = configDir(cfg);
+  return dir ? path.join(dir, "computer.meta.json") : null;
 }
 
 function probeHealth(cfg, timeoutMs = 1000) {
@@ -101,8 +130,10 @@ export async function isComputerRunning(cfg) {
 }
 
 async function readPid(cfg) {
+  const fp = computerPidPath(cfg);
+  if (!fp) return null;
   try {
-    const raw = await fsp.readFile(computerPidPath(cfg), "utf8");
+    const raw = await fsp.readFile(fp, "utf8");
     const pid = Number(String(raw).trim());
     return Number.isFinite(pid) ? pid : null;
   } catch {
@@ -110,29 +141,34 @@ async function readPid(cfg) {
   }
 }
 
-async function writePid(cfg, pid) {
+export async function writePid(cfg, pid) {
   const dir = configDir(cfg);
+  if (!dir) return;
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(computerPidPath(cfg), String(pid) + "\n");
 }
 
-async function writeMeta(cfg, meta) {
+export async function writeMeta(cfg, meta) {
   const dir = configDir(cfg);
+  if (!dir) return;
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(computerMetaPath(cfg), JSON.stringify(meta, null, 2) + "\n");
 }
 
 async function clearPid(cfg) {
+  const fp = computerPidPath(cfg);
+  if (!fp) return;
   try {
-    await fsp.unlink(computerPidPath(cfg));
+    await fsp.unlink(fp);
   } catch {
     /* */
   }
 }
 
 async function appendLog(cfg, line) {
+  const lp = computerLogPath(cfg);
+  if (!lp) return;
   try {
-    const lp = computerLogPath(cfg);
     await fsp.mkdir(path.dirname(lp), { recursive: true });
     await fsp.appendFile(lp, line);
   } catch {
@@ -149,10 +185,13 @@ export async function getComputerStatus(cfg) {
   const pid = await readPid(cfg);
   const pidAlive = isPidAlive(pid);
   let meta = null;
-  try {
-    meta = JSON.parse(await fsp.readFile(computerMetaPath(cfg), "utf8"));
-  } catch {
-    /* */
+  const metaPath = computerMetaPath(cfg);
+  if (metaPath) {
+    try {
+      meta = JSON.parse(await fsp.readFile(metaPath, "utf8"));
+    } catch {
+      /* */
+    }
   }
   const inProcess = Boolean(child && !child.killed);
   const root = process.env.XCLAW_ROOT || process.cwd();
@@ -257,8 +296,11 @@ export async function startComputer({ root, foreground = false } = {}) {
   }
 
   const logPath = computerLogPath(cfg);
-  await fsp.mkdir(path.dirname(logPath), { recursive: true });
-  const logFd = fs.openSync(logPath, "a");
+  let logFd = "ignore";
+  if (logPath) {
+    await fsp.mkdir(path.dirname(logPath), { recursive: true });
+    logFd = fs.openSync(logPath, "a");
+  }
   child = spawn(process.execPath, [entry], {
     cwd: workRoot,
     env,
@@ -298,10 +340,12 @@ export async function startComputer({ root, foreground = false } = {}) {
     cfg,
     `\n===== start ${new Date().toISOString()} engine=${engine} entry=${entry} =====\n`
   );
-  try {
-    fs.closeSync(logFd);
-  } catch {
-    /* */
+  if (typeof logFd === "number") {
+    try {
+      fs.closeSync(logFd);
+    } catch {
+      /* */
+    }
   }
 
   const ok = await waitForHealthy(cfg, {
