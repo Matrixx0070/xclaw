@@ -12,7 +12,6 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import { messageChars } from "./eviction.mjs";
 import { measureContextPressure } from "./pressure.mjs";
@@ -21,15 +20,37 @@ export const OAUTH_SAFE_NOTE =
   "Compaction must never strip or rewrite the leading system attestation prefix.";
 
 /**
- * @param {object} [opts]
- * @param {string} [opts.dir] offload directory
+ * compact-offload belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it
+ * from `os.homedir()` alone meant two instances on one host shared a
+ * single offload map, so instance B's tool results mixed with instance
+ * A's — and the suite wrote into the operator's real
+ * `~/.xclaw/compact-offload`.
+ *
+ * Production loop already had cfg in scope and called
+ * `compactionOptsFromConfig(cfg)` → `compactMessages` with
+ * `offloadDir: c.offloadDir` — when offloadDir unset (normal), they
+ * homed. Compaction is default-ON (`enabled !== false`).
+ *
+ * `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller.
+ * Such a path is `null` rather than guessing at the home dir. Same
+ * shape as `defaultStatePath` in alerts.mjs / `resolvePairingStorePath`
+ * / `resolveSessionsPath` / `defaultLedgerPath`. Honour opts.dir then
+ * nested `tokens.compaction.offloadDir` / `compaction.offloadDir` then
+ * `XCLAW_COMPACT_OFFLOAD_DIR` then `paths.configDir`.
+ * `offloadToolResults` no-ops a null dir (do not `mkdir(null)`).
  */
 export function defaultOffloadDir(opts = {}) {
-  return (
-    opts.dir ||
-    process.env.XCLAW_COMPACT_OFFLOAD_DIR ||
-    path.join(os.homedir(), ".xclaw", "compact-offload")
-  );
+  const explicit = opts.dir;
+  if (typeof explicit === "string" && explicit) return explicit;
+  const nested =
+    opts.cfg?.tokens?.compaction?.offloadDir || opts.cfg?.compaction?.offloadDir;
+  if (typeof nested === "string" && nested) return nested;
+  const env = process.env.XCLAW_COMPACT_OFFLOAD_DIR;
+  if (typeof env === "string" && env) return env;
+  const dir = opts.cfg?.paths?.configDir;
+  return dir ? path.join(dir, "compact-offload") : null;
 }
 
 /**
@@ -49,7 +70,17 @@ export async function offloadToolResults(messages, opts = {}) {
   const dir = defaultOffloadDir(opts);
   const actions = [];
   if (!Array.isArray(messages)) {
-    return { messages: messages || [], report: { actions, offloaded: 0 } };
+    return { messages: messages || [], report: { actions, offloaded: 0, dir } };
+  }
+
+  // No configDir / explicit dir / env → skip offload (do not mkdir(null)).
+  // Fold still runs in compactMessages. Production fills offloadDir from
+  // compactionOptsFromConfig so live still offloads under configDir.
+  if (!dir) {
+    return {
+      messages,
+      report: { actions, offloaded: 0, dir: null, skipped: true, reason: "no_offload_dir" },
+    };
   }
 
   await fs.mkdir(dir, { recursive: true });
@@ -333,6 +364,7 @@ export async function compactMessages(messages, opts = {}) {
     thresholdChars: opts.offloadThresholdChars ?? 4000,
     previewChars: opts.offloadPreviewChars ?? 400,
     dir: opts.offloadDir,
+    cfg: opts.cfg,
   });
   current = off.messages;
   report.phases.push({ phase: "offload", ...off.report });
@@ -376,7 +408,8 @@ export function compactionOptsFromConfig(cfg = {}) {
     keepRecent: c.keepRecent ?? 8,
     maxChars: c.maxChars ?? cfg.tokens?.eviction?.maxChars ?? 120_000,
     maxMessages: c.maxMessages ?? cfg.tokens?.eviction?.maxMessages ?? 40,
-    offloadDir: c.offloadDir,
+    offloadDir: defaultOffloadDir({ dir: c.offloadDir, cfg }),
+    cfg,
   };
 }
 

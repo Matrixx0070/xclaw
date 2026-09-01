@@ -390,7 +390,12 @@ describe("reconcile + resume agent-runs", () => {
       false,
       "filename reverse-lex 80 must miss the ISO owner id"
     );
-    const listed = await listResumableAgentRuns(isolated, { limit: 80 });
+    // Pin `now` to the fixture calendar. DEFAULT_MAX_AGE_MS is 48h; wall-clock
+    // 2026-09-01T08:40Z made the 2026-08-30T08:40Z owner stamp stale and the
+    // boot list returned []. This test is about filename reverse-lex vs
+    // updatedAt sort, not the age window.
+    const now = Date.parse("2026-08-30T12:00:00.000Z");
+    const listed = await listResumableAgentRuns(isolated, { limit: 80, now });
     assert.equal(listed.length, 1);
     assert.equal(listed[0].sessionId, "2026-08-30T03-23-54-655Z_owner-interrupted");
     assert.equal(
@@ -398,7 +403,7 @@ describe("reconcile + resume agent-runs", () => {
       false,
       "eval leftover must not appear in the boot list"
     );
-    const doctorWindow = await listResumableAgentRuns(isolated, { limit: 50 });
+    const doctorWindow = await listResumableAgentRuns(isolated, { limit: 50, now });
     assert.equal(doctorWindow.length, 1);
     assert.equal(doctorWindow[0].sessionId, "2026-08-30T03-23-54-655Z_owner-interrupted");
   });

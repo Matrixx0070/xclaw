@@ -1,3 +1,43 @@
+## 3.510.0
+
+### Compaction offload follows paths.configDir
+
+`defaultOffloadDir()` resolved `~/.xclaw/compact-offload` from
+`os.homedir()` while production loop already had cfg in scope and
+called `compactionOptsFromConfig(cfg)` → `compactMessages` with
+`offloadDir: c.offloadDir` — when offloadDir unset (normal), they
+homed. Compaction is default-ON. Two instances on one host shared a
+single offload map; the suite wrote the operator's real
+`~/.xclaw/compact-offload`. Same class as v3.297.0
+`alert-state.json`, v3.506.0 PagerDuty webhook history, v3.507.0
+pairing store, v3.508.0 sessions persist, and v3.509.0 usage-tracker
+ledger.
+
+- Honour `opts.dir` then nested `tokens.compaction.offloadDir` /
+  `compaction.offloadDir` then `XCLAW_COMPACT_OFFLOAD_DIR` then
+  `paths.configDir`. No configDir → `null`. No home fallback.
+  `offloadToolResults` no-ops a null dir (do not `mkdir(null)`).
+- `compactionOptsFromConfig` fills `offloadDir` from that resolver
+  so live still offloads under configDir when compaction is on
+  (never drop the capability). Fold still runs when offload skips.
+- Honour existing `XCLAW_COMPACT_OFFLOAD_DIR`. Do not invent extra
+  env vars. Telegram writer lock and gateway supervised `stateRoot`
+  are siblings, not this slice.
+- Pin: configDir write never touches home; explicit dir wins; env
+  wins over configDir; no-configDir names no dir and never writes
+  home.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
+Hermetic ship-gate also pinned `now` on
+`listResumableAgentRuns finds an ISO owner id behind 80 job_* names`.
+The fixture `updatedAt` is 2026-08-30T08:40Z; `DEFAULT_MAX_AGE_MS` is
+48h, so wall-clock 2026-09-01 made the owner stamp stale and the boot
+list returned `[]`. The test is about filename reverse-lex vs
+`updatedAt` sort, not the age window.
+
 ## 3.509.0
 
 ### Usage-tracker ledger follows paths.configDir
