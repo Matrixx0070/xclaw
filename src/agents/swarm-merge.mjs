@@ -521,6 +521,24 @@ export async function getMergeProposal(cfg, id) {
   }
 }
 
+/**
+ * Same class as queue cancel overwritten by a long-running writer:
+ * approveMergeProposal holds the in-memory proposal across unbounded
+ * applyWorktreeMerge, then wrote applied/failed/partial without re-reading.
+ * rejectMergeProposal persists rejected while apply is in flight.
+ * Writing applied over rejected is the overwrite.
+ *
+ * Missing file → null (do not resurrect). Different id → null.
+ * On-disk rejected → null. Else return held.
+ */
+export function settleAfterApprove(held, onDisk) {
+  if (!onDisk) return null;
+  if (!held) return null;
+  if (onDisk.id !== held.id) return null;
+  if (onDisk.status === "rejected") return null;
+  return held;
+}
+
 export async function listMergeProposals(cfg, { status, limit = 30 } = {}) {
   await ensureProposalDir(cfg);
   let files = [];
@@ -876,11 +894,44 @@ export async function approveMergeProposal(cfg, proposalId, opts = {}) {
     };
   }
 
+  {
+    const afterClean = await getMergeProposal(cfg, proposalId);
+    if (!settleAfterApprove(rec, afterClean)) {
+      return {
+        ok: false,
+        code: afterClean?.status === "rejected" ? "PROPOSAL_REJECTED" : "PROPOSAL_STATE",
+        error:
+          afterClean?.status === "rejected"
+            ? "proposal was rejected"
+            : `cannot approve status=${afterClean?.status}`,
+        status: afterClean?.status || null,
+        proposalId,
+      };
+    }
+  }
+
   const applied = [];
   const failed = [];
   const applyOpts = { useIndex };
 
   for (const item of rec.items || []) {
+    {
+      const latest = await getMergeProposal(cfg, proposalId);
+      if (!settleAfterApprove(rec, latest)) {
+        return {
+          ok: false,
+          code: latest?.status === "rejected" ? "PROPOSAL_REJECTED" : "PROPOSAL_STATE",
+          error:
+            latest?.status === "rejected"
+              ? "proposal was rejected"
+              : `cannot approve status=${latest?.status}`,
+          status: latest?.status || null,
+          proposalId,
+          applied,
+          failed,
+        };
+      }
+    }
     if (!item.worktreePath) {
       failed.push({
         nodeId: item.nodeId,
@@ -949,6 +1000,24 @@ export async function approveMergeProposal(cfg, proposalId, opts = {}) {
       : applied.length === 0
         ? "failed"
         : "partial";
+
+  {
+    const beforeSave = await getMergeProposal(cfg, proposalId);
+    if (!settleAfterApprove(rec, beforeSave)) {
+      return {
+        ok: false,
+        code: beforeSave?.status === "rejected" ? "PROPOSAL_REJECTED" : "PROPOSAL_STATE",
+        error:
+          beforeSave?.status === "rejected"
+            ? "proposal was rejected"
+            : `cannot approve status=${beforeSave?.status}`,
+        status: beforeSave?.status || null,
+        proposalId,
+        applied,
+        failed,
+      };
+    }
+  }
 
   rec.status = status === "failed" ? "failed" : status;
   rec.approvedAt = new Date().toISOString();

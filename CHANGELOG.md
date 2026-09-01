@@ -1,3 +1,26 @@
+## 3.499.0
+
+### approveMergeProposal does not overwrite a concurrent reject
+
+`approveMergeProposal` held the in-memory proposal across unbounded
+`applyWorktreeMerge` then wrote `applied`/`failed`/`partial` without
+re-reading. `rejectMergeProposal` persists `rejected` while apply is
+in flight. Writing applied over rejected is the same class as queue
+cancel overwritten by a long-running writer.
+
+- `settleAfterApprove(held, onDisk)`: missing file → null (do not
+  resurrect); different `id` → null; on-disk `rejected` → null;
+  else return held.
+- Re-read after cleanliness (before the apply loop). Re-read at
+  apply loop-top (before each `applyWorktreeMerge`). Re-read
+  immediately before the terminal proposal write.
+- Pin: reject during `git apply` (PATH wrapper sleep) leaves
+  `rejected` on disk. Existing S3 + principal pins stay.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.498.0
 
 ### runMission does not overwrite a concurrent rollback after verify
