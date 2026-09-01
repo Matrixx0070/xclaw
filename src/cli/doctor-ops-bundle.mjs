@@ -4,7 +4,7 @@
 export async function pushDoctorOpsBundle(push, cfg = {}, opts = {}) {
   try {
     const { pushKillSwitchChecks } = await import("./doctor-kill-switch.mjs");
-    await pushKillSwitchChecks(push);
+    await pushKillSwitchChecks(push, cfg);
   } catch (e) {
     try {
       const { listActiveSessions } = await import("../agent/session-control.mjs");

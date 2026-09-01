@@ -1,3 +1,29 @@
+## 3.521.0
+
+### Last drain follows paths.configDir
+
+`lastDrainPath()` resolved `~/.xclaw/last-drain.json` from
+`os.homedir()` while production stop writers (`recordLastDrain(drain,
+{ cfg })` at stop-route / ws-stop-control / sse-stop-control) already
+had cfg in scope. `loadConfig()` stamps `paths.configDir`
+unconditionally, so the resolver still homed via the leftover
+`os.homedir()` fallback. Two instances on one host with different
+`paths.configDir` shared one last-drain.json; the suite wrote the
+operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.520.0 `swarm-ledger.lease`. Honour existing `XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `recordLastDrain` no-ops a null path (in-memory `last` still set; do
+  not `mkdir(null)` / `path.dirname(null)`). `loadLastDrain` returns
+  in-memory last or null. Explicit `extra.path` still wins.
+  Production writers always have configDir, so live persist is not
+  dropped. Doctor threads cfg into `getLastDrain(cfg)` so a
+  cross-process `xclaw doctor` still loads disk under configDir.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir;
+  extra.path still writes.
+
 ## 3.520.0
 
 ### Ledger lease follows paths.configDir

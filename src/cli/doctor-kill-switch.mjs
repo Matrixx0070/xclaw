@@ -5,7 +5,7 @@ import { listActiveSessions } from "../agent/session-control.mjs";
 import { getLastDrain } from "../gateway/last-drain.mjs";
 import { normalizeStopChannel, isKnownStopChannel } from "./doctor-channel.mjs";
 
-export async function pushKillSwitchChecks(push) {
+export async function pushKillSwitchChecks(push, cfg = {}) {
   const n = listActiveSessions().length;
   let wsOk = false;
   let sseOk = false;
@@ -22,7 +22,7 @@ export async function pushKillSwitchChecks(push) {
     /* */
   }
   const ready = wsOk && sseOk;
-  const lastDrain = getLastDrain();
+  const lastDrain = getLastDrain(cfg);
   let bashBg = 0;
   try {
     const { listBackgroundBash } = await import("../computer/modules/bash-tool.mjs");
