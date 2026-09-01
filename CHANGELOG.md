@@ -1,3 +1,36 @@
+## 3.504.0
+
+### refreshAppToken does not overwrite a concurrent delete
+
+`refreshAppToken` re-read `getAppToken` after unbounded `refreshAccessToken`
+then still `setAppToken` when `latest` was null. Concurrent
+`deleteAppToken` / `logoutConnected` of THIS app was resurrected.
+`refreshConnectedOAuth` had the same THIS-app hole: `{...stored}` into
+`setAppToken` with no re-read. Overlay keeps other-app deletes (already
+true via `setAppToken` re-load; now also true via settle overlay). Same
+class as queue cancel overwritten by a long-running writer. Sibling of
+3.500.0 `mcp-oauth.json`, 3.501.0 `auth.json`, 3.502.0
+`credentials.json`, and 3.503.0 `auth-profiles.json`.
+
+- `settleAfterAppRefresh(heldStore, onDisk, appId)`: missing heldStore →
+  null; missing onDisk → null (do not resurrect the file); missing
+  heldStore.apps[appId] → null; missing onDisk.apps[appId] → null (this
+  app was deleted / logout-all); else overlay heldStore.apps[appId] onto
+  onDisk so other-app deletes survive.
+- Re-read immediately before `saveTokens`. Return `NO_TOKEN` from
+  refresh if settle is null or re-read `latest` is null.
+  `refreshConnectedOAuth` delegates to `refreshAppToken`. `opts.tokenUrl`
+  / stored `tokenUrl` is a test seam; production provider map is
+  unchanged. `deleteAppToken` / `logoutConnected` unchanged.
+- Pin: delete during a 1s token-endpoint sleep leaves the app gone;
+  delete of a different app during refresh of A leaves A's new tokens
+  and B gone; `logoutConnected all` during refresh leaves apps empty;
+  `refreshConnectedOAuth` concurrent delete stays gone.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.503.0
 
 ### refreshProfileOAuth does not overwrite a concurrent remove

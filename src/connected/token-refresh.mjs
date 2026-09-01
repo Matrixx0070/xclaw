@@ -8,7 +8,7 @@
  * - Optimistic updatedAt check before write
  */
 import { getConnectedOAuthProvider } from "./oauth-providers.mjs";
-import { getAppToken, setAppToken, loadTokens, saveTokens } from "./token-store.mjs";
+import { getAppToken, loadTokens, saveTokens } from "./token-store.mjs";
 import { refreshAccessToken } from "../auth/oauth-browser.mjs";
 import {
   oauthError,
@@ -53,6 +53,48 @@ function resolveClient(provider, stored = {}, opts = {}) {
 }
 
 /**
+ * Re-read after unbounded refreshAccessToken. deleteAppToken /
+ * logoutConnected are concurrent writers of the same file. Save of
+ * the held THIS-app record must not resurrect a deleted app.
+ *
+ * missing held → null
+ * missing onDisk → null (do not resurrect the file)
+ * missing held.apps[appId] → null
+ * missing onDisk.apps[appId] → null (this app was deleted / logout-all)
+ * else overlay held.apps[appId] onto onDisk so other-app deletes survive
+ */
+export function settleAfterAppRefresh(heldStore, onDisk, appId) {
+  if (!heldStore) return null;
+  if (!onDisk) return null;
+  if (!heldStore.apps?.[appId]) return null;
+  if (!onDisk.apps?.[appId]) return null;
+  return {
+    ...onDisk,
+    apps: {
+      ...onDisk.apps,
+      [appId]: heldStore.apps[appId],
+    },
+  };
+}
+
+async function persistRefreshedApp(cfg, appId, tokenRecord) {
+  const held = {
+    version: 1,
+    apps: {
+      [appId]: {
+        ...tokenRecord,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  };
+  const onDisk = await loadTokens(cfg);
+  const settled = settleAfterAppRefresh(held, onDisk, appId);
+  if (!settled) return null;
+  await saveTokens(cfg, settled);
+  return settled.apps[appId];
+}
+
+/**
  * Perform refresh for one app (no lock). Prefer ensureFreshToken.
  */
 export async function refreshAppToken(cfg, appId, opts = {}) {
@@ -80,7 +122,7 @@ export async function refreshAppToken(cfg, appId, opts = {}) {
   const priorUpdatedAt = stored.updatedAt;
 
   const result = await refreshAccessToken({
-    tokenUrl: provider.tokenUrl,
+    tokenUrl: opts.tokenUrl || stored.tokenUrl || provider.tokenUrl,
     clientId,
     clientSecret: clientSecret || undefined,
     refreshToken: priorRefresh,
@@ -120,7 +162,12 @@ export async function refreshAppToken(cfg, appId, opts = {}) {
 
   // Optimistic concurrency: if another writer updated the store, merge carefully
   const latest = await getAppToken(cfg, appId);
-  if (latest?.updatedAt && priorUpdatedAt && latest.updatedAt !== priorUpdatedAt) {
+  if (!latest) {
+    return withHint(
+      oauthError(OAuthErrorCode.NO_TOKEN, "no token — concurrent delete won", { provider: appId })
+    );
+  }
+  if (latest.updatedAt && priorUpdatedAt && latest.updatedAt !== priorUpdatedAt) {
     // Another refresh may have won; if still fresh, use it
     if (!isTokenExpired(latest) && latest.accessToken) {
       return {
@@ -140,7 +187,7 @@ export async function refreshAppToken(cfg, appId, opts = {}) {
       ? new Date(Date.now() + Number(result.expiresIn) * 1000).toISOString()
       : stored.expiresAt || null;
 
-  await setAppToken(cfg, appId, {
+  const persisted = await persistRefreshedApp(cfg, appId, {
     ...stored,
     ...latest,
     accessToken: result.accessToken,
@@ -153,6 +200,11 @@ export async function refreshAppToken(cfg, appId, opts = {}) {
     lastRefreshAt: new Date().toISOString(),
     refreshRotated: rotated,
   });
+  if (!persisted) {
+    return withHint(
+      oauthError(OAuthErrorCode.NO_TOKEN, "no token — concurrent delete won", { provider: appId })
+    );
+  }
 
   return {
     ok: true,

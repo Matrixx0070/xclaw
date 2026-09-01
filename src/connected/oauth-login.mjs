@@ -1,9 +1,10 @@
 /**
  * Browser OAuth login for connected apps → token store.
  */
-import { browserAuthorizationCodePkce, refreshAccessToken } from "../auth/oauth-browser.mjs";
+import { browserAuthorizationCodePkce } from "../auth/oauth-browser.mjs";
 import { getConnectedOAuthProvider, listConnectedOAuthProviders } from "./oauth-providers.mjs";
-import { setAppToken, getAppToken, listConnectedApps } from "./token-store.mjs";
+import { setAppToken, listConnectedApps } from "./token-store.mjs";
+import { refreshAppToken } from "./token-refresh.mjs";
 
 function resolveClient(provider, opts = {}) {
   const clientId =
@@ -93,38 +94,9 @@ export async function loginConnectedOAuth(cfg, appId, opts = {}) {
 }
 
 export async function refreshConnectedOAuth(cfg, appId, opts = {}) {
-  const provider = getConnectedOAuthProvider(appId);
-  if (!provider) return { ok: false, error: `unknown app ${appId}` };
-  const stored = await getAppToken(cfg, appId);
-  if (!stored?.refreshToken) {
-    return { ok: false, error: "no refresh_token stored — run login again" };
-  }
-  const { clientId, clientSecret } = resolveClient(provider, {
-    clientId: stored.clientId,
-    ...opts,
-  });
-  if (!clientId) {
-    return { ok: false, error: `missing client id (${provider.envClientId})` };
-  }
-  const result = await refreshAccessToken({
-    tokenUrl: provider.tokenUrl,
-    clientId,
-    clientSecret: clientSecret || undefined,
-    refreshToken: stored.refreshToken,
-  });
-  if (!result.ok) return result;
-  const expiresAt =
-    result.expiresIn != null
-      ? new Date(Date.now() + Number(result.expiresIn) * 1000).toISOString()
-      : stored.expiresAt;
-  await setAppToken(cfg, provider.id, {
-    ...stored,
-    accessToken: result.accessToken,
-    refreshToken: result.refreshToken,
-    expiresAt,
-    source: "oauth_refresh",
-  });
-  return { ok: true, provider: provider.id, expiresAt };
+  const out = await refreshAppToken(cfg, appId, opts);
+  if (!out.ok) return out;
+  return { ok: true, provider: out.provider, expiresAt: out.expiresAt };
 }
 
 export async function connectedAuthStatus(cfg) {
