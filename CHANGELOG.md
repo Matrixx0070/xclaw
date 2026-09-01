@@ -1,3 +1,26 @@
+## 3.533.0
+
+### Eval quarantine follows paths.configDir
+
+`qPath()` resolved `~/.xclaw/eval-quarantine.json` from
+`os.homedir()` while production writers (`recordCaseOutcome(cfg)`
+at eval/runner.mjs) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via
+the leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one eval-quarantine.json; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.532.0 `skill-stats.json`. Honour existing
+`XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `recordCaseOutcome` still returns the in-memory case without persisting
+  (do not `mkdir(null)`). `listQuarantined` returns `[]`. `isQuarantined`
+  returns false. Production writers always have configDir, so live persist
+  is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.532.0
 
 ### Skill stats follow paths.configDir

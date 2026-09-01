@@ -1943,3 +1943,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/skill-stats-config-dir.test.mjs test/jobs-history.test.mjs → # tests 7 # pass 7 # fail 0 # duration_ms 60.893812; npm test (hermetic) → # tests 5282 # pass 5282 # fail 0 # duration_ms 76583.666004
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-01 — 3.533.0 Eval quarantine follows paths.configDir
+
+LOCKED: `src/eval/quarantine.mjs` `qPath` still homed while production writer `recordCaseOutcome(cfg)` at eval/runner.mjs:180 already had cfg. Same class as v3.297.0 / v3.532.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `eval-quarantine.json`; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Did not rewrite flake aggregation. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `recordCaseOutcome` still returns the in-memory case without persisting (do not `mkdir(null)`). `listQuarantined` returns `[]`. `isQuarantined` returns false. Production writers always have configDir, so live persist is not dropped. Removed `os` import. Exported `evalQuarantinePath`; `function qPath` wraps it.
+
+RAN: node --test test/eval-quarantine-config-dir.test.mjs test/quarantine.test.mjs → # tests 7 # pass 7 # fail 0 # duration_ms 52.841424; npm test (hermetic) → # tests 5287 # pass 5287 # fail 0 # duration_ms 78293.475326
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
