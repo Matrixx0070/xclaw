@@ -1,5 +1,11 @@
 /**
- * Control-plane file (~/.xclaw/state/control.sqlite).
+ * Control-plane file.
+ *
+ * Honour `paths.controlPlaneFile` then `XCLAW_CONTROL_PLANE_FILE` then
+ * `paths.stateDir` then `paths.configDir` + `state/control.sqlite`. No
+ * configDir → null. No home fallback. Do not honour `XCLAW_STATE_DIR`
+ * (seats/auth fallback). Production `getControlPlane(cfg)` at gateway
+ * boot already threads cfg so live still persists under configDir.
  *
  * Pairing slice (spec §11.4 + §11.11 + §11.16) plus later groups (spec §11.7):
  * open via the query kit, refuse a newer schema_meta.version, refuse a
@@ -14,10 +20,9 @@
  * queue helpers (spec §11.22) and task run helpers (spec §11.23) sit on an
  * open kit and are not wired to live outbound or the live runner. Do not
  * fold cron payload jobs into this file. Do not absorb seats/approvals/
- * plugin JSON in this binary.
+ * plugin JSON in this binary. A null path no-ops (do not mkdir(null)).
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { openKit } from "../persist/query-kit.mjs";
 import { tryTakeExclusiveLock } from "../persist/engine-load.mjs";
@@ -166,10 +171,15 @@ function tableNames(db) {
 }
 
 export function controlPlaneFile(cfg) {
-  if (cfg?.paths?.controlPlaneFile) return cfg.paths.controlPlaneFile;
+  const explicit = cfg?.paths?.controlPlaneFile;
+  if (typeof explicit === "string" && explicit) return explicit;
   if (process.env.XCLAW_CONTROL_PLANE_FILE) return process.env.XCLAW_CONTROL_PLANE_FILE;
-  const root = cfg?.paths?.stateDir || path.join(os.homedir(), ".xclaw", "state");
-  return path.join(root, "control.sqlite");
+  const stateDir = cfg?.paths?.stateDir;
+  if (typeof stateDir === "string" && stateDir) {
+    return path.join(stateDir, "control.sqlite");
+  }
+  const dir = cfg?.paths?.configDir;
+  return dir ? path.join(dir, "state", "control.sqlite") : null;
 }
 
 export function pairingJsonFile(cfg) {
@@ -397,6 +407,7 @@ function runStarterSchema(kit) {
 
 export function openControlPlane(cfg) {
   const file = controlPlaneFile(cfg);
+  if (!file) return null;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   refuseNotADatabase(file);
   let kit;
@@ -458,6 +469,7 @@ export function openControlPlane(cfg) {
  */
 export function openControlPlaneExclusive(cfg) {
   const file = controlPlaneFile(cfg);
+  if (!file) return null;
   if (fs.existsSync(file)) return openControlPlane(cfg);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const lock = tryTakeExclusiveLock(file, { waitMs: 1000 });

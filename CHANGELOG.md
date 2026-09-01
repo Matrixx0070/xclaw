@@ -1,3 +1,29 @@
+## 3.514.0
+
+### Control-plane sqlite follows paths.configDir
+
+`controlPlaneFile()` resolved `~/.xclaw/state/control.sqlite` from
+`os.homedir()` while production `getControlPlane(cfg)` at gateway
+boot already had cfg in scope. `loadConfig()` stamps `paths.configDir`
+unconditionally and does not stamp `stateDir` or `controlPlaneFile`, so
+the resolver still homed. Two instances on one host with different
+`paths.configDir` shared one control.sqlite; the suite wrote the
+operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.513.0 automations store.
+
+- Honour `paths.controlPlaneFile` then `XCLAW_CONTROL_PLANE_FILE` then
+  `paths.stateDir` then `paths.configDir`. No configDir → `null`. No
+  home fallback. Do not honour `XCLAW_STATE_DIR` (seats/auth fallback).
+- `openControlPlane` / exclusive / `getControlPlane` no-op a null path
+  (do not `mkdir(null)`). Doctor `probeSqlFile` and `existsSync` skip
+  a null path. `doctor --fix` skips absorb when there is no plane.
+  Production already threads cfg so live still persists under
+  configDir (never drop the capability).
+- Pin: configDir write never touches home; explicit controlPlaneFile
+  wins; stateDir wins over configDir; env wins over configDir;
+  no-configDir names no file and never writes home; gateway still
+  calls `getControlPlane(cfg)`.
+
 ## 3.513.0
 
 ### Automations store follows paths.configDir

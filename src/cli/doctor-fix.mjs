@@ -37,23 +37,27 @@ export async function runDoctorFix(push, cfg) {
 
   try {
     const plane = openControlPlaneExclusive(cfg);
-    try {
-      const n2 = absorbPairingJson(plane, pairingJsonFile(cfg));
-      push("fix.pairing", n2.error ? "warn" : "ok", note(n2));
-      // Spec §12.2 — drop retired names; a non-empty retired table is kept.
-      const { dropRetiredIfEmpty } = await import("../state/schema-retirements.mjs");
-      const r = dropRetiredIfEmpty(plane.db, "control");
-      push(
-        "fix.retirements",
-        r.kept.length ? "warn" : "ok",
-        `dropped=${r.dropped.length ? r.dropped.join(",") : "none"}` +
-          (r.kept.length ? ` kept=${r.kept.join(",")}` : ""),
-      );
-    } finally {
+    if (!plane) {
+      push("fix.pairing", "info", "no control plane path");
+    } else {
       try {
-        plane.close();
-      } catch {
-        /* already closed */
+        const n2 = absorbPairingJson(plane, pairingJsonFile(cfg));
+        push("fix.pairing", n2.error ? "warn" : "ok", note(n2));
+        // Spec §12.2 — drop retired names; a non-empty retired table is kept.
+        const { dropRetiredIfEmpty } = await import("../state/schema-retirements.mjs");
+        const r = dropRetiredIfEmpty(plane.db, "control");
+        push(
+          "fix.retirements",
+          r.kept.length ? "warn" : "ok",
+          `dropped=${r.dropped.length ? r.dropped.join(",") : "none"}` +
+            (r.kept.length ? ` kept=${r.kept.join(",")}` : ""),
+        );
+      } finally {
+        try {
+          plane.close();
+        } catch {
+          /* already closed */
+        }
       }
     }
   } catch (err) {

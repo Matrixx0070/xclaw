@@ -410,7 +410,7 @@ export async function runDoctor(opts = {}) {
     const { listRetiredPresent } = await import("../state/schema-retirements.mjs");
     const { openLocalSql } = await import("../persist/engine-load.mjs");
     const controlFile = controlPlaneFile(cfg);
-    if (fsSync.existsSync(controlFile)) {
+    if (controlFile && fsSync.existsSync(controlFile)) {
       const db = openLocalSql(controlFile);
       try {
         const present = listRetiredPresent(db, "control");

@@ -94,7 +94,7 @@ export function classifySqlProbe(err, file) {
 }
 
 export function probeSqlFile(push, id, file) {
-  if (!fs.existsSync(file)) {
+  if (!file || !fs.existsSync(file)) {
     push(id, "info", "not created yet");
     return;
   }
