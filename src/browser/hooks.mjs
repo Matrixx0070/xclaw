@@ -251,7 +251,7 @@ export async function afterAction(ctx = {}, result = {}) {
     try {
       truth = await afterBrowserToolTruth(ctx.toolName || "browser_act", {
         metadata: { actionId, network: { flows: delta.flows } },
-      });
+      }, { cfg: ctx.cfg || null });
     } catch {
       /* */
     }

@@ -1709,7 +1709,7 @@ export async function runAgentLoop(options) {
         }
         // Horizon 2: optional truth-channel auto assert after browser_* tools
         try {
-          const truth = await afterBrowserToolTruth(name, result);
+          const truth = await afterBrowserToolTruth(name, result, { cfg });
           if (truth && truth.checked > 0) {
             result = {
               ...result,

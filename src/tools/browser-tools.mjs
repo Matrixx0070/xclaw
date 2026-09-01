@@ -903,6 +903,9 @@ export function createMitmExportTool(ctx = {}) {
           limit: args.limit,
           sinceTs: args.sinceTs,
         });
+        if (!r?.ok) {
+          return errorResult(r?.reason || "export failed");
+        }
         // A truncation marker only the JSON carries is a marker nobody reads.
         const mark = (n) => (n ? " (truncated)" : "");
         return textResult(

@@ -91,13 +91,15 @@ export async function bindActionFlows(actionId, flows, extra = {}) {
   if (meta) {
     meta.bound = rec;
   }
-  try {
-    const confdir = mitmConfdir(extra.cfg || null);
-    await fs.mkdir(confdir, { recursive: true });
-    const line = JSON.stringify(rec) + "\n";
-    await fs.appendFile(path.join(confdir, "action-bindings.jsonl"), line);
-  } catch {
-    /* disk optional */
+  const confdir = mitmConfdir(extra.cfg || null);
+  if (confdir) {
+    try {
+      await fs.mkdir(confdir, { recursive: true });
+      const line = JSON.stringify(rec) + "\n";
+      await fs.appendFile(path.join(confdir, "action-bindings.jsonl"), line);
+    } catch {
+      /* disk optional */
+    }
   }
   return rec;
 }
@@ -321,8 +323,10 @@ export function assertOutcome(expect = {}, flows = []) {
  */
 export async function readActionBindings(opts = {}) {
   const limit = opts.limit || 50;
+  const confdir = mitmConfdir(opts.cfg || null);
+  if (!confdir) return [];
   try {
-    const p = path.join(mitmConfdir(opts.cfg || null), "action-bindings.jsonl");
+    const p = path.join(confdir, "action-bindings.jsonl");
     const raw = await fs.readFile(p, "utf8");
     const lines = raw.trim().split("\n").filter(Boolean);
     return lines

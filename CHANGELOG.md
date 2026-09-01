@@ -1,3 +1,28 @@
+## 3.516.0
+
+### Truth/sense no-op a null mitm confdir
+
+Leftover of 3.515.0: `mitmConfdir()` can return null, but `savePolicy`,
+`exportProofBundle`, `bindActionFlows`, and `readActionBindings` still
+`fs.mkdir(confdir)` / `path.join(confdir, ...)`. Node `path.join(null,
+"proofs")` becomes `"null/proofs"` in cwd. Loop
+`afterBrowserToolTruth(name, result)` dropped cfg even though
+`runAgentLoop` has it in scope, so truth-auto would load policy from a
+null confdir when MITM is on. Same trap as 3.514.0 control-plane
+mkdir(null) and 3.515.0 `ensureMitmConfdir`.
+
+- `savePolicy` / `exportProofBundle` no-op a null confdir (`ok: false`,
+  `code: MITM_NO_CONFDIR`, do not `mkdir(null)`). Explicit `opts.dest`
+  still writes. `loadPolicy` returns emptyPolicy without join.
+  `bindActionFlows` still returns the in-memory rec; disk append skips.
+  `readActionBindings` returns `[]`.
+- Loop and hooks thread cfg into `afterBrowserToolTruth` so live still
+  loads policy under configDir when truth-auto is on (never drop the
+  capability). Do not reopen the 3.515.0 resolver.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; explicit dest still writes; loop/hooks still pass
+  cfg.
+
 ## 3.515.0
 
 ### MITM confdir follows paths.configDir

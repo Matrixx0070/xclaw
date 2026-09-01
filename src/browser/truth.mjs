@@ -33,6 +33,7 @@ export function emptyPolicy() {
 export async function loadPolicy(cfg = null) {
   const confdir = mitmConfdir(cfg);
   let filePolicy = emptyPolicy();
+  if (!confdir) return mergeEnvRules(filePolicy);
   try {
     const raw = await fs.readFile(path.join(confdir, "policy.json"), "utf8");
     const parsed = JSON.parse(raw);
@@ -97,6 +98,14 @@ export function mergeEnvRules(policy) {
  */
 export async function savePolicy(policy, cfg = null) {
   const confdir = mitmConfdir(cfg);
+  if (!confdir) {
+    return {
+      ok: false,
+      reason: "no confdir — set paths.configDir or XCLAW_MITM_CONFDIR",
+      code: "MITM_NO_CONFDIR",
+      path: null,
+    };
+  }
   await fs.mkdir(confdir, { recursive: true });
   const clean = {
     version: POLICY_VERSION,
@@ -361,6 +370,14 @@ export async function exportProofBundle(opts = {}) {
   const finalJson = JSON.stringify(bundle, null, 2);
   let outPath = opts.dest;
   if (!outPath) {
+    if (!confdir) {
+      return {
+        ok: false,
+        reason: "no confdir — set paths.configDir or XCLAW_MITM_CONFDIR",
+        code: "MITM_NO_CONFDIR",
+        path: null,
+      };
+    }
     const dir = path.join(confdir, "proofs");
     await fs.mkdir(dir, { recursive: true });
     outPath = path.join(dir, `proof_${Date.now()}.json`);
