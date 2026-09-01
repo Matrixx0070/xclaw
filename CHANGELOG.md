@@ -1,3 +1,26 @@
+## 3.524.0
+
+### Connected vault follows paths.configDir
+
+`vaultRoot()` resolved `~/.xclaw/vault` from `os.homedir()` while
+production writers (`vaultMergeIntoAccount(cfg)` at account-links /
+`vaultDeleteApp(cfg)` at auth-legacy-cli) already had cfg in scope.
+`loadConfig()` stamps `paths.configDir` unconditionally, so the
+resolver still homed via the leftover `os.homedir()` fallback. Two
+instances on one host with different `paths.configDir` shared one
+vault; the suite wrote the operator's real `~/.xclaw`. Same class as
+v3.297.0 `alert-state.json` and v3.523.0 `connected-tokens.json`.
+Honour existing `XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `vaultSave` no-ops a null path (do not `mkdir(null)` /
+  `path.dirname(null)` / rename `"null.bak-*"`). `vaultLoad` returns
+  `{ version: 1, apps: {}, userId }`. Production writers always have
+  configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.523.0
 
 ### Connected token store follows paths.configDir

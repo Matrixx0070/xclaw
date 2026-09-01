@@ -1,11 +1,26 @@
 /**
  * Multi-user connected token vault (P6).
- * Paths: ~/.xclaw/vault/<userId>/connected-tokens.json
+ * Paths: <configDir>/vault/<userId>/connected-tokens.json
  * Default user: "default" (legacy store still works via token-store).
+ *
+ * The vault belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * vault, so instance B's linked accounts used instance A's tokens —
+ * and the suite wrote into the operator's real `~/.xclaw/vault/`.
+ *
+ * Production writers (`vaultMergeIntoAccount(cfg)` at account-links,
+ * `vaultDeleteApp(cfg)` at auth-legacy-cli) already had cfg in scope.
+ * `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller.
+ * Such a path is `null` rather than guessing at the home dir. Same
+ * shape as `storePath` in connected/token-store. Honour existing
+ * `XCLAW_CONFIG_DIR`. `vaultSave` no-ops a null path (do not
+ * `mkdir(null)` / `path.dirname(null)` / rename `"null.bak-*"`).
+ * `vaultLoad` returns `{ version: 1, apps: {}, userId }`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import {
   resolveStoreKey,
   encryptJson,
@@ -13,18 +28,25 @@ import {
   isEncryptedStore,
 } from "./token-crypto.mjs";
 
-function vaultRoot(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "vault");
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function vaultRoot(cfg = {}) {
+  const dir = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return dir ? path.join(dir, "vault") : null;
 }
 
 function userDir(cfg, userId) {
+  const root = vaultRoot(cfg);
+  if (!root) return null;
   const id = String(userId || "default").replace(/[^\w.@+-]+/g, "_").slice(0, 128);
-  return path.join(vaultRoot(cfg), id);
+  return path.join(root, id);
 }
 
 function tokenPath(cfg, userId) {
-  return path.join(userDir(cfg, userId), "connected-tokens.json");
+  const dir = userDir(cfg, userId);
+  return dir ? path.join(dir, "connected-tokens.json") : null;
 }
 
 async function readStore(fp, cfg) {
@@ -44,6 +66,7 @@ async function readStore(fp, cfg) {
 }
 
 async function writeStore(fp, cfg, data) {
+  if (!fp) return null;
   await fs.mkdir(path.dirname(fp), { recursive: true });
   const key = resolveStoreKey(cfg);
   const payload = key ? encryptJson(data, key) : data;
@@ -57,6 +80,7 @@ async function writeStore(fp, cfg, data) {
 
 export async function vaultListUsers(cfg) {
   const root = vaultRoot(cfg);
+  if (!root) return [];
   try {
     const ents = await fs.readdir(root, { withFileTypes: true });
     return ents.filter((e) => e.isDirectory()).map((e) => e.name);
@@ -66,16 +90,20 @@ export async function vaultListUsers(cfg) {
 }
 
 export async function vaultLoad(cfg, userId = "default") {
-  const data = await readStore(tokenPath(cfg, userId), cfg);
+  const fp = tokenPath(cfg, userId);
+  if (!fp) return { version: 1, apps: {}, userId };
+  const data = await readStore(fp, cfg);
   data.userId = userId;
   return data;
 }
 
 export async function vaultSave(cfg, userId, data) {
+  const fp = tokenPath(cfg, userId);
+  if (!fp) return null;
   data.userId = userId;
   data.version = data.version || 1;
-  await writeStore(tokenPath(cfg, userId), cfg, data);
-  return tokenPath(cfg, userId);
+  await writeStore(fp, cfg, data);
+  return fp;
 }
 
 export async function vaultGetApp(cfg, userId, appId) {
@@ -186,6 +214,7 @@ export async function vaultMergeIntoAccount(cfg, accountId, sourceKeys = []) {
       // Backup source vault dir (best-effort)
       try {
         const dir = userDir(cfg, src);
+        if (!dir) continue;
         const bak = `${dir}.bak-${Date.now()}`;
         await fs.rename(dir, bak);
         backedUp.push(bak);
