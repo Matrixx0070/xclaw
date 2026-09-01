@@ -1,3 +1,24 @@
+## 3.498.0
+
+### runMission does not overwrite a concurrent rollback after verify
+
+`runMission` catch already re-reads `TERMINAL_STATUSES` before writing
+`failed`. Success-path `saveMission` after unbounded `runVerification`
+did not. `sh()` takes no abort signal, so `rollbackMission`'s abort
+cannot interrupt a verify cmd. Writing verifying/failed/merge_ready
+over `rolled_back` is the same class as queue cancel overwritten by a
+long-running writer.
+
+- `bailIfAborted` after `createWorktree`, `runMissionTournament`,
+  `runMissionSwarm`, `runVerification`, and both `captureDiff` sites
+  (before the following `saveMission`).
+- Pin: rollback during `sleep 1` verify leaves `rolled_back` on disk.
+  Existing mission + merge-settle pins stay.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.497.0
 
 ### mergeMission does not overwrite a concurrent rollback

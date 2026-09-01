@@ -796,6 +796,8 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     if (!wt.ok) throw new Error(`worktree: ${wt.error}`);
     mission.worktree = { path: wt.path, branch: wt.branch };
     emit("workspace", `shadow workspace ${wt.branch} at ${wt.path}`);
+    // createWorktree is unbounded git. rollback may have landed.
+    await bailIfAborted();
     await saveMission(cfg, mission);
   }
 
@@ -881,6 +883,9 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     let soloNeeded = true;
     if (mission.strategy === "tournament") {
       const t = await runMissionTournament(cfg, mission, { onEvent, signal, spawnSeam });
+      // tournament is unbounded (fan-out + verify + applyWorktreeMerge).
+      // runSwarmFanOut returns on abort rather than throwing.
+      await bailIfAborted();
       await saveMission(cfg, mission);
       if (t.ok) {
         soloNeeded = false;
@@ -892,6 +897,8 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     if (soloNeeded && mission.strategy === "swarm" && mission.swarm?.tasks?.length) {
       emit("execute", `swarm fan-out: ${mission.swarm.tasks.length} nodes in the shadow workspace`);
       const sw = await runMissionSwarm(cfg, mission, { onEvent, signal, spawnSeam });
+      // swarm is unbounded. runSwarmFanOut returns on abort rather than throwing.
+      await bailIfAborted();
       await saveMission(cfg, mission);
       if (sw.ok) {
         soloNeeded = false;
@@ -930,6 +937,9 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     await bailIfAborted();
     emit("verify", `verification attempt ${mission.attempts + 1}/${mission.maxAttempts}`);
     const v = await runVerification(cfg, mission);
+    // runVerification is unbounded (npm install + verify cmds via sh, which
+    // takes no abort signal). rollback may have landed during it.
+    await bailIfAborted();
     await saveMission(cfg, mission);
     mledger(cfg, mission, "verify", {
       ok: v.ok,
@@ -958,6 +968,8 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
       mledger(cfg, mission, "failure", { error: mission.error, phase: "verify" });
       emit("verify", mission.error);
       await captureDiff(cfg, mission);
+      // captureDiff is unbounded git. rollback may have landed.
+      await bailIfAborted();
       await saveMission(cfg, mission);
       return mission;
     }
@@ -998,6 +1010,8 @@ async function runMission(cfg, mission, { onEvent, signal, providerOverride, spa
     return mission;
   }
   await captureDiff(cfg, mission);
+  // captureDiff is unbounded git. rollback may have landed.
+  await bailIfAborted();
   // Empty-diff gate (audit 2026-08-23 C11): a passing suite proves the tree
   // is healthy, NOT that this mission changed anything. An execute phase that
   // produced no effective diff (no patch, no kept untracked files) must not
