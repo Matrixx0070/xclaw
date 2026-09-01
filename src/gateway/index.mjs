@@ -99,6 +99,7 @@ import { createChannelManager } from "../channels/manager.mjs";
 import { ensureHeartbeat } from "../cron/heartbeat.mjs";
 
 import { configureSubagentPersistence } from "../agents/spawn.mjs";
+import { configureSessionPersist } from "../sessions/router.mjs";
 import { createChannelPolicy } from "../channels/policy.mjs";
 import { createMcpClient } from "../mcp/client.mjs";
 import { createMcpServer } from "../mcp/server.mjs";
@@ -1058,6 +1059,12 @@ export async function startGateway({ root, harness = false } = {}) {
   }
 
   const webchatEnabled = isWebchatEnabled(cfg);
+
+  // Import-time configureSessionPersist({}) has no configDir and must
+  // not write home. Thread cfg here so live sessions.json still persists,
+  // under paths.configDir rather than os.homedir(). Same class as
+  // v3.507.0 pairing store. Before startAll — channels bind peers.
+  configureSessionPersist({ cfg });
 
   const channelManager = createChannelManager(cfg);
   await channelManager.startAll();

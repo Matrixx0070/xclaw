@@ -83,8 +83,9 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
     });
   }
 
-  // sessions
-  const sessPath = defaultSessionsPath();
+  // sessions — same resolver as configureSessionPersist so doctor cannot
+  // miss the live file (or report the operator's home file).
+  const sessPath = defaultSessionsPath(cfg);
   let sessExists = false;
   try {
     sessExists = fs.existsSync(sessPath);

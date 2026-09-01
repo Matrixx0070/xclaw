@@ -9,19 +9,21 @@ import {
   bindingKey,
 } from "./session-key.mjs";
 import {
-  defaultSessionsPath,
+  resolveSessionsPath,
   loadSessionState,
   saveSessionState,
 } from "./persist.mjs";
 
 const sessions = new Map();
 const bindings = new Map(); // normalized sessionKey -> sessionId
-let persistPath = defaultSessionsPath();
+// Import-time has no cfg. Stay null so we do not write the operator's
+// home file. Gateway boot threads cfg via configureSessionPersist({ cfg }).
+let persistPath = null;
 let persistEnabled = true;
 let saveTimer = null;
 
 function scheduleSave() {
-  if (!persistEnabled) return;
+  if (!persistEnabled || !persistPath) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
@@ -35,8 +37,17 @@ function scheduleSave() {
   }, 200);
 }
 
+export function sessionsPersistPath() {
+  return persistPath;
+}
+
 export function configureSessionPersist(opts = {}) {
-  if (opts.path) persistPath = opts.path;
+  // opts.path wins when non-empty. Empty string falls through so a
+  // missing override still lands in configDir. Empty opts (enabled /
+  // load only) keep the current path — gate-wiring tests toggle
+  // enabled without re-supplying path.
+  if (typeof opts.path === "string" && opts.path) persistPath = opts.path;
+  else if (opts.cfg || opts.paths) persistPath = resolveSessionsPath(opts.cfg || opts);
   if (opts.enabled != null) persistEnabled = Boolean(opts.enabled);
   if (opts.load !== false) {
     const state = loadSessionState(persistPath);
@@ -48,7 +59,7 @@ export function configureSessionPersist(opts = {}) {
     }
   }
 }
-// auto-load on import
+// auto-load on import — no cfg, no file. In-memory Maps still work.
 try {
   configureSessionPersist({});
 } catch {}

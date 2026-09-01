@@ -1,3 +1,35 @@
+## 3.508.0
+
+### Sessions persist follows paths.configDir
+
+`defaultSessionsPath()` resolved `~/.xclaw/sessions.json` from
+`os.homedir()` while production persist was import-time
+`configureSessionPersist({})` (gateway never reconfigured it) and
+doctor already had cfg in scope and did not thread it. Two instances
+on one host shared a single sessions.json; the suite wrote the
+operator's real `~/.xclaw/sessions.json`. Same class as v3.297.0
+`alert-state.json`, v3.506.0 PagerDuty webhook history, and v3.507.0
+pairing store.
+
+- Honour `opts.path` then `paths.sessionsFile` then
+  `XCLAW_SESSIONS_FILE` then `paths.configDir`. No configDir →
+  `persistPath: null`. No home fallback. `loadSessionState` /
+  `saveSessionState` no-op a null path (do not `dirname(null)`).
+- Import-time auto-load stays in-memory. Gateway boot after
+  `loadConfig` calls `configureSessionPersist({ cfg })` so live still
+  persists under configDir (never drop the capability). Doctor passes
+  cfg so it cannot miss the live file.
+- Empty `opts.path` still lands in configDir. Empty opts (enabled /
+  load only) keep the current path so existing gate-wiring pins stay.
+- Pin: configDir write never touches home; explicit sessionsFile
+  wins; opts.path wins over both; no-configDir names no file and
+  never writes home.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`. Usage-tracker homedir remainder is a sibling,
+not this slice.
+
 ## 3.507.0
 
 ### Pairing store follows paths.configDir
