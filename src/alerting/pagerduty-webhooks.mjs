@@ -11,14 +11,29 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 
 const handlers = new Map();
 const recent = [];
 const MAX_RECENT = 100;
 
-function historyPath() {
-  return path.join(os.homedir(), ".xclaw", "pd-webhook-events.jsonl");
+/**
+ * Webhook history belongs to the config dir that owns the alerting settings,
+ * not to whoever's home dir the process happens to run under. Resolving it
+ * from `os.homedir()` alone meant two instances on one host shared a single
+ * JSONL, so instance B's events mixed with instance A's — and the suite wrote
+ * into the operator's real `~/.xclaw/pd-webhook-events.jsonl`.
+ *
+ * `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller. Such a
+ * handler keeps history in the in-memory ring and reports `null` rather than
+ * guessing at the home dir. Same shape as `defaultStatePath` in alerts.mjs.
+ * An explicit `alerting.pagerduty.webhooks.historyPath` still wins.
+ */
+function historyPath(cfg) {
+  const explicit = cfg?.alerting?.pagerduty?.webhooks?.historyPath;
+  if (typeof explicit === "string" && explicit) return explicit;
+  const dir = cfg?.paths?.configDir;
+  return dir ? path.join(dir, "pd-webhook-events.jsonl") : null;
 }
 
 export function onPagerDutyWebhook(eventType, fn) {
@@ -214,13 +229,15 @@ export function normalizePagerDutyWebhook(body) {
   };
 }
 
-function appendHistory(event) {
+function appendHistory(event, cfg) {
   recent.push(event);
   while (recent.length > MAX_RECENT) recent.shift();
+  const filePath = historyPath(cfg);
+  if (!filePath) return; // no config to own it: in-memory only
   try {
-    fs.mkdirSync(path.dirname(historyPath()), { recursive: true });
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.appendFileSync(
-      historyPath(),
+      filePath,
       JSON.stringify({ at: new Date().toISOString(), ...event }) + "\n"
     );
   } catch (err) {
@@ -230,7 +247,7 @@ function appendHistory(event) {
 
 export async function handlePagerDutyWebhook(body, ctx = {}) {
   const event = normalizePagerDutyWebhook(body);
-  appendHistory(event);
+  appendHistory(event, ctx.cfg);
 
   const type = event.eventType || "unknown";
   console.log(
@@ -287,6 +304,6 @@ export function listRecentPagerDutyWebhooks(limit = 20) {
   return recent.slice(-limit).reverse();
 }
 
-export function getPagerDutyWebhookHistoryPath() {
-  return historyPath();
+export function getPagerDutyWebhookHistoryPath(cfg) {
+  return historyPath(cfg);
 }

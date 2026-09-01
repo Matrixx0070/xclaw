@@ -1,3 +1,29 @@
+## 3.506.0
+
+### PagerDuty webhook history follows paths.configDir
+
+`historyPath()` resolved `~/.xclaw/pd-webhook-events.jsonl` from
+`os.homedir()` while production `handlePagerDutyWebhook` already received
+`ctx.cfg` (gateway/routes/alerts.mjs) and used it only for `shouldMirror`.
+Two instances on one host shared a single JSONL; the suite wrote the
+operator's real `~/.xclaw/pd-webhook-events.jsonl`. Same class as
+v3.297.0 `alert-state.json`.
+
+- Honour `alerting.pagerduty.webhooks.historyPath` then `paths.configDir`.
+  No configDir → in-memory ring only, path `null`. No home fallback.
+- `appendHistory` / `getPagerDutyWebhookHistoryPath` / CLI
+  `xclaw alerts pd-webhooks` thread cfg. GET `/webhooks/pagerduty/recent`
+  stays in-memory.
+- Pin: configDir write never touches home; explicit historyPath wins;
+  no-configDir names no file and never writes home. Existing 401-before-
+  side-effect pins stay. Route-wiring accept case now passes
+  `paths.configDir`.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`. Pairing / sessions / usage-tracker homedir
+remainders are siblings, not this slice.
+
 ## 3.505.0
 
 ### GET /computer/health does not hang forever on a silent upstream

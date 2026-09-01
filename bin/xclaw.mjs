@@ -108,7 +108,7 @@ async function main() {
       if (sub === "pd-webhooks") {
         const { listRecentPagerDutyWebhooks, getPagerDutyWebhookHistoryPath } = await import("../src/alerting/pagerduty-webhooks.mjs");
         console.log(JSON.stringify({
-          path: getPagerDutyWebhookHistoryPath(),
+          path: getPagerDutyWebhookHistoryPath(cfg),
           recent: listRecentPagerDutyWebhooks(20),
         }, null, 2));
         break;

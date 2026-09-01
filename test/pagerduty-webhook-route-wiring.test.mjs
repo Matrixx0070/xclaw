@@ -64,7 +64,10 @@ async function driveRoute(sig) {
     req: makeReq(sig),
     res: {},
     url: new URL("http://local/webhooks/pagerduty"),
-    cfg: { alerting: { pagerduty: { webhooks: { secret: SECRET } } } },
+    cfg: {
+      paths: { configDir: TMP_HOME },
+      alerting: { pagerduty: { webhooks: { secret: SECRET } } },
+    },
     json: (_res, status, payload) => calls.push({ status, payload }),
     readBody: async () => ({}),
   });
