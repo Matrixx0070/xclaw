@@ -1,13 +1,30 @@
 /**
  * Persist last OAuth/cost-preflight auth refresh result for doctor visibility.
+ *
+ * auth-refresh-status.json belongs to the config dir that owns the instance,
+ * not to whoever's home dir the process happens to run under. Resolving it
+ * from `os.homedir()` alone meant two instances on one host shared a single
+ * status file, so instance B's doctor reported instance A's last refresh —
+ * and the suite wrote into the operator's real `~/.xclaw/auth-refresh-status.json`.
+ *
+ * Production writers (`recordAuthRefreshStatus(cfg)` at cost-preflight-auth)
+ * already had cfg in scope. `loadConfig()` stamps `paths.configDir`
+ * unconditionally (config/load.mjs:187), so a cfg without one is never a
+ * real caller. Such a path is `null` rather than guessing at the home dir.
+ * Same shape as `lastDrainPath`. Honour existing `XCLAW_CONFIG_DIR`.
+ * `recordAuthRefreshStatus` no-ops a null path (do not `mkdir(null)` /
+ * `path.dirname(null)`). `loadAuthRefreshStatus` returns `null`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 
-function statusPath(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "auth-refresh-status.json");
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function statusPath(cfg = {}) {
+  const dir = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return dir ? path.join(dir, "auth-refresh-status.json") : null;
 }
 
 export async function recordAuthRefreshStatus(cfg, result = {}) {
@@ -30,6 +47,7 @@ export async function recordAuthRefreshStatus(cfg, result = {}) {
       : [],
   };
   const fp = statusPath(cfg);
+  if (!fp) return payload;
   await fs.mkdir(path.dirname(fp), { recursive: true });
   const tmp = fp + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(payload, null, 2));
@@ -38,8 +56,10 @@ export async function recordAuthRefreshStatus(cfg, result = {}) {
 }
 
 export async function loadAuthRefreshStatus(cfg) {
+  const fp = statusPath(cfg);
+  if (!fp) return null;
   try {
-    return JSON.parse(await fs.readFile(statusPath(cfg), "utf8"));
+    return JSON.parse(await fs.readFile(fp, "utf8"));
   } catch {
     return null;
   }

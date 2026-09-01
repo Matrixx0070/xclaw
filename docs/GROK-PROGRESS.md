@@ -1847,3 +1847,15 @@ BUILT: `vaultRoot(cfg)` honours `paths.configDir` then `XCLAW_CONFIG_DIR` then n
 RAN: node --test test/vault-config-dir.test.mjs test/vault.test.mjs test/account-vault-merge.test.mjs test/request-context-vault.test.mjs test/doctor-accounts.test.mjs → # tests 11 # pass 11 # fail 0 # duration_ms 1417.543868; npm test (hermetic) → # tests 5242 # pass 5242 # fail 0 # duration_ms 76465.776856
 UNVERIFIED: GitHub `ci` on this SHA; live two-instance configDir isolation on a running gateway; live vault merge under a non-home configDir.
 NEXT: remaining non-S3 evolution gap from live source. `tokens/auth-refresh-status.mjs` is a sibling. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not mint persistRun:true on voice, TUI stream body, Discord `/ask`, Slack, email, voice TUI, or voice listen. Do not auto-promote HTTP POST /agent/run. Do not stamp `runs resume --gateway` before GET `/health`.
+
+## 2026-09-01 — 3.525.0 Auth-refresh status follows paths.configDir
+
+LOCKED: `src/tokens/auth-refresh-status.mjs` `statusPath` still homed while production writer `recordAuthRefreshStatus(cfg)` at cost-preflight-auth.mjs:12 already had cfg. Same class as v3.297.0 / v3.524.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `auth-refresh-status.json`; the suite wrote the operator's real `~/.xclaw`. Doctor already threads cfg into `pushAuthRefreshChecks`. Existing tests already pass `{ paths: { configDir } }`.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `recordAuthRefreshStatus` no-ops a null path (do not `mkdir(null)`). `loadAuthRefreshStatus` returns `null`. Keep atomic tmp+rename. Keep doctor probe (`soft` warn vs prod error, skipped, missing-status). Exported `statusPath`. Removed `os` import.
+
+RAN: node --test test/auth-refresh-status-config-dir.test.mjs test/doctor-auth-refresh.test.mjs test/doctor-auth-refresh-prod.test.mjs test/cost-preflight-auth-record.test.mjs → # tests 17 # pass 17 # fail 0 # duration_ms 108.418931; npm test (hermetic) → # tests 5247 # pass 5247 # fail 0 # duration_ms 76049.658889
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers.

@@ -1,3 +1,24 @@
+## 3.525.0
+
+### Auth-refresh status follows paths.configDir
+
+`statusPath()` resolved `~/.xclaw/auth-refresh-status.json` from
+`os.homedir()` while production writers (`recordAuthRefreshStatus(cfg)`
+at cost-preflight-auth) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via the
+leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one status file; the suite wrote the
+operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.524.0 `vault`. Honour existing `XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `recordAuthRefreshStatus` no-ops a null path (do not `mkdir(null)` /
+  `path.dirname(null)`). `loadAuthRefreshStatus` returns `null`.
+  Production writers always have configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.524.0
 
 ### Connected vault follows paths.configDir
