@@ -1919,3 +1919,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/preferences-config-dir.test.mjs test/r5-learning.test.mjs test/memory-s7.test.mjs → # tests 12 # pass 12 # fail 0 # duration_ms 226.357644; npm test (hermetic) → # tests 5272 # pass 5272 # fail 0 # duration_ms 77901.864507
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-01 — 3.531.0 Eval history follows paths.configDir
+
+LOCKED: `src/eval/history.mjs` `historyPath` still homed while production writer `appendEvalHistory(cfg)` at eval/runner.mjs:210 and readers `listEvalHistory(cfg)` at gateway/dashboard, gateway/routes/eval-queue, eval/scoreboard, eval/spend already had cfg. Same class as v3.297.0 / v3.530.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg?.paths?.configDir`. Two instances on one host shared one `eval-history.jsonl`; the suite wrote the operator's real `~/.xclaw`. Existing tests already pass `{ paths: { configDir } }`. Did not rewrite line shape. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `appendEvalHistory` still returns the in-memory line without persisting (do not `mkdir(null)`). `listEvalHistory` returns `[]`. Production writers always have configDir, so live persist is not dropped. Removed `os` import. Exported `evalHistoryPath`; `function historyPath` wraps it.
+
+RAN: node --test test/eval-history-config-dir.test.mjs test/eval-history.test.mjs test/eval-spend.test.mjs → # tests 7 # pass 7 # fail 0 # duration_ms 56.926552; npm test (hermetic) → # tests 5277 # pass 5277 # fail 0 # duration_ms 78286.431447
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

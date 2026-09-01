@@ -1,3 +1,25 @@
+## 3.531.0
+
+### Eval history follows paths.configDir
+
+`historyPath()` resolved `~/.xclaw/eval-history.jsonl` from
+`os.homedir()` while production writers (`appendEvalHistory(cfg)`
+at eval/runner.mjs) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via
+the leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one eval-history.jsonl; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.530.0 `preferences.md`. Honour existing
+`XCLAW_CONFIG_DIR`.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+  fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `appendEvalHistory` still returns the in-memory line without persisting
+  (do not `mkdir(null)`). `listEvalHistory` returns `[]`. Production
+  writers always have configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.530.0
 
 ### Memory preferences follow paths.configDir

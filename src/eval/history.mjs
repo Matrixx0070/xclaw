@@ -1,13 +1,36 @@
 /**
- * Append-only eval run history under ~/.xclaw/eval-history.jsonl
+ * Append-only eval run history under <configDir>/eval-history.jsonl
+ *
+ * eval-history.jsonl belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * history file, so instance B listed instance A's eval runs — and the suite
+ * wrote into the operator's real `~/.xclaw/eval-history.jsonl`.
+ *
+ * Production writer (`appendEvalHistory(cfg)` at eval/runner.mjs:210) and
+ * production readers (`listEvalHistory(cfg)` at gateway/dashboard,
+ * gateway/routes/eval-queue, eval/scoreboard, eval/spend) already had cfg
+ * in scope. `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller.
+ * Such a path is `null` rather than guessing at the home dir. Same shape
+ * as `preferencesPath`. Honour existing `XCLAW_CONFIG_DIR`.
+ * `appendEvalHistory` still returns the in-memory line without persisting.
+ * `listEvalHistory` returns `[]`. Do not `mkdir(null)`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
+
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function evalHistoryPath(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "eval-history.jsonl") : null;
+}
 
 function historyPath(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "eval-history.jsonl");
+  return evalHistoryPath(cfg);
 }
 
 /**
@@ -15,8 +38,6 @@ function historyPath(cfg) {
  * @param {object} report runEvalSuite report
  */
 export async function appendEvalHistory(cfg, report) {
-  const fp = historyPath(cfg);
-  await fs.mkdir(path.dirname(fp), { recursive: true });
   const line = {
     at: report.at || new Date().toISOString(),
     runId: report.runId,
@@ -30,6 +51,9 @@ export async function appendEvalHistory(cfg, report) {
     costUsd: report.cost?.usd ?? null,
     model: report.results?.[0]?.model || null,
   };
+  const fp = historyPath(cfg);
+  if (!fp) return line;
+  await fs.mkdir(path.dirname(fp), { recursive: true });
   await fs.appendFile(fp, JSON.stringify(line) + "\n");
   return line;
 }
@@ -40,6 +64,7 @@ export async function appendEvalHistory(cfg, report) {
  */
 export async function listEvalHistory(cfg, opts = {}) {
   const fp = historyPath(cfg);
+  if (!fp) return [];
   let raw = "";
   try {
     raw = await fs.readFile(fp, "utf8");
