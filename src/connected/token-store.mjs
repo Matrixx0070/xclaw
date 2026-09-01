@@ -1,10 +1,23 @@
 /**
- * Connected-app token store — ~/.xclaw/connected-tokens.json
+ * Connected-app token store — connected-tokens.json in the config dir.
  * Optional AES-256-GCM when XCLAW_TOKEN_STORE_KEY or gateway token present.
+ *
+ * connected-tokens.json belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * token store, so instance B's connected apps used instance A's tokens —
+ * and the suite wrote into the operator's real `~/.xclaw/connected-tokens.json`.
+ *
+ * Production writers (`setAppToken(cfg)` at oauth-callback / oauth-login)
+ * already had cfg in scope. `loadConfig()` stamps `paths.configDir`
+ * unconditionally (config/load.mjs:187), so a cfg without one is never a
+ * real caller. Such a path is `null` rather than guessing at the home
+ * dir. Same shape as `storePath` in mcp/oauth. Honour existing
+ * `XCLAW_CONFIG_DIR`. `saveTokens` no-ops a null path (do not `mkdir(null)` /
+ * `path.dirname(null)`). `loadTokens` returns `{ version: 1, apps: {} }`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import {
   resolveStoreKey,
   encryptJson,
@@ -12,14 +25,20 @@ import {
   isEncryptedStore,
 } from "./token-crypto.mjs";
 
-function storePath(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "connected-tokens.json");
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback.
+ */
+export function storePath(cfg = {}) {
+  const dir = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return dir ? path.join(dir, "connected-tokens.json") : null;
 }
 
 export async function loadTokens(cfg) {
+  const fp = storePath(cfg);
+  if (!fp) return { version: 1, apps: {} };
   try {
-    const raw = await fs.readFile(storePath(cfg), "utf8");
+    const raw = await fs.readFile(fp, "utf8");
     const parsed = JSON.parse(raw);
     if (isEncryptedStore(parsed)) {
       const key = resolveStoreKey(cfg);
@@ -40,6 +59,7 @@ export async function loadTokens(cfg) {
 
 export async function saveTokens(cfg, data) {
   const fp = storePath(cfg);
+  if (!fp) return null;
   await fs.mkdir(path.dirname(fp), { recursive: true });
   const key = resolveStoreKey(cfg);
   const payload = key ? encryptJson(data, key) : data;
