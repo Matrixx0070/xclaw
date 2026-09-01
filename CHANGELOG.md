@@ -1,3 +1,38 @@
+## 3.511.0
+
+### Telegram writer lock follows paths.configDir
+
+`acquireTelegramWriterLock()` resolved
+`~/.xclaw/locks/telegram-writer.lock` from `os.homedir()` while
+production `createTelegramChannel` already had cfg in scope and
+passed `conf.writerLockPath` — when unset (normal), they homed.
+Doctor independently homed the same path. `singleWriter !== false`
+is default-ON. Two instances on one host with different
+`paths.configDir` shared a single lock, so instance B could not
+start Telegram because A held it; the suite wrote the operator's
+real `~/.xclaw/locks/telegram-writer.lock`. Same class as v3.297.0
+`alert-state.json`, v3.506.0 PagerDuty webhook history, v3.507.0
+pairing store, v3.508.0 sessions persist, v3.509.0 usage-tracker
+ledger, and v3.510.0 compaction offload.
+
+- Honour `opts.lockPath` then `channels.telegram.writerLockPath`
+  then `paths.configDir`. No configDir → `null`. No home fallback.
+  Do not invent a lock-path env.
+- `acquireTelegramWriterLock` no-ops a null path (`ok: true`,
+  `skipped: true`, empty `release`/`touch`) so start does not treat
+  missing path as `lock_held`. Production and doctor thread cfg so
+  live still locks under configDir (never drop the capability).
+- Doctor skips `readFile` when lockPath is null. Same-bot sharing
+  when they share configDir is still the point of the lock.
+- Pin: configDir write never touches home; explicit lockPath wins;
+  nested writerLockPath wins; no-configDir names no file and never
+  writes home.
+- Gateway supervised `stateRoot` is a sibling, not this slice.
+
+This slice does not invert default-path durability, does not mint
+`persistRun: true` on voice / TUI / channels, and does not auto-promote
+HTTP `POST /agent/run`.
+
 ## 3.510.0
 
 ### Compaction offload follows paths.configDir

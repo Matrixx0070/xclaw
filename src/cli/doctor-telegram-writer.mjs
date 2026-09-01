@@ -12,7 +12,8 @@
  * route for truth") instead of being removed, so the misleading OK stayed.
  *
  * The honest cross-process signal is the single-writer lock itself. Exactly one
- * process owns Telegram updates, it takes `~/.xclaw/locks/telegram-writer.lock`
+ * process owns Telegram updates, it takes the writer lock (under
+ * `paths.configDir/locks/telegram-writer.lock` unless `writerLockPath` is set)
  * before starting, and `runTelegramPollLoop` touches the lock at the top of
  * every iteration — so the stamp is refreshed at least once per long-poll
  * (30s by default). `acquireTelegramWriterLock` already decides a lock is
@@ -24,7 +25,7 @@
  * bytes in, so every branch below is reachable from a unit test.
  */
 
-/** Must track `acquireTelegramWriterLock`'s default in channels/telegram/webhook.mjs. */
+/** Must track `acquireTelegramWriterLock`'s staleMs in channels/telegram/webhook.mjs. Path resolution is `defaultTelegramWriterLockPath` (configDir, not home). */
 export const WRITER_LOCK_STALE_MS = 120_000;
 
 /**

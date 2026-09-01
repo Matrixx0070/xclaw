@@ -1371,21 +1371,25 @@ export async function runDoctor(opts = {}) {
       // doctor-telegram-writer.mjs).
       try {
         const fs = await import("node:fs");
-        const path = await import("node:path");
-        const os = await import("node:os");
         const { assessTelegramWriter } = await import("./doctor-telegram-writer.mjs");
-        const lockPath =
-          conf.writerLockPath ||
-          path.join(os.homedir(), ".xclaw", "locks", "telegram-writer.lock");
+        const { defaultTelegramWriterLockPath } = await import(
+          "../channels/telegram/webhook.mjs"
+        );
+        const lockPath = defaultTelegramWriterLockPath({
+          lockPath: conf.writerLockPath,
+          cfg,
+        });
         let present = false;
         let raw = null;
         let readError = null;
-        try {
-          raw = fs.readFileSync(lockPath, "utf8");
-          present = true;
-        } catch (e) {
-          if (e?.code === "ENOENT") present = false;
-          else readError = e.message || String(e);
+        if (lockPath) {
+          try {
+            raw = fs.readFileSync(lockPath, "utf8");
+            present = true;
+          } catch (e) {
+            if (e?.code === "ENOENT") present = false;
+            else readError = e.message || String(e);
+          }
         }
         for (const f of assessTelegramWriter({
           enabled,

@@ -1091,6 +1091,7 @@ export function createTelegramChannel(cfg) {
       if (singleWriter) {
         writerLock = acquireTelegramWriterLock({
           lockPath: conf.writerLockPath,
+          cfg,
         });
         if (!writerLock.ok) {
           console.warn(

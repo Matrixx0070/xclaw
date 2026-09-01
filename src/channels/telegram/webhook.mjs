@@ -44,6 +44,37 @@ export function verifyTelegramWebhookSecret(req, secret) {
 }
 
 /**
+ * telegram-writer.lock belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host with different
+ * `paths.configDir` shared a single lock, so instance B could not start
+ * Telegram because A held it — and the suite wrote into the operator's real
+ * `~/.xclaw/locks/telegram-writer.lock`.
+ *
+ * Production `createTelegramChannel(cfg)` already had cfg in scope and
+ * passed `conf.writerLockPath` — when unset (normal), they homed. Doctor
+ * independently homed the same path. `singleWriter !== false` is default-ON.
+ * Same-bot sharing when they share configDir is still the point of the lock.
+ *
+ * `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller.
+ * Such a path is `null` rather than guessing at the home dir. Same shape
+ * as `defaultStatePath` in alerts.mjs / `resolvePairingStorePath` /
+ * `defaultOffloadDir`. Honour opts.lockPath then
+ * `channels.telegram.writerLockPath` then `paths.configDir`. No lock-path
+ * env exists — do not invent one. `acquireTelegramWriterLock` no-ops a
+ * null path (do not `mkdir(null)`).
+ */
+export function defaultTelegramWriterLockPath(opts = {}) {
+  const explicit = opts.lockPath;
+  if (typeof explicit === "string" && explicit) return explicit;
+  const nested = opts.cfg?.channels?.telegram?.writerLockPath;
+  if (typeof nested === "string" && nested) return nested;
+  const dir = opts.cfg?.paths?.configDir;
+  return dir ? path.join(dir, "locks", "telegram-writer.lock") : null;
+}
+
+/**
  * Single-writer lock so only one process owns Telegram updates.
  *
  * Reclaiming this lock while its holder still runs puts two processes on
@@ -55,16 +86,26 @@ export function verifyTelegramWebhookSecret(req, secret) {
  *
  * @param {object} [opts]
  * @param {string} [opts.lockPath]
+ * @param {object} [opts.cfg]
  * @param {number} [opts.staleMs]
  * @param {(pid: number) => boolean} [opts.isAlive] seam: EPERM cannot be
  *   provoked under a single-uid deployment, so tests inject the verdict.
  */
 export function acquireTelegramWriterLock(opts = {}) {
   const alivep = opts.isAlive || isPidAlive;
-  const lockPath =
-    opts.lockPath ||
-    path.join(os.homedir(), ".xclaw", "locks", "telegram-writer.lock");
+  const lockPath = defaultTelegramWriterLockPath(opts);
   const staleMs = opts.staleMs ?? 120_000;
+  // No configDir / explicit path → skip the file (do not mkdir(null)).
+  // Production threads cfg so live still locks under configDir.
+  if (!lockPath) {
+    return {
+      ok: true,
+      lockPath: null,
+      skipped: true,
+      release() {},
+      touch() {},
+    };
+  }
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
 
   const payload = {
@@ -156,6 +197,7 @@ export default {
   TELEGRAM_SECRET_HEADER,
   timingSafeEqualStr,
   verifyTelegramWebhookSecret,
+  defaultTelegramWriterLockPath,
   acquireTelegramWriterLock,
   buildSetWebhookBody,
 };
