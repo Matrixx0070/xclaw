@@ -2531,3 +2531,16 @@ SHIPPED: btnMediaGen fill path classList.remove("placeholder") then body. Pin te
 RAN: pin `# tests 23 # pass 23 # fail 0 # duration_ms 85.158919`. hermetic `# tests 5460 # pass 5460 # fail 0 # duration_ms 81562.144341`.
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.581.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+
+## 2026-09-02 — 3.582.0 Automations Create drops leftover placeholder so filled body is not muted
+
+LOCKED: Automations #/automations Create with empty name/schedule left class `log placeholder` on filled autoOut. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/automations Create filled "name and schedule are required" (30 chars); CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as Images Generate 3.581.0. Empty-state "no output yet" before Create is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.581.0 Images Generate. Do not POST /cron/jobs.
+
+DISCOVERED: btnAutoCreate set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: btnAutoCreate fill path classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (btnAutoCreate slice removes placeholder; empty-state HTML kept). One copy.
+
+RAN: pin `# tests 24 # pass 24 # fail 0 # duration_ms 71.151116`. hermetic `# tests 5461 # pass 5461 # fail 0 # duration_ms 86593.602661`.
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.582.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.

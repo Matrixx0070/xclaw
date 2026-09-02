@@ -1,3 +1,13 @@
+## 3.582.0
+
+### Automations Create drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/automations Create with
+empty name/schedule filled "name and schedule are required" (30 chars) but left
+class `log placeholder`. CSS `.log.placeholder` mutes and italicizes (same
+leftover as Images Generate 3.581.0). Empty-state "no output yet" before Create
+is correct. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.581.0
 
 ### Images Generate drops leftover placeholder so filled body is not muted

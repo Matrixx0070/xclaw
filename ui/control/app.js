@@ -2650,10 +2650,16 @@ async function loadAutomations() {
 }
 
 $("btnAutoCreate")?.addEventListener("click", async () => {
+  const out = $("autoOut");
   const name = $("autoName").value.trim();
   const sched = $("autoSchedule").value.trim();
+  // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/automations Create
+  // with empty name/schedule filled "name and schedule are required" but left
+  // class "log placeholder". CSS mutes and italicizes (same leftover as Images
+  // Generate 3.581.0).
+  if (out) out.classList.remove("placeholder");
   if (!name || !sched) {
-    $("autoOut").textContent = "name and schedule are required";
+    if (out) out.textContent = "name and schedule are required";
     return;
   }
   const body = { name, enabled: true };
@@ -2665,10 +2671,10 @@ $("btnAutoCreate")?.addEventListener("click", async () => {
   if (sk) body.sessionKey = sk;
   try {
     const r = await postJSON("/cron/jobs", body);
-    $("autoOut").textContent = JSON.stringify(r, null, 2);
+    if (out) out.textContent = JSON.stringify(r, null, 2);
     $("autoName").value = ""; $("autoSchedule").value = ""; $("autoMsg").value = "";
     await loadAutomations();
-  } catch (e) { $("autoOut").textContent = String(e.message || e); }
+  } catch (e) { if (out) out.textContent = String(e.message || e); }
 });
 $("btnAutoRefresh")?.addEventListener("click", () => loadAutomations().catch(console.error));
 

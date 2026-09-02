@@ -299,3 +299,15 @@ test("images Generate drops leftover placeholder so filled body is not muted", (
   assert.match(gen, /enter a prompt/);
   assert.match(html, /id="mediaOut" class="log placeholder"/);
 });
+
+test("automations Create drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const create = app.slice(
+    app.indexOf("$(\"btnAutoCreate\")"),
+    app.indexOf("$(\"btnAutoRefresh\")")
+  );
+  assert.match(create, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(create, /name and schedule are required/);
+  assert.match(html, /id="autoOut" class="log placeholder"/);
+});
