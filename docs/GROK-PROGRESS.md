@@ -2287,3 +2287,15 @@ SHIPPED: onPollOk clears lastError. telegramLastErrorIsCurrent refuses to warn w
 RAN: node --test test/telegram-last-error-current.test.mjs → # tests 7 # pass 7 # fail 0 # duration_ms 123.289019; npm test (hermetic) → # tests 5429 # pass 5429 # fail 0 # duration_ms 81151.065275
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class. Do not also fix empty-body suggestions/feedback. Do not pm2 restart without asking.
+
+## 2026-09-02 — 3.562.0 Empty-body suggestion feedback does not invent event=shown
+
+LOCKED: empty-body POST `/channel/webchat/suggestions/feedback` 200 ok:true defaulted shown. Live 2026-09-02 pid 3800483 (version 3.491.0) POST {} bumped shown 78→79. Writer already no-ops unknown events. HTTP path was the fail-open. User named this class (option 3 of ALL 1,2,3,4). Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. 3.561.0 leftover lastError is a different class.
+
+DISCOVERED: `event: body.event || "shown"` at gateway/index.mjs. Client always sends event. recordDurableSuggestionFeedback returns null unless shown|tapped|dismissed.
+
+SHIPPED: handler 400 `event required (shown|tapped|dismissed)` when event missing or not in that set. Pin test/suggestion-feedback-event-required.test.mjs.
+
+RAN: node --test test/suggestion-feedback-event-required.test.mjs → # tests 4 # pass 4 # fail 0 # duration_ms 51.749702; npm test (hermetic) → # tests 5433 # pass 5433 # fail 0 # duration_ms 81317.189638
+
+NEXT: push 71 commits (user said 4). Then pm2 restart xclaw-gateway (user said 2) and live-drive HEAD. Do not mint persistRun. Do not git add -A.

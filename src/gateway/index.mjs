@@ -1,6 +1,11 @@
 /**
  * XClaw Gateway — Phase 3.1
  * Computer + agent API + WebChat + SSE event streaming
+ *
+ * POST /channel/webchat/suggestions/feedback requires event in
+ * shown|tapped|dismissed. Live 2026-09-02 pid 3800483 (version 3.491.0)
+ * accepted POST {} as 200 ok:true and bumped shown because
+ * `event: body.event || "shown"`. Writer already no-ops unknown events.
  */
 import http from "node:http";
 import { createHttpServer } from "./tls.mjs";
@@ -1487,10 +1492,18 @@ export async function startGateway({ root, harness = false } = {}) {
         if (webchatEnabled && p === "/channel/webchat/suggestions/feedback" && req.method === "POST") {
           const body = await readBody(req);
           try {
+            // Live 2026-09-02 pid 3800483: POST {} returned 200 ok:true and
+            // bumped shown (78→79) because event defaulted to "shown". The
+            // writer already no-ops unknown events; the HTTP path must not
+            // invent one. Client always sends event. Keep userId "webchat".
+            const event = body && typeof body === "object" ? body.event : undefined;
+            if (!["shown", "tapped", "dismissed"].includes(event)) {
+              return json(res, 400, { error: "event required (shown|tapped|dismissed)" });
+            }
             const { recordDurableSuggestionFeedback } = await import("../agent/suggestion-feedback.mjs");
             const { recordSuggestionTapMetric } = await import("../agent/agent-metrics.mjs");
             await recordDurableSuggestionFeedback(cfg, {
-              event: body.event || "shown",
+              event,
               source: body.source,
               kind: body.kind,
               prompt: body.prompt,
@@ -1498,7 +1511,7 @@ export async function startGateway({ root, harness = false } = {}) {
               userId: body.sessionId || body.userId || "webchat",
               chatId: body.sessionId,
             });
-            if (body.event === "tapped") {
+            if (event === "tapped") {
               try { recordSuggestionTapMetric(); } catch { /* */ }
             }
             return json(res, 200, { ok: true });

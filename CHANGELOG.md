@@ -1,3 +1,19 @@
+## 3.562.0
+
+### Empty-body suggestion feedback does not invent event=shown
+
+Live 2026-09-02 pid 3800483 (version 3.491.0) POST {} to
+`/channel/webchat/suggestions/feedback` returned 200 `{ok:true}` and
+bumped `xclaw_suggestion_feedback_shown` 78→79 because
+`event: body.event || "shown"`. Writer already no-ops unknown events
+(`recordDurableSuggestionFeedback` returns null unless shown|tapped|
+dismissed). HTTP path now 400 `event required (shown|tapped|dismissed)`
+when event is missing or not in that set. Client always sends event.
+Do not invert: explicit shown|tapped|dismissed still 200. Keep userId
+fallback `"webchat"`. Do not mint persistRun. Homedir JSON store-writer
+class remains EXHAUSTED at 3.560.0. 3.561.0 leftover lastError is a
+different class.
+
 ## 3.561.0
 
 ### Doctor does not warn on leftover telegram.lastError after poll recovery
