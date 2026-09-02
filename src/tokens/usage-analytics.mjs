@@ -110,6 +110,13 @@ export async function usageSummary(cfg, { provider = "all", days = 7 } = {}) {
     // prefer cache object from ledger if present
     pv.costUsd += e.costUsd || 0;
     byProvider.set(prov, pv);
+    // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/usage
+    // anthropic 30d painted spend $0.00 next to 6.1M tokens / 1,071 requests
+    // while byProvider anthropic was $30.99. Anthropic ledger entries carry
+    // entry.costUsd with turns[].costUsd = null; xai turns carry costUsd.
+    // Headline totals summed turn cost only. Fall back to the entry once
+    // when no turn contributed cost — do not double-count the xai path.
+    let turnHadCost = false;
     for (const t of turns) {
       b.promptTokens += t.promptTokens || 0;
       b.completionTokens += t.completionTokens || 0;
@@ -123,6 +130,11 @@ export async function usageSummary(cfg, { provider = "all", days = 7 } = {}) {
       totals.cachedTokens += t.cachedTokens || 0;
       totals.costUsd += t.costUsd || 0;
       totals.requests += 1;
+      if (t.costUsd != null) turnHadCost = true;
+    }
+    if (!turnHadCost && typeof e.costUsd === "number") {
+      b.costUsd += e.costUsd;
+      totals.costUsd += e.costUsd;
     }
     const mk = e.model || "unknown";
     const mv = byModel.get(mk) || { model: mk, runs: 0, tokens: 0, costUsd: 0 };

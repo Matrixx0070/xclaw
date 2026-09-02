@@ -2569,3 +2569,16 @@ SHIPPED: btnMcpSrvAdd fill path classList.remove("placeholder") then body. Pin t
 RAN: pin `# tests 26 # pass 26 # fail 0 # duration_ms 76.889886`. hermetic `# tests 5463 # pass 5463 # fail 0 # duration_ms 84231.145923`.
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.584.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+
+## 2026-09-02 — 3.585.0 usageSummary totals.costUsd falls back to entry when turns lack costUsd
+
+LOCKED: Control #/usage anthropic 30d headline spend $0.00 vs 6.1M tokens / 1,071 requests. Live 2026-09-02 pid 2798540 (version 3.562.0) HTTP GET /usage?provider=anthropic&days=30 totals.costUsd=0 totalTokens=6111563 requests=1071 byProvider anthropic usd=30.987422 runs=279. Anthropic ledger entries have entry.costUsd (e.g. 0.028965) with turns[].costUsd = null and hasCost false. xai turns carry costUsd so 7d xai headline matched. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.584.0 MCP server Add leftover. Do not lock leftover-placeholder. Do not invent rates.
+
+DISCOVERED: usageSummary totals.costUsd += t.costUsd; byProvider.costUsd += e.costUsd.
+
+SHIPPED: when no turn contributed costUsd, add e.costUsd once to totals and the daily bucket. Pin test/usage-analytics.test.mjs (anthropic entry-only vs xai turn cost; all = sum). One copy.
+
+RAN: pin `# tests 6 # pass 6 # fail 0 # duration_ms 67.721047`. hermetic `# tests 5464 # pass 5464 # fail 0 # duration_ms 87417.770869` EXIT:0.
+
+NEXT: do not pm2 restart without asking. Aggregator is gateway JS — SPA reload will not live-prove. Do not push 3.563.0–3.585.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. Do not kill xtui without asking.

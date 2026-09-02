@@ -1,3 +1,17 @@
+## 3.585.0
+
+### usageSummary totals.costUsd falls back to entry when turns lack costUsd
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/usage anthropic 30d
+painted spend $0.00 next to 6.1M tokens / 1,071 requests while byProvider
+anthropic was $30.99. HTTP GET /usage?provider=anthropic&days=30 totals.costUsd=0
+vs byProvider usd=30.987422. Anthropic ledger entries carry entry.costUsd with
+turns[].costUsd = null; xai turns carry costUsd so the 7d xai headline matched.
+usageSummary summed turn.costUsd into totals and entry.costUsd into byProvider.
+Fall back to entry.costUsd once when no turn contributed cost. Do not
+double-count the xai path. Do not invent rates. Homedir JSON store-writer class
+remains EXHAUSTED at 3.560.0.
+
 ## 3.584.0
 
 ### MCP server Add drops leftover placeholder so filled body is not muted
