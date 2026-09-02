@@ -2251,3 +2251,15 @@ SHIPPED: honour `cfg.auth?.idempotency?.storePath` then `paths.configDir` then `
 RAN: node --test test/idempotency-config-dir.test.mjs test/idempotency.test.mjs test/jwks-invalidation-config-dir.test.mjs → # tests 16 # pass 16 # fail 0 # duration_ms 135.363754; npm test (hermetic) → # tests 5412 # pass 5412 # fail 0 # duration_ms 79612.226163
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.559.0 xAI OAuth token vault follows paths.configDir
+
+LOCKED: `src/auth/xai-oauth.mjs` `authPaths` still homed while production writers `loginXai(cfg)` at auth-cli.mjs:279 and `logoutXai(cfg)` at auth-cli.mjs:96 inside `runAuthCli(cfg)` at bin/xclaw.mjs:49-53 after `loadConfig()` already had cfg. Same class as v3.297.0 / v3.558.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `auth.json`; the suite wrote the operator's real `~/.xclaw`. Existing xai-oauth-file-mode.test.mjs already passes `{ paths: { configDir: dir } }`. KEEP `cfg.auth?.xai?.tokenPath`. KEEP grokCliAuth at `~/.grok/auth.json`. KEEP `os` import. KEEP `XCLAW_XAI_CLIENT_ID` as OAuth client id (not path). KEEP settleAfterXaiRefresh. KEEP writeTokens 0o600 chmod. Did not rewrite loginDeviceCode / loginPkceLoopback / importGrokCliAuth / loginXai / refreshXaiToken / loadXaiAuth / authStatus / resolveBrainAuth. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). cold-start-persist REJECTED (existing pin asserts default path under .xclaw). Did not also fix key-compromise-recovery.
+
+SHIPPED: honour `cfg.auth?.xai?.tokenPath` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback for this store. Do not honour `XCLAW_STATE_DIR`. No new env. `writeTokens` still no-ops without persisting (do not mkdir dirname of null). `logoutXai` no-ops without unlink(null). Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/xai-oauth-config-dir.test.mjs test/xai-oauth-file-mode.test.mjs test/idempotency-config-dir.test.mjs → # tests 12 # pass 12 # fail 0 # duration_ms 88.083342; npm test (hermetic) → # tests 5417 # pass 5417 # fail 0 # duration_ms 84715.643008
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

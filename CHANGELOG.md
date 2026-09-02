@@ -1,3 +1,21 @@
+## 3.559.0
+
+### xAI OAuth token vault follows paths.configDir
+
+`authPaths()` resolved `~/.xclaw/auth.json` from `os.homedir()`
+while production writers (`loginXai(cfg)` at auth-cli.mjs:279 and
+`logoutXai(cfg)` at auth-cli.mjs:96 inside `runAuthCli(cfg)` at
+bin/xclaw.mjs:49-53 after `loadConfig()`; also `refreshXaiToken(own, cfg)`
+from `loadXaiAuth(cfg)`) already had cfg in scope. Two xclaw instances
+on one host with different `paths.configDir` shared one OAuth vault.
+Home fallback is refused. Honour existing `XCLAW_CONFIG_DIR`. Keep
+`cfg.auth?.xai?.tokenPath`. Keep grokCliAuth at `~/.grok/auth.json`
+(Grok CLI cache — not this store). Keep `XCLAW_XAI_CLIENT_ID` as OAuth
+client id (not path). KEEP `os` import (grokCliAuth uses `os.homedir()`).
+`writeTokens` no-ops without `mkdir` dirname of null. `logoutXai` no-ops
+without unlink(null). Production writers always have configDir, so live
+persist is not dropped.
+
 ## 3.558.0
 
 ### Idempotency store follows paths.configDir

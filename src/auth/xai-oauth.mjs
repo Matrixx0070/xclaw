@@ -9,6 +9,16 @@
  * Note: xAI OAuth client_id / exact device endpoints may require
  * registration with xAI. Defaults target accounts.x.ai / auth.x.ai
  * patterns used by Grok CLI; override via config.auth.xai.
+ *
+ * `authPaths()` honours `cfg.auth?.xai?.tokenPath` then
+ * `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback
+ * for this store. Do not honour `XCLAW_STATE_DIR`. A cfg without
+ * configDir is never a real caller (`loadConfig()` stamps it
+ * unconditionally). `writeTokens` still no-ops without persisting
+ * (do not `mkdir` dirname of null). `logoutXai` no-ops without
+ * unlink(null). Keep `cfg.auth?.xai?.tokenPath`. Keep grokCliAuth at
+ * `~/.grok/auth.json` (Grok CLI cache — not this store). Keep
+ * `XCLAW_XAI_CLIENT_ID` as OAuth client id (not path).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -23,19 +33,17 @@ const DEFAULTS = {
   /** Public/native client id — replace with registered XClaw app id when issued */
   clientId: process.env.XCLAW_XAI_CLIENT_ID || "xclaw-cli",
   scope: "openid profile offline_access",
-  tokenPath: null, // set at runtime → ~/.xclaw/auth.json
+  tokenPath: null, // set at runtime → <configDir>/auth.json
 };
 
 function authPaths(cfg = {}) {
-  const configDir =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
+  const explicit = cfg.auth?.xai?.tokenPath;
+  const configDir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
   return {
     configDir,
     tokenPath:
-      cfg.auth?.xai?.tokenPath ||
-      path.join(configDir, "auth.json"),
+      explicit ||
+      (configDir ? path.join(configDir, "auth.json") : null),
     grokCliAuth: path.join(os.homedir(), ".grok", "auth.json"),
   };
 }
@@ -54,6 +62,7 @@ async function readJsonSafe(p) {
 }
 
 async function writeTokens(tokenPath, data) {
+  if (!tokenPath) return;
   await fs.mkdir(path.dirname(tokenPath), { recursive: true });
   await fs.writeFile(tokenPath, JSON.stringify(data, null, 2) + "\n", {
     mode: 0o600,
@@ -418,6 +427,7 @@ export async function importGrokCliAuth(cfg = {}) {
 
 export async function logoutXai(cfg = {}) {
   const paths = authPaths(cfg);
+  if (!paths.tokenPath) return { ok: true };
   try {
     await fs.unlink(paths.tokenPath);
   } catch {
