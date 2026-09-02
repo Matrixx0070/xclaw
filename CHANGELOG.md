@@ -1,3 +1,21 @@
+## 3.558.0
+
+### Idempotency store follows paths.configDir
+
+`paths()` resolved `~/.xclaw/idempotency.json` from `os.homedir()`
+while the production writer (`withIdempotency(cfg)` at
+jwks-invalidation.mjs:260 from `applyRemoteInvalidation(cfg)`, itself
+called from `handleInvalidationHttp(cfg)` at gateway/routes/jwks.mjs:57)
+already had cfg in scope. Two xclaw instances on one host with different
+`paths.configDir` shared one idempotency store. Home fallback is refused.
+Honour existing `XCLAW_CONFIG_DIR`. Keep `cfg.auth?.idempotency?.storePath`.
+Keep `XCLAW_IDEMPOTENCY_ON_IN_PROGRESS` as strategy env (not path). Removed
+`os` import (only used by the leftover home fallback). `writeStore` no-ops
+without calling durableAtomicWriteJson (that helper `mkdir`s dirname).
+`readStore` returns the empty default (same as missing). `clearIdempotencyStore`
+no-ops without unlink(null). Production writers always have configDir, so
+live persist is not dropped.
+
 ## 3.557.0
 
 ### JWKS invalidation epoch follows paths.configDir

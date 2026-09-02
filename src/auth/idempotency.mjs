@@ -11,11 +11,17 @@
  *   in_progress_wait    — wait for first to finish, return same result
  *   replay_only         — if completed, return stored; if in progress, reject
  *
- * Storage: ~/.xclaw/idempotency.json (0600) — pluggable via cfg.auth.idempotency
+ * `paths()` honours `cfg.auth?.idempotency?.storePath` then
+ * `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback.
+ * Do not honour `XCLAW_STATE_DIR`. A cfg without configDir is never a
+ * real caller (`loadConfig()` stamps it unconditionally). `writeStore`
+ * still no-ops without persisting (do not call durableAtomicWriteJson on
+ * null — that helper `mkdir`s dirname). `readStore` returns the empty
+ * default (same as missing). Keep `cfg.auth?.idempotency?.storePath`.
+ * Keep `XCLAW_IDEMPOTENCY_ON_IN_PROGRESS` as strategy env (not path).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import {
   durableAtomicWriteJson,
@@ -32,15 +38,13 @@ export class IdempotencyError extends Error {
 }
 
 function paths(cfg = {}) {
-  const configDir =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
+  const explicit = cfg.auth?.idempotency?.storePath;
+  const configDir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
   return {
     configDir,
     storePath:
-      cfg.auth?.idempotency?.storePath ||
-      path.join(configDir, "idempotency.json"),
+      explicit ||
+      (configDir ? path.join(configDir, "idempotency.json") : null),
   };
 }
 
@@ -92,8 +96,10 @@ export function requestFingerprint(parts = {}) {
 }
 
 async function readStore(cfg) {
+  const p = paths(cfg).storePath;
+  if (!p) return { version: 1, records: {} };
   try {
-    return JSON.parse(await fs.readFile(paths(cfg).storePath, "utf8"));
+    return JSON.parse(await fs.readFile(p, "utf8"));
   } catch {
     return { version: 1, records: {} };
   }
@@ -101,6 +107,7 @@ async function readStore(cfg) {
 
 async function writeStore(cfg, store) {
   const p = paths(cfg).storePath;
+  if (!p) return;
   await durableAtomicWriteJson(p, store, {
     durable: durableWritesEnabled(cfg),
     mode: 0o600,
@@ -375,6 +382,7 @@ export async function idempotencyStatus(cfg = {}) {
 
 export async function clearIdempotencyStore(cfg = {}) {
   const p = paths(cfg).storePath;
+  if (!p) return { ok: true };
   try {
     await fs.unlink(p);
   } catch {

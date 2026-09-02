@@ -2239,3 +2239,15 @@ SHIPPED: honour `cfg.auth?.jwks?.invalidationEpochPath` then `paths.configDir` t
 RAN: node --test test/jwks-invalidation-config-dir.test.mjs test/jwks-invalidation.test.mjs test/jwks-config-dir.test.mjs → # tests 16 # pass 16 # fail 0 # duration_ms 131.515017; npm test (hermetic) → # tests 5407 # pass 5407 # fail 0 # duration_ms 82749.259758
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.558.0 Idempotency store follows paths.configDir
+
+LOCKED: `src/auth/idempotency.mjs` `paths` still homed while production writer `withIdempotency(cfg)` at jwks-invalidation.mjs:260 from `applyRemoteInvalidation(cfg)`, itself called from `handleInvalidationHttp(cfg)` at gateway/routes/jwks.mjs:57 already had cfg. Same class as v3.297.0 / v3.557.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `idempotency.json`; the suite wrote the operator's real `~/.xclaw`. Existing idempotency.test.mjs already passes `{ paths: { configDir: dir } }`. KEEP `cfg.auth?.idempotency?.storePath`. KEEP `XCLAW_IDEMPOTENCY_ON_IN_PROGRESS` as strategy env (not path). Removed `os` import (only used by the leftover home fallback). Did not rewrite beginIdempotent / completeIdempotent / failIdempotent / withIdempotency / requestFingerprint / idempotencyKeyFromEvent / idempotencyStatus / prune. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). cold-start-persist REJECTED (existing pin asserts default path under .xclaw). Did not also fix xai-oauth / key-compromise-recovery.
+
+SHIPPED: honour `cfg.auth?.idempotency?.storePath` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `writeStore` still no-ops without persisting (do not call durableAtomicWriteJson on null). `readStore` returns the empty default. `clearIdempotencyStore` no-ops without unlink(null). Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/idempotency-config-dir.test.mjs test/idempotency.test.mjs test/jwks-invalidation-config-dir.test.mjs → # tests 16 # pass 16 # fail 0 # duration_ms 135.363754; npm test (hermetic) → # tests 5412 # pass 5412 # fail 0 # duration_ms 79612.226163
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
