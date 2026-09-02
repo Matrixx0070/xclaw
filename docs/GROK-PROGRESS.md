@@ -2455,3 +2455,15 @@ SHIPPED: Read/Get click and List/Prompts catch fill paths classList.remove("plac
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 17 # pass 17 # fail 0 # duration_ms 59.604462; npm test (hermetic) → # tests 5454 # pass 5454 # fail 0 # duration_ms 81628.332649
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.575.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.576.0 Missions Open drops leftover placeholder so filled body is not muted
+
+LOCKED: Missions #/missions Open left class `log placeholder` on filled msnVerify and msnPlan. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/missions Open filled msnVerify 258 chars and msnPlan 2760 chars; CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as MCP resource Read 3.575.0, Missions Open. Empty-state "no output yet" before Open is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.575.0 MCP resource Read. Do not click Resume / Launch / Merge.
+
+DISCOVERED: openMission set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: Open fill path classList.remove("placeholder") then body on msnVerify and msnPlan. Pin test/control-auto-refresh.test.mjs (openMission slice removes placeholder; empty-state HTML kept). One copy.
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 18 # pass 18 # fail 0 # duration_ms 63.953526; npm test (hermetic) → # tests 5455 # pass 5455 # fail 0 # duration_ms 85532.020158
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.576.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.

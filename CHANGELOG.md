@@ -1,3 +1,13 @@
+## 3.576.0
+
+### Missions Open drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/missions Open filled
+msnVerify 258 chars and msnPlan 2760 chars but left class `log placeholder`.
+CSS `.log.placeholder` mutes and italicizes (same leftover as MCP resource
+Read 3.575.0). Empty-state "no output yet" before Open is correct. Homedir
+JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.575.0
 
 ### MCP resource Read drops leftover placeholder so filled body is not muted

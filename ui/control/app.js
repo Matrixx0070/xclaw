@@ -3380,14 +3380,26 @@ async function openMission(id, { silent } = {}) {
         : "—"],
       ["Agent runs", String((m.agentRuns || []).length)],
     ]);
-    $("msnVerify").textContent = (m.verify?.history || [])
-      .map((h) => `[${h.at.slice(11, 19)}] attempt ${h.attempt}: ${h.ok ? "PASS" : "FAIL"} — ${h.summary}`)
-      .join("\n") +
-      "\n\n" +
-      (m.verify?.results || [])
-        .map((r) => `$ ${r.cmd}\n${r.pass ? "PASS" : "FAIL (exit " + r.exitCode + ")"}\n${(r.output || "").slice(-1200)}`)
-        .join("\n\n") || "—";
-    $("msnPlan").textContent = m.plan?.summary || "—";
+    const verify = $("msnVerify");
+    const plan = $("msnPlan");
+    // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/missions
+    // Open filled msnVerify 258 chars and msnPlan 2760 chars but left
+    // class "log placeholder". CSS mutes and italicizes (same leftover
+    // as MCP resource Read 3.575.0).
+    if (verify) {
+      verify.classList.remove("placeholder");
+      verify.textContent = (m.verify?.history || [])
+        .map((h) => `[${h.at.slice(11, 19)}] attempt ${h.attempt}: ${h.ok ? "PASS" : "FAIL"} — ${h.summary}`)
+        .join("\n") +
+        "\n\n" +
+        (m.verify?.results || [])
+          .map((r) => `$ ${r.cmd}\n${r.pass ? "PASS" : "FAIL (exit " + r.exitCode + ")"}\n${(r.output || "").slice(-1200)}`)
+          .join("\n\n") || "—";
+    }
+    if (plan) {
+      plan.classList.remove("placeholder");
+      plan.textContent = m.plan?.summary || "—";
+    }
     $("msnEvents").querySelector("tbody").innerHTML = (m.events || [])
       .slice()
       .reverse()

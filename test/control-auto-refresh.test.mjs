@@ -225,3 +225,17 @@ test("mcp resource Read drops leftover placeholder so filled body is not muted",
   assert.match(list, /out\.classList\.remove\("placeholder"\)/);
   assert.match(html, /id="mcpResOut" class="log placeholder"/);
 });
+
+test("missions Open drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const open = app.slice(
+    app.indexOf("async function openMission"),
+    app.indexOf("// ── Remote workers")
+  );
+  assert.match(open, /verify\.classList\.remove\("placeholder"\)/);
+  assert.match(open, /plan\.classList\.remove\("placeholder"\)/);
+  assert.match(open, /m\.plan\?\.summary/);
+  assert.match(html, /id="msnVerify" class="log placeholder"/);
+  assert.match(html, /id="msnPlan" class="log placeholder"/);
+});
