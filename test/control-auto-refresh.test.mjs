@@ -287,3 +287,15 @@ test("subagents Spawn drops leftover placeholder so filled body is not muted", (
   assert.match(spawn, /enter a task/);
   assert.match(html, /id="saOut" class="log placeholder"/);
 });
+
+test("images Generate drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const gen = app.slice(
+    app.indexOf("$(\"btnMediaGen\")"),
+    app.indexOf("$(\"btnMediaJobs\")")
+  );
+  assert.match(gen, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(gen, /enter a prompt/);
+  assert.match(html, /id="mediaOut" class="log placeholder"/);
+});

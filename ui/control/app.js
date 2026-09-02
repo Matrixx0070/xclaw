@@ -3122,10 +3122,15 @@ async function loadMediaJobs() {
   }
 }
 $("btnMediaGen")?.addEventListener("click", async () => {
+  const out = $("mediaOut");
   const prompt = $("mediaPrompt").value.trim();
-  if (!prompt) { $("mediaOut").textContent = "enter a prompt"; return; }
+  // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/media Generate with
+  // empty prompt filled "enter a prompt" but left class "log placeholder". CSS
+  // mutes and italicizes (same leftover as Subagents Spawn 3.580.0).
+  if (out) out.classList.remove("placeholder");
+  if (!prompt) { if (out) out.textContent = "enter a prompt"; return; }
   $("btnMediaGen").disabled = true;
-  $("mediaOut").textContent = "generating…";
+  if (out) out.textContent = "generating…";
   try {
     const body = { type: "image", prompt };
     if ($("mediaProvider").value) body.provider = $("mediaProvider").value;
@@ -3133,7 +3138,7 @@ $("btnMediaGen")?.addEventListener("click", async () => {
     const job = await postJSON("/media/jobs", body);
     mediaRenderResult(job);
     await loadMediaJobs();
-  } catch (e) { $("mediaOut").textContent = String(e.message || e); }
+  } catch (e) { if (out) out.textContent = String(e.message || e); }
   finally { $("btnMediaGen").disabled = false; }
 });
 $("btnMediaJobs")?.addEventListener("click", () => loadMediaJobs().catch(console.error));

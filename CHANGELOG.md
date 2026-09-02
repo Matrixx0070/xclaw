@@ -1,3 +1,13 @@
+## 3.581.0
+
+### Images Generate drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/media Generate with
+empty prompt filled "enter a prompt" (14 chars) but left class `log placeholder`.
+CSS `.log.placeholder` mutes and italicizes (same leftover as Subagents Spawn
+3.580.0). Empty-state "no output yet" before Generate is correct. Homedir JSON
+store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.580.0
 
 ### Subagents Spawn drops leftover placeholder so filled body is not muted

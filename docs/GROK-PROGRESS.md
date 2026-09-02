@@ -2518,3 +2518,16 @@ SHIPPED: btnSaSpawn fill path classList.remove("placeholder") then body. Pin tes
 RAN: pin `# tests 22 # pass 22 # fail 0 # duration_ms 93.527571`. hermetic `# tests 5459 # pass 5459 # fail 0 # duration_ms 81922.813456`.
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.580.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+
+## 2026-09-02 — 3.581.0 Images Generate drops leftover placeholder so filled body is not muted
+
+LOCKED: Images #/media Generate with empty prompt left class `log placeholder` on filled mediaOut. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/media Generate filled "enter a prompt" (14 chars); CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as Subagents Spawn 3.580.0. Empty-state "no output yet" before Generate is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.580.0 Subagents Spawn. Do not POST /media/jobs. Do not Generate with a prompt.
+
+DISCOVERED: btnMediaGen set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: btnMediaGen fill path classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (btnMediaGen slice removes placeholder; empty-state HTML kept). One copy.
+
+RAN: pin `# tests 23 # pass 23 # fail 0 # duration_ms 85.158919`. hermetic `# tests 5460 # pass 5460 # fail 0 # duration_ms 81562.144341`.
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.581.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
