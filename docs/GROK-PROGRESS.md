@@ -2219,3 +2219,11 @@ SHIPPED: honour `cfg.auth?.keys?.storePath` then `paths.configDir` then `XCLAW_C
 RAN: node --test test/key-rotation-config-dir.test.mjs test/key-rotation.test.mjs test/key-store-file-mode.test.mjs test/key-rotation-scheduler.test.mjs test/webauthn-config-dir.test.mjs → # tests 21 # pass 21 # fail 0 # duration_ms 188.708193; npm test (hermetic) → # tests 5397 # pass 5397 # fail 0 # duration_ms 80258.594481
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.556.0 JWKS cache follows paths.configDir
+
+LOCKED: src/auth/jwks.mjs — honour cfg.auth?.jwks?.cachePath then paths.configDir then XCLAW_CONFIG_DIR then null. No home fallback. writeCache no-ops without durableAtomicWriteJson. readCache returns null. os import removed. Keep XCLAW_JWKS_CACHE as strategy env. Keep cfg.auth?.jwks?.cachePath.
+DISCOVERED: leftover home fallback at paths() while production writers getJwksCached(cfg)/exportJwks(cfg) at gateway/routes/jwks.mjs:21-25 already had cfg.
+SHIPPED: pin test/jwks-config-dir.test.mjs (5 tests). Combined pin 21/21 fail 0 duration 183.824651.
+RAN: node --test test/jwks-config-dir.test.mjs test/jwks.test.mjs test/key-rotation-config-dir.test.mjs → # tests 21 # pass 21 # fail 0 # duration_ms 183.824651; npm test (hermetic) → # tests 5402 # pass 5402 # fail 0 # duration_ms 79704.864219
+NEXT: remainder hunt leftover configDir||homedir writers with cfg at a production caller. Prefer jwks-invalidation. Prefer NOT cold-start-persist. Prefer NOT cron/logs. Prefer NOT run-store.

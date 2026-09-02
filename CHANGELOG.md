@@ -1,3 +1,19 @@
+## 3.556.0
+
+### JWKS cache follows paths.configDir
+
+`paths()` resolved `~/.xclaw/jwks-cache.json` from `os.homedir()`
+while production writers (`getJwksCached(cfg)` / `exportJwks(cfg)` at
+gateway/routes/jwks.mjs:21-25 via `tryHandleJwksRoute({ cfg })`) already
+had cfg in scope. Two xclaw instances on one host with different
+`paths.configDir` shared one JWKS cache. Home fallback is refused.
+Honour existing `XCLAW_CONFIG_DIR`. Keep `cfg.auth?.jwks?.cachePath`.
+Keep `XCLAW_JWKS_CACHE` as strategy env (not path). Removed `os` import
+(only used by the leftover home fallback). `writeCache` no-ops without
+calling durableAtomicWriteJson (that helper `mkdir`s dirname).
+`readCache` returns null (same as missing). Production writers always
+have configDir, so live persist is not dropped.
+
 ## 3.555.0
 
 ### Key rotation follows paths.configDir

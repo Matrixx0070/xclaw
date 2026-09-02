@@ -10,10 +10,18 @@
  *   unknown_kid      — refresh immediately when kid not in cache
  *   stale_revalidate — serve stale up to maxStaleMs while refreshing
  *   hybrid (default) — unknown_kid + ttl + soft stale window
+ *
+ * `paths()` honours `cfg.auth?.jwks?.cachePath` then `paths.configDir`
+ * then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour
+ * `XCLAW_STATE_DIR`. A cfg without configDir is never a real caller
+ * (`loadConfig()` stamps it unconditionally). `writeCache` still no-ops
+ * without persisting (do not call durableAtomicWriteJson on null — that
+ * helper `mkdir`s dirname). `readCache` returns null (same as missing).
+ * Keep `cfg.auth?.jwks?.cachePath`. Keep `XCLAW_JWKS_CACHE` as strategy
+ * env (not path).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import {
   ensureKeyStore,
@@ -48,14 +56,13 @@ export const JWKS_CACHE_STRATEGIES = {
 };
 
 function paths(cfg = {}) {
-  const configDir =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
+  const explicit = cfg.auth?.jwks?.cachePath;
+  const configDir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
   return {
     configDir,
     cachePath:
-      cfg.auth?.jwks?.cachePath || path.join(configDir, "jwks-cache.json"),
+      explicit ||
+      (configDir ? path.join(configDir, "jwks-cache.json") : null),
   };
 }
 
@@ -134,8 +141,10 @@ export async function exportJwks(cfg = {}) {
 }
 
 async function readCache(cfg) {
+  const p = paths(cfg).cachePath;
+  if (!p) return null;
   try {
-    return JSON.parse(await fs.readFile(paths(cfg).cachePath, "utf8"));
+    return JSON.parse(await fs.readFile(p, "utf8"));
   } catch {
     return null;
   }
@@ -143,6 +152,7 @@ async function readCache(cfg) {
 
 async function writeCache(cfg, cache) {
   const p = paths(cfg).cachePath;
+  if (!p) return;
   // JWKS cache is rebuildable — still atomic; durable optional via same policy
   await durableAtomicWriteJson(p, cache, {
     durable: durableWritesEnabled(cfg),
@@ -334,6 +344,7 @@ export async function findJwkByKid(cfg, kid, opts = {}) {
  */
 export async function invalidateJwksCache(cfg = {}) {
   const p = paths(cfg).cachePath;
+  if (!p) return { ok: true, invalidated: true };
   try {
     await fs.unlink(p);
   } catch {
