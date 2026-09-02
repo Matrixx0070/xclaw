@@ -2159,3 +2159,15 @@ SHIPPED: honour `paths.cronLedgerFile` then `XCLAW_CRON_LEDGER_FILE` then `paths
 RAN: node --test test/cron-durable-jobs-config-dir.test.mjs test/cron-ledger.test.mjs test/cron-log-scope.test.mjs test/doctor-fix.test.mjs → # tests 17 # pass 17 # fail 0 # duration_ms 2248.238015; npm test (hermetic) → # tests 5372 # pass 5372 # fail 0 # duration_ms 83847.343363
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.551.0 Web session follows paths.configDir
+
+LOCKED: `src/auth/web-login.mjs` `paths()` still homed while production writers `importWebSession(cfg)` via `runAuthCli(cfg)` at bin/xclaw.mjs:49-53 after `loadConfig()` already had cfg. Same class as v3.297.0 / v3.550.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `web-session.json`; the suite wrote the operator's real `~/.xclaw`. Existing web-login-secure / cookie-rotation / fingerprint-rotation tests already pass `{ paths: { configDir: dir } }`. KEEP `os` import for `getSessionSecret` (`os.hostname` / `os.userInfo`). KEEP `cfg.auth?.web?.sessionPath`. KEEP `XCLAW_SESSION_SECRET` / `XCLAW_COOKIE_SECRET` as encryption secrets. Did not rewrite sanitizeCookieHeader / encryptPayload / atomicWriteSecure / getSessionSecret derivation. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). cold-start-persist REJECTED (existing pin asserts default path under .xclaw). Did not also fix cookie-rotation / fingerprint-rotation / webauthn / key-rotation / jwks.
+
+SHIPPED: honour `cfg.auth?.web?.sessionPath` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `importWebSession` still returns without persisting (do not `mkdir(null)`). `loadWebSession` returns null. `clearWebSession` no-ops. Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/web-login-config-dir.test.mjs test/web-login-secure.test.mjs test/cookie-rotation.test.mjs test/fingerprint-rotation.test.mjs → # tests 18 # pass 18 # fail 0 # duration_ms 127.328856; npm test (hermetic) → # tests 5377 # pass 5377 # fail 0 # duration_ms 78216.356537
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

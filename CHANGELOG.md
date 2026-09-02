@@ -1,3 +1,28 @@
+## 3.551.0
+
+### Web session follows paths.configDir
+
+`paths()` resolved `~/.xclaw/web-session.json` from
+`os.homedir()` while production writers (`importWebSession(cfg)` via
+`runAuthCli(cfg)` at bin/xclaw.mjs:49-53 after `loadConfig()`) already
+had cfg in scope. `loadConfig()` stamps `paths.configDir`
+unconditionally, so the resolver still homed via the leftover
+`os.homedir()` fallback. Two instances on one host with different
+`paths.configDir` shared one Grok web session; the suite wrote the
+operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.550.0 cron/jobs.sqlite. Honour existing `XCLAW_CONFIG_DIR`.
+Keep `cfg.auth?.web?.sessionPath`. No new env.
+
+- Honour `cfg.auth?.web?.sessionPath` then `paths.configDir` then
+  `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour
+  `XCLAW_STATE_DIR`.
+- `importWebSession` still returns without persisting (do not
+  `mkdir(null)`). `loadWebSession` returns null. `clearWebSession`
+  no-ops. Production writers always have configDir, so live persist
+  is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.550.0
 
 ### Cron ledger follows paths.configDir

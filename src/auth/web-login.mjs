@@ -8,6 +8,14 @@
  *  - Input size limits; cookie name allow-hints; no secrets in logs
  *  - Redacted status; secure delete on logout
  *  - Optional maxAge; expired sessions rejected
+ *
+ * `paths()` honours `cfg.auth?.web?.sessionPath` then `paths.configDir`
+ * then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour
+ * `XCLAW_STATE_DIR`. A cfg without configDir is never a real caller
+ * (`loadConfig()` stamps it unconditionally). `importWebSession` still
+ * returns without persisting (do not `mkdir(null)`). `loadWebSession`
+ * returns null. `clearWebSession` no-ops. Keep `os` for
+ * `getSessionSecret` (`os.hostname` / `os.userInfo`).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -19,14 +27,12 @@ const MAX_AUTH_BYTES = 8 * 1024;
 const DEFAULT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function paths(cfg = {}) {
-  const configDir =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
+  const explicit = cfg.auth?.web?.sessionPath;
+  const configDir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
+  if (explicit) return { configDir, webSessionPath: explicit };
   return {
     configDir,
-    webSessionPath:
-      cfg.auth?.web?.sessionPath || path.join(configDir, "web-session.json"),
+    webSessionPath: configDir ? path.join(configDir, "web-session.json") : null,
   };
 }
 
@@ -215,6 +221,9 @@ export function webLoginInstructions(cfg = {}) {
  */
 export async function importWebSession(cfg = {}, input = {}) {
   const p = paths(cfg);
+  if (!p.webSessionPath) {
+    return { ok: false, error: "no web session path" };
+  }
   let cookie;
   let authorization;
   let cookieObjects = [];
@@ -310,6 +319,7 @@ export async function importWebSessionFile(cfg, filePath) {
 
 export async function loadWebSession(cfg = {}) {
   const p = paths(cfg);
+  if (!p.webSessionPath) return null;
   try {
     const raw = await fs.readFile(p.webSessionPath, "utf8");
     const data = JSON.parse(raw);
@@ -350,6 +360,7 @@ export async function loadWebSession(cfg = {}) {
 
 export async function clearWebSession(cfg = {}) {
   const p = paths(cfg);
+  if (!p.webSessionPath) return { ok: true };
   await secureUnlink(p.webSessionPath);
   return { ok: true };
 }
