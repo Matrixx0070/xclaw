@@ -98,3 +98,21 @@ test("control auto-refresh wiring pins", () => {
   assert.match(app, /class="prov-cred-del"/);
   assert.match(app, /const guard = \(fn\) => async \(ev\) =>/);
 });
+
+test("memory click drops placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const css = fs.readFileSync(path.join(root, "ui/control/styles.css"), "utf8");
+  const mem = app.slice(
+    app.indexOf("async function loadMemoryFilesUi"),
+    app.indexOf("$(\"btnMemRefresh\")")
+  );
+  assert.match(mem, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(mem, /out\.textContent = f\?\.body/);
+  // Empty-state before click stays — the class is the empty-state, not a lie.
+  assert.match(html, /id="memOut" class="log placeholder"/);
+  assert.match(html, /no output yet/);
+  // CSS still mutes leftover placeholder — that is why the class must drop.
+  const rule = css.slice(css.indexOf(".log.placeholder"), css.indexOf(".log.placeholder") + 120);
+  assert.match(rule, /color:\s*var\(--muted\)/);
+});

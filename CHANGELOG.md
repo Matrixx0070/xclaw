@@ -1,3 +1,15 @@
+## 3.568.0
+
+### Memory click drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/memory listed
+XCLAW.md 3,051 chars. Click filled 3051 chars but left class
+`log placeholder`. CSS `.log.placeholder` mutes and italicizes, so
+the body looked empty-state after a successful read. Sibling panes
+(ledger/stop) already drop the class on fill. Empty-state
+"no output yet" before click is correct. Homedir JSON store-writer
+class remains EXHAUSTED at 3.560.0.
+
 ## 3.567.0
 
 ### TUI /cost paints today's spend against the daily cap

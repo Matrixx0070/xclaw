@@ -2359,3 +2359,15 @@ SHIPPED: slash `/cost` fetches `/cost`, paints spentUsd and dailySoftUsd/dailyHa
 RAN: node --test test/tui.test.mjs → # tests 52 # pass 52 # fail 0 # duration_ms 106.373648; npm test (hermetic) → # tests 5446 # pass 5446 # fail 0 # duration_ms 90694.441768
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.567.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. Existing xtui will not see 3.567.0 until a new TUI process. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.568.0 Memory click drops leftover placeholder so filled body is not muted
+
+LOCKED: Memory click left class `log placeholder` on filled body. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/memory listed XCLAW.md 3,051 chars. Click filled 3051 chars; CDP reported cls `log placeholder`. CSS `.log.placeholder` mutes and italicizes. Sibling panes (ledger/stop) already drop the class on fill. Empty-state "no output yet" before click is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.567.0 TUI /cost. Do not reopen 3.566.0 hidden-gate. Do not reopen 3.565.0 WebChat sidebar. Do not reopen 3.564.0 TUI MCP. Do not reopen 3.563.0 mutex.
+
+DISCOVERED: loadMemoryFilesUi set textContent only. CSS color var(--muted) + font-style italic. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: click path classList.remove("placeholder") then textContent. Pin test/control-auto-refresh.test.mjs (memory slice removes placeholder; empty-state HTML kept; CSS still mutes).
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 10 # pass 10 # fail 0 # duration_ms 53.396284; npm test (hermetic) → # tests 5447 # pass 5447 # fail 0 # duration_ms 81093.134021
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.568.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — reload live-proves without gateway restart. Do not kill xtui without asking.

@@ -3686,7 +3686,16 @@ async function loadMemoryFilesUi() {
     tbody.querySelectorAll(".mem-row").forEach((tr) => {
       bindRowOpen(tr, () => {
         const f = files[Number(tr.dataset.i)];
-        $("memOut").textContent = f?.body || f?.preview || "(empty)";
+        const out = $("memOut");
+        if (!out) return;
+        // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/memory
+        // click filled 3051 chars of XCLAW.md but left class "log placeholder".
+        // .log.placeholder mutes and italicizes, so the body looked empty-state
+        // after a successful read. Ledger/stop already drop the class on fill.
+        // Empty-state "no output yet" before click is correct — only drop once
+        // there is body text.
+        out.classList.remove("placeholder");
+        out.textContent = f?.body || f?.preview || "(empty)";
       });
     });
   } catch (e) {
