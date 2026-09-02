@@ -251,3 +251,15 @@ test("alerts pagerduty fill drops leftover placeholder so filled body is not mut
   assert.match(pd, /out\.textContent = "loading…"/);
   assert.match(html, /id="pdOut" class="log placeholder"/);
 });
+
+test("hooks Add drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const add = app.slice(
+    app.indexOf("$(\"btnHkAdd\")"),
+    app.indexOf("if ($(\"hkTable\"))")
+  );
+  assert.match(add, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(add, /command required/);
+  assert.match(html, /id="hkOut" class="log placeholder"/);
+});

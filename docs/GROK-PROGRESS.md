@@ -2479,3 +2479,16 @@ SHIPPED: pdShow fill path classList.remove("placeholder") then loading… then b
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 19 # pass 19 # fail 0 # duration_ms 61.556677; npm test (hermetic) → # tests 5456 # pass 5456 # fail 0 # duration_ms 85941.958333
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.577.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+
+## 2026-09-02 — 3.578.0 Hooks Add drops leftover placeholder so filled body is not muted
+
+LOCKED: Hooks #/hooks Add with empty command left class `log placeholder` on filled hkOut. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/hooks Add filled "command required" (16 chars); CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as Alerts PagerDuty 3.577.0, Hooks pane. Empty-state "no output yet" before Add is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.577.0 Alerts PagerDuty. Do not POST /hooks/commands.
+
+DISCOVERED: btnHkAdd set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: btnHkAdd fill path classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (btnHkAdd slice removes placeholder; empty-state HTML kept). One copy.
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 20 # pass 20 # fail 0 # duration_ms 66.590473; npm test (hermetic) → # tests 5457 # pass 5457 # fail 0 # duration_ms 80928.056322
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.578.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.

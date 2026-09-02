@@ -1,3 +1,13 @@
+## 3.578.0
+
+### Hooks Add drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/hooks Add with empty
+command filled "command required" (16 chars) but left class `log placeholder`.
+CSS `.log.placeholder` mutes and italicizes (same leftover as Alerts PagerDuty
+3.577.0). Empty-state "no output yet" before Add is correct. Homedir JSON
+store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.577.0
 
 ### Alerts PagerDuty fill drops leftover placeholder so filled body is not muted

@@ -3750,6 +3750,7 @@ async function loadHookHistory() {
 $("btnHkRefresh")?.addEventListener("click", () => { loadHooks(); loadHookHistory(); });
 $("btnHkHist")?.addEventListener("click", () => loadHookHistory());
 $("btnHkAdd")?.addEventListener("click", async () => {
+  const out = $("hkOut");
   const body = {
     name: $("hkName").value.trim() || undefined,
     event: $("hkEvent").value,
@@ -3757,13 +3758,17 @@ $("btnHkAdd")?.addEventListener("click", async () => {
     matcher: $("hkMatcher").value.trim() || undefined,
     tier: $("hkTier").value,
   };
-  if (!body.command) { $("hkOut").textContent = "command required"; return; }
+  // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/hooks Add with
+  // empty command filled "command required" but left class "log placeholder".
+  // CSS mutes and italicizes (same leftover as Alerts PagerDuty 3.577.0).
+  if (out) out.classList.remove("placeholder");
+  if (!body.command) { if (out) out.textContent = "command required"; return; }
   try {
     const r = await postJSON("/hooks/commands", body);
-    $("hkOut").textContent = JSON.stringify(r, null, 2);
+    if (out) out.textContent = JSON.stringify(r, null, 2);
     $("hkName").value = ""; $("hkCommand").value = ""; $("hkMatcher").value = "";
     await loadHooks();
-  } catch (e) { $("hkOut").textContent = String(e.message || e); }
+  } catch (e) { if (out) out.textContent = String(e.message || e); }
 });
 if ($("hkTable")) { loadHooks().catch(() => {}); loadHookHistory().catch(() => {}); }
 
