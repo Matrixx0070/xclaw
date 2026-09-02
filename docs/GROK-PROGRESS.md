@@ -2195,3 +2195,15 @@ SHIPPED: honour `cfg.auth?.web?.fingerprintStatePath` then `paths.configDir` the
 RAN: node --test test/fingerprint-rotation-config-dir.test.mjs test/fingerprint-rotation.test.mjs test/cookie-rotation-config-dir.test.mjs test/cookie-rotation.test.mjs test/web-login-config-dir.test.mjs test/web-login-secure.test.mjs → # tests 28 # pass 28 # fail 0 # duration_ms 142.67835; npm test (hermetic) → # tests 5387 # pass 5387 # fail 0 # duration_ms 79235.630932
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.554.0 WebAuthn credentials follow paths.configDir
+
+LOCKED: `src/auth/webauthn.mjs` `waPaths` still homed while production writers `completeRegistration(cfg)` / `completeAssertion(cfg)` / `markWebAuthnRequiredAfterRotate(cfg)` via `runAuthCli(cfg)` at bin/xclaw.mjs:49-53 after `loadConfig()`, auth-cli.mjs:191/201/164 already had cfg. Same class as v3.297.0 / v3.553.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `webauthn-credentials.json`; the suite wrote the operator's real `~/.xclaw`. Existing webauthn.test.mjs already passes `{ paths: { configDir: dir } }`. KEEP `cfg.auth?.webauthn?.storePath`. KEEP `XCLAW_WEBAUTHN_RP_ID` / `XCLAW_WEBAUTHN_ORIGIN` as RP/origin config (not path). KEEP `os` import (`os.userInfo()` in registration, not leftover home fallback). Did not rewrite createRegistrationOptions / completeRegistration / createAssertionOptions / completeAssertion / gateWithWebAuthn / markWebAuthnRequiredAfterRotate / webauthnStatus / webauthnBrowserSnippet / verifyEs256Raw. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). cold-start-persist REJECTED (existing pin asserts default path under .xclaw). Did not also fix key-rotation / jwks / jwks-invalidation / idempotency / xai-oauth / key-compromise-recovery.
+
+SHIPPED: honour `cfg.auth?.webauthn?.storePath` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `writeStore` still no-ops without persisting (do not `mkdir(null)`). `readStore` returns the empty default. Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/webauthn-config-dir.test.mjs test/webauthn.test.mjs test/webauthn-assertion-context.test.mjs test/webauthn-registration-context.test.mjs test/webauthn-assertion-signature.test.mjs test/fingerprint-rotation-config-dir.test.mjs → # tests 27 # pass 27 # fail 0 # duration_ms 171.845644; npm test (hermetic) → # tests 5392 # pass 5392 # fail 0 # duration_ms 82149.307148
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

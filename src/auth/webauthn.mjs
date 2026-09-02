@@ -12,6 +12,15 @@
  *           platform authenticator bridge.
  *
  * Spec: W3C WebAuthn Level 2/3 — public-key credentials, user verification.
+ *
+ * `waPaths()` honours `cfg.auth?.webauthn?.storePath` then
+ * `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback.
+ * Do not honour `XCLAW_STATE_DIR`. A cfg without configDir is never a
+ * real caller (`loadConfig()` stamps it unconditionally). `writeStore`
+ * still no-ops without persisting (do not `mkdir(null)`). `readStore`
+ * returns the empty default. Keep `cfg.auth?.webauthn?.storePath`.
+ * Keep `XCLAW_WEBAUTHN_RP_ID` / `XCLAW_WEBAUTHN_ORIGIN` as RP/origin
+ * config (not path). Keep `os` for `os.userInfo()` in registration.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -26,15 +35,13 @@ import {
 import { verifyEs256Raw } from "./cose-es256-verify.mjs";
 
 function waPaths(cfg = {}) {
-  const configDir =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
+  const explicit = cfg.auth?.webauthn?.storePath;
+  const configDir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
   return {
     configDir,
     storePath:
-      cfg.auth?.webauthn?.storePath ||
-      path.join(configDir, "webauthn-credentials.json"),
+      explicit ||
+      (configDir ? path.join(configDir, "webauthn-credentials.json") : null),
   };
 }
 
@@ -51,21 +58,28 @@ function waCfg(cfg = {}) {
   };
 }
 
+function emptyStore() {
+  return {
+    version: 1,
+    credentials: [],
+    lastAssertAt: null,
+    lastAssertCredentialId: null,
+  };
+}
+
 async function readStore(cfg) {
+  const p = waPaths(cfg).storePath;
+  if (!p) return emptyStore();
   try {
-    return JSON.parse(await fs.readFile(waPaths(cfg).storePath, "utf8"));
+    return JSON.parse(await fs.readFile(p, "utf8"));
   } catch {
-    return {
-      version: 1,
-      credentials: [],
-      lastAssertAt: null,
-      lastAssertCredentialId: null,
-    };
+    return emptyStore();
   }
 }
 
 async function writeStore(cfg, store) {
   const p = waPaths(cfg).storePath;
+  if (!p) return;
   await fs.mkdir(path.dirname(p), { recursive: true, mode: 0o700 });
   const tmp = `${p}.${process.pid}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(store, null, 2) + "\n", {

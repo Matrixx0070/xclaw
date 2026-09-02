@@ -1,3 +1,19 @@
+## 3.554.0
+
+### WebAuthn credentials follow paths.configDir
+
+`waPaths()` resolved `~/.xclaw/webauthn-credentials.json` from
+`os.homedir()` while production writers (`completeRegistration(cfg)` /
+`completeAssertion(cfg)` / `markWebAuthnRequiredAfterRotate(cfg)` via
+`runAuthCli(cfg)` at bin/xclaw.mjs:49-53 after `loadConfig()`,
+auth-cli.mjs:191/201/164) already had cfg in scope. Two xclaw instances
+on one host with different `paths.configDir` shared one credential
+store. Home fallback is refused. Honour existing `XCLAW_CONFIG_DIR`.
+Keep `cfg.auth?.webauthn?.storePath`. Keep `XCLAW_WEBAUTHN_RP_ID` /
+`XCLAW_WEBAUTHN_ORIGIN` as RP/origin config (not path). Keep `os` for
+`os.userInfo()` in registration. `writeStore` no-ops without
+`mkdir(null)`. `readStore` returns the empty default.
+
 ## 3.553.0
 
 ### Fingerprint rotation follows paths.configDir
