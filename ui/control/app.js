@@ -2850,11 +2850,17 @@ async function loadMcpServers() {
 
     tbody.querySelectorAll(".mcp-srv-test").forEach((b) => {
       b.onclick = async () => {
-        $("mcpSrvOut").textContent = `testing ${b.dataset.srv}…`;
+        const out = $("mcpSrvOut");
+        if (!out) return;
+        // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp
+        // github Test filled 92 chars of JSON but left class "log placeholder".
+        // CSS mutes and italicizes (same leftover as Cost 3.570.0).
+        out.classList.remove("placeholder");
+        out.textContent = `testing ${b.dataset.srv}…`;
         try {
           const r = await postJSON("/mcp/servers/test", { name: b.dataset.srv });
-          $("mcpSrvOut").textContent = JSON.stringify(r, null, 2);
-        } catch (e) { $("mcpSrvOut").textContent = String(e.message || e); }
+          out.textContent = JSON.stringify(r, null, 2);
+        } catch (e) { out.textContent = String(e.message || e); }
       };
     });
     tbody.querySelectorAll(".mcp-srv-del").forEach((b) => {

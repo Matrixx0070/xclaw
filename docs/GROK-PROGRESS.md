@@ -2395,3 +2395,15 @@ SHIPPED: fill paths classList.remove("placeholder") then body. Pin test/control-
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 12 # pass 12 # fail 0 # duration_ms 60.419073; npm test (hermetic) → # tests 5449 # pass 5449 # fail 0 # duration_ms 85106.854908
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.570.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.571.0 MCP server Test drops leftover placeholder so filled body is not muted
+
+LOCKED: MCP #/mcp github Test left class `log placeholder` on filled JSON. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp Test filled 92 chars (`ok: true, toolCount: 2`); CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as Cost 3.570.0, MCP Test click. Empty-state "no output yet" before click is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.570.0 Cost. Do not reopen 3.569.0 Transcript. Do not reopen 3.568.0 Memory.
+
+DISCOVERED: mcp-srv-test onclick set textContent only. HTML starts with class="log placeholder" and "no output yet". List resources fills a table, not mcpResOut — empty-state after List is correct.
+
+SHIPPED: Test click classList.remove("placeholder") then testing… then body. Pin test/control-auto-refresh.test.mjs (mcp-srv-test slice removes placeholder; empty-state HTML kept).
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 13 # pass 13 # fail 0 # duration_ms 71.228489; npm test (hermetic) → # tests 5450 # pass 5450 # fail 0 # duration_ms 80436.263886
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.571.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.

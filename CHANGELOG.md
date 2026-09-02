@@ -1,3 +1,13 @@
+## 3.571.0
+
+### MCP server Test drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp github Test filled
+92 chars of JSON (`ok: true, toolCount: 2`) but left class `log placeholder`.
+CSS `.log.placeholder` mutes and italicizes (same leftover as Cost 3.570.0).
+Empty-state "no output yet" before click is correct. Homedir JSON store-writer
+class remains EXHAUSTED at 3.560.0.
+
 ## 3.570.0
 
 ### Cost eval and scoreboard fills drop leftover placeholder so filled body is not muted

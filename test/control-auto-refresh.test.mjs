@@ -155,3 +155,14 @@ test("cost eval and scoreboard fills drop leftover placeholder", () => {
   assert.match(html, /id="evalBaseOut" class="log placeholder"/);
   assert.match(html, /id="scoreOut" class="log placeholder"/);
 });
+
+test("mcp server Test drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const i = app.indexOf('tbody.querySelectorAll(".mcp-srv-test")');
+  const j = app.indexOf('tbody.querySelectorAll(".mcp-srv-del")');
+  const slice = app.slice(i, j);
+  assert.match(slice, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(slice, /testing \$\{b\.dataset\.srv\}/);
+  assert.match(html, /id="mcpSrvOut" class="log placeholder"/);
+});
