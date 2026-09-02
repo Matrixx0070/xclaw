@@ -1,3 +1,14 @@
+## 3.584.0
+
+### MCP server Add drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp Add with empty
+name/url filled "name and url/command are required" (33 chars) but left
+class `log placeholder`. CSS `.log.placeholder` mutes and italicizes (same
+leftover as Subagents Merge 3.583.0). Test 3.571.0 already drops on
+mcp-srv-test; Add did not. Empty-state "no output yet" before Add is
+correct. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.583.0
 
 ### Subagents Merge drops leftover placeholder so filled body is not muted

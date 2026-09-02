@@ -2557,3 +2557,15 @@ SHIPPED: btnSaMerge fill path classList.remove("placeholder") then body. Pin tes
 RAN: pin 25/25 fail 0 duration 69.907403; hermetic 5462/5462 fail 0 duration 81427.9939.
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.583.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.584.0 MCP server Add drops leftover placeholder so filled body is not muted
+
+LOCKED: MCP #/mcp Add with empty name/url left class `log placeholder` on filled mcpSrvOut. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp Add filled "name and url/command are required" (33 chars); CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as Subagents Merge 3.583.0. Test 3.571.0 already drops on mcp-srv-test; Add did not. Empty-state "no output yet" before Add is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.583.0 Subagents Merge. Do not POST /mcp/servers.
+
+DISCOVERED: btnMcpSrvAdd set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: btnMcpSrvAdd fill path classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (btnMcpSrvAdd slice removes placeholder; empty-state HTML kept). One copy.
+
+RAN: pin `# tests 26 # pass 26 # fail 0 # duration_ms 76.889886`. hermetic `# tests 5463 # pass 5463 # fail 0 # duration_ms 84231.145923`.
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.584.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.

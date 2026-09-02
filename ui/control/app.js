@@ -2938,9 +2938,19 @@ async function loadMcpServers() {
 }
 $("btnMcpSrvRefresh")?.addEventListener("click", () => loadMcpServers().catch(console.error));
 $("btnMcpSrvAdd")?.addEventListener("click", async () => {
+  const out = $("mcpSrvOut");
   const name = $("mcpSrvName").value.trim();
   const target = $("mcpSrvUrl").value.trim();
-  if (!name || !target) { $("mcpSrvOut").textContent = "name and url/command are required"; return; }
+  // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp Add with
+  // empty name/url filled "name and url/command are required" but left
+  // class "log placeholder". CSS mutes and italicizes (same leftover as
+  // Subagents Merge 3.583.0). Test 3.571.0 already drops on mcp-srv-test;
+  // Add did not.
+  if (out) out.classList.remove("placeholder");
+  if (!name || !target) {
+    if (out) out.textContent = "name and url/command are required";
+    return;
+  }
   const def = { name };
   if (/^https?:\/\//i.test(target)) def.url = target;
   else {
