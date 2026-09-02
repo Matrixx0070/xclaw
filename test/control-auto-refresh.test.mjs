@@ -166,3 +166,15 @@ test("mcp server Test drops leftover placeholder so filled body is not muted", (
   assert.match(slice, /testing \$\{b\.dataset\.srv\}/);
   assert.match(html, /id="mcpSrvOut" class="log placeholder"/);
 });
+
+test("ops dashboard fill drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const dash = app.slice(
+    app.indexOf("async function loadDashboard"),
+    app.indexOf("$(\"btnDash\")")
+  );
+  assert.match(dash, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(dash, /getJSON\("\/dashboard"\)/);
+  assert.match(html, /id="dashOut" class="log placeholder"/);
+});

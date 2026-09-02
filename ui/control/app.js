@@ -1250,9 +1250,15 @@ $("btnQueueRetry")?.addEventListener("click", async () => {
 
 
 async function loadDashboard() {
+  const out = $("dashOut");
+  if (!out) return;
   try {
     const d = await getJSON("/dashboard");
-    $("dashOut").textContent = JSON.stringify({
+    // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/ops
+    // auto-fill left 1421 chars of JSON but class stayed "log placeholder".
+    // CSS mutes and italicizes (same leftover as Cost 3.570.0 / MCP 3.571.0).
+    out.classList.remove("placeholder");
+    out.textContent = JSON.stringify({
       at: d.at,
       profile: d.profile,
       computer: d.computer,
@@ -1265,7 +1271,8 @@ async function loadDashboard() {
       evalCron: d.eval?.cron,
     }, null, 2);
   } catch (e) {
-    $("dashOut").textContent = String(e.message || e);
+    out.classList.remove("placeholder");
+    out.textContent = String(e.message || e);
   }
 }
 $("btnDash")?.addEventListener("click", loadDashboard);

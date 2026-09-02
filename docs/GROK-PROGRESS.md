@@ -2407,3 +2407,15 @@ SHIPPED: Test click classList.remove("placeholder") then testing… then body. P
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 13 # pass 13 # fail 0 # duration_ms 71.228489; npm test (hermetic) → # tests 5450 # pass 5450 # fail 0 # duration_ms 80436.263886
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.571.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.572.0 Ops dashboard fill drops leftover placeholder so filled body is not muted
+
+LOCKED: Ops #/ops auto-fill left class `log placeholder` on filled JSON. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/ops dashOut 1421 chars; CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as Cost 3.570.0 / MCP 3.571.0, Ops auto-fill. Empty-state "no output yet" before fill is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.571.0 MCP. Do not reopen 3.570.0 Cost. Do not reopen 3.569.0 Transcript.
+
+DISCOVERED: loadDashboard set textContent only. HTML starts with class="log placeholder" and "no output yet". stopOut empty-state is correct until Dry run/Stop all.
+
+SHIPPED: fill path classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (dashboard slice removes placeholder; empty-state HTML kept).
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 14 # pass 14 # fail 0 # duration_ms 61.332413; npm test (hermetic) → # tests 5451 # pass 5451 # fail 0 # duration_ms 89825.665155
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.572.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
