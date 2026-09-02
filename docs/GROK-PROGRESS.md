@@ -2335,3 +2335,15 @@ SHIPPED: `refreshSessions()` in sendMessage `finally` (every send, including abo
 RAN: node --test test/webchat-suggestions.test.mjs → # tests 7 # pass 7 # fail 0 # duration_ms 53.108445; npm test (hermetic) → # tests 5445 # pass 5445 # fail 0 # duration_ms 88589.120919
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.565.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive (Control Health / Automations). WebChat SPA will pick up app.js on reload without gateway restart.
+
+## 2026-09-02 — 3.566.0 Control auto-refresh honors nav/manual when the window is hidden
+
+LOCKED: `createRefreshGate` skipped nav/manual when `document.hidden`. Live 2026-09-02 pid 2798540 (version 3.562.0) Control Chrome CDP 9224 had `document.hidden === true` while Display :10 painted. `lastRefreshAt` stayed `as of 3:37:31 PM` across #/ops, #/automations, #/sessions. Clicking Refresh updated footMeta (app.js `loadStatus`) but not `lastRefreshAt` (only auto-refresh.mjs `stamp()` writes that). Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.565.0 WebChat sidebar. Do not reopen 3.564.0 TUI MCP. Do not reopen 3.563.0 mutex.
+
+DISCOVERED: hidden check ran BEFORE `trigger === "nav" || trigger === "manual"`, contradicting the comment "A human acted (switched views, pressed Refresh): always honor it." Existing pin `a hidden window never fires, for any trigger` encoded the lie. Interval/focus skip-when-hidden is correct. refreshAll itself settled in 354ms — not a hang. `#/health` unknown-hash → overview is not a linked route (0 hits). Sessions admin GET `/sessions` omitting in-memory WebChat 299e4916 is two stores, not this slice.
+
+SHIPPED: honor nav/manual before the hidden check. Interval/focus still skip when hidden. Pin test/control-auto-refresh.test.mjs (hidden+manual → true; hidden+interval → false; hidden+nav → true). Do not change refreshAll composition.
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 9 # pass 9 # fail 0 # duration_ms 55.412298; npm test (hermetic) → # tests 5445 # pass 5445 # fail 0 # duration_ms 83721.86919
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.566.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA will pick up auto-refresh.mjs on reload without gateway restart.

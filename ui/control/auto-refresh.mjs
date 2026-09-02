@@ -28,15 +28,18 @@ export function createRefreshGate({ minGapMs = 5000, now = Date.now } = {}) {
   let last = -Infinity;
   return {
     shouldFire(trigger, { hidden = false } = {}) {
-      // A hidden window refreshes nothing — data nobody can see is not
-      // worth a request, and the focus/visibility fire covers the return.
-      if (hidden) return false;
       const t = now();
       // A human acted (switched views, pressed Refresh): always honor it.
+      // Live 2026-09-02 pid 2798540 (version 3.562.0) Control Chrome CDP 9224
+      // had document.hidden === true while Display :10 painted. Hidden-first
+      // skipped nav/manual, so lastRefreshAt froze while footMeta moved.
       if (trigger === "nav" || trigger === "manual") {
         last = t;
         return true;
       }
+      // Interval/focus still skip when hidden — data nobody can see is not
+      // worth a request, and the focus/visibility fire covers the return.
+      if (hidden) return false;
       if (t - last < minGapMs) return false;
       last = t;
       return true;

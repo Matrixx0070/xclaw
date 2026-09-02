@@ -1,3 +1,17 @@
+## 3.566.0
+
+### Control auto-refresh honors nav/manual when the window is hidden
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control Chrome CDP 9224
+had `document.hidden === true` while the operator console on Display :10
+painted. `lastRefreshAt` stayed `as of 3:37:31 PM` across #/ops,
+#/automations, #/sessions. Clicking Refresh updated footMeta (app.js
+`loadStatus`) but not `lastRefreshAt` (only auto-refresh.mjs `stamp()`
+writes that). `createRefreshGate` checked hidden BEFORE honoring
+nav/manual, contradicting its own comment. Nav/manual now fire even
+when hidden. Interval/focus still skip. Homedir JSON store-writer
+class remains EXHAUSTED at 3.560.0.
+
 ## 3.565.0
 
 ### WebChat sidebar message count refreshes after every turn

@@ -16,11 +16,15 @@ test("control auto-refresh gate", async (t) => {
     return { tick: (ms) => (t0 += ms), gate: createRefreshGate({ minGapMs: 5000, now: () => t0 }) };
   };
 
-  await t.test("a hidden window never fires, for any trigger", () => {
+  await t.test("hidden skips interval and focus; nav and manual still fire", () => {
     const { gate } = clocked();
-    for (const trigger of ["nav", "manual", "focus", "interval"]) {
-      assert.equal(gate.shouldFire(trigger, { hidden: true }), false, trigger);
-    }
+    // Live 2026-09-02 pid 2798540 (version 3.562.0) Control Chrome CDP 9224
+    // had document.hidden === true while Display :10 painted. Nav/manual
+    // must still stamp; interval/focus must not.
+    assert.equal(gate.shouldFire("nav", { hidden: true }), true);
+    assert.equal(gate.shouldFire("manual", { hidden: true }), true);
+    assert.equal(gate.shouldFire("focus", { hidden: true }), false);
+    assert.equal(gate.shouldFire("interval", { hidden: true }), false);
   });
 
   await t.test("the first interval tick fires — a fresh gate holds nothing back", () => {
