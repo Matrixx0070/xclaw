@@ -7,10 +7,16 @@
  *
  * Rotating the binding salt invalidates old bindings without necessarily
  * deleting the cookie file — used after suspected leak of rotation state.
+ *
+ * `fpPaths()` honours `cfg.auth?.web?.fingerprintStatePath` then
+ * `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback.
+ * Do not honour `XCLAW_STATE_DIR`. A cfg without configDir is never a
+ * real caller (`loadConfig()` stamps it unconditionally). `writeFpState`
+ * still no-ops without persisting (do not `mkdir(null)`). `readFpState`
+ * returns the empty default. Keep `cfg.auth?.web?.fingerprintStatePath`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import {
   cookieFingerprint,
@@ -20,39 +26,42 @@ import {
 import { loadWebSession, redactSecret } from "./web-login.mjs";
 
 function fpPaths(cfg = {}) {
-  const configDir =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
+  const explicit = cfg.auth?.web?.fingerprintStatePath;
+  const configDir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
   return {
     configDir,
     fpStatePath:
-      cfg.auth?.web?.fingerprintStatePath ||
-      path.join(configDir, "fingerprint-rotation.json"),
+      explicit ||
+      (configDir ? path.join(configDir, "fingerprint-rotation.json") : null),
+  };
+}
+
+function emptyFpState() {
+  return {
+    version: 1,
+    salt: null,
+    previousSalt: null,
+    generation: 0,
+    binding: null,
+    previousBinding: null,
+    rotatedAt: null,
+    history: [],
   };
 }
 
 async function readFpState(cfg) {
+  const p = fpPaths(cfg).fpStatePath;
+  if (!p) return emptyFpState();
   try {
-    return JSON.parse(
-      await fs.readFile(fpPaths(cfg).fpStatePath, "utf8")
-    );
+    return JSON.parse(await fs.readFile(p, "utf8"));
   } catch {
-    return {
-      version: 1,
-      salt: null,
-      previousSalt: null,
-      generation: 0,
-      binding: null,
-      previousBinding: null,
-      rotatedAt: null,
-      history: [],
-    };
+    return emptyFpState();
   }
 }
 
 async function writeFpState(cfg, state) {
   const p = fpPaths(cfg).fpStatePath;
+  if (!p) return;
   await fs.mkdir(path.dirname(p), { recursive: true, mode: 0o700 });
   const tmp = `${p}.${process.pid}.tmp`;
   const body = JSON.stringify(state, null, 2) + "\n";

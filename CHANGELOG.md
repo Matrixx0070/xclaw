@@ -1,3 +1,22 @@
+## 3.553.0
+
+### Fingerprint rotation follows paths.configDir
+
+`fpPaths()` resolved `~/.xclaw/fingerprint-rotation.json` from
+`os.homedir()` while production writers (`rotateFingerprint(cfg)` via
+`runAuthCli(cfg)` at bin/xclaw.mjs:49-53 after `loadConfig()`,
+auth-cli.mjs:162) already had cfg in scope. Two xclaw instances on one
+host with different `paths.configDir` shared one fingerprint-rotation.json,
+so instance B restored instance A's binding salt / generation. The suite
+wrote the operator's real `~/.xclaw`.
+
+Honour `cfg.auth?.web?.fingerprintStatePath` then `paths.configDir` then
+`XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour
+`XCLAW_STATE_DIR`. No new env. `writeFpState` still no-ops without
+persisting (do not `mkdir(null)`). `readFpState` returns the empty
+default. Removed `os` import (only used by the leftover home fallback).
+Production writers always have configDir, so live persist is not dropped.
+
 ## 3.552.0
 
 ### Cookie rotation follows paths.configDir
