@@ -1,3 +1,13 @@
+## 3.573.0
+
+### Automations cron activity fill drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/automations auto-fill
+left 7713 chars of cron JSONL with class `log placeholder`. CSS
+`.log.placeholder` mutes and italicizes (same leftover as Ops 3.572.0).
+Empty-state "no output yet" before fill is correct. autoOut stays empty
+until Run now. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.572.0
 
 ### Ops dashboard fill drops leftover placeholder so filled body is not muted

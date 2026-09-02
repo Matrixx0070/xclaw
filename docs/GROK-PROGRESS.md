@@ -2419,3 +2419,15 @@ SHIPPED: fill path classList.remove("placeholder") then body. Pin test/control-a
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 14 # pass 14 # fail 0 # duration_ms 61.332413; npm test (hermetic) → # tests 5451 # pass 5451 # fail 0 # duration_ms 89825.665155
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.572.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.573.0 Automations cron activity fill drops leftover placeholder so filled body is not muted
+
+LOCKED: Automations #/automations auto-fill left class `log placeholder` on filled cron JSONL. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/automations autoLogOut 7713 chars; CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as Ops 3.572.0, Automations auto-fill. Empty-state "no output yet" before fill is correct. autoOut empty-state until Run now is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.572.0 Ops. Do not click Run now.
+
+DISCOVERED: loadAutoLogs set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: fill path classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (loadAutoLogs slice removes placeholder; empty-state HTML kept).
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 15 # pass 15 # fail 0 # duration_ms 59.166441; npm test (hermetic) → # tests 5452 # pass 5452 # fail 0 # duration_ms 84384.105982
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.573.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.

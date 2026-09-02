@@ -2673,11 +2673,20 @@ $("btnAutoCreate")?.addEventListener("click", async () => {
 $("btnAutoRefresh")?.addEventListener("click", () => loadAutomations().catch(console.error));
 
 async function loadAutoLogs() {
+  const out = $("autoLogOut");
+  if (!out) return;
   try {
     const data = await getJSON("/cron/logs?lines=60");
     const events = (data.cronEvents?.tail || []).join("\n");
-    $("autoLogOut").textContent = events || "(no cron events yet)";
-  } catch (e) { $("autoLogOut").textContent = String(e.message || e); }
+    // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/automations
+    // auto-fill left 7713 chars of cron JSONL but class stayed "log placeholder".
+    // CSS mutes and italicizes (same leftover as Ops 3.572.0).
+    out.classList.remove("placeholder");
+    out.textContent = events || "(no cron events yet)";
+  } catch (e) {
+    out.classList.remove("placeholder");
+    out.textContent = String(e.message || e);
+  }
 }
 $("btnAutoLogs")?.addEventListener("click", () => loadAutoLogs().catch(console.error));
 if ($("autoTable")) { loadAutomations().catch(() => {}); loadAutoLogs().catch(() => {}); }

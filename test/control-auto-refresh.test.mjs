@@ -178,3 +178,15 @@ test("ops dashboard fill drops leftover placeholder so filled body is not muted"
   assert.match(dash, /getJSON\("\/dashboard"\)/);
   assert.match(html, /id="dashOut" class="log placeholder"/);
 });
+
+test("automations cron activity fill drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const logs = app.slice(
+    app.indexOf("async function loadAutoLogs"),
+    app.indexOf("$(\"btnAutoLogs\")")
+  );
+  assert.match(logs, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(logs, /getJSON\("\/cron\/logs\?lines=60"\)/);
+  assert.match(html, /id="autoLogOut" class="log placeholder"/);
+});
