@@ -15,16 +15,20 @@
  * uptime: a job is due when it has never run, or when `intervalMs` has elapsed
  * since the recorded run — so a restart resumes the schedule rather than
  * resetting it. Generic on purpose: any periodic job can adopt it by name.
+ *
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+ * fallback. Do not honour `XCLAW_STATE_DIR`. A cfg without configDir is
+ * never a real caller (`loadConfig()` stamps it unconditionally).
+ * `markRan`/`markArmed` no-op without persisting (do not `mkdir(null)`).
  */
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { durableAtomicWriteJson } from "../utils/durable-write.mjs";
 
 export function dueStatePath(cfg = {}) {
-  const base = cfg.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "ops-schedule.json");
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "ops-schedule.json") : null;
 }
 
 function parseMap(raw) {
@@ -51,8 +55,10 @@ function parseAnchors(text) {
 
 /** @returns {Promise<Record<string, number>>} name → last run epoch ms */
 export async function readDueState(cfg = {}) {
+  const fp = dueStatePath(cfg);
+  if (!fp) return {};
   try {
-    return parseDueState(await fsp.readFile(dueStatePath(cfg), "utf8"));
+    return parseDueState(await fsp.readFile(fp, "utf8"));
   } catch {
     // absent or corrupt → treat as "never ran" (fail toward doing the work)
     return {};
@@ -65,8 +71,10 @@ export async function readDueState(cfg = {}) {
  * it async would ripple through every caller for no gain.
  */
 export function readDueStateSync(cfg = {}) {
+  const fp = dueStatePath(cfg);
+  if (!fp) return {};
   try {
-    return parseDueState(fs.readFileSync(dueStatePath(cfg), "utf8"));
+    return parseDueState(fs.readFileSync(fp, "utf8"));
   } catch {
     return {};
   }
@@ -80,8 +88,10 @@ export function readDueStateSync(cfg = {}) {
 let writeChain = Promise.resolve();
 
 async function readAnchors(cfg = {}) {
+  const fp = dueStatePath(cfg);
+  if (!fp) return { lastRun: {}, armed: {} };
   try {
-    return parseAnchors(await fsp.readFile(dueStatePath(cfg), "utf8"));
+    return parseAnchors(await fsp.readFile(fp, "utf8"));
   } catch {
     return { lastRun: {}, armed: {} };
   }
@@ -89,8 +99,10 @@ async function readAnchors(cfg = {}) {
 
 /** Sync twin of readAnchors, for the scheduler's synchronous addJob. */
 export function readAnchorsSync(cfg = {}) {
+  const fp = dueStatePath(cfg);
+  if (!fp) return { lastRun: {}, armed: {} };
   try {
-    return parseAnchors(fs.readFileSync(dueStatePath(cfg), "utf8"));
+    return parseAnchors(fs.readFileSync(fp, "utf8"));
   } catch {
     return { lastRun: {}, armed: {} };
   }
@@ -114,10 +126,12 @@ export function readAnchorsSync(cfg = {}) {
  */
 export function markArmed(cfg = {}, name, now = Date.now()) {
   const run = writeChain.then(async () => {
+    const fp = dueStatePath(cfg);
+    if (!fp) return false;
     const { lastRun, armed } = await readAnchors(cfg);
     if (Number.isFinite(armed[name])) return false; // already counting; leave it
     armed[name] = now;
-    await durableAtomicWriteJson(dueStatePath(cfg), { lastRun, armed }, { mode: 0o600 });
+    await durableAtomicWriteJson(fp, { lastRun, armed }, { mode: 0o600 });
     return true;
   });
   writeChain = run.then(
@@ -149,11 +163,13 @@ export async function isDue(cfg = {}, name, intervalMs, now = Date.now()) {
  */
 export function markRan(cfg = {}, name, now = Date.now()) {
   const run = writeChain.then(async () => {
+    const fp = dueStatePath(cfg);
+    if (!fp) return false;
     const { lastRun, armed } = await readAnchors(cfg);
     lastRun[name] = now;
     // Rewrites the whole file, so it must carry `armed` forward: dropping it
     // would re-arm every job at the next boot and reset the clocks.
-    await durableAtomicWriteJson(dueStatePath(cfg), { lastRun, armed }, { mode: 0o600 });
+    await durableAtomicWriteJson(fp, { lastRun, armed }, { mode: 0o600 });
     return true;
   });
   writeChain = run.then(

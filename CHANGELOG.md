@@ -1,3 +1,27 @@
+## 3.546.0
+
+### Ops due-stamp follows paths.configDir
+
+`dueStatePath()` resolved `~/.xclaw/ops-schedule.json`
+from `os.homedir()` while production writers (`markRan(cfg)` /
+`markArmed(cfg)` at cron/scheduler.mjs:99/207 and
+ops/scheduler.mjs:70) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via the
+leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one ops-schedule.json; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.545.0 merge proposals. Honour existing
+`XCLAW_CONFIG_DIR`. No new env.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No
+  home fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `markRan`/`markArmed` still return `false` without persisting
+  (do not `mkdir(null)`). `readDueState` returns `{}`.
+  `readAnchorsSync` returns `{ lastRun: {}, armed: {} }`. Production
+  writers always have configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.545.0
 
 ### Swarm merge proposals follow paths.configDir

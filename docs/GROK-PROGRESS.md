@@ -2099,3 +2099,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/swarm-merge-config-dir.test.mjs test/s3-swarm-merge.test.mjs test/swarm-merge-settle.test.mjs → # tests 23 # pass 23 # fail 0 # duration_ms 3209.374842; npm test (hermetic) → # tests 5347 # pass 5347 # fail 0 # duration_ms 78857.374595
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.546.0 Ops due-stamp follows paths.configDir
+
+LOCKED: `src/ops/due.mjs` `dueStatePath` still homed while production writers `markRan(cfg)` / `markArmed(cfg)` at cron/scheduler.mjs:99/207 and ops/scheduler.mjs:70 already had cfg. Same class as v3.297.0 / v3.545.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `ops-schedule.json`; the suite wrote the operator's real `~/.xclaw`. Existing ops-schedule-restart / cron-anchor-restart tests already pass `{ paths: { configDir } }`. Removed `os` import (only used by the leftover home fallback). Did not rewrite parseAnchors / writeChain / startPeriodic. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). Did not also fix durable-jobs / self-evolve / skills/loop / cold-start-persist.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `markRan`/`markArmed` still return `false` without persisting (do not `mkdir(null)`). `readDueState` returns `{}`. `readAnchorsSync` returns `{ lastRun: {}, armed: {} }`. Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/ops-due-config-dir.test.mjs test/ops-schedule-restart.test.mjs test/cron-anchor-restart.test.mjs → # tests 30 # pass 30 # fail 0 # duration_ms 371.154462; npm test (hermetic) → # tests 5352 # pass 5352 # fail 0 # duration_ms 78323.896827
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
