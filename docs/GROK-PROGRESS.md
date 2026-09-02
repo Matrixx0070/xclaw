@@ -2135,3 +2135,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/skill-loop-config-dir.test.mjs test/skill-ab.test.mjs → # tests 7 # pass 7 # fail 0 # duration_ms 130.448244; npm test (hermetic) → # tests 5362 # pass 5362 # fail 0 # duration_ms 83866.32953
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.549.0 TUI session follows paths.configDir
+
+LOCKED: `src/cli/tui.mjs` `tuiStatePath` still homed while production writer `saveTuiState(cfg)` via `runTui(cfg)` at bin/xclaw.mjs:2045 after `loadConfig()` already had cfg. Same class as v3.297.0 / v3.548.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `tui-session.json`; the suite wrote the operator's real `~/.xclaw`. Existing tui.test.mjs / tui-input.test.mjs only import render helpers and do not write. Removed `os` import (only used by the leftover home fallback). Did not rewrite runTui / streamAgent / persistRun-absent stream body / autoPromoteIfNeeded. Did not mint persistRun:true. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). Did not also fix durable-jobs / cold-start-persist.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `saveTuiState` still no-ops without persisting (do not `mkdir(null)`). `loadTuiState` returns `{}`. Production writers always have configDir, so live persist is not dropped. Exported `tuiStatePath` / `loadTuiState` / `saveTuiState`.
+
+RAN: node --test test/tui-config-dir.test.mjs → # tests 5 # pass 5 # fail 0 # duration_ms 69.635802; npm test (hermetic) → # tests 5367 # pass 5367 # fail 0 # duration_ms 81850.188125
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

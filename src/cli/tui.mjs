@@ -10,11 +10,15 @@
  * CLI process, which is why it always reports 0 active sessions.
  *
  * Zero dependencies — plain ANSI, same rule as the Control UI.
+ *
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+ * fallback. Do not honour `XCLAW_STATE_DIR`. A cfg without configDir is
+ * never a real caller (`loadConfig()` stamps it unconditionally).
+ * `saveTuiState` no-ops without persisting (do not `mkdir(null)`).
  */
 import { writeSync } from "node:fs";
 import { gatewayBaseUrl } from "./gateway-client.mjs";
 import fsp from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { stripLiveScaffold } from "../agent/claims-scaffold.mjs";
 import { isNewApprovalAsk } from "../security/approval-events.mjs";
@@ -1092,14 +1096,16 @@ async function statusLoop(cfg, opts, { colour, intervalMs }) {
 }
 
 /** Where the TUI keeps its own session — same convention as the other stores. */
-function tuiStatePath(cfg) {
-  const dir = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(dir, "tui-session.json");
+export function tuiStatePath(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "tui-session.json") : null;
 }
 
-async function loadTuiState(cfg) {
+export async function loadTuiState(cfg) {
+  const file = tuiStatePath(cfg);
+  if (!file) return {};
   try {
-    const raw = await fsp.readFile(tuiStatePath(cfg), "utf8");
+    const raw = await fsp.readFile(file, "utf8");
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
@@ -1108,10 +1114,11 @@ async function loadTuiState(cfg) {
   }
 }
 
-async function saveTuiState(cfg, patch) {
+export async function saveTuiState(cfg, patch) {
   // best-effort: a read-only home must never take the UI down with it
   try {
     const file = tuiStatePath(cfg);
+    if (!file) return;
     await fsp.mkdir(path.dirname(file), { recursive: true });
     const next = { ...(await loadTuiState(cfg)), ...patch, updatedAt: new Date().toISOString() };
     const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`;

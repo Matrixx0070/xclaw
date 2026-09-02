@@ -1,3 +1,25 @@
+## 3.549.0
+
+### TUI session follows paths.configDir
+
+`tuiStatePath()` resolved `~/.xclaw/tui-session.json` from
+`os.homedir()` while the production writer (`saveTuiState(cfg)` via
+`runTui(cfg)` at bin/xclaw.mjs:2045 after `loadConfig()`) already had
+cfg in scope. `loadConfig()` stamps `paths.configDir` unconditionally,
+so the resolver still homed via the leftover `os.homedir()` fallback.
+Two instances on one host with different `paths.configDir` shared one
+tui-session.json; the suite wrote the operator's real `~/.xclaw`. Same
+class as v3.297.0 `alert-state.json` and v3.548.0 skill-loop-metrics.jsonl.
+Honour existing `XCLAW_CONFIG_DIR`. No new env.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No
+  home fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `saveTuiState` still no-ops without persisting (do not `mkdir(null)`).
+  `loadTuiState` returns `{}`. Production writers always have
+  configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.548.0
 
 ### Skill-loop metrics follow paths.configDir
