@@ -25,11 +25,15 @@ function note(result) {
 export async function runDoctorFix(push, cfg) {
   try {
     const cron = openCronLedger(cfg);
-    try {
-      const n1 = absorbLegacyCronJson(cron, legacyCronJsonFile(cfg));
-      push("fix.cron", n1.error ? "warn" : "ok", note(n1));
-    } finally {
-      cron.close();
+    if (!cron) {
+      push("fix.cron", "info", "no cron ledger path");
+    } else {
+      try {
+        const n1 = absorbLegacyCronJson(cron, legacyCronJsonFile(cfg));
+        push("fix.cron", n1.error ? "warn" : "ok", note(n1));
+      } finally {
+        cron.close();
+      }
     }
   } catch (err) {
     push("fix.cron", "warn", err.message || String(err));

@@ -362,7 +362,9 @@ export async function runDoctor(opts = {}) {
   // Durable cron ledger integrity
   try {
     const ledgerFile = cronLedgerFile(cfg);
-    if (fsSync.existsSync(ledgerFile)) {
+    if (!ledgerFile) {
+      push("cron.ledger", "info", "no cron ledger path");
+    } else if (fsSync.existsSync(ledgerFile)) {
       const db = openLocalSql(ledgerFile);
       try {
         const integ = db.prepare("PRAGMA integrity_check").get();

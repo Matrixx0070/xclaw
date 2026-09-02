@@ -1,3 +1,27 @@
+## 3.550.0
+
+### Cron ledger follows paths.configDir
+
+`cronStoreRoot()` resolved `~/.xclaw` from
+`os.homedir()` while production writers (`openCronLedger(cfg)` via
+`startCron(cfg)` at bin/xclaw.mjs:209/255/2133 and
+gateway/index.mjs:1164) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via the
+leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one cron ledger; the suite wrote
+the operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.549.0 tui-session.json. Honour existing `XCLAW_CONFIG_DIR`. Keep
+extra env `XCLAW_CRON_LEDGER_FILE` / `XCLAW_CRON_JOBS_FILE`. No new env.
+
+- Honour `paths.cronLedgerFile` then `XCLAW_CRON_LEDGER_FILE` then
+  `paths.configDir` then `XCLAW_CONFIG_DIR` then null (same for the
+  jobs file). No home fallback. Do not honour `XCLAW_STATE_DIR`.
+- `openCronLedger` still returns `null` without persisting (do not
+  `mkdir(null)`). Production writers always have configDir, so live
+  persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.549.0
 
 ### TUI session follows paths.configDir

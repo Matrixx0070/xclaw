@@ -395,13 +395,13 @@ export function status() {
 export function start(cfg) {
   if (!ledger) {
     ledger = openCronLedger(cfg);
-    if (ledger.list().length === 0) {
+    if (ledger && ledger.list().length === 0) {
       absorbLegacyCronJson(ledger, legacyCronJsonFile(cfg));
     }
   }
-  const restored = restorePersistedJobs(cfg, ledger.list());
+  const restored = restorePersistedJobs(cfg, ledger ? ledger.list() : []);
   armTimer();
-  return { ok: true, restored: restored.restored, ledger: ledger.file };
+  return { ok: true, restored: restored.restored, ledger: ledger?.file ?? null };
 }
 
 export function stop() {

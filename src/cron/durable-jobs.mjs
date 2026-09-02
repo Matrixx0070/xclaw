@@ -4,9 +4,14 @@
  * In-process handlers (doctor / eval / heartbeat) stay owner-registered and
  * are not written here. Payload jobs used to live in ~/.xclaw/cron-jobs.json.
  * That file is imported once, then the ledger is ~/.xclaw/cron/jobs.sqlite.
+ *
+ * `cronStoreRoot()` honours `paths.configDir` then `XCLAW_CONFIG_DIR` then
+ * null. Extra env `XCLAW_CRON_LEDGER_FILE` / `XCLAW_CRON_JOBS_FILE` and
+ * `paths.cronLedgerFile` / `paths.cronJobsFile` still win when set. No home
+ * fallback. Do not honour `XCLAW_STATE_DIR`. `openCronLedger` still returns
+ * null without persisting (do not `mkdir(null)`). Catch is not a substitute.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { openLocalSql } from "../persist/engine-load.mjs";
 import { applyStorePragmas } from "../persist/journal-mode.mjs";
@@ -23,30 +28,29 @@ CREATE INDEX IF NOT EXISTS payload_jobs_name ON payload_jobs(name);
 `;
 
 function cronStoreRoot(cfg) {
-  return cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
+  return cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
 }
 
 export function cronLedgerFile(cfg) {
-  return (
-    cfg?.paths?.cronLedgerFile ||
-    process.env.XCLAW_CRON_LEDGER_FILE ||
-    path.join(cronStoreRoot(cfg), "cron", "jobs.sqlite")
-  );
+  const explicit = cfg?.paths?.cronLedgerFile || process.env.XCLAW_CRON_LEDGER_FILE;
+  if (explicit) return explicit;
+  const root = cronStoreRoot(cfg);
+  return root ? path.join(root, "cron", "jobs.sqlite") : null;
 }
 
 export function legacyCronJsonFile(cfg) {
   // Was hard-coded to the home dir while its sibling three lines up honoured
   // configDir: a scoped caller absorbed the OPERATOR'S legacy job file (and
   // renamed it to .bak) instead of its own.
-  return (
-    cfg?.paths?.cronJobsFile ||
-    process.env.XCLAW_CRON_JOBS_FILE ||
-    path.join(cronStoreRoot(cfg), "cron-jobs.json")
-  );
+  const explicit = cfg?.paths?.cronJobsFile || process.env.XCLAW_CRON_JOBS_FILE;
+  if (explicit) return explicit;
+  const root = cronStoreRoot(cfg);
+  return root ? path.join(root, "cron-jobs.json") : null;
 }
 
 export function openCronLedger(cfg) {
   const file = cronLedgerFile(cfg);
+  if (!file) return null;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = openLocalSql(file);
   const keeper = applyStorePragmas(db, {

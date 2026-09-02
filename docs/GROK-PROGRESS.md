@@ -2147,3 +2147,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/tui-config-dir.test.mjs → # tests 5 # pass 5 # fail 0 # duration_ms 69.635802; npm test (hermetic) → # tests 5367 # pass 5367 # fail 0 # duration_ms 81850.188125
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.550.0 Cron ledger follows paths.configDir
+
+LOCKED: `src/cron/durable-jobs.mjs` `cronStoreRoot` still homed while production writers `openCronLedger(cfg)` via `startCron(cfg)` at bin/xclaw.mjs:209/255/2133 and gateway/index.mjs:1164 already had cfg. Same class as v3.297.0 / v3.549.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `cron/jobs.sqlite`; the suite wrote the operator's real `~/.xclaw`. Extra env `XCLAW_CRON_LEDGER_FILE` / `XCLAW_CRON_JOBS_FILE` already exist — KEEP. Existing cron-ledger.test.mjs `start({})` is covered by those extra env. cron-log-scope does NOT assert home fallback for this store. Removed `os` import (only used by the leftover home fallback). Did not rewrite normalizeLegacyJob / absorbLegacyCronJson / persistJobs / SCHEMA. Guarded `start()` / doctor-fix / doctor when openCronLedger / cronLedgerFile return null. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). Did not also fix cold-start-persist.
+
+SHIPPED: honour `paths.cronLedgerFile` then `XCLAW_CRON_LEDGER_FILE` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null (same for jobs file). No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `openCronLedger` still returns `null` without persisting (do not `mkdir(null)`). Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/cron-durable-jobs-config-dir.test.mjs test/cron-ledger.test.mjs test/cron-log-scope.test.mjs test/doctor-fix.test.mjs → # tests 17 # pass 17 # fail 0 # duration_ms 2248.238015; npm test (hermetic) → # tests 5372 # pass 5372 # fail 0 # duration_ms 83847.343363
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
