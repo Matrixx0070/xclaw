@@ -1515,7 +1515,13 @@ async function chatLoop(cfg, opts) {
       process.exit(0);
     }
     if (cmd === "/cost") {
-      const st = await getJson(`${base}/tokens/cost`, token);
+      // Live 2026-09-02 pid 2798540 (version 3.562.0) TUI /cost painted
+      // "today —" because this slash fetched the lifetime ledger (costUsd
+      // 116.5276, no today/usd/spendUsd/totalUsd). GET /cost is the governor
+      // (spentUsd 12.383758, limits.dailySoftUsd 25, dailyHardUsd 60). Help
+      // text is "today's spend against the daily cap". Status view still
+      // uses the lifetime ledger for the total — do not change that.
+      const st = await getJson(`${base}/cost`, token);
       const c = st.body || {};
       push("");
       push(acc("cost"));
@@ -1523,11 +1529,17 @@ async function chatLoop(cfg, opts) {
         push(dim(`  unavailable (HTTP ${st.status || 0})`));
         return;
       }
-      const today = c.today || c.daily || c;
-      const spend = today.usd ?? today.spendUsd ?? today.totalUsd;
+      const spend = c.spentUsd;
+      const soft = c.limits?.dailySoftUsd;
+      const hard = c.limits?.dailyHardUsd;
       push(`  ${dim("today")}      ${spend != null ? `$${Number(spend).toFixed(4)}` : "—"}`);
-      if (today.limitUsd != null) push(`  ${dim("daily cap")}  $${Number(today.limitUsd).toFixed(2)}`);
-      if (c.band) push(`  ${dim("band")}       ${c.band}`);
+      if (soft != null || hard != null) {
+        const cap = [soft, hard]
+          .filter((n) => n != null)
+          .map((n) => `$${Number(n).toFixed(2)}`)
+          .join(" / ");
+        push(`  ${dim("daily cap")}  ${cap}`);
+      }
       return;
     }
     if (cmd === "/session") {

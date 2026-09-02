@@ -542,3 +542,22 @@ describe("TUI stream treats application ok:false as not complete", () => {
     assert.match(src, /not complete \(\$\{why\}\)/);
   });
 });
+
+describe("TUI /cost paints today's spend against the daily cap", () => {
+  it("slash /cost fetches the governor, not the lifetime ledger", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../src/cli/tui.mjs", import.meta.url), "utf8");
+    // Live 2026-09-02 pid 2798540 (version 3.562.0) TUI /cost painted
+    // "today —" because slash fetched /tokens/cost (no today/usd/spendUsd).
+    // GET /cost is spentUsd + limits.dailySoftUsd/dailyHardUsd.
+    const slash = src.slice(src.indexOf('if (cmd === "/cost")'), src.indexOf('if (cmd === "/session")'));
+    assert.match(slash, /getJson\(`\$\{base\}\/cost`/);
+    assert.match(slash, /c\.spentUsd/);
+    assert.match(slash, /c\.limits\?\.dailySoftUsd/);
+    assert.match(slash, /c\.limits\?\.dailyHardUsd/);
+    assert.doesNotMatch(slash, /\/tokens\/cost/);
+    // Status view lifetime total still comes from the ledger.
+    const snap = src.slice(src.indexOf("export async function collectTuiSnapshot"), src.indexOf("function relTime"));
+    assert.match(snap, /getJson\(`\$\{base\}\/tokens\/cost`/);
+  });
+});

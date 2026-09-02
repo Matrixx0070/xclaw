@@ -1,3 +1,16 @@
+## 3.567.0
+
+### TUI /cost paints today's spend against the daily cap
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) TUI `/cost` painted
+`today —` while Control Cost showed Spent today $12.3838 Soft / Hard
+$25 / $60. Help text is "today's spend against the daily cap". Slash
+`/cost` fetched `/tokens/cost` (lifetime ledger: costUsd 116.5276, no
+today/usd/spendUsd/totalUsd). GET `/cost` is the governor (spentUsd,
+limits.dailySoftUsd, dailyHardUsd). Slash now fetches `/cost`. Status
+view still uses `/tokens/cost` for the lifetime total. Homedir JSON
+store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.566.0
 
 ### Control auto-refresh honors nav/manual when the window is hidden

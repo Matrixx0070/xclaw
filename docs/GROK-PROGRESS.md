@@ -2347,3 +2347,15 @@ SHIPPED: honor nav/manual before the hidden check. Interval/focus still skip whe
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 9 # pass 9 # fail 0 # duration_ms 55.412298; npm test (hermetic) → # tests 5445 # pass 5445 # fail 0 # duration_ms 83721.86919
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.566.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA will pick up auto-refresh.mjs on reload without gateway restart.
+
+## 2026-09-02 — 3.567.0 TUI /cost paints today's spend against the daily cap
+
+LOCKED: TUI `/cost` painted `today —`. Live 2026-09-02 pid 2798540 (version 3.562.0) Control Cost showed Spent today $12.3838 Soft / Hard $25 / $60. Help text is "today's spend against the daily cap". Slash fetched `/tokens/cost` (lifetime ledger: costUsd 116.5276, no today/usd/spendUsd/totalUsd). GET `/cost` is the governor (spentUsd 12.383758, limits.dailySoftUsd 25, dailyHardUsd 60). Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.566.0 hidden-gate. Do not reopen 3.565.0 WebChat sidebar. Do not reopen 3.564.0 TUI MCP. Do not reopen 3.563.0 mutex.
+
+DISCOVERED: slash `/cost` fetched `/tokens/cost` then `c.today || c.daily || c` then `today.usd ?? today.spendUsd ?? today.totalUsd` → "—". collectTuiSnapshot still uses `/tokens/cost` for `/status` lifetime — KEEP.
+
+SHIPPED: slash `/cost` fetches `/cost`, paints spentUsd and dailySoftUsd/dailyHardUsd. Pin test/tui.test.mjs (slash slice doesNotMatch `/tokens/cost`; snapshot still matches).
+
+RAN: node --test test/tui.test.mjs → # tests 52 # pass 52 # fail 0 # duration_ms 106.373648; npm test (hermetic) → # tests 5446 # pass 5446 # fail 0 # duration_ms 90694.441768
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.567.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. Existing xtui will not see 3.567.0 until a new TUI process. Do not kill xtui without asking.
