@@ -10,16 +10,31 @@
  *
  * This store keeps the mission — objective, interpretation, plan, completion
  * criteria, progress, findings, decisions, failures, inspected resources —
- * in an atomic per-objective JSON under ~/.xclaw/objectives/. The model
+ * in an atomic per-objective JSON under <configDir>/objectives/. The model
  * updates it via fenced state blocks each segment; the runtime OWNS it.
  *
  * Storage conventions match missions/store.mjs: atomic write via tmp+rename,
  * ID_RE guard against path traversal, reconcileInterrupted at boot.
+ *
+ * objectives/ belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * objectives/ directory, so instance B listed instance A's missions —
+ * and the suite wrote into the operator's real `~/.xclaw/objectives`.
+ *
+ * Production writers (`saveObjective(cfg)` at agent/objective.mjs,
+ * agent/run-resume.mjs, channels/runtime.mjs, gateway/routes/objectives.mjs)
+ * already had cfg in scope. `loadConfig()` stamps `paths.configDir`
+ * unconditionally (config/load.mjs:187), so a cfg without one is never a
+ * real caller. Such a path is `null` rather than guessing at the home dir.
+ * Same shape as `missionsStoreDir`. Honour existing `XCLAW_CONFIG_DIR`.
+ * Keep `cfg.objectives?.dir` as an explicit override. `saveObjective`
+ * still returns the in-memory objective without persisting. `listObjectives`
+ * returns `[]`. `loadObjective` returns `null`. Do not `mkdir(null)`.
  */
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import { sanitizeModelVerifyChecks } from "./objective-verify.mjs";
 
@@ -37,16 +52,21 @@ export const OBJECTIVE_STATUSES = [
 
 const TERMINAL = new Set(["done", "failed", "stopped"]);
 
+/**
+ * Honour `cfg.objectives?.dir` then `paths.configDir` then
+ * `XCLAW_CONFIG_DIR` then null. No home fallback.
+ */
 export function objectivesDir(cfg = {}) {
-  return (
-    cfg.objectives?.dir ||
-    path.join(cfg.paths?.configDir || path.join(os.homedir(), ".xclaw"), "objectives")
-  );
+  if (cfg.objectives?.dir) return cfg.objectives.dir;
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "objectives") : null;
 }
 
 function fileFor(cfg, id) {
   if (!ID_RE.test(String(id || ""))) throw new Error(`invalid objective id: ${id}`);
-  return path.join(objectivesDir(cfg), `${id}.json`);
+  const dir = objectivesDir(cfg);
+  if (!dir) return null;
+  return path.join(dir, `${id}.json`);
 }
 
 /** Bounded string-array union — newest survive, dedup, per-item cap. */
@@ -201,32 +221,38 @@ export function newObjective({
 
 let saveSeq = 0;
 export async function saveObjective(cfg, obj) {
+  obj.updatedAt = new Date().toISOString();
   const dir = objectivesDir(cfg);
+  if (!dir) return obj;
   await fs.mkdir(dir, { recursive: true });
   const fp = fileFor(cfg, obj.id);
+  if (!fp) return obj;
   // tmp name must be unique PER CALL, not per process: the stop/resume
   // routes save the same objective the orchestrator is saving — a shared
   // `.tmp-<pid>` collided (writer A renames the tmp away, writer B's rename
   // ENOENTs). Found as a 2-in-5 test flake; same race exists live.
   const tmp = `${fp}.tmp-${process.pid}-${++saveSeq}`;
-  obj.updatedAt = new Date().toISOString();
   await fs.writeFile(tmp, JSON.stringify(obj, null, 1));
   await fs.rename(tmp, fp);
   return obj;
 }
 
 export async function loadObjective(cfg, id) {
+  const fp = fileFor(cfg, id);
+  if (!fp) return null;
   try {
-    return JSON.parse(await fs.readFile(fileFor(cfg, id), "utf8"));
+    return JSON.parse(await fs.readFile(fp, "utf8"));
   } catch {
     return null;
   }
 }
 
 export async function listObjectives(cfg, { activeOnly = false } = {}) {
+  const dir = objectivesDir(cfg);
+  if (!dir) return [];
   let names = [];
   try {
-    names = await fs.readdir(objectivesDir(cfg));
+    names = await fs.readdir(dir);
   } catch {
     return [];
   }
@@ -234,7 +260,7 @@ export async function listObjectives(cfg, { activeOnly = false } = {}) {
   for (const n of names) {
     if (!n.endsWith(".json")) continue;
     try {
-      const o = JSON.parse(await fs.readFile(path.join(objectivesDir(cfg), n), "utf8"));
+      const o = JSON.parse(await fs.readFile(path.join(dir, n), "utf8"));
       if (activeOnly && TERMINAL.has(o.status)) continue;
       out.push(o);
     } catch {

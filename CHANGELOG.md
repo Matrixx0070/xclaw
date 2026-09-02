@@ -1,3 +1,28 @@
+## 3.539.0
+
+### Objectives follow paths.configDir
+
+`objectivesDir()` resolved `~/.xclaw/objectives` from
+`os.homedir()` while production writers (`saveObjective(cfg)` at
+agent/objective.mjs, agent/run-resume.mjs, channels/runtime.mjs,
+gateway/routes/objectives.mjs) already had cfg in scope. `loadConfig()`
+stamps `paths.configDir` unconditionally, so the resolver still homed
+via the leftover `os.homedir()` fallback. Two instances on one host
+with different `paths.configDir` shared one objectives/; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.538.0 `computer.pid`. Honour existing
+`XCLAW_CONFIG_DIR`. Keep `cfg.objectives?.dir`.
+
+- Honour `cfg.objectives?.dir` then `paths.configDir` then
+  `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour
+  `XCLAW_STATE_DIR`. No new env.
+- `saveObjective` still returns the in-memory objective without
+  persisting (do not `mkdir(null)`). `listObjectives` returns `[]`.
+  `loadObjective` returns `null`. Production writers always have
+  configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.538.0
 
 ### Computer supervisor files follow paths.configDir

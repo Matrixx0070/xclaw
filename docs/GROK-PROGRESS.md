@@ -2015,3 +2015,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/computer-config-dir.test.mjs test/computer-status.test.mjs test/computer-contract.test.mjs → # tests 14 # pass 14 # fail 0 # duration_ms 131.010888; npm test (hermetic) → # tests 5312 # pass 5312 # fail 0 # duration_ms 81260.698562
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.539.0 Objectives follow paths.configDir
+
+LOCKED: `src/agent/objective-store.mjs` `objectivesDir` still homed while production writers `saveObjective(cfg)` at agent/objective.mjs, agent/run-resume.mjs, channels/runtime.mjs, gateway/routes/objectives.mjs already had cfg. Same class as v3.297.0 / v3.538.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.objectives?.dir` then `cfg.paths?.configDir`. Two instances on one host shared one `objectives/`; the suite wrote the operator's real `~/.xclaw/objectives`. Existing tests already pass `{ paths: { configDir } }`. Keep `cfg.objectives?.dir`. Removed `os` import (only used by the leftover home fallback). Did not rewrite newObjective / mergeStateUpdate / reconcileInterrupted / stampOperatorChecks. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `cfg.objectives?.dir` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `saveObjective` still returns the in-memory objective without persisting (do not `mkdir(null)`). `listObjectives` returns `[]`. `loadObjective` returns `null`. Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/objective-config-dir.test.mjs test/objective-channel.test.mjs test/objective-longrun.test.mjs test/objectives-routes.test.mjs test/objective-guardrails.test.mjs test/objective-learning.test.mjs test/objective-verify-gate.test.mjs → # tests 77 # pass 77 # fail 0 # duration_ms 3316.162006; npm test (hermetic) → # tests 5317 # pass 5317 # fail 0 # duration_ms 77520.675629
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
