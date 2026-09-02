@@ -2371,3 +2371,15 @@ SHIPPED: click path classList.remove("placeholder") then textContent. Pin test/c
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 10 # pass 10 # fail 0 # duration_ms 53.396284; npm test (hermetic) → # tests 5447 # pass 5447 # fail 0 # duration_ms 81093.134021
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.568.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — reload live-proves without gateway restart. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.569.0 Transcript Read drops leftover placeholder so filled body is not muted
+
+LOCKED: Transcript Read left class `log placeholder` on filled body. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/sessions Read on 299e4916 filled 761 chars; CDP reported cls `log placeholder`. CSS `.log.placeholder` mutes and italicizes. Same leftover as Memory 3.568.0, different pane. Empty-state "no output yet" before click is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.568.0 Memory. Do not reopen 3.567.0 TUI /cost. Do not reopen 3.566.0 hidden-gate.
+
+DISCOVERED: loadTranscripts set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: click path classList.remove("placeholder") then loading… then body. Pin test/control-auto-refresh.test.mjs (transcript slice removes placeholder; empty-state HTML kept).
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 11 # pass 11 # fail 0 # duration_ms 51.96742; npm test (hermetic) → # tests 5448 # pass 5448 # fail 0 # duration_ms 81047.022475
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.569.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — reload live-proves without gateway restart. Do not kill xtui without asking.

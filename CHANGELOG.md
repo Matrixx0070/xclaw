@@ -1,3 +1,13 @@
+## 3.569.0
+
+### Transcript Read drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/sessions Read on
+299e4916 filled 761 chars but left class `log placeholder`. CSS
+`.log.placeholder` mutes and italicizes (same leftover as Memory
+3.568.0). Empty-state "no output yet" before click is correct.
+Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.568.0
 
 ### Memory click drops leftover placeholder so filled body is not muted

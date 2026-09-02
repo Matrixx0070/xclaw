@@ -3119,13 +3119,20 @@ async function loadTranscripts() {
       .join("") || `<tr><td colspan="4" class="muted">No transcripts recorded yet.</td></tr>`;
     tbody.querySelectorAll(".tr-view").forEach((b) => {
       b.onclick = async () => {
-        $("trOut").textContent = "loading…";
+        const out = $("trOut");
+        if (!out) return;
+        // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/sessions
+        // Read on 299e4916 filled 761 chars but left class "log placeholder".
+        // CSS mutes and italicizes that class (same leftover as Memory 3.568.0).
+        // Empty-state "no output yet" before click is correct — drop on fill.
+        out.classList.remove("placeholder");
+        out.textContent = "loading…";
         try {
           const d = await getJSON("/transcripts/" + encodeURIComponent(b.dataset.id) + "?limit=60");
-          $("trOut").textContent = (d.history || [])
+          out.textContent = (d.history || [])
             .map((m) => `[${m.role || m.type || "?"}] ${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`.slice(0, 500))
             .join("\n\n") || "(empty transcript)";
-        } catch (e) { $("trOut").textContent = String(e.message || e); }
+        } catch (e) { out.textContent = String(e.message || e); }
       };
     });
   } catch (e) {

@@ -116,3 +116,15 @@ test("memory click drops placeholder so filled body is not muted", () => {
   const rule = css.slice(css.indexOf(".log.placeholder"), css.indexOf(".log.placeholder") + 120);
   assert.match(rule, /color:\s*var\(--muted\)/);
 });
+
+test("transcript Read drops placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const tr = app.slice(
+    app.indexOf("async function loadTranscripts"),
+    app.indexOf("$(\"btnTrRefresh\")")
+  );
+  assert.match(tr, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(tr, /out\.textContent = "loading…"/);
+  assert.match(html, /id="trOut" class="log placeholder"/);
+});
