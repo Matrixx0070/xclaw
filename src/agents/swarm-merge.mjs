@@ -7,11 +7,26 @@
  *  3. git apply --check for each worktree (serial)
  *  4. autoMerge (lab) → apply; else pending_approval + durable proposal
  *  5. approveMergeProposal(id) applies after owner approval
+ *
+ * merge-proposals belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * swarms/merge-proposals — and the suite wrote into the operator's real
+ * `~/.xclaw/swarms`. Production writers (`saveMergeProposal(cfg)` via
+ * `planAndMaybeMerge(cfg)` at agents/swarm-run.mjs:1460, plus
+ * `approveMergeProposal`/`rejectMergeProposal` at gateway/routes/swarm.mjs
+ * and cli/swarm-cli.mjs) already had cfg in scope. `loadConfig()` stamps
+ * `paths.configDir` unconditionally (config/load.mjs:187), so a cfg without
+ * one is never a real caller. Such a path is `null` rather than guessing at
+ * the home dir. Same shape as `swarmReceiptsRoot`. Honour existing
+ * `XCLAW_CONFIG_DIR`. `saveMergeProposal` still returns the in-memory
+ * proposal without persisting. `getMergeProposal` returns `null`.
+ * `listMergeProposals` returns `[]`. Do not `mkdir(null)`.
+ * Do not `path.join(null, ...)`.
  */
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import {
   applyWorktreeMerge,
   mergeSubagentWorktree,
@@ -29,16 +44,23 @@ import {
   hasReceipt,
 } from "./swarm-receipt.mjs";
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback.
+ */
+export function mergeProposalsRoot(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "swarms", "merge-proposals") : null;
+}
+
 function proposalsDir(cfg) {
-  return path.join(
-    cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"),
-    "swarms",
-    "merge-proposals"
-  );
+  return mergeProposalsRoot(cfg);
 }
 
 async function ensureProposalDir(cfg) {
-  await fs.mkdir(proposalsDir(cfg), { recursive: true });
+  const dir = proposalsDir(cfg);
+  if (!dir) return null;
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
 }
 
 /**
@@ -492,7 +514,6 @@ export async function planAndMaybeMerge(cfg, opts = {}) {
 }
 
 export async function saveMergeProposal(cfg, data) {
-  await ensureProposalDir(cfg);
   const id = randomUUID();
   const rec = {
     id,
@@ -504,17 +525,18 @@ export async function saveMergeProposal(cfg, data) {
     gates: data.gates,
     items: data.items || [],
   };
-  const fp = path.join(proposalsDir(cfg), `${id}.json`);
+  const dir = await ensureProposalDir(cfg);
+  if (!dir) return rec;
+  const fp = path.join(dir, `${id}.json`);
   await fs.writeFile(fp, JSON.stringify(rec, null, 2) + "\n");
   return rec;
 }
 
 export async function getMergeProposal(cfg, id) {
+  const dir = proposalsDir(cfg);
+  if (!dir || id == null || id === "") return null;
   try {
-    const raw = await fs.readFile(
-      path.join(proposalsDir(cfg), `${id}.json`),
-      "utf8"
-    );
+    const raw = await fs.readFile(path.join(dir, `${id}.json`), "utf8");
     return JSON.parse(raw);
   } catch {
     return null;
@@ -540,21 +562,19 @@ export function settleAfterApprove(held, onDisk) {
 }
 
 export async function listMergeProposals(cfg, { status, limit = 30 } = {}) {
+  const dir = proposalsDir(cfg);
+  if (!dir) return [];
   await ensureProposalDir(cfg);
   let files = [];
   try {
-    files = (await fs.readdir(proposalsDir(cfg))).filter((f) =>
-      f.endsWith(".json")
-    );
+    files = (await fs.readdir(dir)).filter((f) => f.endsWith(".json"));
   } catch {
     return [];
   }
   const out = [];
   for (const f of files) {
     try {
-      const rec = JSON.parse(
-        await fs.readFile(path.join(proposalsDir(cfg), f), "utf8")
-      );
+      const rec = JSON.parse(await fs.readFile(path.join(dir, f), "utf8"));
       if (status && rec.status !== status) continue;
       out.push(rec);
     } catch {
@@ -1022,11 +1042,13 @@ export async function approveMergeProposal(cfg, proposalId, opts = {}) {
   rec.status = status === "failed" ? "failed" : status;
   rec.approvedAt = new Date().toISOString();
   rec.approveResult = { applied, failed };
-  await ensureProposalDir(cfg);
-  await fs.writeFile(
-    path.join(proposalsDir(cfg), `${proposalId}.json`),
-    JSON.stringify(rec, null, 2) + "\n"
-  );
+  const dir = await ensureProposalDir(cfg);
+  if (dir) {
+    await fs.writeFile(
+      path.join(dir, `${proposalId}.json`),
+      JSON.stringify(rec, null, 2) + "\n"
+    );
+  }
 
   // Optional git commit with XClaw Co-Authored-By trailers
   let commit = null;
@@ -1098,10 +1120,13 @@ export async function rejectMergeProposal(cfg, proposalId, reason = "") {
   rec.status = "rejected";
   rec.rejectedAt = new Date().toISOString();
   rec.rejectReason = reason || null;
-  await fs.writeFile(
-    path.join(proposalsDir(cfg), `${proposalId}.json`),
-    JSON.stringify(rec, null, 2) + "\n"
-  );
+  const dir = await ensureProposalDir(cfg);
+  if (dir) {
+    await fs.writeFile(
+      path.join(dir, `${proposalId}.json`),
+      JSON.stringify(rec, null, 2) + "\n"
+    );
+  }
   if (rec.swarmId) {
     await updateSwarmRun(cfg, rec.swarmId, {
       merge: { status: "rejected", proposalId, reason },

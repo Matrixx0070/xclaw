@@ -1,23 +1,25 @@
-## 3.544.0
+## 3.545.0
 
-### Swarm receipts follow paths.configDir
+### Swarm merge proposals follow paths.configDir
 
-`receiptsDir()` resolved `~/.xclaw/swarms/runs/<id>/receipts`
-from `os.homedir()` while production writers (`writeNodeReceipt(cfg)`
-via `attachNodeReceipt(cfg)` at agents/swarm-run.mjs:498/727/755/819)
-already had cfg in scope. `loadConfig()` stamps `paths.configDir`
-unconditionally, so the resolver still homed via the leftover
-`os.homedir()` fallback. Two instances on one host with different
-`paths.configDir` shared one receipts tree; the suite wrote the
-operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
-and v3.543.0 journal. Honour existing `XCLAW_CONFIG_DIR`. No new env.
+`proposalsDir()` resolved `~/.xclaw/swarms/merge-proposals`
+from `os.homedir()` while production writers (`saveMergeProposal(cfg)`
+via `planAndMaybeMerge(cfg)` at agents/swarm-run.mjs:1460, plus
+`approveMergeProposal`/`rejectMergeProposal` at gateway/routes/swarm.mjs
+and cli/swarm-cli.mjs) already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed via the
+leftover `os.homedir()` fallback. Two instances on one host with
+different `paths.configDir` shared one merge-proposals tree; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.544.0 receipts. Honour existing
+`XCLAW_CONFIG_DIR`. No new env.
 
 - Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No
   home fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
-- `writeNodeReceipt` still returns `{ ok: true, path: null, receipt }`
-  without persisting (do not `mkdir(null)`). `readNodeReceipt`
-  returns `null`. `listNodeReceipts` returns `[]`. Production
-  writers always have configDir, so live persist is not dropped.
+- `saveMergeProposal` still returns the in-memory proposal without
+  persisting (do not `mkdir(null)`). `getMergeProposal` returns
+  `null`. `listMergeProposals` returns `[]`. Production writers
+  always have configDir, so live persist is not dropped.
 - Pin: configDir write never touches home; no-configDir never writes
   home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
 

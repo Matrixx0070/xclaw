@@ -2087,3 +2087,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/swarm-receipt-config-dir.test.mjs test/receipt-schema.test.mjs test/swarm-s2-receipts.test.mjs test/receipt-policy.test.mjs → # tests 37 # pass 37 # fail 0 # duration_ms 112.88532; npm test (hermetic) → # tests 5342 # pass 5342 # fail 0 # duration_ms 78026.345974
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.545.0 Swarm merge proposals follow paths.configDir
+
+LOCKED: `src/agents/swarm-merge.mjs` `proposalsDir` still homed while production writers `saveMergeProposal(cfg)` via `planAndMaybeMerge(cfg)` at agents/swarm-run.mjs:1460 plus `approveMergeProposal`/`rejectMergeProposal` at gateway/routes/swarm.mjs and cli/swarm-cli.mjs already had cfg. Same class as v3.297.0 / v3.544.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `swarms/merge-proposals`; the suite wrote the operator's real `~/.xclaw/swarms`. Existing s3-swarm-merge / swarm-merge-settle tests already pass `{ paths: { configDir } }`. Removed `os` import (only used by the leftover home fallback). Did not rewrite merge policy / evaluateMergeGates / collectMergeCandidates. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). Did not also fix cold-start-persist / durable-jobs / self-evolve / skills/loop.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `saveMergeProposal` still returns the in-memory proposal without persisting (do not `mkdir(null)`). `getMergeProposal` returns `null`. `listMergeProposals` returns `[]`. Production writers always have configDir, so live persist is not dropped. Exported `mergeProposalsRoot`.
+
+RAN: node --test test/swarm-merge-config-dir.test.mjs test/s3-swarm-merge.test.mjs test/swarm-merge-settle.test.mjs → # tests 23 # pass 23 # fail 0 # duration_ms 3209.374842; npm test (hermetic) → # tests 5347 # pass 5347 # fail 0 # duration_ms 78857.374595
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
