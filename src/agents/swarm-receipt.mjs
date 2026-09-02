@@ -3,10 +3,23 @@
  *
  * A receipt is durable proof of what a node did: tools, artifacts, effects,
  * optional browser/fabric fields when present.
+ *
+ * runs/<id>/receipts belongs to the config dir that owns the instance, not
+ * to whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * swarms/runs/<id>/receipts — and the suite wrote into the operator's real
+ * `~/.xclaw/swarms`. Production writers (`writeNodeReceipt(cfg)` via
+ * `attachNodeReceipt(cfg)` at agents/swarm-run.mjs:498/727/755/819) already
+ * had cfg in scope. `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller. Such
+ * a path is `null` rather than guessing at the home dir. Same shape as
+ * `journalRoot`. Honour existing `XCLAW_CONFIG_DIR`. `writeNodeReceipt`
+ * still returns `{ ok: true, path: null, receipt }` without persisting.
+ * `readNodeReceipt` returns `null`. `listNodeReceipts` returns `[]`.
+ * Do not `mkdir(null)`. Do not `path.join(null, ...)`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -221,15 +234,22 @@ export function validateReceiptShape(receipt, opts = {}) {
   };
 }
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback.
+ */
+export function swarmReceiptsRoot(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "swarms") : null;
+}
+
 function swarmsRoot(cfg) {
-  return path.join(
-    cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"),
-    "swarms"
-  );
+  return swarmReceiptsRoot(cfg);
 }
 
 export function receiptsDir(cfg, swarmId) {
-  return path.join(swarmsRoot(cfg), "runs", String(swarmId), "receipts");
+  const root = swarmsRoot(cfg);
+  if (!root || swarmId == null || swarmId === "") return null;
+  return path.join(root, "runs", String(swarmId), "receipts");
 }
 
 /**
@@ -393,6 +413,7 @@ export async function writeNodeReceipt(cfg, receipt, writeOpts = {}) {
     }
   }
   const dir = receiptsDir(cfg, receipt.swarmId);
+  if (!dir) return { ok: true, path: null, receipt };
   await fs.mkdir(dir, { recursive: true });
   const safeNode = String(receipt.nodeId).replace(/[^a-zA-Z0-9._-]/g, "_");
   const fp = path.join(dir, `${safeNode}.json`);
@@ -404,9 +425,11 @@ export async function writeNodeReceipt(cfg, receipt, writeOpts = {}) {
 }
 
 export async function readNodeReceipt(cfg, swarmId, nodeId, readOpts = {}) {
+  const dir = receiptsDir(cfg, swarmId);
+  if (!dir) return null;
   try {
     const safeNode = String(nodeId).replace(/[^a-zA-Z0-9._-]/g, "_");
-    const fp = path.join(receiptsDir(cfg, swarmId), `${safeNode}.json`);
+    const fp = path.join(dir, `${safeNode}.json`);
     const data = JSON.parse(await fs.readFile(fp, "utf8"));
     if (readOpts.validate === true) {
       const shape = validateReceiptShape(data, readOpts);
@@ -422,6 +445,7 @@ export async function readNodeReceipt(cfg, swarmId, nodeId, readOpts = {}) {
 
 export async function listNodeReceipts(cfg, swarmId) {
   const dir = receiptsDir(cfg, swarmId);
+  if (!dir) return [];
   let files = [];
   try {
     files = (await fs.readdir(dir)).filter(
@@ -648,6 +672,8 @@ export default {
   RECEIPT_STATUS_ENUM,
   normalizeReceiptStatus,
   validateReceiptShape,
+  swarmReceiptsRoot,
+  receiptsDir,
   buildNodeReceipt,
   writeNodeReceipt,
   readNodeReceipt,
