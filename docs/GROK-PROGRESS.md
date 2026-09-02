@@ -2492,3 +2492,16 @@ SHIPPED: btnHkAdd fill path classList.remove("placeholder") then body. Pin test/
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 20 # pass 20 # fail 0 # duration_ms 66.590473; npm test (hermetic) → # tests 5457 # pass 5457 # fail 0 # duration_ms 80928.056322
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.578.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+
+## 2026-09-02 — 3.579.0 Sessions Bind drops leftover placeholder so filled body is not muted
+
+LOCKED: Sessions #/sessions Bind with empty fields left class `log placeholder` on filled sessOut. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/sessions Bind filled "channel, peerId and sessionId are all required" (46 chars); CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as Hooks Add 3.578.0, Sessions pane. Empty-state "no output yet" before Bind is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.578.0 Hooks Add. Do not POST /sessions or /sessions/bind.
+
+DISCOVERED: btnSessBind set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: btnSessBind fill path classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (btnSessBind slice removes placeholder; empty-state HTML kept). One copy.
+
+RAN: pin `# tests 21 # pass 21 # fail 0 # duration_ms 70.810421`. hermetic `# tests 5458 # pass 5458 # fail 0 # duration_ms 81093.085389`.
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.579.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.

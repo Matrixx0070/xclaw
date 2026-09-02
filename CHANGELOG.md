@@ -1,3 +1,14 @@
+## 3.579.0
+
+### Sessions Bind drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/sessions Bind with
+empty fields filled "channel, peerId and sessionId are all required" (46
+chars) but left class `log placeholder`. CSS `.log.placeholder` mutes and
+italicizes (same leftover as Hooks Add 3.578.0). Empty-state "no output yet"
+before Bind is correct. Homedir JSON store-writer class remains EXHAUSTED
+at 3.560.0.
+
 ## 3.578.0
 
 ### Hooks Add drops leftover placeholder so filled body is not muted

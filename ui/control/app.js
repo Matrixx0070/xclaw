@@ -3168,18 +3168,24 @@ $("btnSessNew")?.addEventListener("click", async () => {
   } catch (e) { $("sessOut").textContent = String(e.message || e); }
 });
 $("btnSessBind")?.addEventListener("click", async () => {
+  const out = $("sessOut");
   const channel = $("bindChannel").value.trim();
   const peerId = $("bindPeer").value.trim();
   const sessionId = $("bindSession").value.trim();
+  // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/sessions Bind with
+  // empty fields filled "channel, peerId and sessionId are all required" but
+  // left class "log placeholder". CSS mutes and italicizes (same leftover as
+  // Hooks Add 3.578.0).
+  if (out) out.classList.remove("placeholder");
   if (!channel || !peerId || !sessionId) {
-    $("sessOut").textContent = "channel, peerId and sessionId are all required";
+    if (out) out.textContent = "channel, peerId and sessionId are all required";
     return;
   }
   try {
     const r = await postJSON("/sessions/bind", { channel, peerId, sessionId });
-    $("sessOut").textContent = JSON.stringify(r, null, 2);
+    if (out) out.textContent = JSON.stringify(r, null, 2);
     await loadSessAdmin();
-  } catch (e) { $("sessOut").textContent = String(e.message || e); }
+  } catch (e) { if (out) out.textContent = String(e.message || e); }
 });
 async function loadTranscripts() {
   const tbody = $("trTable")?.querySelector("tbody");

@@ -263,3 +263,15 @@ test("hooks Add drops leftover placeholder so filled body is not muted", () => {
   assert.match(add, /command required/);
   assert.match(html, /id="hkOut" class="log placeholder"/);
 });
+
+test("sessions Bind drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const bind = app.slice(
+    app.indexOf("$(\"btnSessBind\")"),
+    app.indexOf("async function loadTranscripts")
+  );
+  assert.match(bind, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(bind, /channel, peerId and sessionId are all required/);
+  assert.match(html, /id="sessOut" class="log placeholder"/);
+});
