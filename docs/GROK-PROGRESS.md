@@ -2111,3 +2111,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/ops-due-config-dir.test.mjs test/ops-schedule-restart.test.mjs test/cron-anchor-restart.test.mjs → # tests 30 # pass 30 # fail 0 # duration_ms 371.154462; npm test (hermetic) → # tests 5352 # pass 5352 # fail 0 # duration_ms 78323.896827
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.547.0 Self-evolve log follows paths.configDir
+
+LOCKED: `src/autonomy/self-evolve.mjs` `evolveDir` still homed while production writer `appendEvolveLog(cfg)` via `runEvolutionTick(cfg)` at cron/heartbeat.mjs:120 already had cfg. Same class as v3.297.0 / v3.546.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `evolution/events.jsonl`; the suite wrote the operator's real `~/.xclaw`. Existing self-evolve tests already pass `{ paths: { configDir } }`. Removed `os` import (only used by the leftover home fallback). Did not rewrite runEvolutionTick / handsFreeStatus / handsFreeConfigOverlay. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). Did not also fix durable-jobs / skills/loop / cold-start-persist.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `appendEvolveLog` still returns `null` without persisting (do not `mkdir(null)`). Production writers always have configDir, so live persist is not dropped. Exported `evolveDir`.
+
+RAN: node --test test/self-evolve-config-dir.test.mjs test/self-evolve.test.mjs → # tests 15 # pass 15 # fail 0 # duration_ms 453.096785; npm test (hermetic) → # tests 5357 # pass 5357 # fail 0 # duration_ms 78744.595145
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

@@ -8,11 +8,15 @@
  * Hands-free profile (owner away from keyboard):
  *   autonomy.level=full|lab + heartbeat + harness defaults + evolve.autoPromote (lab only)
  *   prod: proposals stay review-only unless ownerApproved / skills.allowInstall
+ *
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+ * fallback. Do not honour `XCLAW_STATE_DIR`. A cfg without configDir is
+ * never a real caller (`loadConfig()` stamps it unconditionally).
+ * `appendEvolveLog` no-ops without persisting (do not `mkdir(null)`).
  */
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { resolveAutonomyLevel } from "../config/autonomy-policy.mjs";
 import { principlesForLevel } from "../agent/principles.mjs";
 import {
@@ -28,13 +32,14 @@ import {
 import { listProposals, canInstallSkills, installProposal } from "../skills/propose.mjs";
 import { queueStats, startQueueWorker, listQueue } from "../jobs/queue.mjs";
 
-function evolveDir(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "evolution");
+export function evolveDir(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "evolution") : null;
 }
 
-async function appendEvolveLog(cfg, row) {
+export async function appendEvolveLog(cfg, row) {
   const d = evolveDir(cfg);
+  if (!d) return null;
   await fs.mkdir(d, { recursive: true });
   const fp = path.join(d, "events.jsonl");
   await fs.appendFile(
@@ -381,6 +386,8 @@ export function handsFreeConfigOverlay() {
 }
 
 export default {
+  evolveDir,
+  appendEvolveLog,
   handsFreeStatus,
   runEvolutionTick,
   handsFreeConfigOverlay,

@@ -1,3 +1,25 @@
+## 3.547.0
+
+### Self-evolve log follows paths.configDir
+
+`evolveDir()` resolved `~/.xclaw/evolution` from
+`os.homedir()` while production writers (`appendEvolveLog(cfg)` via
+`runEvolutionTick(cfg)` at cron/heartbeat.mjs:120) already had cfg
+in scope. `loadConfig()` stamps `paths.configDir` unconditionally,
+so the resolver still homed via the leftover `os.homedir()` fallback.
+Two instances on one host with different `paths.configDir` shared one
+evolution log; the suite wrote the operator's real `~/.xclaw`. Same
+class as v3.297.0 `alert-state.json` and v3.546.0 ops-schedule.json.
+Honour existing `XCLAW_CONFIG_DIR`. No new env.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No
+  home fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `appendEvolveLog` still returns `null` without persisting
+  (do not `mkdir(null)`). Production writers always have configDir,
+  so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.546.0
 
 ### Ops due-stamp follows paths.configDir
