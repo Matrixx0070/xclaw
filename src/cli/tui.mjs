@@ -213,7 +213,35 @@ export function renderTuiFrame(snap = {}, opts = {}) {
  * the two ways to actually provide them. The bare list was a dead end: the
  * TUI said "needs authentication" and stopped, while `xclaw mcp login` and
  * the Control MCP page both already existed — nothing named either.
+ *
+ * Idle is not auth. Live 2026-09-02 pid 2798540 (version 3.562.0): GET
+ * `/mcp/status` reported deepwiki/github/linear `connected: false` with
+ * `error: null` (lazy conn map). GitHub already had an API key, Linear
+ * already had OAuth, POST `/mcp/servers/test` returned ok for all three,
+ * then GET `/mcp/tools` flipped status to connected. TUI splash and `/mcp`
+ * still said "needs authentication". Paint idle as "not connected"; reserve
+ * the login hint for an auth-shaped error.
  */
+export function mcpAuthNeeded(s) {
+  if (!s || s.connected) return false;
+  return /401|403|unauthorized|unauthorised|authentication required/i.test(
+    String(s.error || "")
+  );
+}
+
+export function mcpBannerText(servers = []) {
+  const list = servers.filter(Boolean);
+  const needAuth = list.filter(mcpAuthNeeded).length;
+  const ok = list.filter((s) => s.connected).length;
+  if (needAuth) {
+    return `${needAuth} MCP server${needAuth === 1 ? "" : "s"} need authentication · /mcp`;
+  }
+  if (ok) {
+    return `${ok} MCP server${ok === 1 ? "" : "s"} connected`;
+  }
+  return "";
+}
+
 export function renderMcpServers(servers = [], { base = "", colour = true } = {}) {
   const p = (t, c) => paint(t, c, colour);
   const dim = (t) => p(t, C.grey);
@@ -227,8 +255,8 @@ export function renderMcpServers(servers = [], { base = "", colour = true } = {}
     const mark = s.connected ? p(DOT_ON, C.green) : p(DOT_OFF, C.yellow);
     const extra = s.connected
       ? dim(`${s.toolCount ?? 0} tools`)
-      : p(s.error || "needs authentication", C.yellow);
-    if (!s.connected) needAuth += 1;
+      : p(s.error || "not connected", C.yellow);
+    if (mcpAuthNeeded(s)) needAuth += 1;
     lines.push(`  ${mark} ${s.name}  ${extra}`);
   }
   if (needAuth > 0) {
@@ -1159,8 +1187,6 @@ async function chatLoop(cfg, opts) {
   const pendingN = approvals.body?.pending?.length || 0;
   const machineBypass = cfg.security?.bypassApprovals === true;
   const mcpServers = mcp.body?.servers || [];
-  const mcpNeedAuth = mcpServers.filter((s) => s && s.connected === false).length;
-  const mcpOk = mcpServers.filter((s) => s && s.connected).length;
 
   const state = {
     version: info.body?.version || "?",
@@ -1180,11 +1206,7 @@ async function chatLoop(cfg, opts) {
     notice: info.ok
       ? `${dim("gateway ready")}${pendingN ? p(` · ${pendingN} approval(s) pending`, C.yellow) : ""}`
       : p(`gateway unreachable at ${base} — start it with: xclaw gateway`, C.red),
-    mcpBanner: mcpNeedAuth
-      ? `${mcpNeedAuth} MCP server${mcpNeedAuth === 1 ? "" : "s"} need authentication · /mcp`
-      : mcpOk
-        ? `${mcpOk} MCP server${mcpOk === 1 ? "" : "s"} connected`
-        : "",
+    mcpBanner: mcpBannerText(mcpServers),
     footer: "",
   };
 

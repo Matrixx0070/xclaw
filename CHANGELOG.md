@@ -1,3 +1,16 @@
+## 3.564.0
+
+### TUI idle MCP is not needs-authentication
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) TUI splash and `/mcp`
+said "3 MCP servers need authentication" while GET `/mcp/status`
+reported deepwiki/github/linear `connected: false` with `error: null`.
+GitHub already had an API key, Linear already had OAuth, POST
+`/mcp/servers/test` returned ok for all three, then GET `/mcp/tools`
+flipped status to connected. Idle (`connected: false`, no error) now
+paints "not connected". Login hint is reserved for an auth-shaped
+error. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.563.0
 
 ### Cron tick is per-job in-flight, not process-global

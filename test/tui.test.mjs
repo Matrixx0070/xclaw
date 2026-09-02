@@ -19,6 +19,8 @@ import {
   cycleOverlay,
   overlayLabel,
   renderMcpServers,
+  mcpAuthNeeded,
+  mcpBannerText,
 } from "../src/cli/tui.mjs";
 
 const UP = {
@@ -487,7 +489,7 @@ describe("renderMcpServers", () => {
       { base, colour: false },
     );
     const text = lines.join("\n");
-    assert.match(text, /github\s+needs authentication/);
+    assert.match(text, /github\s+not connected/);
     assert.match(text, /deepwiki\s+401 unauthorized/);
     assert.match(text, /xclaw mcp login <name>/);
     assert.ok(text.includes(`${base}/control/#/mcp`), "hint must carry the real Control URL");
@@ -507,6 +509,28 @@ describe("renderMcpServers", () => {
     const text = renderMcpServers([], { base, colour: false }).join("\n");
     assert.match(text, /none configured/);
     assert.doesNotMatch(text, /mcp login/);
+  });
+
+  it("idle connected:false with no error is not authentication", () => {
+    const idle = [
+      { name: "deepwiki", connected: false, error: null },
+      { name: "github", connected: false, error: null },
+      { name: "linear", connected: false, error: null },
+    ];
+    assert.equal(idle.filter(mcpAuthNeeded).length, 0);
+    assert.equal(mcpBannerText(idle), "");
+    const text = renderMcpServers(idle, { base, colour: false }).join("\n");
+    assert.match(text, /github\s+not connected/);
+    assert.doesNotMatch(text, /needs authentication/);
+    assert.doesNotMatch(text, /mcp login|control\/#\/mcp/);
+  });
+
+  it("auth-shaped error still names both login pathways", () => {
+    const servers = [{ name: "linear", connected: false, error: "401 unauthorized" }];
+    assert.equal(mcpAuthNeeded(servers[0]), true);
+    assert.match(mcpBannerText(servers), /1 MCP server need authentication/);
+    const text = renderMcpServers(servers, { base, colour: false }).join("\n");
+    assert.match(text, /xclaw mcp login <name>/);
   });
 });
 

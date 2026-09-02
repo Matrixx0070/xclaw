@@ -2311,3 +2311,15 @@ SHIPPED: per-job `job.running`. Tick starts due jobs without awaiting the previo
 RAN: node --test test/cron-per-job-inflight.test.mjs test/cron-anchor-restart.test.mjs test/cron-jobs-leak.test.mjs test/cron-job-cfg.test.mjs → # tests 32 # pass 32 # fail 0 # duration_ms 370.121081; npm test (hermetic) → # tests 5442 # pass 5442 # fail 0 # duration_ms 88256.057331
 
 NEXT: do not pm2 restart without asking (live Telegram). Live-prove of the mutex needs restart. Do not push 3.563.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive (WebChat /chat/, TUI /mcp).
+
+## 2026-09-02 — 3.564.0 TUI idle MCP is not needs-authentication
+
+LOCKED: TUI paints idle MCP (`connected: false`, `error: null`) as "needs authentication". Live 2026-09-02 pid 2798540 (version 3.562.0) TUI splash and `/mcp` said "3 MCP servers need authentication" while GET `/mcp/status` reported deepwiki/github/linear `connected: false` with `error: null`. GitHub already had an API key, Linear already had OAuth, POST `/mcp/servers/test` returned ok for all three, then GET `/mcp/tools` flipped status to connected. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.563.0 mutex. Do not change mcpClient.status() Boolean(c) this slice.
+
+DISCOVERED: `mcpNeedAuth = mcpServers.filter((s) => s && s.connected === false).length` and `renderMcpServers` extra = `s.error || "needs authentication"` plus login hint whenever `!s.connected`. Writer `mcpClient.status()` is `connected: Boolean(c)` (lazy conn map). Idle is not auth.
+
+SHIPPED: helpers `mcpAuthNeeded` / `mcpBannerText`. Idle paints "not connected". Login hint reserved for auth-shaped error (`/401|403|unauthorized|unauthorised|authentication required/i`). Pin test/tui.test.mjs (existing mixed test + idle/auth cases).
+
+RAN: node --test test/tui.test.mjs → # tests 51 # pass 51 # fail 0 # duration_ms 133.166876; npm test (hermetic) → # tests 5444 # pass 5444 # fail 0 # duration_ms 82190.840873
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0 or 3.564.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive (WebChat /chat/). TUI paint is CLI-side — existing xtui will not see it until a new TUI process. Do not kill xtui without asking.
