@@ -2051,3 +2051,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/swarm-store-config-dir.test.mjs test/s0-swarm-store.test.mjs test/s1-swarm-run.test.mjs test/swarm-http.test.mjs test/swarm-resume-journal.test.mjs → # tests 32 # pass 32 # fail 0 # duration_ms 322.931769; npm test (hermetic) → # tests 5327 # pass 5327 # fail 0 # duration_ms 78032.48305
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.542.0 Swarm blackboard follows paths.configDir
+
+LOCKED: `src/agents/blackboard.mjs` `blackboardPath` still homed while production writers `appendEntry(cfg)` via `createBlackboardTool({ cfg })` at agents/swarm-run.mjs:540 already had cfg. Same class as v3.297.0 / v3.541.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `swarms/runs/<id>/blackboard.jsonl`; the suite wrote the operator's real `~/.xclaw/swarms`. Existing tests already pass `{ paths: { configDir } }`. Removed `os` import (only used by the leftover home fallback). Did not rewrite JSONL entry shape / KINDS / createBlackboardTool. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). Did not also fix swarm-journal / swarm-receipt / swarm-merge.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `appendEntry` still returns the in-memory entry without persisting (do not `mkdir(null)`). `readEntries` returns `[]`. `tailDigest` returns `null`. Production writers always have configDir, so live persist is not dropped. Exported `blackboardRoot`.
+
+RAN: node --test test/blackboard-config-dir.test.mjs test/swarm-b4.test.mjs → # tests 10 # pass 10 # fail 0 # duration_ms 128.96343; npm test (hermetic) → # tests 5332 # pass 5332 # fail 0 # duration_ms 82386.596217
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

@@ -9,22 +9,39 @@
  *
  * Entries are UNTRUSTED text from other agents — consumers are told to treat
  * them as hints and verify with tools (same stance as upstream handoff).
+ *
+ * blackboard.jsonl belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * swarms/runs/<id>/blackboard.jsonl — and the suite wrote into the
+ * operator's real `~/.xclaw/swarms`. Production writers (`appendEntry(cfg)`
+ * via `createBlackboardTool({ cfg })` at agents/swarm-run.mjs:540) already
+ * had cfg in scope. `loadConfig()` stamps `paths.configDir` unconditionally
+ * (config/load.mjs:187), so a cfg without one is never a real caller. Such
+ * a path is `null` rather than guessing at the home dir. Same shape as
+ * `swarmStoreRoot`. Honour existing `XCLAW_CONFIG_DIR`. `appendEntry` still
+ * returns the in-memory entry without persisting. `readEntries` returns `[]`.
+ * Do not `mkdir(null)`. Do not `path.join(null, ...)`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 
 const ENTRY_MAX_CHARS = 2000;
 const KINDS = ["finding", "decision", "question", "artifact"];
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback.
+ */
+export function blackboardRoot(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "swarms", "runs") : null;
+}
+
 // same root convention as swarm-store.mjs (runs/<id>/ dir holds receipts too)
 export function blackboardPath(cfg, runId) {
-  const base = path.join(
-    cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"),
-    "swarms",
-    "runs"
-  );
-  return path.join(base, String(runId), "blackboard.jsonl");
+  const root = blackboardRoot(cfg);
+  if (!root || runId == null || runId === "") return null;
+  return path.join(root, String(runId), "blackboard.jsonl");
 }
 
 export async function appendEntry(cfg, runId, { nodeId, role, kind, text }) {
@@ -37,15 +54,18 @@ export async function appendEntry(cfg, runId, { nodeId, role, kind, text }) {
     text: String(text || "").slice(0, ENTRY_MAX_CHARS),
   };
   const p = blackboardPath(cfg, runId);
+  if (!p) return entry;
   await fs.mkdir(path.dirname(p), { recursive: true });
   await fs.appendFile(p, JSON.stringify(entry) + "\n", "utf8");
   return entry;
 }
 
 export async function readEntries(cfg, runId, { kinds = null, limit = 50 } = {}) {
+  const p = blackboardPath(cfg, runId);
+  if (!p) return [];
   let text;
   try {
-    text = await fs.readFile(blackboardPath(cfg, runId), "utf8");
+    text = await fs.readFile(p, "utf8");
   } catch {
     return [];
   }
