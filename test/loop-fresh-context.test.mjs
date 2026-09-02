@@ -23,7 +23,12 @@ after(() => {
   fs.rmSync(tmpHome, { recursive: true, force: true });
 });
 
-const CFG = { agent: { apiKey: "fake", model: "fake-1" }, tokens: { ledger: false }, hooks: { enabled: false } };
+const CFG = {
+  agent: { apiKey: "fake", model: "fake-1" },
+  tokens: { ledger: false },
+  hooks: { enabled: false },
+  paths: { configDir: tmpHome },
+};
 
 function fakeProvider() {
   const calls = [];

@@ -2027,3 +2027,15 @@ SHIPPED: honour `cfg.objectives?.dir` then `paths.configDir` then `XCLAW_CONFIG_
 RAN: node --test test/objective-config-dir.test.mjs test/objective-channel.test.mjs test/objective-longrun.test.mjs test/objectives-routes.test.mjs test/objective-guardrails.test.mjs test/objective-learning.test.mjs test/objective-verify-gate.test.mjs → # tests 77 # pass 77 # fail 0 # duration_ms 3316.162006; npm test (hermetic) → # tests 5317 # pass 5317 # fail 0 # duration_ms 77520.675629
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.540.0 Transcripts follow paths.configDir
+
+LOCKED: `src/sessions/transcript.mjs` `transcriptDir` still homed while production writer `appendTranscript(cfg, ...)` at agent/loop.mjs:2021 already had cfg. Same class as v3.297.0 / v3.539.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.transcriptsDir` then `cfg.paths?.configDir`. Two instances on one host shared one `transcripts/`; the suite wrote the operator's real `~/.xclaw/transcripts`. Existing tests already pass `{ paths: { transcriptsDir } }`. Keep `cfg.paths?.transcriptsDir`. Removed `os` import (only used by the leftover home fallback). Did not rewrite JSONL line shape. `loop-fresh-context.test.mjs` now stamps `paths.configDir` so history replay still holds. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability).
+
+SHIPPED: honour `paths.transcriptsDir` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `appendTranscript` still returns `{ ok: true }` without persisting (do not `mkdir(null)`). `listTranscripts` returns `[]`. `loadTranscriptHistory` returns `[]`. Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/transcript-config-dir.test.mjs test/transcript-persist.test.mjs test/loop-fresh-context.test.mjs → # tests 9 # pass 9 # fail 0 # duration_ms 242.656092; npm test (hermetic) → # tests 5322 # pass 5322 # fail 0 # duration_ms 82704.392613
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

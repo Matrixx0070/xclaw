@@ -1,3 +1,27 @@
+## 3.540.0
+
+### Transcripts follow paths.configDir
+
+`transcriptDir()` resolved `~/.xclaw/transcripts` from
+`os.homedir()` while production writers (`appendTranscript(cfg, ...)`
+at agent/loop.mjs:2021) already had cfg in scope. `loadConfig()`
+stamps `paths.configDir` unconditionally, so the resolver still homed
+via the leftover `os.homedir()` fallback. Two instances on one host
+with different `paths.configDir` shared one transcripts/; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.539.0 `objectives/`. Honour existing
+`XCLAW_CONFIG_DIR`. Keep `cfg.paths?.transcriptsDir`.
+
+- Honour `paths.transcriptsDir` then `paths.configDir` then
+  `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour
+  `XCLAW_STATE_DIR`. No new env.
+- `appendTranscript` still returns `{ ok: true }` without persisting
+  (do not `mkdir(null)`). `listTranscripts` returns `[]`.
+  `loadTranscriptHistory` returns `[]`. Production writers always
+  have configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.539.0
 
 ### Objectives follow paths.configDir
