@@ -1,20 +1,25 @@
 /**
  * Skill learning closed loop + A/B harness (Phase L).
  * fail → propose → install → re-run same case → record delta.
+ *
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home
+ * fallback. Do not honour `XCLAW_STATE_DIR`. A cfg without configDir is
+ * never a real caller (`loadConfig()` stamps it unconditionally).
+ * `recordSkillLoopMetric` no-ops without persisting (do not `mkdir(null)`).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { proposeSkillFromFailure, installProposal, canInstallSkills } from "./propose.mjs";
 import { loadCases, runEvalSuite } from "../eval/runner.mjs";
 
-function metricsPath(cfg) {
-  const base = cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
-  return path.join(base, "skill-loop-metrics.jsonl");
+export function metricsPath(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "skill-loop-metrics.jsonl") : null;
 }
 
 export async function recordSkillLoopMetric(cfg, row) {
   const fp = metricsPath(cfg);
+  if (!fp) return null;
   await fs.mkdir(path.dirname(fp), { recursive: true });
   await fs.appendFile(
     fp,
@@ -24,8 +29,10 @@ export async function recordSkillLoopMetric(cfg, row) {
 }
 
 export async function readSkillLoopMetrics(cfg, limit = 50) {
+  const fp = metricsPath(cfg);
+  if (!fp) return [];
   try {
-    const raw = await fs.readFile(metricsPath(cfg), "utf8");
+    const raw = await fs.readFile(fp, "utf8");
     return raw
       .split("\n")
       .filter(Boolean)

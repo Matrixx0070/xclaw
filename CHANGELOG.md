@@ -1,3 +1,27 @@
+## 3.548.0
+
+### Skill-loop metrics follow paths.configDir
+
+`metricsPath()` resolved `~/.xclaw/skill-loop-metrics.jsonl` from
+`os.homedir()` while production writers (`recordSkillLoopMetric(cfg)`
+via `runSkillAB(cfg)` at skills/loop.mjs:107/141 and
+`bin/xclaw.mjs:2317` after `loadConfig()`) already had cfg in scope.
+`loadConfig()` stamps `paths.configDir` unconditionally, so the
+resolver still homed via the leftover `os.homedir()` fallback. Two
+instances on one host with different `paths.configDir` shared one
+skill-loop-metrics.jsonl; the suite wrote the operator's real
+`~/.xclaw`. Same class as v3.297.0 `alert-state.json` and v3.547.0
+evolution/events.jsonl. Honour existing `XCLAW_CONFIG_DIR`. No new env.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No
+  home fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `recordSkillLoopMetric` still returns `null` without persisting
+  (do not `mkdir(null)`). `readSkillLoopMetrics` returns `[]`.
+  Production writers always have configDir, so live persist is not
+  dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.547.0
 
 ### Self-evolve log follows paths.configDir
