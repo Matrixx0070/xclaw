@@ -190,3 +190,20 @@ test("automations cron activity fill drops leftover placeholder so filled body i
   assert.match(logs, /getJSON\("\/cron\/logs\?lines=60"\)/);
   assert.match(html, /id="autoLogOut" class="log placeholder"/);
 });
+
+test("mcp tool-row click drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const row = app.slice(
+    app.indexOf('tbody.querySelectorAll(".mcp-row")'),
+    app.indexOf("$(\"btnMcpRefresh\")")
+  );
+  const call = app.slice(
+    app.indexOf("$(\"btnMcpCall\")"),
+    app.indexOf("if ($(\"mcpTable\"))")
+  );
+  assert.match(row, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(row, /loaded — fill arguments and Call/);
+  assert.match(call, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(html, /id="mcpOut" class="log placeholder"/);
+});

@@ -2431,3 +2431,15 @@ SHIPPED: fill path classList.remove("placeholder") then body. Pin test/control-a
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 15 # pass 15 # fail 0 # duration_ms 59.166441; npm test (hermetic) → # tests 5452 # pass 5452 # fail 0 # duration_ms 84384.105982
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.573.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.574.0 MCP tool-row click drops leftover placeholder so filled body is not muted
+
+LOCKED: MCP #/mcp tool-row click left class `log placeholder` on filled mcpOut. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp first tool row filled 62 chars (`→ mcp__deepwiki__ask_question loaded — fill arguments and Call`); CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as MCP Test 3.571.0, tool-row click. Empty-state "no output yet" before click is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.571.0 MCP Test. Do not Call mutating tools.
+
+DISCOVERED: bindRowOpen on `.mcp-row` set textContent only. HTML starts with class="log placeholder" and "no output yet". Call path same leftover on the same pane.
+
+SHIPPED: row click and Call fill paths classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (mcp-row slice + btnMcpCall slice remove placeholder; empty-state HTML kept).
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 16 # pass 16 # fail 0 # duration_ms 62.202042; npm test (hermetic) → # tests 5453 # pass 5453 # fail 0 # duration_ms 86763.160564
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.574.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.

@@ -1,3 +1,14 @@
+## 3.574.0
+
+### MCP tool-row click drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp tool-row click
+filled 62 chars (`→ mcp__deepwiki__ask_question loaded — fill arguments
+and Call`) but left class `log placeholder`. CSS `.log.placeholder` mutes
+and italicizes (same leftover as MCP Test 3.571.0). Empty-state "no output
+yet" before click is correct. Homedir JSON store-writer class remains
+EXHAUSTED at 3.560.0.
+
 ## 3.573.0
 
 ### Automations cron activity fill drops leftover placeholder so filled body is not muted

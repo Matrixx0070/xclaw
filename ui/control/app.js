@@ -2966,7 +2966,13 @@ async function loadMcpTools() {
     tbody.querySelectorAll(".mcp-row").forEach((tr) => {
       bindRowOpen(tr, () => {
         $("mcpToolName").value = tr.dataset.name;
-        $("mcpOut").textContent = "→ " + tr.dataset.name + " loaded — fill arguments and Call";
+        const out = $("mcpOut");
+        if (!out) return;
+        // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp
+        // tool-row click filled 62 chars but left class "log placeholder".
+        // CSS mutes and italicizes (same leftover as MCP Test 3.571.0).
+        out.classList.remove("placeholder");
+        out.textContent = "→ " + tr.dataset.name + " loaded — fill arguments and Call";
       });
     });
   } catch (e) {
@@ -2975,16 +2981,21 @@ async function loadMcpTools() {
 }
 $("btnMcpRefresh")?.addEventListener("click", () => loadMcpTools().catch(console.error));
 $("btnMcpCall")?.addEventListener("click", async () => {
+  const out = $("mcpOut");
+  if (!out) return;
   const name = $("mcpToolName").value.trim();
-  if (!name) { $("mcpOut").textContent = "pick a tool first"; return; }
+  // Same leftover as the tool-row click: Call fills mcpOut while class
+  // stays "log placeholder" (CSS mutes). Drop on every fill of this pane.
+  out.classList.remove("placeholder");
+  if (!name) { out.textContent = "pick a tool first"; return; }
   let args = {};
   try { args = JSON.parse($("mcpArgs").value || "{}"); }
-  catch (e) { $("mcpOut").textContent = "arguments JSON invalid: " + e.message; return; }
-  $("mcpOut").textContent = "calling…";
+  catch (e) { out.textContent = "arguments JSON invalid: " + e.message; return; }
+  out.textContent = "calling…";
   try {
     const r = await postJSON("/mcp/call", { name, arguments: args });
-    $("mcpOut").textContent = JSON.stringify(r, null, 2);
-  } catch (e) { $("mcpOut").textContent = String(e.message || e); }
+    out.textContent = JSON.stringify(r, null, 2);
+  } catch (e) { out.textContent = String(e.message || e); }
 });
 if ($("mcpTable")) loadMcpTools().catch(() => {});
 
