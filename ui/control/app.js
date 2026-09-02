@@ -835,13 +835,19 @@ loadSkillsStats();
 
 
 async function loadEvalBaseline() {
+  const out = $("evalBaseOut");
+  if (!out) return;
   try {
     // served from static? use jobs as proxy — try fetch from known path via gateway file not available
     // Use last eval summary from /jobs pass rate as soft signal; baseline via optional endpoint
     const r = await fetch("/eval/baseline");
     if (!r.ok) throw new Error("no baseline endpoint or file");
     const j = await r.json();
-    $("evalBaseOut").textContent = JSON.stringify({
+    // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/cost
+    // auto-fill left 107 chars of JSON but class stayed "log placeholder".
+    // CSS mutes and italicizes (same leftover as Memory 3.568.0 / Transcript 3.569.0).
+    out.classList.remove("placeholder");
+    out.textContent = JSON.stringify({
       passRate: j.passRate,
       total: j.total,
       passed: j.passed,
@@ -851,7 +857,8 @@ async function loadEvalBaseline() {
       at: j.at,
     }, null, 2);
   } catch (e) {
-    $("evalBaseOut").textContent = String(e.message || e);
+    out.classList.remove("placeholder");
+    out.textContent = String(e.message || e);
   }
 }
 $("btnEvalBase")?.addEventListener("click", loadEvalBaseline);
@@ -1141,15 +1148,19 @@ loadAdmission().then(() => { connectEventsWs(); startAdmissionLive(); }).catch((
 
 
 async function loadEvalHistory() {
+  const out = $("evalBaseOut");
+  if (!out) return;
   try {
     const data = await getJSON("/eval/history?limit=15");
     const lines = (data.history || []).map(
       (h) =>
         `${(h.at || "").slice(0, 19)}  pass=${((h.passRate || 0) * 100).toFixed(0)}%  turns=${Number(h.meanTurns || 0).toFixed(1)}  tok=${h.tokens?.total ?? "—"}`
     );
-    $("evalBaseOut").textContent = lines.length ? lines.join("\n") : "No eval history yet.";
+    out.classList.remove("placeholder");
+    out.textContent = lines.length ? lines.join("\n") : "No eval history yet.";
   } catch (e) {
-    $("evalBaseOut").textContent = String(e.message || e);
+    out.classList.remove("placeholder");
+    out.textContent = String(e.message || e);
   }
 }
 $("btnEvalHist")?.addEventListener("click", loadEvalHistory);
@@ -1176,9 +1187,12 @@ loadProfile();
 
 
 async function loadEvalSpend() {
+  const out = $("evalBaseOut");
+  if (!out) return;
   try {
     const s = await getJSON("/eval/spend?limit=50");
-    $("evalBaseOut").textContent = JSON.stringify({
+    out.classList.remove("placeholder");
+    out.textContent = JSON.stringify({
       runs: s.runs,
       fullyPassedRuns: s.fullyPassedRuns,
       totalUsd: s.totalUsd,
@@ -1186,7 +1200,8 @@ async function loadEvalSpend() {
       totalTokens: s.totalTokens,
     }, null, 2);
   } catch (e) {
-    $("evalBaseOut").textContent = String(e.message || e);
+    out.classList.remove("placeholder");
+    out.textContent = String(e.message || e);
   }
 }
 $("btnEvalSpend")?.addEventListener("click", loadEvalSpend);
@@ -1330,9 +1345,14 @@ setInterval(() => { loadApprovals().catch(() => {}); }, 5000);
 
 
 async function loadScoreboard() {
+  const out = $("scoreOut");
+  if (!out) return;
   try {
     const s = await getJSON("/eval/scoreboard");
-    $("scoreOut").textContent = JSON.stringify({
+    // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/cost
+    // auto-fill left 419 chars of JSON but class stayed "log placeholder".
+    out.classList.remove("placeholder");
+    out.textContent = JSON.stringify({
       passRate: s.passRate,
       passed: s.passed,
       total: s.total,
@@ -1344,7 +1364,8 @@ async function loadScoreboard() {
       spendWindow: s.spendWindow,
     }, null, 2);
   } catch (e) {
-    $("scoreOut").textContent = String(e.message || e);
+    out.classList.remove("placeholder");
+    out.textContent = String(e.message || e);
   }
 }
 $("btnScoreboard")?.addEventListener("click", loadScoreboard);

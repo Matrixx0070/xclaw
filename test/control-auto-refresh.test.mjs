@@ -128,3 +128,30 @@ test("transcript Read drops placeholder so filled body is not muted", () => {
   assert.match(tr, /out\.textContent = "loading…"/);
   assert.match(html, /id="trOut" class="log placeholder"/);
 });
+
+test("cost eval and scoreboard fills drop leftover placeholder", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const base = app.slice(
+    app.indexOf("async function loadEvalBaseline"),
+    app.indexOf("$(\"btnEvalBase\")")
+  );
+  const hist = app.slice(
+    app.indexOf("async function loadEvalHistory"),
+    app.indexOf("$(\"btnEvalHist\")")
+  );
+  const spend = app.slice(
+    app.indexOf("async function loadEvalSpend"),
+    app.indexOf("$(\"btnEvalSpend\")")
+  );
+  const score = app.slice(
+    app.indexOf("async function loadScoreboard"),
+    app.indexOf("$(\"btnScoreboard\")")
+  );
+  assert.match(base, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(hist, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(spend, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(score, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(html, /id="evalBaseOut" class="log placeholder"/);
+  assert.match(html, /id="scoreOut" class="log placeholder"/);
+});

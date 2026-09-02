@@ -2383,3 +2383,15 @@ SHIPPED: click path classList.remove("placeholder") then loading… then body. P
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 11 # pass 11 # fail 0 # duration_ms 51.96742; npm test (hermetic) → # tests 5448 # pass 5448 # fail 0 # duration_ms 81047.022475
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.569.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — reload live-proves without gateway restart. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.570.0 Cost eval and scoreboard fills drop leftover placeholder so filled body is not muted
+
+LOCKED: Cost #/cost auto-fill left class `log placeholder` on filled JSON. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/cost evalBaseOut 107 chars and scoreOut 419 chars; CDP reported cls `log placeholder`. CSS `.log.placeholder` mutes and italicizes. Same leftover as Memory 3.568.0 / Transcript 3.569.0, Cost auto-fill panes. Empty-state "no output yet" before fill is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.569.0 Transcript. Do not reopen 3.568.0 Memory. Do not reopen 3.567.0 TUI /cost. Do not reopen 3.566.0 hidden-gate.
+
+DISCOVERED: loadEvalBaseline / loadEvalHistory / loadEvalSpend / loadScoreboard set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: fill paths classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (eval/score slices remove placeholder; empty-state HTML kept).
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 12 # pass 12 # fail 0 # duration_ms 60.419073; npm test (hermetic) → # tests 5449 # pass 5449 # fail 0 # duration_ms 85106.854908
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.570.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.

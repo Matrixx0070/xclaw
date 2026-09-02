@@ -1,3 +1,13 @@
+## 3.570.0
+
+### Cost eval and scoreboard fills drop leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/cost auto-fill left
+eval baseline JSON (107 chars) and scoreboard JSON (419 chars) with class
+`log placeholder`. CSS `.log.placeholder` mutes and italicizes (same leftover
+as Memory 3.568.0 / Transcript 3.569.0). Empty-state "no output yet" before
+fill is correct. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.569.0
 
 ### Transcript Read drops leftover placeholder so filled body is not muted
