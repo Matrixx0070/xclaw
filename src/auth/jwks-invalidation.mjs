@@ -10,10 +10,18 @@
  *
  * On rotate / compromise recovery, call publishJwksInvalidation().
  * On getJwksCached, call checkJwksInvalidation() — if epoch advanced, force refresh.
+ *
+ * `paths()` honours `cfg.auth?.jwks?.invalidationEpochPath` then
+ * `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback.
+ * Do not honour `XCLAW_STATE_DIR`. A cfg without configDir is never a
+ * real caller (`loadConfig()` stamps it unconditionally). `writeEpoch`
+ * still no-ops without persisting (do not call durableAtomicWriteJson on
+ * null — that helper `mkdir`s dirname). `readEpoch` returns the empty
+ * default (same as missing). Keep `cfg.auth?.jwks?.invalidationEpochPath`.
+ * Keep `XCLAW_JWKS_INVALIDATION_WEBHOOKS` as webhook URLs (not path).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import {
   durableAtomicWriteJson,
@@ -21,15 +29,13 @@ import {
 } from "../utils/durable-write.mjs";
 
 function paths(cfg = {}) {
-  const configDir =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
+  const explicit = cfg.auth?.jwks?.invalidationEpochPath;
+  const configDir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
   return {
     configDir,
     epochPath:
-      cfg.auth?.jwks?.invalidationEpochPath ||
-      path.join(configDir, "jwks-invalidation-epoch.json"),
+      explicit ||
+      (configDir ? path.join(configDir, "jwks-invalidation-epoch.json") : null),
   };
 }
 
@@ -62,25 +68,32 @@ export function onJwksInvalidation(fn) {
   return () => localListeners.delete(fn);
 }
 
+function emptyEpoch() {
+  return {
+    version: 1,
+    epoch: 0,
+    updatedAt: 0,
+    reason: null,
+    generation: null,
+    kid: null,
+    etag: null,
+    id: null,
+  };
+}
+
 async function readEpoch(cfg) {
+  const p = paths(cfg).epochPath;
+  if (!p) return emptyEpoch();
   try {
-    return JSON.parse(await fs.readFile(paths(cfg).epochPath, "utf8"));
+    return JSON.parse(await fs.readFile(p, "utf8"));
   } catch {
-    return {
-      version: 1,
-      epoch: 0,
-      updatedAt: 0,
-      reason: null,
-      generation: null,
-      kid: null,
-      etag: null,
-      id: null,
-    };
+    return emptyEpoch();
   }
 }
 
 async function writeEpoch(cfg, epochDoc) {
   const p = paths(cfg).epochPath;
+  if (!p) return;
   await durableAtomicWriteJson(p, epochDoc, {
     durable: durableWritesEnabled(cfg),
     mode: 0o600,

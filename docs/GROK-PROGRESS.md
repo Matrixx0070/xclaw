@@ -2227,3 +2227,15 @@ DISCOVERED: leftover home fallback at paths() while production writers getJwksCa
 SHIPPED: pin test/jwks-config-dir.test.mjs (5 tests). Combined pin 21/21 fail 0 duration 183.824651.
 RAN: node --test test/jwks-config-dir.test.mjs test/jwks.test.mjs test/key-rotation-config-dir.test.mjs → # tests 21 # pass 21 # fail 0 # duration_ms 183.824651; npm test (hermetic) → # tests 5402 # pass 5402 # fail 0 # duration_ms 79704.864219
 NEXT: remainder hunt leftover configDir||homedir writers with cfg at a production caller. Prefer jwks-invalidation. Prefer NOT cold-start-persist. Prefer NOT cron/logs. Prefer NOT run-store.
+
+## 2026-09-02 — 3.557.0 JWKS invalidation epoch follows paths.configDir
+
+LOCKED: `src/auth/jwks-invalidation.mjs` `paths` still homed while production writers `publishJwksInvalidation(cfg)` at jwks.mjs:360 from `refreshJwksAfterRotation(cfg)` AND `handleInvalidationHttp(cfg)` at gateway/routes/jwks.mjs:57 already had cfg. Same class as v3.297.0 / v3.556.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `jwks-invalidation-epoch.json`; the suite wrote the operator's real `~/.xclaw`. Existing jwks-invalidation.test.mjs already passes `{ paths: { configDir: dir } }`. KEEP `cfg.auth?.jwks?.invalidationEpochPath`. KEEP `XCLAW_JWKS_INVALIDATION_WEBHOOKS` as webhook URLs (not path). Removed `os` import (only used by the leftover home fallback). Did not rewrite publishJwksInvalidation / checkJwksInvalidation / applyRemoteInvalidation / getInvalidationEpoch / handleInvalidationHttp / onJwksInvalidation / invPolicy / webhook fetch. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). cold-start-persist REJECTED (existing pin asserts default path under .xclaw). Did not also fix idempotency / key-compromise-recovery / xai-oauth.
+
+SHIPPED: honour `cfg.auth?.jwks?.invalidationEpochPath` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `writeEpoch` still no-ops without persisting (do not call durableAtomicWriteJson on null). `readEpoch` returns the empty default. Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/jwks-invalidation-config-dir.test.mjs test/jwks-invalidation.test.mjs test/jwks-config-dir.test.mjs → # tests 16 # pass 16 # fail 0 # duration_ms 131.515017; npm test (hermetic) → # tests 5407 # pass 5407 # fail 0 # duration_ms 82749.259758
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

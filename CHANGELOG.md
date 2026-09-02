@@ -1,3 +1,20 @@
+## 3.557.0
+
+### JWKS invalidation epoch follows paths.configDir
+
+`paths()` resolved `~/.xclaw/jwks-invalidation-epoch.json` from `os.homedir()`
+while production writers (`publishJwksInvalidation(cfg)` at jwks.mjs:360 from
+`refreshJwksAfterRotation(cfg)` AND `handleInvalidationHttp(cfg)` at
+gateway/routes/jwks.mjs:57) already had cfg in scope. Two xclaw instances
+on one host with different `paths.configDir` shared one invalidation epoch.
+Home fallback is refused. Honour existing `XCLAW_CONFIG_DIR`. Keep
+`cfg.auth?.jwks?.invalidationEpochPath`. Keep
+`XCLAW_JWKS_INVALIDATION_WEBHOOKS` as webhook URLs (not path). Removed
+`os` import (only used by the leftover home fallback). `writeEpoch` no-ops
+without calling durableAtomicWriteJson (that helper `mkdir`s dirname).
+`readEpoch` returns the empty default (same as missing). Production writers
+always have configDir, so live persist is not dropped.
+
 ## 3.556.0
 
 ### JWKS cache follows paths.configDir
