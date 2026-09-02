@@ -3018,24 +3018,42 @@ function mcpResRender(rows, kind) {
     .join("") || `<tr><td colspan="3" class="muted">none exposed</td></tr>`;
   tbody.querySelectorAll(".mcp-res-open").forEach((b) => {
     b.onclick = async () => {
-      $("mcpResOut").textContent = "loading…";
+      const out = $("mcpResOut");
+      if (!out) return;
+      // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp
+      // resource Read filled 8000 chars but left class "log placeholder".
+      // CSS mutes and italicizes (same leftover as MCP tool-row 3.574.0).
+      out.classList.remove("placeholder");
+      out.textContent = "loading…";
       try {
-        const out =
+        const r =
           b.dataset.kind === "resource"
             ? await postJSON("/mcp/resources/read", { server: b.dataset.server, uri: b.dataset.ref })
             : await postJSON("/mcp/prompts/get", { server: b.dataset.server, name: b.dataset.ref });
-        $("mcpResOut").textContent = JSON.stringify(out, null, 2).slice(0, 8000);
-      } catch (e) { $("mcpResOut").textContent = String(e.message || e); }
+        out.textContent = JSON.stringify(r, null, 2).slice(0, 8000);
+      } catch (e) { out.textContent = String(e.message || e); }
     };
   });
 }
 $("btnMcpRes")?.addEventListener("click", async () => {
+  const out = $("mcpResOut");
   try { mcpResRender((await getJSON("/mcp/resources")).resources || [], "resource"); }
-  catch (e) { $("mcpResOut").textContent = String(e.message || e); }
+  catch (e) {
+    if (!out) return;
+    // Same leftover as Read: List catch fills mcpResOut while class stays
+    // "log placeholder" (CSS mutes). Drop on every fill of this pane.
+    out.classList.remove("placeholder");
+    out.textContent = String(e.message || e);
+  }
 });
 $("btnMcpPrompts")?.addEventListener("click", async () => {
+  const out = $("mcpResOut");
   try { mcpResRender((await getJSON("/mcp/prompts")).prompts || [], "prompt"); }
-  catch (e) { $("mcpResOut").textContent = String(e.message || e); }
+  catch (e) {
+    if (!out) return;
+    out.classList.remove("placeholder");
+    out.textContent = String(e.message || e);
+  }
 });
 
 /* ── Images (media jobs) ─────────────────────────────────────────── */

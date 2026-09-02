@@ -1,3 +1,14 @@
+## 3.575.0
+
+### MCP resource Read drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp resource Read
+filled 8000 chars of github get-me UI JSON but left class `log placeholder`.
+CSS `.log.placeholder` mutes and italicizes (same leftover as MCP tool-row
+3.574.0). Empty-state "no output yet" before Read is correct. List resources
+fills the table, not mcpResOut. Homedir JSON store-writer class remains
+EXHAUSTED at 3.560.0.
+
 ## 3.574.0
 
 ### MCP tool-row click drops leftover placeholder so filled body is not muted

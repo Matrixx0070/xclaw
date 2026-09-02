@@ -207,3 +207,21 @@ test("mcp tool-row click drops leftover placeholder so filled body is not muted"
   assert.match(call, /out\.classList\.remove\("placeholder"\)/);
   assert.match(html, /id="mcpOut" class="log placeholder"/);
 });
+
+test("mcp resource Read drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const render = app.slice(
+    app.indexOf("function mcpResRender"),
+    app.indexOf("$(\"btnMcpRes\")")
+  );
+  const list = app.slice(
+    app.indexOf("$(\"btnMcpRes\")"),
+    app.indexOf("/* ── Images")
+  );
+  assert.match(render, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(render, /out\.textContent = "loading…"/);
+  assert.match(render, /JSON\.stringify\(r, null, 2\)\.slice\(0, 8000\)/);
+  assert.match(list, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(html, /id="mcpResOut" class="log placeholder"/);
+});

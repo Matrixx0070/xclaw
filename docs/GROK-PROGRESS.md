@@ -2443,3 +2443,15 @@ SHIPPED: row click and Call fill paths classList.remove("placeholder") then body
 RAN: node --test test/control-auto-refresh.test.mjs → # tests 16 # pass 16 # fail 0 # duration_ms 62.202042; npm test (hermetic) → # tests 5453 # pass 5453 # fail 0 # duration_ms 86763.160564
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.574.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.575.0 MCP resource Read drops leftover placeholder so filled body is not muted
+
+LOCKED: MCP #/mcp resource Read left class `log placeholder` on filled mcpResOut. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/mcp Read on github `ui://github-mcp-server/get-me` filled 8000 chars; CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as MCP tool-row 3.574.0, resource Read. Empty-state "no output yet" before Read is correct. List resources fills the table, not mcpResOut. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.574.0 MCP tool-row. Do not Call mutating tools.
+
+DISCOVERED: mcp-res-open onclick set textContent only. HTML starts with class="log placeholder" and "no output yet". List/Prompts catch paths same leftover on the same pane.
+
+SHIPPED: Read/Get click and List/Prompts catch fill paths classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (mcpResRender slice + btnMcpRes slice remove placeholder; empty-state HTML kept). One copy.
+
+RAN: node --test test/control-auto-refresh.test.mjs → # tests 17 # pass 17 # fail 0 # duration_ms 59.604462; npm test (hermetic) → # tests 5454 # pass 5454 # fail 0 # duration_ms 81628.332649
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.575.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
