@@ -335,3 +335,16 @@ test("mcp server Add drops leftover placeholder so filled body is not muted", ()
   assert.match(add, /name and url\/command are required/);
   assert.match(html, /id="mcpSrvOut" class="log placeholder"/);
 });
+
+test("sessions admin unions in-memory webchat so live pill is not bindings-only", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const load = app.slice(
+    app.indexOf("async function loadSessAdmin"),
+    app.indexOf("$(\"btnSessRefresh\")")
+  );
+  assert.match(load, /getJSON\("\/sessions"\)/);
+  assert.match(load, /getJSON\("\/channel\/webchat\/sessions"\)/);
+  assert.match(load, /seen\.has\(id\)/);
+  assert.match(html, /Live conversation sessions across all channels/);
+});

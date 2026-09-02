@@ -2582,3 +2582,15 @@ SHIPPED: when no turn contributed costUsd, add e.costUsd once to totals and the 
 RAN: pin `# tests 6 # pass 6 # fail 0 # duration_ms 67.721047`. hermetic `# tests 5464 # pass 5464 # fail 0 # duration_ms 87417.770869` EXIT:0.
 
 NEXT: do not pm2 restart without asking. Aggregator is gateway JS — SPA reload will not live-prove. Do not push 3.563.0–3.585.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.586.0 Sessions admin unions in-memory WebChat so the live pill is not bindings-only
+
+LOCKED: Control #/sessions painted "4 LIVE" / "Live conversation sessions across all channels" while in-memory WebChat 299e4916 (16 msgs, now) lived only on Ops sessionsTable via GET /channel/webchat/sessions. Live 2026-09-02 pid 2798540 (version 3.562.0). GET /sessions is persisted bindings (3 telegram + stale webchat:dm:4f3292f5). Transcripts listed 299e4916. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.585.0 usage spend lie. Do not change GET /sessions. Do not mint persistRun.
+
+DISCOVERED: loadSessAdmin fetched GET /sessions only. Pane copy claims all channels. Ops loadSessions already fetches /channel/webchat/sessions.
+
+SHIPPED: loadSessAdmin unions GET /channel/webchat/sessions into the table by id. Pin test/control-auto-refresh.test.mjs (loadSessAdmin slice fetches both; HTML copy kept). One copy.
+
+RAN: pin `# tests 27 # pass 27 # fail 0 # duration_ms 70.326298`. hermetic `# tests 5465 # pass 5465 # fail 0 # duration_ms 80709.146415`.
+
+NEXT: do not pm2 restart without asking. SPA is disk-served — hard-reload live-proves without gateway restart. Do not push 3.563.0–3.586.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. Do not kill xtui without asking.

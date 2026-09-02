@@ -1,3 +1,17 @@
+## 3.586.0
+
+### Sessions admin unions in-memory WebChat so the live pill is not bindings-only
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/sessions painted
+"4 LIVE" / "Live conversation sessions across all channels" while the
+in-memory WebChat 299e4916 (16 msgs, now) lived only on Ops sessionsTable
+via GET /channel/webchat/sessions. GET /sessions is persisted bindings
+(telegram:dm:42, telegram:dm:8087386717, telegram:dm:900002, stale
+webchat:dm:4f3292f5). Transcripts listed 299e4916. loadSessAdmin now
+unions GET /channel/webchat/sessions into the table by id. Do not change
+GET /sessions. Do not mint persistRun. Homedir JSON store-writer class
+remains EXHAUSTED at 3.560.0.
+
 ## 3.585.0
 
 ### usageSummary totals.costUsd falls back to entry when turns lack costUsd

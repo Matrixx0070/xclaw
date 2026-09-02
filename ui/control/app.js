@@ -3167,6 +3167,32 @@ async function loadSessAdmin() {
   try {
     const data = await getJSON("/sessions");
     const list = data.sessions || [];
+    // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/sessions painted
+    // "4 LIVE" / "Live conversation sessions across all channels" while the
+    // in-memory WebChat 299e4916 (16 msgs, now) lived only on Ops sessionsTable
+    // via GET /channel/webchat/sessions. GET /sessions is persisted bindings.
+    // Union in-memory WebChat rows into this table. Do not change GET
+    // /sessions. Do not mint persistRun.
+    let chats = [];
+    try {
+      const wc = await getJSON("/channel/webchat/sessions");
+      chats = wc.sessions || wc || [];
+      if (!Array.isArray(chats)) chats = [];
+    } catch {
+      chats = [];
+    }
+    const seen = new Set(list.map((s) => s.id));
+    for (const c of chats) {
+      const id = c.id || c.sessionId;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      list.push({
+        id,
+        sessionKey: c.sessionKey || `webchat:dm:${id}`,
+        channel: c.channel || "webchat",
+        updatedAt: c.updatedAt || c.updated || c.createdAt,
+      });
+    }
     if ($("sessCount")) $("sessCount").textContent = `${list.length} live`;
     tbody.innerHTML = list
       .map((s) => `<tr>
