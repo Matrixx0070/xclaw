@@ -1,34 +1,58 @@
 /**
- * S0 — Durable swarm / subagent registry under ~/.xclaw/swarms/
+ * S0 — Durable swarm / subagent registry under <configDir>/swarms/
+ *
+ * swarms/ belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * swarms/ directory, so instance B listed instance A's runs —
+ * and the suite wrote into the operator's real `~/.xclaw/swarms`.
+ *
+ * Production writers (`createSwarmRun(cfg)` at agents/swarm-run.mjs,
+ * `saveSubagentSnapshot` via `configureSubagentPersistence(cfg)` at
+ * gateway/index.mjs:1071) already had cfg in scope. `loadConfig()` stamps
+ * `paths.configDir` unconditionally (config/load.mjs:187), so a cfg
+ * without one is never a real caller. Such a path is `null` rather than
+ * guessing at the home dir. Same shape as `transcriptDir`. Honour existing
+ * `XCLAW_CONFIG_DIR`. `createSwarmRun` still returns the in-memory run
+ * without persisting. `saveSubagentSnapshot` still no-ops. `listSwarmRuns`
+ * returns `[]`. Do not `mkdir(null)`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { randomUUID } from "node:crypto";
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback.
+ */
+export function swarmStoreRoot(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "swarms") : null;
+}
+
 function rootDir(cfg) {
-  return path.join(
-    cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"),
-    "swarms"
-  );
+  return swarmStoreRoot(cfg);
 }
 
 function runsDir(cfg) {
-  return path.join(rootDir(cfg), "runs");
+  const root = rootDir(cfg);
+  return root ? path.join(root, "runs") : null;
 }
 
 function agentsDir(cfg) {
-  return path.join(rootDir(cfg), "agents");
+  const root = rootDir(cfg);
+  return root ? path.join(root, "agents") : null;
 }
 
 async function ensureDirs(cfg) {
-  await fs.mkdir(runsDir(cfg), { recursive: true });
-  await fs.mkdir(agentsDir(cfg), { recursive: true });
+  const runs = runsDir(cfg);
+  const agents = agentsDir(cfg);
+  if (!runs || !agents) return;
+  await fs.mkdir(runs, { recursive: true });
+  await fs.mkdir(agents, { recursive: true });
 }
 
 export async function saveSubagentSnapshot(cfg, record) {
   if (!cfg) return;
-  await ensureDirs(cfg);
   const slim = {
     id: record.id,
     parentId: record.parentId || null,
@@ -47,14 +71,19 @@ export async function saveSubagentSnapshot(cfg, record) {
       : null,
     updatedAt: new Date().toISOString(),
   };
-  const fp = path.join(agentsDir(cfg), `${record.id}.json`);
+  const dir = agentsDir(cfg);
+  if (!dir) return slim;
+  await ensureDirs(cfg);
+  const fp = path.join(dir, `${record.id}.json`);
   await fs.writeFile(fp, JSON.stringify(slim, null, 2) + "\n");
   return fp;
 }
 
 export async function loadSubagentSnapshot(cfg, id) {
+  const dir = agentsDir(cfg);
+  if (!dir) return null;
   try {
-    const raw = await fs.readFile(path.join(agentsDir(cfg), `${id}.json`), "utf8");
+    const raw = await fs.readFile(path.join(dir, `${id}.json`), "utf8");
     return JSON.parse(raw);
   } catch {
     return null;
@@ -62,10 +91,12 @@ export async function loadSubagentSnapshot(cfg, id) {
 }
 
 export async function listPersistedSubagents(cfg, { status, limit = 50 } = {}) {
+  const dir = agentsDir(cfg);
+  if (!dir) return [];
   await ensureDirs(cfg);
   let files = [];
   try {
-    files = (await fs.readdir(agentsDir(cfg))).filter((f) => f.endsWith(".json"));
+    files = (await fs.readdir(dir)).filter((f) => f.endsWith(".json"));
   } catch {
     return [];
   }
@@ -73,7 +104,7 @@ export async function listPersistedSubagents(cfg, { status, limit = 50 } = {}) {
   for (const f of files.slice(0, limit * 2)) {
     try {
       const rec = JSON.parse(
-        await fs.readFile(path.join(agentsDir(cfg), f), "utf8")
+        await fs.readFile(path.join(dir, f), "utf8")
       );
       if (status && rec.status !== status) continue;
       out.push(rec);
@@ -89,6 +120,8 @@ export async function listPersistedSubagents(cfg, { status, limit = 50 } = {}) {
  * Mark in-memory-lost "running" agents as interrupted after restart.
  */
 export async function reconcileStaleAgents(cfg, liveIds = new Set()) {
+  const dir = agentsDir(cfg);
+  if (!dir) return { marked: 0 };
   const all = await listPersistedSubagents(cfg, { limit: 200 });
   let marked = 0;
   for (const rec of all) {
@@ -99,7 +132,7 @@ export async function reconcileStaleAgents(cfg, liveIds = new Set()) {
     rec.finishedAt = rec.finishedAt || new Date().toISOString();
     rec.updatedAt = new Date().toISOString();
     await fs.writeFile(
-      path.join(agentsDir(cfg), `${rec.id}.json`),
+      path.join(dir, `${rec.id}.json`),
       JSON.stringify(rec, null, 2) + "\n"
     );
     marked += 1;
@@ -108,7 +141,6 @@ export async function reconcileStaleAgents(cfg, liveIds = new Set()) {
 }
 
 export async function createSwarmRun(cfg, input = {}) {
-  await ensureDirs(cfg);
   const id = input.id || randomUUID();
   const run = {
     id,
@@ -123,15 +155,20 @@ export async function createSwarmRun(cfg, input = {}) {
     finishedAt: null,
     error: null,
   };
+  const dir = runsDir(cfg);
+  if (!dir) return run;
+  await ensureDirs(cfg);
   await fs.writeFile(
-    path.join(runsDir(cfg), `${id}.json`),
+    path.join(dir, `${id}.json`),
     JSON.stringify(run, null, 2) + "\n"
   );
   return run;
 }
 
 export async function updateSwarmRun(cfg, id, patch = {}) {
-  const fp = path.join(runsDir(cfg), `${id}.json`);
+  const dir = runsDir(cfg);
+  if (!dir) return null;
+  const fp = path.join(dir, `${id}.json`);
   let run;
   try {
     run = JSON.parse(await fs.readFile(fp, "utf8"));
@@ -144,9 +181,11 @@ export async function updateSwarmRun(cfg, id, patch = {}) {
 }
 
 export async function getSwarmRun(cfg, id) {
+  const dir = runsDir(cfg);
+  if (!dir) return null;
   try {
     return JSON.parse(
-      await fs.readFile(path.join(runsDir(cfg), `${id}.json`), "utf8")
+      await fs.readFile(path.join(dir, `${id}.json`), "utf8")
     );
   } catch {
     return null;
@@ -154,10 +193,12 @@ export async function getSwarmRun(cfg, id) {
 }
 
 export async function listSwarmRuns(cfg, { limit = 30 } = {}) {
+  const dir = runsDir(cfg);
+  if (!dir) return [];
   await ensureDirs(cfg);
   let files = [];
   try {
-    files = (await fs.readdir(runsDir(cfg))).filter((f) => f.endsWith(".json"));
+    files = (await fs.readdir(dir)).filter((f) => f.endsWith(".json"));
   } catch {
     return [];
   }
@@ -165,7 +206,7 @@ export async function listSwarmRuns(cfg, { limit = 30 } = {}) {
   for (const f of files) {
     try {
       out.push(
-        JSON.parse(await fs.readFile(path.join(runsDir(cfg), f), "utf8"))
+        JSON.parse(await fs.readFile(path.join(dir, f), "utf8"))
       );
     } catch {
       /* */

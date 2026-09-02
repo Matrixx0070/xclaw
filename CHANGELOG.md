@@ -1,3 +1,29 @@
+## 3.541.0
+
+### Swarm store follows paths.configDir
+
+`rootDir()` resolved `~/.xclaw/swarms` from
+`os.homedir()` while production writers (`createSwarmRun(cfg)`
+at agents/swarm-run.mjs, `saveSubagentSnapshot` via
+`configureSubagentPersistence(cfg)` at gateway/index.mjs:1071)
+already had cfg in scope. `loadConfig()` stamps
+`paths.configDir` unconditionally, so the resolver still homed
+via the leftover `os.homedir()` fallback. Two instances on one host
+with different `paths.configDir` shared one swarms/; the suite
+wrote the operator's real `~/.xclaw`. Same class as v3.297.0
+`alert-state.json` and v3.540.0 `transcripts/`. Honour existing
+`XCLAW_CONFIG_DIR`. No new env.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No
+  home fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `createSwarmRun` still returns the in-memory run without
+  persisting (do not `mkdir(null)`). `saveSubagentSnapshot` still
+  returns the in-memory slim without persisting. `listSwarmRuns`
+  returns `[]`. `listPersistedSubagents` returns `[]`. Production
+  writers always have configDir, so live persist is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.540.0
 
 ### Transcripts follow paths.configDir

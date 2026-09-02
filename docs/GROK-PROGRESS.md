@@ -2039,3 +2039,15 @@ SHIPPED: honour `paths.transcriptsDir` then `paths.configDir` then `XCLAW_CONFIG
 RAN: node --test test/transcript-config-dir.test.mjs test/transcript-persist.test.mjs test/loop-fresh-context.test.mjs → # tests 9 # pass 9 # fail 0 # duration_ms 242.656092; npm test (hermetic) → # tests 5322 # pass 5322 # fail 0 # duration_ms 82704.392613
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.541.0 Swarm store follows paths.configDir
+
+LOCKED: `src/agents/swarm-store.mjs` `rootDir` still homed while production writers `createSwarmRun(cfg)` at agents/swarm-run.mjs, `saveSubagentSnapshot` via `configureSubagentPersistence(cfg)` at gateway/index.mjs:1071 already had cfg. Same class as v3.297.0 / v3.540.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `swarms/`; the suite wrote the operator's real `~/.xclaw/swarms`. Existing tests already pass `{ paths: { configDir } }`. Removed `os` import (only used by the leftover home fallback). Did not rewrite snapshot/run JSON shape. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). ops/slo REJECTED (reader of jobs/index.jsonl).
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `createSwarmRun` still returns the in-memory run without persisting (do not `mkdir(null)`). `saveSubagentSnapshot` still returns the in-memory slim. `listSwarmRuns` returns `[]`. Production writers always have configDir, so live persist is not dropped. Exported `swarmStoreRoot`.
+
+RAN: node --test test/swarm-store-config-dir.test.mjs test/s0-swarm-store.test.mjs test/s1-swarm-run.test.mjs test/swarm-http.test.mjs test/swarm-resume-journal.test.mjs → # tests 32 # pass 32 # fail 0 # duration_ms 322.931769; npm test (hermetic) → # tests 5327 # pass 5327 # fail 0 # duration_ms 78032.48305
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
