@@ -1,3 +1,15 @@
+## 3.565.0
+
+### WebChat sidebar message count refreshes after every turn
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) WebChat session 299e4916
+showed "2 messages" after two complete turns while GET
+`/channel/webchat/sessions` reported messageCount 4. `refreshSessions()`
+ran only when `result.sessionId !== sessionId` (first turn of a new
+session). Subsequent turns never re-fetched. Sidebar now refreshes
+after every send. Homedir JSON store-writer class remains EXHAUSTED
+at 3.560.0.
+
 ## 3.564.0
 
 ### TUI idle MCP is not needs-authentication

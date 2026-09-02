@@ -14,6 +14,16 @@ describe("webchat suggestions surface", () => {
     assert.match(js, /\/channel\/webchat\/suggestions\/feedback/);
   });
 
+  it("sidebar messageCount refreshes after every send, not only sessionId change", () => {
+    const js = fs.readFileSync(path.join(root, "ui/webchat/app.js"), "utf8");
+    const send = js.slice(js.indexOf("async function sendMessage"), js.indexOf("function wireCopyButtons"));
+    const finallyBlock = send.slice(send.lastIndexOf("} finally {"));
+    assert.match(finallyBlock, /refreshSessions\(\)/);
+    const assign = send.match(/if \(result\.sessionId && result\.sessionId !== sessionId\) \{[\s\S]*?\}/);
+    assert.ok(assign, "sessionId-change block present");
+    assert.doesNotMatch(assign[0], /refreshSessions\(\)/);
+  });
+
   it("composer Enter ignores IME composition", () => {
     const js = fs.readFileSync(path.join(root, "ui/webchat/app.js"), "utf8");
     assert.match(js, /e\.isComposing \|\| e\.keyCode === 229/);

@@ -2323,3 +2323,15 @@ SHIPPED: helpers `mcpAuthNeeded` / `mcpBannerText`. Idle paints "not connected".
 RAN: node --test test/tui.test.mjs → # tests 51 # pass 51 # fail 0 # duration_ms 133.166876; npm test (hermetic) → # tests 5444 # pass 5444 # fail 0 # duration_ms 82190.840873
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0 or 3.564.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive (WebChat /chat/). TUI paint is CLI-side — existing xtui will not see it until a new TUI process. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.565.0 WebChat sidebar message count refreshes after every turn
+
+LOCKED: WebChat sidebar stuck at "2 messages" after two complete turns. Live 2026-09-02 pid 2798540 (version 3.562.0) session 299e4916 painted 2 while GET `/channel/webchat/sessions` reported messageCount 4. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.564.0 TUI MCP. Do not reopen 3.563.0 mutex.
+
+DISCOVERED: `refreshSessions()` ran only when `result.sessionId !== sessionId` (first turn of a new session). Subsequent turns never re-fetched. Writer `listChatSessions` is `s.messages.length` (correct). Reader was the SPA.
+
+SHIPPED: `refreshSessions()` in sendMessage `finally` (every send, including abort/error). sessionId-change block no longer owns the refresh. Pin test/webchat-suggestions.test.mjs.
+
+RAN: node --test test/webchat-suggestions.test.mjs → # tests 7 # pass 7 # fail 0 # duration_ms 53.108445; npm test (hermetic) → # tests 5445 # pass 5445 # fail 0 # duration_ms 88589.120919
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.565.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive (Control Health / Automations). WebChat SPA will pick up app.js on reload without gateway restart.

@@ -528,7 +528,6 @@ async function sendMessage(raw) {
     if (result.sessionId && result.sessionId !== sessionId) {
       sessionId = result.sessionId;
       localStorage.setItem("xclaw_session", sessionId);
-      refreshSessions();
     }
     let final = result.reply?.content || result.text || liveText.buf || "";
     // The model sometimes ends a tool turn with no prose (the server stores
@@ -566,6 +565,13 @@ async function sendMessage(raw) {
     sendBtn.disabled = false;
     stopBtn.hidden = true;
     abortCtl = null;
+    // Live 2026-09-02 pid 2798540 (version 3.562.0): session 299e4916
+    // painted "2 messages" after two complete turns while GET
+    // `/channel/webchat/sessions` reported messageCount 4. refreshSessions
+    // ran only when sessionId changed (first turn of a new session).
+    // Subsequent turns never re-fetched. Refresh after every send,
+    // including abort/error — the user row is already on the thread.
+    refreshSessions();
     input.focus();
   }
 }
