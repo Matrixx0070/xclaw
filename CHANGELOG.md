@@ -1,3 +1,19 @@
+## 3.560.0
+
+### Suggestion feedback store follows paths.configDir
+
+`baseDir()` resolved `~/.xclaw/suggestion-feedback.json` from `os.homedir()`
+while production writers (`recordDurableSuggestionFeedback(cfg, …)` at
+telegram/index.mjs:565/:934 inside `createTelegramChannel(cfg)`, and at
+gateway/index.mjs:1492 inside `startGateway` after `loadConfig()`) already
+had cfg in scope. Two xclaw instances on one host with different
+`paths.configDir` shared one tap-history store. Home fallback is refused.
+Honour existing `XCLAW_CONFIG_DIR`. No extra path env. Do not invent
+`XCLAW_SUGGESTION_FEEDBACK`. `saveSuggestionFeedback` no-ops without
+`mkdir` dirname of null. `suggestionFeedbackPath` on null returns null.
+`loadSuggestionFeedback` on null returns emptyStore(). Production writers
+always have configDir, so live persist is not dropped.
+
 ## 3.559.0
 
 ### xAI OAuth token vault follows paths.configDir

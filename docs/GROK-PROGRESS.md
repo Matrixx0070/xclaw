@@ -2263,3 +2263,15 @@ SHIPPED: honour `cfg.auth?.xai?.tokenPath` then `paths.configDir` then `XCLAW_CO
 RAN: node --test test/xai-oauth-config-dir.test.mjs test/xai-oauth-file-mode.test.mjs test/idempotency-config-dir.test.mjs → # tests 12 # pass 12 # fail 0 # duration_ms 88.083342; npm test (hermetic) → # tests 5417 # pass 5417 # fail 0 # duration_ms 84715.643008
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.560.0 Suggestion feedback store follows paths.configDir
+
+LOCKED: `src/agent/suggestion-feedback.mjs` `baseDir` still homed while production writers `recordDurableSuggestionFeedback(cfg, …)` at telegram/index.mjs:565/:934 inside `createTelegramChannel(cfg)`, and at gateway/index.mjs:1492 inside `startGateway` after `loadConfig()` already had cfg. Same class as v3.297.0 / v3.559.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `suggestion-feedback.json`; the suite wrote the operator's real `~/.xclaw`. Existing suggestion-feedback.test.mjs already passes `{ paths: { configDir: tmp } }`. No extra path env. Do not invent `XCLAW_SUGGESTION_FEEDBACK`. Removed `os` import (only used by the leftover home fallback). Did not rewrite scoreBiasFromStats / buildScoreBiasMap / applySuggestionBias / recentPromptsFromStore / suggestionFeedbackStats. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). cold-start-persist REJECTED (existing pin asserts default path under .xclaw). Did not also fix key-compromise-recovery.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `saveSuggestionFeedback` still no-ops without persisting (do not mkdir dirname of null). `suggestionFeedbackPath` on null returns null. `loadSuggestionFeedback` on null returns emptyStore(). Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/suggestion-feedback-config-dir.test.mjs test/suggestion-feedback.test.mjs test/xai-oauth-config-dir.test.mjs → # tests 15 # pass 15 # fail 0 # duration_ms 78.781271; npm test (hermetic) → # tests 5422 # pass 5422 # fail 0 # duration_ms 81188.503438
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

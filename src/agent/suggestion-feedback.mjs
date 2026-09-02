@@ -1,11 +1,18 @@
 /**
- * Durable suggestion feedback — ~/.xclaw/suggestion-feedback.json
+ * Durable suggestion feedback — <configDir>/suggestion-feedback.json
  *
  * Tracks shown/tapped by (source, kind) and optional userId.
  * Used to bias chip scores (simple empirical CTR / Bayesian-smoothed).
+ *
+ * `baseDir()` honours `paths.configDir` then `XCLAW_CONFIG_DIR` then null.
+ * No home fallback for this store. Do not honour `XCLAW_STATE_DIR`. A cfg
+ * without configDir is never a real caller (`loadConfig()` stamps it
+ * unconditionally). `saveSuggestionFeedback` still no-ops without persisting
+ * (do not `mkdir` dirname of null). `suggestionFeedbackPath` on null returns
+ * null. `loadSuggestionFeedback` on null returns emptyStore(). Keep no extra
+ * path env. Do not invent `XCLAW_SUGGESTION_FEEDBACK`.
  */
 import path from "node:path";
-import os from "node:os";
 import fsp from "node:fs/promises";
 import {
   durableAtomicWriteJson,
@@ -16,11 +23,12 @@ const VERSION = 1;
 const MAX_EVENTS = 500;
 
 function baseDir(cfg) {
-  return cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw");
+  return cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
 }
 
 export function suggestionFeedbackPath(cfg) {
-  return path.join(baseDir(cfg), "suggestion-feedback.json");
+  const dir = baseDir(cfg);
+  return dir ? path.join(dir, "suggestion-feedback.json") : null;
 }
 
 function emptyStore() {
@@ -49,6 +57,7 @@ function emptyBucket() {
  */
 export async function loadSuggestionFeedback(cfg) {
   const fp = suggestionFeedbackPath(cfg);
+  if (!fp) return emptyStore();
   try {
     const raw = JSON.parse(await fsp.readFile(fp, "utf8"));
     if (!raw || typeof raw !== "object") return emptyStore();
@@ -70,6 +79,7 @@ export async function loadSuggestionFeedback(cfg) {
  */
 export async function saveSuggestionFeedback(cfg, data) {
   const fp = suggestionFeedbackPath(cfg);
+  if (!fp) return null;
   data.updatedAt = new Date().toISOString();
   data.version = VERSION;
   if (durableWritesEnabled(cfg)) {
