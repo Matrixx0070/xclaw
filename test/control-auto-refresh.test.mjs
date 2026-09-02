@@ -311,3 +311,15 @@ test("automations Create drops leftover placeholder so filled body is not muted"
   assert.match(create, /name and schedule are required/);
   assert.match(html, /id="autoOut" class="log placeholder"/);
 });
+
+test("subagents Merge drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const merge = app.slice(
+    app.indexOf("$(\"btnSaMerge\")"),
+    app.indexOf("if ($(\"saTable\"))")
+  );
+  assert.match(merge, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(merge, /enter a subagent id \(View fills it\)/);
+  assert.match(html, /id="saOut" class="log placeholder"/);
+});

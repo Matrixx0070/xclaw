@@ -1,3 +1,14 @@
+## 3.583.0
+
+### Subagents Merge drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/subagents Merge with
+empty id filled "enter a subagent id (View fills it)" (35 chars) but left
+class `log placeholder`. CSS `.log.placeholder` mutes and italicizes (same
+leftover as Automations Create 3.582.0). Spawn 3.580.0 already drops on
+btnSaSpawn; Merge did not. Empty-state "no output yet" before Merge is
+correct. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.582.0
 
 ### Automations Create drops leftover placeholder so filled body is not muted

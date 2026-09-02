@@ -3291,12 +3291,18 @@ $("btnSaSpawn")?.addEventListener("click", async () => {
   finally { $("btnSaSpawn").disabled = false; }
 });
 $("btnSaMerge")?.addEventListener("click", async () => {
+  const out = $("saOut");
   const subagentId = $("saMergeId").value.trim();
-  if (!subagentId) { $("saOut").textContent = "enter a subagent id (View fills it)"; return; }
+  // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/subagents Merge with
+  // empty id filled "enter a subagent id (View fills it)" but left class
+  // "log placeholder". CSS mutes and italicizes (same leftover as Automations
+  // Create 3.582.0). Spawn 3.580.0 already drops on btnSaSpawn; Merge did not.
+  if (out) out.classList.remove("placeholder");
+  if (!subagentId) { if (out) out.textContent = "enter a subagent id (View fills it)"; return; }
   try {
     const r = await postJSON("/subagents/merge", { subagentId, checkOnly: $("saCheckOnly").checked });
-    $("saOut").textContent = JSON.stringify(r, null, 2);
-  } catch (e) { $("saOut").textContent = String(e.message || e); }
+    if (out) out.textContent = JSON.stringify(r, null, 2);
+  } catch (e) { if (out) out.textContent = String(e.message || e); }
 });
 if ($("saTable")) loadSubagents().catch(() => {});
 

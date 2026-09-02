@@ -2544,3 +2544,16 @@ SHIPPED: btnAutoCreate fill path classList.remove("placeholder") then body. Pin 
 RAN: pin `# tests 24 # pass 24 # fail 0 # duration_ms 71.151116`. hermetic `# tests 5461 # pass 5461 # fail 0 # duration_ms 86593.602661`.
 
 NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.582.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
+
+
+## 2026-09-02 — 3.583.0 Subagents Merge drops leftover placeholder so filled body is not muted
+
+LOCKED: Subagents #/subagents Merge with empty id left class `log placeholder` on filled saOut. Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/subagents Merge filled "enter a subagent id (View fills it)" (35 chars); CDP reported cls `log placeholder`. CSS mutes and italicizes. Same leftover as Automations Create 3.582.0. Spawn 3.580.0 already drops on btnSaSpawn; Merge did not. Empty-state "no output yet" before Merge is correct. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.582.0 Automations Create. Do not POST /subagents/merge.
+
+DISCOVERED: btnSaMerge set textContent only. HTML starts with class="log placeholder" and "no output yet".
+
+SHIPPED: btnSaMerge fill path classList.remove("placeholder") then body. Pin test/control-auto-refresh.test.mjs (btnSaMerge slice removes placeholder; empty-state HTML kept). One copy.
+
+RAN: pin 25/25 fail 0 duration 69.907403; hermetic 5462/5462 fail 0 duration 81427.9939.
+
+NEXT: do not pm2 restart without asking. Do not push 3.563.0–3.583.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. SPA is disk-served — hard-reload live-proves without gateway restart. Do not kill xtui without asking.
