@@ -221,4 +221,62 @@ describe("agent run-store", () => {
     const miss = both.find((r) => r.sessionId === "2026-08-19T03-43-26-648Z_a4-G01-write-read");
     assert.equal(miss.error, "SESSION_WORKDIR_MISSING");
   });
+
+  it("list overlays a matching job pass so unverified snapshots of verified jobs are not pinned as failed", async () => {
+    const isolated = { paths: { configDir: await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-runs-job-")) } };
+    const wd = await fs.mkdtemp(path.join(os.tmpdir(), "xclaw-wd-job-"));
+    const { recordJob } = await import("../src/jobs/history.mjs");
+    const passedId = "2026-09-02T11-11-49-091Z_workflow-publish-post";
+    const failedId = "2026-09-02T11-00-00-000Z_wc-a-06-task-9";
+    const chatId = "299e4916-6faa-4882-a3b4-c5eade0ed800";
+    await saveAgentRun(isolated, {
+      sessionId: passedId,
+      workingDir: wd,
+      status: "unverified",
+      stopReason: "unverified",
+    });
+    await saveAgentRun(isolated, {
+      sessionId: failedId,
+      workingDir: wd,
+      status: "unverified",
+      stopReason: "unverified",
+    });
+    await saveAgentRun(isolated, {
+      sessionId: chatId,
+      workingDir: wd,
+      status: "completed",
+      stopReason: "natural",
+    });
+    await recordJob(isolated, {
+      id: passedId,
+      status: "succeeded",
+      pass: true,
+      verdict: "verified",
+      stopReason: "unverified",
+    });
+    await recordJob(isolated, {
+      id: failedId,
+      status: "failed",
+      pass: false,
+      verdict: "failed",
+      stopReason: "unverified",
+    });
+    const list = await listAgentRuns(isolated, { limit: 10 });
+    const passed = list.find((r) => r.sessionId === passedId);
+    const failed = list.find((r) => r.sessionId === failedId);
+    const chat = list.find((r) => r.sessionId === chatId);
+    assert.equal(passed.ok, true);
+    assert.equal(passed.status, "succeeded");
+    assert.equal(passed.stopReason, "unverified");
+    assert.equal(passed.resumable, false);
+    assert.equal(failed.ok, false);
+    assert.equal(failed.status, "unverified");
+    assert.equal(failed.stopReason, "unverified");
+    assert.equal(chat.ok, true);
+    assert.equal(chat.status, "completed");
+    const snap = JSON.parse(
+      await fs.readFile(path.join(isolated.paths.configDir, "agent-runs", `${passedId}.json`), "utf8")
+    );
+    assert.equal(snap.status, "unverified", "overlay is read-path only — snapshot stays Feature 2 honest");
+  });
 });

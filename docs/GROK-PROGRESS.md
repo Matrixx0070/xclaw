@@ -2594,3 +2594,15 @@ SHIPPED: loadSessAdmin unions GET /channel/webchat/sessions into the table by id
 RAN: pin `# tests 27 # pass 27 # fail 0 # duration_ms 70.326298`. hermetic `# tests 5465 # pass 5465 # fail 0 # duration_ms 80709.146415`.
 
 NEXT: do not pm2 restart without asking. SPA is disk-served — hard-reload live-proves without gateway restart. Do not push 3.563.0–3.586.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. Do not kill xtui without asking.
+
+## 2026-09-02 — 3.587.0 listAgentRuns overlays a matching job pass so verified jobs are not pinned as failed snapshots
+
+LOCKED: Control #/ops Agent Runs painted the same id as Job History succeeded/verified as unverified/unverified with ok:false and the "not ok — stay put" pin. Live 2026-09-02 pid 2798540 (version 3.562.0) HTTP GET /jobs/:id status succeeded pass true verdict verified stopReason unverified; GET /agent-runs same id status unverified stopReason unverified ok false. Loop persist writes terminalStatus(stopReason) BEFORE job verify; job copies stopReason unchanged and never patches the snapshot. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.586.0 Sessions admin union. Do not rewrite snapshot files. Do not change agentExitCode. Do not mint persistRun. Do not change GET /sessions.
+
+DISCOVERED: listAgentRuns ok used agentExitCode({stopReason}); job.mjs after verify.ok sets status succeeded / verdict verified without saveAgentRun.
+
+SHIPPED: listAgentRuns loads jobsDir once per list; overlay job.pass === true → ok true and status from job.status; keep snapshot stopReason. Failed jobs stay not-ok. No job → loop-ok. Pin test/agent-run-store.test.mjs (passed job overlays; failed job stays not-ok; chat with no job stays loop-ok; snapshot file unchanged). One copy.
+
+RAN: pin `# tests 11 # pass 11 # fail 0 # duration_ms 102.287117`. hermetic `# tests 5466 # pass 5466 # fail 0 # duration_ms 83520.408704`.
+
+NEXT: do not pm2 restart without asking. Overlay is gateway JS — SPA reload will not live-prove. Do not push 3.563.0–3.587.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. Do not kill xtui without asking.

@@ -147,6 +147,7 @@ export async function loadAgentRun(cfg, sessionId) {
 }
 
 let _isResumableAgentRun;
+let _jobsDir;
 
 async function resumableFlag(run) {
   // Dynamic import: run-resume.mjs already imports this module. A static
@@ -157,6 +158,47 @@ async function resumableFlag(run) {
     ({ isResumableAgentRun: _isResumableAgentRun } = await import("./run-resume.mjs"));
   }
   return _isResumableAgentRun(run);
+}
+
+/**
+ * Read-path overlay: a job that already earned pass must not paint as a
+ * failed snapshot. Loop persist writes terminalStatus(stopReason) BEFORE
+ * job verify (live: publish-post snapshot unverified / job succeeded).
+ * Do not rewrite the snapshot file — Feature 2 honesty stays on disk.
+ * Do not flip resumable. Failed jobs (pass !== true) stay loop-ok.
+ */
+export function overlayJobOnAgentRun(row, job) {
+  if (!job || job.pass !== true) return row;
+  return {
+    ...row,
+    ok: true,
+    status: job.status || row.status,
+  };
+}
+
+async function loadJobPassMap(cfg) {
+  if (!_jobsDir) {
+    ({ jobsDir: _jobsDir } = await import("../jobs/history.mjs"));
+  }
+  const dir = _jobsDir(cfg);
+  if (!dir) return new Map();
+  let names = [];
+  try {
+    names = (await fs.readdir(dir)).filter((f) => f.endsWith(".json"));
+  } catch {
+    return new Map();
+  }
+  const map = new Map();
+  for (const f of names) {
+    try {
+      const job = JSON.parse(await fs.readFile(path.join(dir, f), "utf8"));
+      const id = job.id || f.replace(/\.json$/, "");
+      map.set(id, { status: job.status, pass: job.pass, verdict: job.verdict });
+    } catch {
+      /* skip corrupt / unreadable */
+    }
+  }
+  return map;
 }
 
 export async function listAgentRuns(cfg, { limit = 30 } = {}) {
@@ -178,6 +220,7 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
   // live 3.476.0 put 16 SESSION_WORKDIR_MISSING into the default
   // 20 after the 4 not-ok leftovers (101 of 293 at limit=400).
   const cap = Number(limit) > 0 ? Number(limit) : 30;
+  const jobMap = await loadJobPassMap(cfg);
   const out = [];
   for (const f of names) {
     const id = f.replace(/\.json$/, "");
@@ -190,18 +233,23 @@ export async function listAgentRuns(cfg, { limit = 30 } = {}) {
         (run.status !== "active" &&
           run.status !== "interrupted" &&
           agentExitCode({ stopReason: run.stopReason }) === 0);
-      out.push({
-        sessionId: run.sessionId,
-        updatedAt: run.updatedAt,
-        status: run.status,
-        stopReason: run.stopReason || null,
-        turns: run.turns,
-        model: run.model,
-        messageCount: (run.messages || []).length,
-        objectiveId: run.objectiveId || null,
-        resumable,
-        ok,
-      });
+      out.push(
+        overlayJobOnAgentRun(
+          {
+            sessionId: run.sessionId,
+            updatedAt: run.updatedAt,
+            status: run.status,
+            stopReason: run.stopReason || null,
+            turns: run.turns,
+            model: run.model,
+            messageCount: (run.messages || []).length,
+            objectiveId: run.objectiveId || null,
+            resumable,
+            ok,
+          },
+          jobMap.get(run.sessionId)
+        )
+      );
     } else {
       out.push({ sessionId: id, error: loaded.code, updatedAt: "" });
     }

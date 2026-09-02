@@ -1,3 +1,17 @@
+## 3.587.0
+
+### listAgentRuns overlays a matching job pass so verified jobs are not pinned as failed snapshots
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/ops Agent Runs painted
+the same id as Job History succeeded/verified as unverified/unverified with
+ok:false and the "not ok — stay put" pin. Loop persist writes
+terminalStatus(stopReason) BEFORE job verify; job then copies stopReason
+unchanged and never patches the snapshot. listAgentRuns now overlays
+job.pass === true → ok true and status from job.status; keep snapshot
+stopReason. Failed jobs stay not-ok. No job → loop-ok. Do not rewrite
+snapshot files. Do not change agentExitCode. Do not mint persistRun.
+Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.586.0
 
 ### Sessions admin unions in-memory WebChat so the live pill is not bindings-only
