@@ -10,22 +10,40 @@
  * The journal is advisory: a write failure warns (once) and never fails the
  * run. Resume (swarm-run.mjs resumeSwarmRun) replays terminal ok results into
  * the wave scheduler's state maps and re-runs only what remains.
+ *
+ * <runId>.journal belongs to the config dir that owns the instance, not to
+ * whoever's home dir the process happens to run under. Resolving it from
+ * `os.homedir()` alone meant two instances on one host shared a single
+ * swarms/runs/*.journal — and the suite wrote into the operator's real
+ * `~/.xclaw/swarms`. Production writers (`createRunJournal(cfg, run.id)` at
+ * agents/swarm-run.mjs:1075) already had cfg in scope. `loadConfig()` stamps
+ * `paths.configDir` unconditionally (config/load.mjs:187), so a cfg without
+ * one is never a real caller. Such a path is `null` rather than guessing at
+ * the home dir. Same shape as `blackboardRoot`. Honour existing
+ * `XCLAW_CONFIG_DIR`. `createRunJournal` still returns an in-memory journal
+ * whose `append` no-ops. `readJournal` returns `null`. Do not `mkdir(null)`.
+ * Do not `path.join(null, ...)`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 
+/**
+ * Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback.
+ */
+export function journalRoot(cfg = {}) {
+  const base = cfg?.paths?.configDir || process.env.XCLAW_CONFIG_DIR;
+  return base ? path.join(base, "swarms", "runs") : null;
+}
+
 function runsDir(cfg) {
-  return path.join(
-    cfg?.paths?.configDir || path.join(os.homedir(), ".xclaw"),
-    "swarms",
-    "runs"
-  );
+  return journalRoot(cfg);
 }
 
 export function journalPath(cfg, runId) {
-  return path.join(runsDir(cfg), `${runId}.journal`);
+  const root = runsDir(cfg);
+  if (!root || runId == null || runId === "") return null;
+  return path.join(root, `${runId}.journal`);
 }
 
 /**
@@ -67,6 +85,7 @@ export function createRunJournal(cfg, runId, { onWarn } = {}) {
   const append = (entry) => {
     const line = JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n";
     chain = chain.then(async () => {
+      if (!fp) return;
       try {
         await fs.mkdir(path.dirname(fp), { recursive: true });
         await fs.appendFile(fp, line);
@@ -92,9 +111,11 @@ export function createRunJournal(cfg, runId, { onWarn } = {}) {
  * artifact; anything else is treated the same — the journal is advisory).
  */
 export async function readJournal(cfg, runId) {
+  const fp = journalPath(cfg, runId);
+  if (!fp) return null;
   let raw;
   try {
-    raw = await fs.readFile(journalPath(cfg, runId), "utf8");
+    raw = await fs.readFile(fp, "utf8");
   } catch {
     return null;
   }
@@ -111,6 +132,7 @@ export async function readJournal(cfg, runId) {
 }
 
 export default {
+  journalRoot,
   journalPath,
   computeGraphHash,
   slimResultForJournal,

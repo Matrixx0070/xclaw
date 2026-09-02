@@ -1,3 +1,25 @@
+## 3.543.0
+
+### Swarm journal follows paths.configDir
+
+`journalPath()` resolved `~/.xclaw/swarms/runs/<id>.journal`
+from `os.homedir()` while production writers (`createRunJournal(cfg, run.id)`
+at agents/swarm-run.mjs:1075) already had cfg in scope. `loadConfig()`
+stamps `paths.configDir` unconditionally, so the resolver still homed
+via the leftover `os.homedir()` fallback. Two instances on one host
+with different `paths.configDir` shared one journal; the suite wrote
+the operator's real `~/.xclaw`. Same class as v3.297.0 `alert-state.json`
+and v3.542.0 blackboard. Honour existing `XCLAW_CONFIG_DIR`. No new env.
+
+- Honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No
+  home fallback. Do not honour `XCLAW_STATE_DIR`. No new env.
+- `createRunJournal` still returns an in-memory journal whose
+  `append` no-ops (do not `mkdir(null)`). `readJournal` returns
+  `null`. Production writers always have configDir, so live persist
+  is not dropped.
+- Pin: configDir write never touches home; no-configDir never writes
+  home or cwd/`null`; `XCLAW_CONFIG_DIR` still wins when no configDir.
+
 ## 3.542.0
 
 ### Swarm blackboard follows paths.configDir

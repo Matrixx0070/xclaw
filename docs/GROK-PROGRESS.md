@@ -2063,3 +2063,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/blackboard-config-dir.test.mjs test/swarm-b4.test.mjs → # tests 10 # pass 10 # fail 0 # duration_ms 128.96343; npm test (hermetic) → # tests 5332 # pass 5332 # fail 0 # duration_ms 82386.596217
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.543.0 Swarm journal follows paths.configDir
+
+LOCKED: `src/agents/swarm-journal.mjs` `runsDir` still homed while production writer `createRunJournal(cfg, run.id)` at agents/swarm-run.mjs:1075 already had cfg. Same class as v3.297.0 / v3.542.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `swarms/runs/<id>.journal`; the suite wrote the operator's real `~/.xclaw/swarms`. Existing swarm-resume-journal tests already pass `{ paths: { configDir } }`. Removed `os` import (only used by the leftover home fallback). Did not rewrite computeGraphHash / slimResultForJournal / NDJSON line shape / torn-line skip. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). Did not also fix swarm-receipt / swarm-merge.
+
+SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `createRunJournal` still returns an in-memory journal whose `append` no-ops (do not `mkdir(null)`). `readJournal` returns `null`. Production writers always have configDir, so live persist is not dropped. Exported `journalRoot`.
+
+RAN: node --test test/swarm-journal-config-dir.test.mjs test/swarm-resume-journal.test.mjs → # tests 11 # pass 11 # fail 0 # duration_ms 171.762604; npm test (hermetic) → # tests 5337 # pass 5337 # fail 0 # duration_ms 77780.409747
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
