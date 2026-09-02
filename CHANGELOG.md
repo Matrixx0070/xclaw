@@ -1,3 +1,13 @@
+## 3.577.0
+
+### Alerts PagerDuty fill drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/alerts Setup report
+filled 747 chars and Policies filled 72 chars but left class `log placeholder`.
+CSS `.log.placeholder` mutes and italicizes (same leftover as Missions Open
+3.576.0). Empty-state "no output yet" before Setup is correct. Homedir JSON
+store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.576.0
 
 ### Missions Open drops leftover placeholder so filled body is not muted

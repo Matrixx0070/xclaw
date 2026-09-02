@@ -2739,13 +2739,20 @@ const PD_HINTS = {
   disabled: "PagerDuty alerting is disabled in config.",
 };
 const pdShow = (p) => async () => {
-  $("pdOut").textContent = "loading…";
+  const out = $("pdOut");
+  if (!out) return;
+  // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/alerts
+  // Setup report filled 747 chars and Policies filled 72 chars but left
+  // class "log placeholder". CSS mutes and italicizes (same leftover
+  // as Missions Open 3.576.0).
+  out.classList.remove("placeholder");
+  out.textContent = "loading…";
   try {
-    const out = await getJSON(p);
-    const hint = out && out.ok === false ? PD_HINTS[String(out.reason || "")] : null;
-    $("pdOut").textContent = hint || JSON.stringify(out, null, 2);
+    const r = await getJSON(p);
+    const hint = r && r.ok === false ? PD_HINTS[String(r.reason || "")] : null;
+    out.textContent = hint || JSON.stringify(r, null, 2);
   } catch (e) {
-    $("pdOut").textContent = String(e.message || e);
+    out.textContent = String(e.message || e);
   }
 };
 $("btnPdSetup")?.addEventListener("click", pdShow("/alerts/pd/setup"));

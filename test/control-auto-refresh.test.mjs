@@ -239,3 +239,15 @@ test("missions Open drops leftover placeholder so filled body is not muted", () 
   assert.match(html, /id="msnVerify" class="log placeholder"/);
   assert.match(html, /id="msnPlan" class="log placeholder"/);
 });
+
+test("alerts pagerduty fill drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const pd = app.slice(
+    app.indexOf("const pdShow"),
+    app.indexOf("$(\"btnPdSetup\")")
+  );
+  assert.match(pd, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(pd, /out\.textContent = "loading…"/);
+  assert.match(html, /id="pdOut" class="log placeholder"/);
+});
