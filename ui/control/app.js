@@ -2571,8 +2571,16 @@ async function loadAutomations() {
           ? typeof j.delivery === "string" ? j.delivery : j.delivery.channel || "custom"
           : j.sessionKey || (j.payload?.kind ? j.payload.kind : j.payload?.message ? "announce" : "log");
         const lastCls = j.lastStatus === "ok" ? "on" : j.lastStatus === "error" ? "danger" : "";
-        const last = j.lastRunAt
+        const last = j.running
+          ? `<span class="pill">running</span>${j.lastRunAt ? " " + new Date(j.lastRunAt).toLocaleTimeString() : ""}`
+          : j.lastRunAt
           ? `<span class="pill ${lastCls}">${esc(j.lastStatus || "ran")}</span> ${new Date(j.lastRunAt).toLocaleTimeString()}`
+          : "—";
+        const overdue = j.nextRunAt && !j.running && j.nextRunAt < Date.now();
+        const next = j.running
+          ? `<span class="pill">in flight</span>`
+          : j.nextRunAt
+          ? `${overdue ? '<span class="pill danger">overdue</span> ' : ""}${new Date(j.nextRunAt).toLocaleString()}`
           : "—";
         return `<tr>
           <td><b>${esc(j.name || j.id)}</b><br /><span class="muted" style="font-size:0.7rem;">${esc((j.id || "").slice(0, 12))}</span></td>
@@ -2580,7 +2588,7 @@ async function loadAutomations() {
           <td>${j.enabled !== false ? '<span class="pill on">on</span>' : '<span class="pill">off</span>'}</td>
           <td style="font-size:0.75rem;">${esc(String(deliv))}</td>
           <td style="font-size:0.7rem;">${last}</td>
-          <td style="font-size:0.7rem;">${j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : "—"}</td>
+          <td style="font-size:0.7rem;">${next}</td>
           <td class="row" style="gap:0.25rem;">
             <button class="btn ghost auto-run" data-id="${esc(j.id)}">Run now</button>
             <button class="btn ghost auto-del" data-id="${esc(j.id)}" title="delete">×</button>

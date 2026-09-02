@@ -2299,3 +2299,15 @@ SHIPPED: handler 400 `event required (shown|tapped|dismissed)` when event missin
 RAN: node --test test/suggestion-feedback-event-required.test.mjs → # tests 4 # pass 4 # fail 0 # duration_ms 51.749702; npm test (hermetic) → # tests 5433 # pass 5433 # fail 0 # duration_ms 81317.189638
 
 NEXT: push 71 commits (user said 4). Then pm2 restart xclaw-gateway (user said 2) and live-drive HEAD. Do not mint persistRun. Do not git add -A.
+
+## 2026-09-02 — 3.563.0 Cron tick is per-job in-flight, not process-global
+
+LOCKED: process-global `running` mutex in cron tick. Live 2026-09-02 pid 2798540 (version 3.562.0) held eval-suite from 11:11:49 while digest (due 11:14:35) and doctor (due 12:04:32) sat overdue past 13:30. Doctor reported `3 enabled / 3 total` ok. Found as a user on Display :10. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not reopen 3.283.0–3.286.0 / 3.312.0 (jobs ARE armed; one handler blocked siblings).
+
+DISCOVERED: `tick()` `if (running) return` then `await runJob` per due job. `runJob` awaited the handler before advancing nextRunAt. Doctor cron check was count-only.
+
+SHIPPED: per-job `job.running`. Tick starts due jobs without awaiting the previous handler. Same-id overlap rejected (`already_running`). lastStatus stays null while in-flight. serializeJob strips `running`. Doctor warns (ok:true, severity:warn) on in-flight or overdue. Control Automations paints in-flight / overdue. Pin test/cron-per-job-inflight.test.mjs.
+
+RAN: node --test test/cron-per-job-inflight.test.mjs test/cron-anchor-restart.test.mjs test/cron-jobs-leak.test.mjs test/cron-job-cfg.test.mjs → # tests 32 # pass 32 # fail 0 # duration_ms 370.121081; npm test (hermetic) → # tests 5442 # pass 5442 # fail 0 # duration_ms 88256.057331
+
+NEXT: do not pm2 restart without asking (live Telegram). Live-prove of the mutex needs restart. Do not push 3.563.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive (WebChat /chat/, TUI /mcp).

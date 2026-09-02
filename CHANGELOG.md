@@ -1,3 +1,19 @@
+## 3.563.0
+
+### Cron tick is per-job in-flight, not process-global
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) held eval-suite from
+11:11:49 while digest (due 11:14:35) and doctor (due 12:04:32) sat
+overdue past 13:30 because `tick()` awaited each handler under one
+process `running` flag. Doctor reported `3 enabled / 3 total` ok.
+Tick now starts due jobs without awaiting the previous handler.
+Same-id overlap still rejected (`already_running`). lastStatus stays
+null while in-flight. Doctor warns (ok:true, severity:warn) when any
+enabled job is in-flight or overdue — do not flip ok false. Control
+Automations paints in-flight / overdue. Stamp-on-attempt, no-catch-up,
+and first-arm-wins stay. Do not reopen 3.283.0–3.286.0 / 3.312.0.
+Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.562.0
 
 ### Empty-body suggestion feedback does not invent event=shown

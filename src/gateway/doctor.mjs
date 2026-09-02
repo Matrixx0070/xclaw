@@ -6,6 +6,12 @@
  * and `lastPollOkAt >= lastPollErrorAt`) must not warn — live 2026-09-02
  * pid 3800483 had lastError=TIMEOUT, consecutivePollFails=0, lastPollOkAt
  * after lastPollErrorAt, and doctor still listed telegram.lastError.
+ *
+ * Cron is not count-only. Live 2026-09-02 pid 2798540 (version 3.562.0)
+ * reported `3 enabled / 3 total` ok while eval held the process mutex and
+ * digest+doctor sat overdue. Doctor now warns (ok:true, severity:warn) when
+ * any enabled job is in-flight or overdue. Do not flip ok false — late
+ * digest/doctor is warn, not gateway-down.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -194,12 +200,33 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
 
   // cron
   const cs = cronStatus();
+  const cronNow = Date.now();
+  const cronList = listJobs({ includeDisabled: false });
+  const overdue = cronList.filter(
+    (j) => j.nextRunAt != null && !j.running && j.nextRunAt < cronNow
+  );
+  const inFlight = cronList.filter((j) => j.running);
+  const cronWarn = overdue.length > 0 || inFlight.length > 0;
+  const cronParts = [`${cs.enabled || 0} enabled / ${cs.jobs || 0} total`];
+  if (inFlight.length) cronParts.push(`${inFlight.length} in-flight`);
+  if (overdue.length) cronParts.push(`${overdue.length} overdue`);
   push("cron", true, {
-    summary: `${cs.enabled || 0} enabled / ${cs.jobs || 0} total`,
+    summary: cronParts.join(" · "),
+    ...(cronWarn ? { severity: "warn" } : {}),
     ...cs,
     nextRunAt: cs.nextRunAt
       ? new Date(cs.nextRunAt).toISOString()
       : null,
+    overdue: overdue.map((j) => ({
+      id: j.id,
+      name: j.name,
+      nextRunAt: new Date(j.nextRunAt).toISOString(),
+    })),
+    inFlight: inFlight.map((j) => ({
+      id: j.id,
+      name: j.name,
+      lastRunAt: j.lastRunAt ? new Date(j.lastRunAt).toISOString() : null,
+    })),
   });
 
   // skills

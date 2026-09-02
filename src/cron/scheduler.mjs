@@ -21,6 +21,12 @@
  * (src/ops/due.mjs) instead of process uptime. It is opt-in because the
  * no-catch-up rule is correct for user payload jobs — nobody wants a restart
  * to burst the messages it missed — and wrong only for maintenance.
+ *
+ * Tick is per-job in-flight, not process-global. Live 2026-09-02 pid 2798540
+ * (version 3.562.0) held eval-suite from 11:11:49 while digest (due 11:14:35)
+ * and doctor (due 12:04:32) sat overdue past 13:30 because tick awaited each
+ * handler under one process flag. Same-id overlap is still rejected.
+ * Stamp-on-attempt, no-catch-up, and first-arm-wins stay.
  */
 import { randomUUID } from "node:crypto";
 import { computeNextRun } from "./schedule.mjs";
@@ -45,7 +51,6 @@ import { getSharedAlerter } from "../alerting/alerts.mjs";
 const jobs = new Map();
 const hooks = new Map();
 let timer = null;
-let running = false;
 let ledger = null;
 
 export function cronJobsPath(cfg) {
@@ -103,7 +108,7 @@ function nextRunFor(job, now = Date.now()) {
 }
 
 function serializeJob(job) {
-  const { handler, _cfg, _lastAnnounce, ...rest } = job;
+  const { handler, _cfg, _lastAnnounce, running, ...rest } = job;
   return rest;
 }
 
@@ -137,7 +142,8 @@ export function restorePersistedJobs(cfg, recordsFromLedger) {
     if (!rec || !rec.id || jobs.has(rec.id) || !rec.schedule) continue;
     // No catch-up for runs missed while down — schedule from now. Anchored
     // jobs opt out of that and resume from their stamp (see nextRunFor).
-    const job = { ...rec, handler: null, _cfg: cfg || null, nextRunAt: null };
+    const { running: _running, ...safe } = rec;
+    const job = { ...safe, handler: null, _cfg: cfg || null, nextRunAt: null, running: false };
     job.nextRunAt = rec.enabled !== false ? nextRunFor(job, now) : null;
     if (job.schedule.kind === "at" && job.nextRunAt == null) job.enabled = false;
     jobs.set(job.id, job);
@@ -171,7 +177,9 @@ function armTimer() {
   if (timer) clearTimeout(timer);
   let next = null;
   for (const j of jobs.values()) {
-    if (!j.enabled || j.nextRunAt == null) continue;
+    // Skip in-flight jobs: their nextRunAt is still the due stamp that
+    // started this run. Scheduling off that stamp 50ms-loops the tick.
+    if (!j.enabled || j.nextRunAt == null || j.running) continue;
     if (next == null || j.nextRunAt < next) next = j.nextRunAt;
   }
   if (next == null) return;
@@ -183,83 +191,84 @@ function armTimer() {
 }
 
 async function tick() {
-  if (running) return;
-  running = true;
   const now = Date.now();
-  try {
-    for (const job of [...jobs.values()]) {
-      if (!job.enabled || job.nextRunAt == null || job.nextRunAt > now) continue;
-      await runJob(job, { mode: "due" });
-    }
-  } finally {
-    running = false;
-    armTimer();
+  for (const job of [...jobs.values()]) {
+    if (!job.enabled || job.nextRunAt == null || job.nextRunAt > now) continue;
+    if (job.running) continue;
+    void runJob(job, { mode: "due" });
   }
+  armTimer();
 }
 
 async function runJob(job, opts = {}) {
-  job.lastRunAt = Date.now();
-  // Stamp the ATTEMPT, not the completion. A run cut short by a restart must
-  // not re-arm at the next boot: the eval suite takes ~54 minutes against a
-  // median uptime of 24, so stamping on completion would launch it at every
-  // boot forever. At-most-once-per-interval is what a maintenance job wants;
-  // the trade is that an interrupted run waits out its interval.
-  if (anchorOf(job)) await markRan(job._cfg, job.anchorKey, job.lastRunAt);
+  if (job.running) return false;
+  job.running = true;
   try {
-    await emit("cron:before", { id: job.id, name: job.name, job });
-    if (typeof job.handler === "function") {
-      await job.handler(job);
-    } else if (job.payload?.message || job.payload?.text || job.payload?.prompt) {
-      // Default: run agent and emit delivery for channel adapters
-      const ann = await announceCronJob(job, { cfg: job._cfg || {} });
-      job._lastAnnounce = ann.delivery;
-    }
-    await emit("cron:after", { id: job.id, name: job.name, ok: true, job });
-    await emit("cron:delivery", {
-      id: job.id,
-      delivery: job.delivery,
-      sessionKey: resolveJobDeliverySessionKey(job),
-      notificationKey: resolveJobNotificationKey(job),
-    });
-    job.lastStatus = "ok";
-    job.lastError = null;
-    appendCronEvent(job._cfg || {}, {
-      type: "end",
-      id: job.id,
-      name: job.name,
-      ok: true,
-    });
-  } catch (err) {
-    job.lastStatus = "error";
-    job.lastError = err.message || String(err);
-    appendCronEvent(job._cfg || {}, {
-      type: "end",
-      id: job.id,
-      name: job.name,
-      ok: false,
-      error: job.lastError,
-    });
+    job.lastRunAt = Date.now();
+    // Stamp the ATTEMPT, not the completion. A run cut short by a restart must
+    // not re-arm at the next boot: the eval suite takes ~54 minutes against a
+    // median uptime of 24, so stamping on completion would launch it at every
+    // boot forever. At-most-once-per-interval is what a maintenance job wants;
+    // the trade is that an interrupted run waits out its interval.
+    if (anchorOf(job)) await markRan(job._cfg, job.anchorKey, job.lastRunAt);
     try {
-      await getSharedAlerter(job._cfg || {}).alertCronJobError(job, job.lastError);
-    } catch {}
-    await emit("cron:after", {
-      id: job.id,
-      name: job.name,
-      ok: false,
-      error: job.lastError,
-      job,
-    });
-  }
+      await emit("cron:before", { id: job.id, name: job.name, job });
+      if (typeof job.handler === "function") {
+        await job.handler(job);
+      } else if (job.payload?.message || job.payload?.text || job.payload?.prompt) {
+        // Default: run agent and emit delivery for channel adapters
+        const ann = await announceCronJob(job, { cfg: job._cfg || {} });
+        job._lastAnnounce = ann.delivery;
+      }
+      await emit("cron:after", { id: job.id, name: job.name, ok: true, job });
+      await emit("cron:delivery", {
+        id: job.id,
+        delivery: job.delivery,
+        sessionKey: resolveJobDeliverySessionKey(job),
+        notificationKey: resolveJobNotificationKey(job),
+      });
+      job.lastStatus = "ok";
+      job.lastError = null;
+      appendCronEvent(job._cfg || {}, {
+        type: "end",
+        id: job.id,
+        name: job.name,
+        ok: true,
+      });
+    } catch (err) {
+      job.lastStatus = "error";
+      job.lastError = err.message || String(err);
+      appendCronEvent(job._cfg || {}, {
+        type: "end",
+        id: job.id,
+        name: job.name,
+        ok: false,
+        error: job.lastError,
+      });
+      try {
+        await getSharedAlerter(job._cfg || {}).alertCronJobError(job, job.lastError);
+      } catch {}
+      await emit("cron:after", {
+        id: job.id,
+        name: job.name,
+        ok: false,
+        error: job.lastError,
+        job,
+      });
+    }
 
-  if (job.schedule?.kind === "at") {
-    job.enabled = false;
-    job.nextRunAt = null;
-  } else {
-    job.nextRunAt = computeNextRun(job.schedule, Date.now());
+    if (job.schedule?.kind === "at") {
+      job.enabled = false;
+      job.nextRunAt = null;
+    } else {
+      job.nextRunAt = computeNextRun(job.schedule, Date.now());
+    }
+    if (isPersistable(job)) persistJobs(job._cfg); // keep lastRunAt/status durable
+    return job;
+  } finally {
+    job.running = false;
+    armTimer();
   }
-  if (isPersistable(job)) persistJobs(job._cfg); // keep lastRunAt/status durable
-  armTimer();
-  return job;
 }
 
 /**
@@ -316,6 +325,7 @@ export function addJob(input = {}) {
     lastRunAt: null,
     lastStatus: null,
     lastError: null,
+    running: false,
     createdAt: new Date().toISOString(),
   };
   if (job.enabled) job.nextRunAt = nextRunFor(job);
@@ -376,7 +386,8 @@ export function listJobs({ includeDisabled = true } = {}) {
 export async function run(id, mode = "manual") {
   const job = jobs.get(id);
   if (!job) return { ok: false, error: "not_found" };
-  await runJob(job, { mode });
+  const started = await runJob(job, { mode });
+  if (started === false) return { ok: false, error: "already_running" };
   return { ok: true, job: getJob(id) };
 }
 
@@ -385,8 +396,9 @@ export function status() {
   return {
     jobs: list.length,
     enabled: list.filter((j) => j.enabled).length,
+    inFlight: list.filter((j) => j.running).length,
     nextRunAt: list
-      .filter((j) => j.nextRunAt != null)
+      .filter((j) => j.nextRunAt != null && !j.running)
       .map((j) => j.nextRunAt)
       .sort((a, b) => a - b)[0] ?? null,
   };
