@@ -13,10 +13,19 @@
  *
  * Keys are P-256 (ES256-compatible). Private keys stored encrypted-at-rest
  * when XCLAW_KEY_SECRET / auth.keys.secret is set.
+ *
+ * `paths()` honours `cfg.auth?.keys?.storePath` then `paths.configDir`
+ * then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour
+ * `XCLAW_STATE_DIR`. A cfg without configDir is never a real caller
+ * (`loadConfig()` stamps it unconditionally). `writeStore` still no-ops
+ * without persisting (do not call durableAtomicWriteJson on null — that
+ * helper `mkdir`s dirname). `readStore` returns null (same as missing).
+ * Keep `cfg.auth?.keys?.storePath`. Keep `XCLAW_KEY_ROTATION` as strategy
+ * env (not path). Keep `XCLAW_KEY_SECRET` / `XCLAW_SESSION_SECRET` as
+ * encryption secrets (not path).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import {
   durableAtomicWriteJson,
@@ -56,14 +65,13 @@ export class KeyRotationError extends Error {
 }
 
 function paths(cfg = {}) {
-  const configDir =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
+  const explicit = cfg.auth?.keys?.storePath;
+  const configDir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
   return {
     configDir,
     storePath:
-      cfg.auth?.keys?.storePath || path.join(configDir, "key-rotation.json"),
+      explicit ||
+      (configDir ? path.join(configDir, "key-rotation.json") : null),
   };
 }
 
@@ -154,8 +162,10 @@ function decryptJwk(blob, secret) {
 }
 
 async function readStore(cfg) {
+  const p = paths(cfg).storePath;
+  if (!p) return null;
   try {
-    return JSON.parse(await fs.readFile(paths(cfg).storePath, "utf8"));
+    return JSON.parse(await fs.readFile(p, "utf8"));
   } catch {
     return null;
   }
@@ -163,6 +173,7 @@ async function readStore(cfg) {
 
 async function writeStore(cfg, store) {
   const p = paths(cfg).storePath;
+  if (!p) return;
   await durableAtomicWriteJson(p, store, {
     durable: durableWritesEnabled(cfg),
     mode: 0o600,

@@ -2207,3 +2207,15 @@ SHIPPED: honour `cfg.auth?.webauthn?.storePath` then `paths.configDir` then `XCL
 RAN: node --test test/webauthn-config-dir.test.mjs test/webauthn.test.mjs test/webauthn-assertion-context.test.mjs test/webauthn-registration-context.test.mjs test/webauthn-assertion-signature.test.mjs test/fingerprint-rotation-config-dir.test.mjs → # tests 27 # pass 27 # fail 0 # duration_ms 171.845644; npm test (hermetic) → # tests 5392 # pass 5392 # fail 0 # duration_ms 82149.307148
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.555.0 Key rotation follows paths.configDir
+
+LOCKED: `src/auth/key-rotation.mjs` `paths` still homed while production writers `ensureKeyStore(cfg)` at jwks.mjs:96 from `getJwksCached(cfg)` / `exportJwks(cfg)` at gateway/routes/jwks.mjs:21-25 via `tryHandleJwksRoute({ cfg })` already had cfg. Same class as v3.297.0 / v3.554.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `key-rotation.json`; the suite wrote the operator's real `~/.xclaw`. Existing key-rotation.test.mjs already passes `{ paths: { configDir: dir } }`. KEEP `cfg.auth?.keys?.storePath`. KEEP `XCLAW_KEY_ROTATION` as strategy env (not a path). KEEP `XCLAW_KEY_SECRET` / `XCLAW_SESSION_SECRET` as encryption secrets (not path). Removed `os` import (only used by the leftover home fallback). Did not rewrite KEY_ROTATION_STRATEGIES / generateP256Pair / encryptJwk / decryptJwk / rotateKeys / maybeAutoRotate / evaluateKeyRotation / getDualWindowState / signWithCurrentKey / verifyWithRotatedKeys / getSigningKey / recordKeyUse. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). cold-start-persist REJECTED (existing pin asserts default path under .xclaw). Did not also fix jwks / jwks-invalidation / key-compromise-recovery / idempotency / xai-oauth.
+
+SHIPPED: honour `cfg.auth?.keys?.storePath` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `writeStore` still no-ops without persisting (do not call durableAtomicWriteJson on null). `readStore` returns null (same as missing). Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/key-rotation-config-dir.test.mjs test/key-rotation.test.mjs test/key-store-file-mode.test.mjs test/key-rotation-scheduler.test.mjs test/webauthn-config-dir.test.mjs → # tests 21 # pass 21 # fail 0 # duration_ms 188.708193; npm test (hermetic) → # tests 5397 # pass 5397 # fail 0 # duration_ms 80258.594481
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.

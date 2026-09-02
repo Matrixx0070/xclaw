@@ -1,3 +1,21 @@
+## 3.555.0
+
+### Key rotation follows paths.configDir
+
+`paths()` resolved `~/.xclaw/key-rotation.json` from `os.homedir()`
+while production writers (`ensureKeyStore(cfg)` at jwks.mjs:96 from
+`getJwksCached(cfg)` / `exportJwks(cfg)` at gateway/routes/jwks.mjs:21-25
+via `tryHandleJwksRoute({ cfg })`) already had cfg in scope. Two xclaw
+instances on one host with different `paths.configDir` shared one
+signing-key store. Home fallback is refused. Honour existing
+`XCLAW_CONFIG_DIR`. Keep `cfg.auth?.keys?.storePath`. Keep
+`XCLAW_KEY_ROTATION` as strategy env (not path). Keep `XCLAW_KEY_SECRET`
+/ `XCLAW_SESSION_SECRET` as encryption secrets (not path). Removed `os`
+import (only used by the leftover home fallback). `writeStore` no-ops
+without calling durableAtomicWriteJson (that helper `mkdir`s dirname).
+`readStore` returns null (same as missing). Production writers always
+have configDir, so live persist is not dropped.
+
 ## 3.554.0
 
 ### WebAuthn credentials follow paths.configDir
