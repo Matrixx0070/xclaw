@@ -275,3 +275,15 @@ test("sessions Bind drops leftover placeholder so filled body is not muted", () 
   assert.match(bind, /channel, peerId and sessionId are all required/);
   assert.match(html, /id="sessOut" class="log placeholder"/);
 });
+
+test("subagents Spawn drops leftover placeholder so filled body is not muted", () => {
+  const app = fs.readFileSync(path.join(root, "ui/control/app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "ui/control/index.html"), "utf8");
+  const spawn = app.slice(
+    app.indexOf("$(\"btnSaSpawn\")"),
+    app.indexOf("$(\"btnSaMerge\")")
+  );
+  assert.match(spawn, /out\.classList\.remove\("placeholder"\)/);
+  assert.match(spawn, /enter a task/);
+  assert.match(html, /id="saOut" class="log placeholder"/);
+});

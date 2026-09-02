@@ -1,3 +1,13 @@
+## 3.580.0
+
+### Subagents Spawn drops leftover placeholder so filled body is not muted
+
+Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/subagents Spawn with
+empty task filled "enter a task" (12 chars) but left class `log placeholder`.
+CSS `.log.placeholder` mutes and italicizes (same leftover as Sessions Bind
+3.579.0). Empty-state "no output yet" before Spawn is correct. Homedir JSON
+store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.579.0
 
 ### Sessions Bind drops leftover placeholder so filled body is not muted

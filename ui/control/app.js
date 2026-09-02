@@ -3259,19 +3259,24 @@ async function loadSubagents() {
 }
 $("btnSaRefresh")?.addEventListener("click", () => loadSubagents().catch(console.error));
 $("btnSaSpawn")?.addEventListener("click", async () => {
+  const out = $("saOut");
   const task = $("saTask").value.trim();
-  if (!task) { $("saOut").textContent = "enter a task"; return; }
+  // Live 2026-09-02 pid 2798540 (version 3.562.0) Control #/subagents Spawn with
+  // empty task filled "enter a task" but left class "log placeholder". CSS mutes
+  // and italicizes (same leftover as Sessions Bind 3.579.0).
+  if (out) out.classList.remove("placeholder");
+  if (!task) { if (out) out.textContent = "enter a task"; return; }
   $("btnSaSpawn").disabled = true;
-  $("saOut").textContent = "spawning… (runs the task to completion)";
+  if (out) out.textContent = "spawning… (runs the task to completion)";
   try {
     const body = { task };
     const turns = Number($("saTurns").value.trim());
     if (turns > 0) body.maxTurns = turns;
     const r = await postJSON("/subagents/spawn", body);
-    $("saOut").textContent = JSON.stringify(r, null, 2);
+    if (out) out.textContent = JSON.stringify(r, null, 2);
     $("saTask").value = "";
     await loadSubagents();
-  } catch (e) { $("saOut").textContent = String(e.message || e); }
+  } catch (e) { if (out) out.textContent = String(e.message || e); }
   finally { $("btnSaSpawn").disabled = false; }
 });
 $("btnSaMerge")?.addEventListener("click", async () => {
