@@ -7,10 +7,17 @@
  *  - Support multiple slots (primary + standby)
  *  - Detect reuse / anomaly triggers
  *  - Never log secret values
+ *
+ * `rotationPaths()` honours `cfg.auth?.web?.rotationStatePath` /
+ * `previousSessionPath` then `paths.configDir` then `XCLAW_CONFIG_DIR`
+ * then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. A cfg
+ * without configDir is never a real caller (`loadConfig()` stamps it
+ * unconditionally). `writeState` still no-ops without persisting (do
+ * not `mkdir(null)`). `readState` returns the empty default. Keep
+ * `XCLAW_COOKIE_ROTATION` as the strategy env (not a path).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import {
   loadWebSession,
@@ -43,18 +50,17 @@ export const ROTATION_STRATEGIES = {
 };
 
 function rotationPaths(cfg = {}) {
-  const configDir =
-    cfg.paths?.configDir ||
-    process.env.XCLAW_CONFIG_DIR ||
-    path.join(os.homedir(), ".xclaw");
+  const explicitState = cfg.auth?.web?.rotationStatePath;
+  const explicitPrev = cfg.auth?.web?.previousSessionPath;
+  const configDir = cfg.paths?.configDir || process.env.XCLAW_CONFIG_DIR || null;
   return {
     configDir,
     statePath:
-      cfg.auth?.web?.rotationStatePath ||
-      path.join(configDir, "cookie-rotation.json"),
+      explicitState ||
+      (configDir ? path.join(configDir, "cookie-rotation.json") : null),
     previousPath:
-      cfg.auth?.web?.previousSessionPath ||
-      path.join(configDir, "web-session.prev.json"),
+      explicitPrev ||
+      (configDir ? path.join(configDir, "web-session.prev.json") : null),
   };
 }
 
@@ -78,25 +84,31 @@ function rotationCfg(cfg = {}) {
   };
 }
 
+function emptyState() {
+  return {
+    strategy: null,
+    useCount: 0,
+    lastUsedAt: null,
+    lastRotatedAt: null,
+    firstImportedAt: null,
+    generation: 0,
+    fingerprint: null,
+  };
+}
+
 async function readState(cfg) {
   const p = rotationPaths(cfg).statePath;
+  if (!p) return emptyState();
   try {
     return JSON.parse(await fs.readFile(p, "utf8"));
   } catch {
-    return {
-      strategy: null,
-      useCount: 0,
-      lastUsedAt: null,
-      lastRotatedAt: null,
-      firstImportedAt: null,
-      generation: 0,
-      fingerprint: null,
-    };
+    return emptyState();
   }
 }
 
 async function writeState(cfg, state) {
   const p = rotationPaths(cfg).statePath;
+  if (!p) return;
   await fs.mkdir(path.dirname(p), { recursive: true, mode: 0o700 });
   const tmp = `${p}.${process.pid}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
@@ -253,7 +265,7 @@ export async function rotateWebSession(cfg = {}, opts = {}) {
   const state = await readState(cfg);
   const now = Date.now();
 
-  if (session && (rc.strategy === "dual_slot" || opts.keepPrevious)) {
+  if (session && (rc.strategy === "dual_slot" || opts.keepPrevious) && p.previousPath) {
     try {
       // Store redacted meta + encrypted path copy is complex; store fingerprint only + timestamp
       const prevMeta = {
@@ -266,9 +278,10 @@ export async function rotateWebSession(cfg = {}, opts = {}) {
       // Move current file to previous if exists
       const main =
         cfg.auth?.web?.sessionPath ||
-        path.join(p.configDir || path.dirname(p.statePath), "web-session.json");
+        (p.configDir ? path.join(p.configDir, "web-session.json") : null);
       try {
-        await fs.rename(main, p.previousPath);
+        if (main) await fs.rename(main, p.previousPath);
+        else throw new Error("no session path");
       } catch {
         await fs.writeFile(
           p.previousPath + ".meta.json",

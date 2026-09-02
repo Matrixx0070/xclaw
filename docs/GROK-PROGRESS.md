@@ -2171,3 +2171,15 @@ SHIPPED: honour `cfg.auth?.web?.sessionPath` then `paths.configDir` then `XCLAW_
 RAN: node --test test/web-login-config-dir.test.mjs test/web-login-secure.test.mjs test/cookie-rotation.test.mjs test/fingerprint-rotation.test.mjs → # tests 18 # pass 18 # fail 0 # duration_ms 127.328856; npm test (hermetic) → # tests 5377 # pass 5377 # fail 0 # duration_ms 78216.356537
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.552.0 Cookie rotation follows paths.configDir
+
+LOCKED: `src/auth/cookie-rotation.mjs` `rotationPaths` still homed while production writers `rotateWebSession(cfg)` via `runAuthCli(cfg)` at bin/xclaw.mjs:49-53 after `loadConfig()`, auth-cli.mjs:123 already had cfg. Same class as v3.297.0 / v3.551.0.
+
+DISCOVERED: leftover `os.homedir()` fallback after `cfg.paths?.configDir`. Two instances on one host shared one `cookie-rotation.json`; the suite wrote the operator's real `~/.xclaw`. Existing cookie-rotation.test.mjs already passes `{ paths: { configDir: dir } }`. KEEP `cfg.auth?.web?.rotationStatePath` / `previousSessionPath`. KEEP `XCLAW_COOKIE_ROTATION` as strategy env (not a path). Removed `os` import (only used by the leftover home fallback). Did not rewrite cookieFingerprint / evaluateRotation / recordSessionUse / bindAfterImport / gateWebSession / listRotationStrategies / ROTATION_STRATEGIES. cron/logs REJECTED (reader-home-by-design). run-store REJECTED (persistRun durability). cold-start-persist REJECTED (existing pin asserts default path under .xclaw). Did not also fix fingerprint-rotation / webauthn / key-rotation / jwks.
+
+SHIPPED: honour `cfg.auth?.web?.rotationStatePath` / `previousSessionPath` then `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fallback. Do not honour `XCLAW_STATE_DIR`. No new env. `writeState` still no-ops without persisting (do not `mkdir(null)`). `readState` returns the empty default. `rotateWebSession` skips archive when `previousPath` is null. Production writers always have configDir, so live persist is not dropped.
+
+RAN: node --test test/cookie-rotation-config-dir.test.mjs test/cookie-rotation.test.mjs test/web-login-config-dir.test.mjs test/web-login-secure.test.mjs test/fingerprint-rotation.test.mjs → # tests 23 # pass 23 # fail 0 # duration_ms 135.003102; npm test (hermetic) → # tests 5382 # pass 5382 # fail 0 # duration_ms 79189.599729
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
