@@ -1,5 +1,11 @@
 /**
  * Deep health / doctor report for XClaw gateway.
+ *
+ * `telegram.lastError` is only a current warn when the leftover field is
+ * still the live outage. A recovered poller (`consecutivePollFails === 0`
+ * and `lastPollOkAt >= lastPollErrorAt`) must not warn — live 2026-09-02
+ * pid 3800483 had lastError=TIMEOUT, consecutivePollFails=0, lastPollOkAt
+ * after lastPollErrorAt, and doctor still listed telegram.lastError.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,6 +22,28 @@ import { evictionBufferMetrics, evictionListenerCount } from "./eviction-events.
 import { streamRegistryStats } from "./stream-resume.mjs";
 import { runningVersion } from "./build-version.mjs";
 import { computerBaseUrl } from "../computer/manager.mjs";
+
+/**
+ * True when `st.lastError` is still the live outage, not a leftover after
+ * poll recovery. Writer already treats recovery as `consecutivePollFails = 0`
+ * (onPollOk) and `lastPollOkAt` after `lastPollErrorAt`; doctor used to key
+ * the warn on the leftover string alone. A quiet bot never hits the
+ * message-success `lastError = null` path, so this is the only reader that
+ * can drop the recovered TIMEOUT.
+ *
+ * @param {{ lastError?: unknown, consecutivePollFails?: number, lastPollOkAt?: string, lastPollErrorAt?: string }|null|undefined} st
+ * @returns {boolean}
+ */
+export function telegramLastErrorIsCurrent(st) {
+  if (!st?.lastError) return false;
+  const fails = Number(st.consecutivePollFails || 0);
+  if (fails > 0) return true;
+  const okAt = st.lastPollOkAt ? Date.parse(st.lastPollOkAt) : NaN;
+  const errAt = st.lastPollErrorAt ? Date.parse(st.lastPollErrorAt) : NaN;
+  if (Number.isFinite(okAt) && Number.isFinite(errAt) && okAt >= errAt) return false;
+  if (Number.isFinite(okAt) && !Number.isFinite(errAt)) return false;
+  return true;
+}
 
 /**
  * @returns {Promise<object>}
@@ -130,7 +158,7 @@ export async function buildDoctorReport({ cfg, channelManager, isComputerRunning
         dmPolicy,
         allowFromCount: Array.isArray(allow) ? allow.length : 0,
       });
-      if (tgLive?.lastError) {
+      if (telegramLastErrorIsCurrent(tgLive)) {
         push("telegram.lastError", true, {
           summary: String(tgLive.lastError).slice(0, 200),
           severity: "warn",

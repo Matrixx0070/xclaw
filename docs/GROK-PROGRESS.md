@@ -2275,3 +2275,15 @@ SHIPPED: honour `paths.configDir` then `XCLAW_CONFIG_DIR` then null. No home fal
 RAN: node --test test/suggestion-feedback-config-dir.test.mjs test/suggestion-feedback.test.mjs test/xai-oauth-config-dir.test.mjs → # tests 15 # pass 15 # fail 0 # duration_ms 78.781271; npm test (hermetic) → # tests 5422 # pass 5422 # fail 0 # duration_ms 81188.503438
 
 NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class.
+
+## 2026-09-02 — 3.561.0 Doctor does not warn on leftover telegram.lastError after poll recovery
+
+LOCKED: leftover `telegram.lastError` after poll recovery. Live 2026-09-02 pid 3800483 (version 3.491.0) had consecutivePollFails=0, lastPollOkAt after lastPollErrorAt, lastError still TIMEOUT. Doctor listed telegram.lastError as the only warn. Watchdog already treats that state as recovered. Quiet bot (messagesHandled=0) never hits message-success lastError=null. NEW class (not homedir). Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
+DISCOVERED: writer onPollOk set consecutivePollFails=0 and lastPollOkAt but did not clear lastError. Doctor keyed `if (tgLive?.lastError)` on the leftover string alone. Empty-body POST /channel/webchat/suggestions/feedback 200 ok:true defaulted shown — NOT this slice. Live process is 3.491.0 since Aug 30; do not pm2 restart without asking.
+
+SHIPPED: onPollOk clears lastError. telegramLastErrorIsCurrent refuses to warn when fails===0 and lastPollOkAt >= lastPollErrorAt. Pin test/telegram-last-error-current.test.mjs.
+
+RAN: node --test test/telegram-last-error-current.test.mjs → # tests 7 # pass 7 # fail 0 # duration_ms 123.289019; npm test (hermetic) → # tests 5429 # pass 5429 # fail 0 # duration_ms 81151.065275
+
+NEXT: remaining non-S3 evolution gap from live source. Do not invert default-path durability. Do not rebuild S3 listed callers. Do not pick run-store. Do not pick cron/logs without a new class. Do not also fix empty-body suggestions/feedback. Do not pm2 restart without asking.

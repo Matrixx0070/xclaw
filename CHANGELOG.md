@@ -1,3 +1,21 @@
+## 3.561.0
+
+### Doctor does not warn on leftover telegram.lastError after poll recovery
+
+Live 2026-09-02 pid 3800483 (version 3.491.0) had consecutivePollFails=0,
+lastPollOkAt after lastPollErrorAt, lastError still
+"Telegram getUpdates: The operation was aborted due to timeout". Doctor
+listed telegram.lastError as the only warn. Watchdog already treats that
+state as recovered. A quiet bot (messagesHandled=0) never hits the
+message-success lastError=null path, so the leftover string was the only
+signal doctor consulted. Writer onPollOk now clears lastError. Reader
+telegramLastErrorIsCurrent refuses to warn when consecutivePollFails===0
+and lastPollOkAt >= lastPollErrorAt. Do not invert: leftover lastError
+with consecutivePollFails > 0, or lastPollErrorAt after lastPollOkAt, is
+still current. Empty-body POST /channel/webchat/suggestions/feedback
+200 ok:true defaulted shown is NOT this slice. Do not pm2 restart without
+asking. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.560.0
 
 ### Suggestion feedback store follows paths.configDir

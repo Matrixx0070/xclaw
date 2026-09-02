@@ -1036,6 +1036,10 @@ export function createTelegramChannel(cfg) {
       onPollOk: () => {
         lastPollOkAt = new Date().toISOString();
         consecutivePollFails = 0;
+        // A recovered poll is the channel's liveness signal. lastError used
+        // to stick until the next inbound message (lastOkAt path), so a
+        // quiet bot kept doctor-warning after TIMEOUT recovered.
+        lastError = null;
       },
       onError: (info) => {
         lastError = info.message || info.code;
