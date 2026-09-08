@@ -1,8 +1,14 @@
+## 3.589.0
+
+### 15-minute start is git clone (working today); npm global stays unpublished/future
+
+Public 15-minute start no longer leads with `npm install -g xclaw@latest` (404 until published). Working path is `git clone` then `npm run install:local` then `node bin/xclaw.mjs onboard --yes --install-daemon --api-key "$XAI_API_KEY"`. INSTALL.md leads with GitHub; npm section is labeled unpublished. Pin `test/update-cli.test.mjs` (README/INSTALL lead with clone; npm global is not the 15-minute lead). `xclaw update` unpublished fail-clean and eval-suite restart refuse unchanged. Do not npm publish this turn. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.588.0
 
 ### npm-first install docs + `xclaw update` CLI (git or global package) refuses restart while eval suite running
 
-15-minute start is `npm install -g xclaw@latest` then `xclaw onboard --yes --install-daemon`. `--install-daemon` writes `~/.config/systemd/user/xclaw.service` and does not start it. `xclaw update` detects a git checkout vs a global package install, skips a dirty tree, `--dry-run` / `--no-restart` / `--json` / `--timeout` (default 600000 ms), fails clean when the package is unpublished, and refuses restart while `[xclaw:eval-cron] running suite` is later than a done stamp. Default restart is a no-op (`no_supervisor`) so this host is not pm2-restarted. Git tags track `package.json`. Do not publish this turn. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+15-minute start was `npm install -g xclaw@latest` then `xclaw onboard --yes --install-daemon` (unpublished; corrected in 3.589.0). `--install-daemon` writes `~/.config/systemd/user/xclaw.service` and does not start it. `xclaw update` detects a git checkout vs a global package install, skips a dirty tree, `--dry-run` / `--no-restart` / `--json` / `--timeout` (default 600000 ms), fails clean when the package is unpublished, and refuses restart while `[xclaw:eval-cron] running suite` is later than a done stamp. Default restart is a no-op (`no_supervisor`) so this host is not pm2-restarted. Git tags track `package.json`. Do not publish this turn. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
 
 ## 3.587.0
 

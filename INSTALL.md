@@ -7,43 +7,40 @@
   - `XAI_API_KEY` and/or provider keys in `~/.xclaw/xclaw.json`
 - Optional: Git for swarm worktree flows
 
-## Install from npm (recommended)
+## Install from GitHub
 
-```bash
-npm install -g xclaw@latest
-
-export XAI_API_KEY=xai-...
-export XCLAW_PROFILE=lab
-export XCLAW_MODEL=xai/grok-4.5
-
-xclaw onboard --yes --install-daemon   # writes ~/.xclaw + optional systemd unit (does not start it)
-xclaw doctor
-xclaw self-test
-xclaw gateway
-```
-
-`--install-daemon` writes `~/.config/systemd/user/xclaw.service` and does not start or enable it. Enable later with `systemctl --user daemon-reload && systemctl --user enable --now xclaw`.
-
-Update later with `xclaw update` (git fetch + rebase on a checkout, or a global package `@latest`). Skips a dirty working tree. Refuses restart while the eval suite is running. `--dry-run` / `--no-restart` / `--json` / `--timeout` (default 600000 ms). Git tags track `package.json`.
-
-Until the package is on the registry, `xclaw update` on a global install fails clean (`unpublished`) and the contributor path below is the working install.
-
-## Install from GitHub (contributors)
+Working path today. Clone, then run from the checkout.
 
 ```bash
 git clone https://github.com/Matrixx0070/xclaw.git
 cd xclaw
 
-# core is pure ESM; install only if you need optional deps / scripts
-npm install   # safe to run
-
 export XAI_API_KEY=xai-...
 export XCLAW_PROFILE=lab
 export XCLAW_MODEL=xai/grok-4.5
 
+npm run install:local               # or: bash install/install.sh --yes
+node bin/xclaw.mjs onboard --yes --install-daemon --api-key "$XAI_API_KEY"
 node bin/xclaw.mjs doctor
 node bin/xclaw.mjs self-test
 node bin/xclaw.mjs gateway
+```
+
+`--install-daemon` writes `~/.config/systemd/user/xclaw.service` and does not start or enable it. Enable later with `systemctl --user daemon-reload && systemctl --user enable --now xclaw`. `xclaw onboard` (the bin path) needs `--api-key` or `XAI_API_KEY`; `npm run onboard -- --yes --install-daemon` can skip the key.
+
+Update later with `node bin/xclaw.mjs update` (git fetch + rebase on a checkout). Skips a dirty working tree. Refuses restart while the eval suite is running. `--dry-run` / `--no-restart` / `--json` / `--timeout` (default 600000 ms). Git tags track `package.json`.
+
+## Install from npm (unpublished)
+
+The package is not on the registry yet. `npm install -g xclaw@latest` 404s. `xclaw update` on a global install fails clean (`unpublished`). Use the GitHub path above until publish.
+
+```bash
+# After publish:
+# npm install -g xclaw@latest
+# export XAI_API_KEY=xai-...
+# xclaw onboard --yes --install-daemon
+# xclaw doctor
+# xclaw gateway
 ```
 
 Docs: [SECURITY.md](./SECURITY.md) · [docs/AUTONOMY.md](./docs/AUTONOMY.md) · [docs/FABRIC.md](./docs/FABRIC.md) · [CHANGELOG.md](./CHANGELOG.md)

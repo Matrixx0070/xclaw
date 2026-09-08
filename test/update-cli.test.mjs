@@ -223,4 +223,26 @@ describe("xclaw update", () => {
     assert.equal(SRC.toLowerCase().includes(needle), false, "src/cli/update.mjs must stay vendor-clean");
     assert.equal(TEST_SRC.toLowerCase().includes(needle), false, "test/update-cli.test.mjs must stay vendor-clean");
   });
+
+  it("README 15-minute start and INSTALL lead with git clone, not unpublished npm global", () => {
+    const readme = fs.readFileSync(path.join(REPO, "README.md"), "utf8");
+    const install = fs.readFileSync(path.join(REPO, "INSTALL.md"), "utf8");
+    const fifteen = readme.split("## 15-minute start")[1].split("\n## ")[0];
+    const fence = fifteen.split("```bash")[1].split("```")[0];
+    assert.match(fence, /git clone https:\/\/github.com\/Matrixx0070\/xclaw\.git/);
+    const liveLines = fence
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#"));
+    assert.equal(
+      liveLines.some((l) => l.includes("npm install -g xclaw")),
+      false,
+      "15-minute live commands must not lead with unpublished npm global"
+    );
+    const ghIdx = install.indexOf("## Install from GitHub");
+    const npmIdx = install.indexOf("## Install from npm");
+    assert.ok(ghIdx >= 0, "INSTALL.md must have a GitHub section");
+    assert.ok(npmIdx < 0 || ghIdx < npmIdx, "INSTALL.md must lead with GitHub before npm");
+    assert.match(install, /unpublished/);
+  });
 });

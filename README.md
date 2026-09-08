@@ -17,32 +17,27 @@ Not a thin chat wrapper: agents **run tools**, can **verify work**, and can **pr
 ## 15-minute start
 
 ```bash
-npm install -g xclaw@latest
+git clone https://github.com/Matrixx0070/xclaw.git
+cd xclaw
 
 export XAI_API_KEY=xai-...          # never commit this
 export XCLAW_PROFILE=lab
 export XCLAW_MODEL=xai/grok-4.5
 
-xclaw onboard --yes --install-daemon   # writes ~/.xclaw + optional systemd unit (does not start it)
-xclaw doctor                           # exit 0=ok · 1=warnings · 2=errors
-xclaw agent "Create /tmp/xclaw-hello.txt with text ok"
+npm run install:local               # or: bash install/install.sh --yes
+node bin/xclaw.mjs onboard --yes --install-daemon --api-key "$XAI_API_KEY"
+node bin/xclaw.mjs doctor            # exit 0=ok · 1=warnings · 2=errors
+node bin/xclaw.mjs agent "Create /tmp/xclaw-hello.txt with text ok"
 
 # Optional: long-running gateway + WebChat
-xclaw gateway
+node bin/xclaw.mjs gateway
 # → http://127.0.0.1:18790/chat/
 
-# Later: xclaw update                  # git fetch+rebase, or global package @latest
-#         xclaw update --dry-run --no-restart
+# Later: node bin/xclaw.mjs update
+#         node bin/xclaw.mjs update --dry-run --no-restart
 ```
 
-Contributor checkout (from source, not the global package):
-
-```bash
-git clone https://github.com/Matrixx0070/xclaw.git
-cd xclaw
-XAI_API_KEY=xai-... npm run install:local     # or: bash install/install.sh --yes
-node bin/xclaw.mjs doctor
-```
+After the package is on the registry (not yet): `npm install -g xclaw@latest` then `xclaw onboard --yes --install-daemon`. Until then that command 404s; `xclaw update` on a global install fails clean (`unpublished`).
 
 | Check | Expect |
 |-------|--------|

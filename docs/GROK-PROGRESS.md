@@ -2616,3 +2616,13 @@ DISCOVERED: bin onboard is not initMain (auth-choice path). evalCronStatus uses 
 SHIPPED: package.json 3.588.0 + repository/homepage/bugs → Matrixx0070/xclaw. README 15-minute start = npm install -g xclaw@latest then xclaw onboard --yes --install-daemon. INSTALL.md drops v3.77.1; git clone stays contributor path. install.sh remote-one-liner comment rewritten without competitor names. --install-daemon writes ~/.config/systemd/user/xclaw.service via installUserDaemon (does not start). xclaw update: git vs npm/pnpm/bun, dirty skip, --dry-run --no-restart --json --timeout 600000, unpublished fail-clean, refuse restart while eval suite running. Pin test/update-cli.test.mjs one copy. Git tags track package.json. Do not gh release create this turn.
 
 NEXT: do not pm2 restart without asking. Do not push 3.588.0 unless asked. Do not mint persistRun. Do not git add -A. Do not npm publish. Do not kill xtui without asking.
+
+## 2026-09-08 — 3.589.0 15-minute start is git clone (working today)
+
+LOCKED: 3.588.0 README 15-minute start led with `npm install -g xclaw@latest` which 404s (npm view xclaw 404; npm whoami E401). User: FIX WEAKEST POINTS THEN VERIFIED EVERYTHING BEFORE PUSH. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not npm publish. Do not pm2 restart. Do not lock leftover.
+
+DISCOVERED: bin onboard requires --api-key or XAI_API_KEY. npm run onboard (initMain) can skip the key. Untracked swarm files make /root/xclaw dirty for xclaw update.
+
+SHIPPED: README 15-minute fence is git clone + npm run install:local + node bin/xclaw.mjs onboard --yes --install-daemon --api-key. INSTALL.md leads with GitHub; npm section labeled unpublished. package.json 3.589.0. Pin test/update-cli.test.mjs (README/INSTALL lead with clone). xclaw update unpublished fail-clean unchanged.
+
+NEXT: live-prove then push 3.588.0+3.589.0. Do not mint persistRun. Do not git add -A. Do not npm publish. Do not kill xtui without asking.
