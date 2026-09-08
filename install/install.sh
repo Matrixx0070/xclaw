@@ -6,8 +6,8 @@
 #   bash install/install.sh --start-gateway
 #   XAI_API_KEY=xai-... bash install/install.sh --yes
 #
-# OpenClaw-style remote install requires a public install host or public repo.
-# While the repo is private, the supported one-liner is:
+# A remote one-liner needs a public install host or public repo.
+# Supported path:
 #   git clone <repo> && cd xclaw && bash install/install.sh
 #
 set -euo pipefail

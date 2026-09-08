@@ -7,12 +7,32 @@
   - `XAI_API_KEY` and/or provider keys in `~/.xclaw/xclaw.json`
 - Optional: Git for swarm worktree flows
 
-## Install from GitHub
+## Install from npm (recommended)
+
+```bash
+npm install -g xclaw@latest
+
+export XAI_API_KEY=xai-...
+export XCLAW_PROFILE=lab
+export XCLAW_MODEL=xai/grok-4.5
+
+xclaw onboard --yes --install-daemon   # writes ~/.xclaw + optional systemd unit (does not start it)
+xclaw doctor
+xclaw self-test
+xclaw gateway
+```
+
+`--install-daemon` writes `~/.config/systemd/user/xclaw.service` and does not start or enable it. Enable later with `systemctl --user daemon-reload && systemctl --user enable --now xclaw`.
+
+Update later with `xclaw update` (git fetch + rebase on a checkout, or a global package `@latest`). Skips a dirty working tree. Refuses restart while the eval suite is running. `--dry-run` / `--no-restart` / `--json` / `--timeout` (default 600000 ms). Git tags track `package.json`.
+
+Until the package is on the registry, `xclaw update` on a global install fails clean (`unpublished`) and the contributor path below is the working install.
+
+## Install from GitHub (contributors)
 
 ```bash
 git clone https://github.com/Matrixx0070/xclaw.git
 cd xclaw
-git checkout v3.77.1   # or main
 
 # core is pure ESM; install only if you need optional deps / scripts
 npm install   # safe to run

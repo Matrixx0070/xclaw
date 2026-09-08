@@ -17,28 +17,31 @@ Not a thin chat wrapper: agents **run tools**, can **verify work**, and can **pr
 ## 15-minute start
 
 ```bash
-git clone https://github.com/Matrixx0070/xclaw.git
-cd xclaw
+npm install -g xclaw@latest
 
-# 0) One-command install + onboard (creates ~/.xclaw, runs doctor)
-XAI_API_KEY=xai-... npm run install:local     # or: bash install/install.sh --yes
-# equivalently, just onboard:  npm run onboard -- --yes --profile lab
-
-# 1) Key (never commit this)
-export XAI_API_KEY=xai-...          # or other provider keys via config
-export XCLAW_PROFILE=lab            # convenient defaults
+export XAI_API_KEY=xai-...          # never commit this
+export XCLAW_PROFILE=lab
 export XCLAW_MODEL=xai/grok-4.5
 
-# 2) Health
-node bin/xclaw.mjs doctor          # exit 0=ok · 1=warnings · 2=errors
-node bin/xclaw.mjs status --json
-
-# 3) One-shot goal
-node bin/xclaw.mjs agent "Create /tmp/xclaw-hello.txt with text ok"
+xclaw onboard --yes --install-daemon   # writes ~/.xclaw + optional systemd unit (does not start it)
+xclaw doctor                           # exit 0=ok · 1=warnings · 2=errors
+xclaw agent "Create /tmp/xclaw-hello.txt with text ok"
 
 # Optional: long-running gateway + WebChat
-node bin/xclaw.mjs gateway
+xclaw gateway
 # → http://127.0.0.1:18790/chat/
+
+# Later: xclaw update                  # git fetch+rebase, or global package @latest
+#         xclaw update --dry-run --no-restart
+```
+
+Contributor checkout (from source, not the global package):
+
+```bash
+git clone https://github.com/Matrixx0070/xclaw.git
+cd xclaw
+XAI_API_KEY=xai-... npm run install:local     # or: bash install/install.sh --yes
+node bin/xclaw.mjs doctor
 ```
 
 | Check | Expect |

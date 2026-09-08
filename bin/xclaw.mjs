@@ -358,6 +358,11 @@ Enable with seats.enabled: true in config`);
           suggestedModel: model,
           next: `Set agent.model to ${model} or export XCLAW_PROVIDER=${provider}`,
         }, null, 2));
+        if (args.includes("--install-daemon")) {
+          const { installUserDaemon } = await import("../src/cli/daemon.mjs");
+          const d = installUserDaemon({ workdir: root });
+          console.log(JSON.stringify({ daemon: d }, null, 2));
+        }
         break;
       }
       if (choice === "custom-api-key") {
@@ -378,12 +383,17 @@ Enable with seats.enabled: true in config`);
           hint: "Set cfg.agent.baseUrl and cfg.agent.model, or XCLAW_API_BASE / XCLAW_MODEL",
           env: { XCLAW_API_BASE: base, XCLAW_MODEL: model, XCLAW_PROVIDER: "compatible" },
         }, null, 2));
+        if (args.includes("--install-daemon")) {
+          const { installUserDaemon } = await import("../src/cli/daemon.mjs");
+          const d = installUserDaemon({ workdir: root });
+          console.log(JSON.stringify({ daemon: d }, null, 2));
+        }
         break;
       }
       console.error(`Usage:
-  xclaw onboard --auth-choice xai-api-key --api-key xai-...
-  xclaw onboard --auth-choice openai-api-key --api-key sk-...
-  xclaw onboard --auth-choice custom-api-key --custom-base-url http://127.0.0.1:8080/v1 --custom-model-id local-model`);
+  xclaw onboard --auth-choice xai-api-key --api-key xai-... [--install-daemon]
+  xclaw onboard --auth-choice openai-api-key --api-key sk-... [--install-daemon]
+  xclaw onboard --auth-choice custom-api-key --custom-base-url http://127.0.0.1:8080/v1 --custom-model-id local-model [--install-daemon]`);
       process.exit(1);
       break;
     }
@@ -1568,6 +1578,12 @@ Enable with seats.enabled: true in config`);
       }
       console.error("Usage: xclaw self-deploy status | run-once | watch");
       process.exitCode = 1;
+      break;
+    }
+    case "update": {
+      const { updateMain } = await import("../src/cli/update.mjs");
+      const code = await updateMain(args.slice(1), { cwd: root });
+      process.exitCode = code;
       break;
     }
     case "timeline": {
@@ -2934,6 +2950,8 @@ Commands:
   ledger               tail | query | who-touched <path> | stats | compact
   timeline             list | diff <a> <b> | revert <missionId> | known-good | attribute <path>
   self-deploy          status | run-once | watch (external deploy executor)
+  update [--json] [--dry-run] [--no-restart] [--yes] [--timeout]
+                       Update git checkout or global npm install; refuse restart while eval suite running
   eval                 Eval suite (--tag, --mock, --json)
   job [--gateway] <goal>  Verified job in a temp workspace (opt-in POST /jobs)
   harness <goal>       Long-run grounded harness (anti-hallucination)

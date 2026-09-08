@@ -1,3 +1,9 @@
+## 3.588.0
+
+### npm-first install docs + `xclaw update` CLI (git or global package) refuses restart while eval suite running
+
+15-minute start is `npm install -g xclaw@latest` then `xclaw onboard --yes --install-daemon`. `--install-daemon` writes `~/.config/systemd/user/xclaw.service` and does not start it. `xclaw update` detects a git checkout vs a global package install, skips a dirty tree, `--dry-run` / `--no-restart` / `--json` / `--timeout` (default 600000 ms), fails clean when the package is unpublished, and refuses restart while `[xclaw:eval-cron] running suite` is later than a done stamp. Default restart is a no-op (`no_supervisor`) so this host is not pm2-restarted. Git tags track `package.json`. Do not publish this turn. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.587.0
 
 ### listAgentRuns overlays a matching job pass so verified jobs are not pinned as failed snapshots

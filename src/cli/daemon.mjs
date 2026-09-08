@@ -3,6 +3,7 @@
  * Prefer true session leaders (setsid) so parent exit does not kill children.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { isPidAlive, isPidDefinitelyDead } from "../shared/pid-alive.mjs";
@@ -148,6 +149,35 @@ export function systemdUnit(opts = {}) {
     environment: opts.environment,
     environmentFiles: opts.environmentFiles,
   });
+}
+
+/**
+ * Write a user systemd unit for the gateway. Does not start or enable it.
+ * Shared by `xclaw onboard --install-daemon` and `init --install-daemon`.
+ */
+export function installUserDaemon(opts = {}) {
+  const home = opts.home || os.homedir();
+  const workdir = opts.workdir || process.cwd();
+  const unitDir = opts.unitDir || path.join(home, ".config", "systemd", "user");
+  const unitPath = opts.unitPath || path.join(unitDir, "xclaw.service");
+  const bin = opts.bin || path.join(workdir, "bin", "xclaw.mjs");
+  const body = systemdUnit({
+    workdir,
+    programArguments: opts.programArguments || [process.execPath, bin, "gateway"],
+    environment: opts.environment,
+    environmentFiles: opts.environmentFiles,
+  });
+  fs.mkdirSync(path.dirname(unitPath), { recursive: true });
+  fs.writeFileSync(unitPath, body, { encoding: "utf8", mode: 0o644 });
+  return {
+    ok: true,
+    unitPath,
+    enable: "systemctl --user enable --now xclaw",
+    next: [
+      `Wrote ${unitPath}`,
+      "Enable with: systemctl --user daemon-reload && systemctl --user enable --now xclaw",
+    ],
+  };
 }
 
 /**

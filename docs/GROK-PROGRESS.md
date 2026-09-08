@@ -2606,3 +2606,13 @@ SHIPPED: listAgentRuns loads jobsDir once per list; overlay job.pass === true �
 RAN: pin `# tests 11 # pass 11 # fail 0 # duration_ms 102.287117`. hermetic `# tests 5466 # pass 5466 # fail 0 # duration_ms 83520.408704`.
 
 NEXT: do not pm2 restart without asking. Overlay is gateway JS — SPA reload will not live-prove. Do not push 3.563.0–3.587.0 without asking. Do not mint persistRun. Do not git add -A. Continue Display :10 drive. Do not kill xtui without asking.
+
+## 2026-09-08 — 3.588.0 npm-first install docs + xclaw update CLI
+
+LOCKED: public install was git clone + npm run install:local; INSTALL.md still pinned git checkout v3.77.1; GitHub Latest release v3.375.0 vs main 3.587.0; no xclaw update CLI; package.json had no repository/homepage/bugs. User asked A+B+C+D (package identity, npm-first docs, tag cadence, xclaw update) with zero competitor names in NEW tracked files. Do not npm publish (slice E; npm whoami E401). Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not lock leftover as 3.588.0. Do not reopen 3.587.0 listAgentRuns overlay.
+
+DISCOVERED: bin onboard is not initMain (auth-choice path). evalCronStatus uses in-process listJobs() — useless from a separate CLI. Probe gateway.log / eval-cron.log text. Default restart is no_supervisor so this host is not pm2-restarted.
+
+SHIPPED: package.json 3.588.0 + repository/homepage/bugs → Matrixx0070/xclaw. README 15-minute start = npm install -g xclaw@latest then xclaw onboard --yes --install-daemon. INSTALL.md drops v3.77.1; git clone stays contributor path. install.sh remote-one-liner comment rewritten without competitor names. --install-daemon writes ~/.config/systemd/user/xclaw.service via installUserDaemon (does not start). xclaw update: git vs npm/pnpm/bun, dirty skip, --dry-run --no-restart --json --timeout 600000, unpublished fail-clean, refuse restart while eval suite running. Pin test/update-cli.test.mjs one copy. Git tags track package.json. Do not gh release create this turn.
+
+NEXT: do not pm2 restart without asking. Do not push 3.588.0 unless asked. Do not mint persistRun. Do not git add -A. Do not npm publish. Do not kill xtui without asking.

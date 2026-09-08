@@ -94,6 +94,7 @@ export async function initMain(args = []) {
   const json = flag(args, "--json");
   const yes = flag(args, "--yes") || flag(args, "-y") || flag(args, "--non-interactive");
   const skipDoctor = flag(args, "--skip-doctor");
+  const installDaemon = flag(args, "--install-daemon");
   const help = flag(args, "--help") || flag(args, "-h");
 
   if (help) {
@@ -274,6 +275,19 @@ export async function initMain(args = []) {
     return 1;
   }
 
+  if (installDaemon) {
+    try {
+      const { installUserDaemon } = await import("./daemon.mjs");
+      result.daemon = installUserDaemon({});
+    } catch (err) {
+      result.ok = false;
+      result.error = `daemon unit write failed: ${err.message}`;
+      if (json) console.log(JSON.stringify(result, null, 2));
+      else console.error(`[xclaw] ${result.error}`);
+      return 1;
+    }
+  }
+
   if (apiKey) {
     try {
       cfg = await loadConfig({ strict: false });
@@ -327,6 +341,8 @@ export async function initMain(args = []) {
     result.gatewayTokenGenerated
       ? `# gateway token generated and stored in ${result.configPath} (mode 600)`
       : null,
+    result.daemon?.unitPath ? `Wrote systemd unit ${result.daemon.unitPath}` : null,
+    result.daemon?.enable ? result.daemon.enable : null,
     `node bin/xclaw.mjs doctor`,
     `node bin/xclaw.mjs gateway`,
     `open http://127.0.0.1:${gwPort}/chat/`,
@@ -376,6 +392,7 @@ Options:
   --provider <xai|openai|anthropic|compatible>
   --model <id>           e.g. xai/grok-4.5
   --api-key <key>        Store provider API key (or set XAI_API_KEY)
+  --install-daemon       Write ~/.config/systemd/user/xclaw.service (does not start it)
   --skip-doctor          Skip post-init doctor checks
   --json                 Machine-readable output
   -h, --help             Show this help
