@@ -1,3 +1,9 @@
+## 3.590.0
+
+### Review-ready public tree (README de-dupe, env template, test fixture, CONTRIBUTING)
+
+README no longer repeats `## Secrets`, `## Profiles`, or `## Computer server (single engine)`. `.env.example` lists keys this repo reads without naming a competitor. `test/redact-secrets.test.mjs` uses the alphabet xAI fixture (same as sibling redact tests). Short `CONTRIBUTING.md` (clone, `npm test`, never commit secrets, never `git add -A`). PR #211 closed as superseded (wires already on main; branch CONFLICTING). GitHub Latest release tracks this version. Do not npm publish this turn. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0.
+
 ## 3.589.0
 
 ### 15-minute start is git clone (working today); npm global stays unpublished/future

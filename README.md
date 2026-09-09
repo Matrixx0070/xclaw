@@ -77,8 +77,7 @@ an empty prompt exits.
 
 ## Secrets
 
-Full checklist: [docs/SECRETS.md](./docs/SECRETS.md). Empty placeholders: [`.env.example`](./.env.example).
-
+Full checklist: [docs/SECRETS.md](./docs/SECRETS.md). Empty placeholders: [`.env.example`](./.env.example). Operator / prod defaults: **[SECURITY.md](./SECURITY.md)**.
 
 - **Never commit** API keys, OAuth tokens, or GitHub PATs.
 - Prefer env vars or local config outside the repo.
@@ -109,6 +108,12 @@ export XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
 | Kill | `xclaw stop-all` | Abort sessions + stop computer |
 
 Project memory injected into the agent: **[XCLAW.md](./XCLAW.md)** (edit this for repo-local rules).
+
+Autonomy levels (`off` · `supervised` · `lab` · `full`): **[docs/AUTONOMY.md](./docs/AUTONOMY.md)** — or `XCLAW_AUTONOMY_LEVEL=…` / `autonomy.level` in config.
+
+Browser fabric (tab leases + commit gates): **[docs/FABRIC.md](./docs/FABRIC.md)** — enable with `XCLAW_COMMIT_GATES=1` + `XCLAW_FABRIC_ENFORCE=1`.
+
+Roadmap: **[docs/ROADMAP.md](./docs/ROADMAP.md)** · MCP: **[docs/MCP-PARITY.md](./docs/MCP-PARITY.md)** · Harness: **[docs/HARNESS.md](./docs/HARNESS.md)** · Principles: **[docs/PRINCIPLES.md](./docs/PRINCIPLES.md)** · Evolution: **[docs/SELF_EVOLUTION.md](./docs/SELF_EVOLUTION.md)**.
 
 ---
 
@@ -150,52 +155,6 @@ docker compose up --build
 Config file: `~/.xclaw/xclaw.json` (created on first run).
 
 More install detail: [INSTALL.md](./INSTALL.md)
-
----
-
-## Secrets
-
-Full checklist: **[SECURITY.md](./SECURITY.md)**.
-
-
-- **Never commit** API keys, OAuth tokens, or GitHub PATs.
-- Prefer env vars or local config outside the repo.
-- If a key was pasted into chat or logs → **rotate it**.
-- Prod: set `XCLAW_GATEWAY_TOKEN` (or `gateway.token` in config).
-
----
-
-## Profiles
-
-| Profile | Intent | Typical defaults |
-|---------|--------|------------------|
-| **lab** | Local experiments | `autoApprove=true`, egress allow, open gateway |
-| **dev** | Day-to-day build | Mixed; prefer explicit approvals for risky tools |
-| **prod** | Exposed or unattended | Token required, stricter approvals, egress **deny**, prefer OS sandbox |
-
-```bash
-export XCLAW_PROFILE=lab    # default-friendly
-export XCLAW_PROFILE=prod
-export XCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
-```
-
-| Knob | Env / config | Notes |
-|------|----------------|-------|
-| Egress | `XCLAW_EGRESS=deny\\|allow\\|allowlist` | Prod default deny for shell network patterns |
-| OS sandbox | `XCLAW_OS_SANDBOX=auto\\|bwrap\\|off` | Uses **bubblewrap** when installed & usable |
-| Spawn plan | `XCLAW_SPAWN_ENFORCE` | Exact approved command at bash spawn |
-| Kill | `xclaw stop-all` | Abort sessions + stop computer |
-
-Project memory injected into the agent: **[XCLAW.md](./XCLAW.md)** (edit this for repo-local rules).
-
-Autonomy levels (`off` · `supervised` · `lab` · `full`): **[docs/AUTONOMY.md](./docs/AUTONOMY.md)** — or `XCLAW_AUTONOMY_LEVEL=…` / `autonomy.level` in config.
-
-Browser fabric (tab leases + commit gates): **[docs/FABRIC.md](./docs/FABRIC.md)** — enable with `XCLAW_COMMIT_GATES=1` + `XCLAW_FABRIC_ENFORCE=1`.
-
-Roadmap: **[docs/ROADMAP.md](./docs/ROADMAP.md)** · MCP: **[docs/MCP-PARITY.md](./docs/MCP-PARITY.md)** · Harness: **[docs/HARNESS.md](./docs/HARNESS.md)** · Principles: **[docs/PRINCIPLES.md](./docs/PRINCIPLES.md)** · Evolution: **[docs/SELF_EVOLUTION.md](./docs/SELF_EVOLUTION.md)**.
-
----
-
 
 ---
 
@@ -259,22 +218,6 @@ curl -sX POST http://127.0.0.1:18790/objectives \
 ```
 
 Architecture + state contract: **[docs/LONGRUN.md](./docs/LONGRUN.md)**.
-
-## Computer server (single engine)
-
-**One engine** (ADR 0006): `src/computer/xclaw-server.mjs` — the tracked,
-hand-patched bundle serving all 7 tools (bash, file read/write/edit,
-browser_tab, browser_network_details, computer_act). Hand edits carry
-`// A6: thin-server merge` markers; shared logic (env policy, sandbox, SSRF,
-Chrome lifecycle, motor/hooks) is bridged from `src/computer/modules/*` and
-`src/computer/chrome-session.mjs` — edit those directly.
-
-```bash
-node src/computer/xclaw-server.mjs        # or: node scripts/ensure-computer.mjs
-# legacy XCLAW_COMPUTER_ENGINE selectors all resolve to bundle (ADR 0006)
-```
-
-Source of truth: [docs/COMPUTER_SOURCE_OF_TRUTH.md](./docs/COMPUTER_SOURCE_OF_TRUTH.md)
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "xclaw",
-  "version": "3.589.0",
+  "version": "3.590.0",
   "description": "XClaw autonomous agent gateway",
   "type": "module",
   "repository": {
@@ -97,6 +97,7 @@
     "deploy/",
     "SECURITY.md",
     "LICENSE",
+    "CONTRIBUTING.md",
     ".env.example",
     "THIRD_PARTY.md"
   ],

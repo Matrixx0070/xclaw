@@ -2626,3 +2626,13 @@ DISCOVERED: bin onboard requires --api-key or XAI_API_KEY. npm run onboard (init
 SHIPPED: README 15-minute fence is git clone + npm run install:local + node bin/xclaw.mjs onboard --yes --install-daemon --api-key. INSTALL.md leads with GitHub; npm section labeled unpublished. package.json 3.589.0. Pin test/update-cli.test.mjs (README/INSTALL lead with clone). xclaw update unpublished fail-clean unchanged.
 
 NEXT: live-prove then push 3.588.0+3.589.0. Do not mint persistRun. Do not git add -A. Do not npm publish. Do not kill xtui without asking.
+
+## 2026-09-09 — 3.590.0 review-ready public tree
+
+LOCKED: user FIX EVERYTHING after pending-work audit of public https://github.com/Matrixx0070/xclaw before sharing the link with other AIs. Dings: Latest release v3.375.0 vs main 3.589.0; open PR #211; README duplicate headings; `.env.example` competitor sentence; Oy56 test fixture; no CONTRIBUTING.md. Homedir JSON store-writer class remains EXHAUSTED at 3.560.0. Do not npm publish. Do not pm2 restart. Do not lock leftover.
+
+DISCOVERED: PR #211 feat/land-remaining-wires is CONFLICTING; scripts/land-remaining-wires.mjs + stopAuthReadiness / handleWsStopControl / guardToolAgainstHardCircuit already on main. Close as superseded, do not merge.
+
+SHIPPED: README unique headings; `.env.example` competitor sentence stripped (keeps no TAVILY_API_KEY / no BRAVE_SEARCH_API_KEY / no electron-builder rebuild); redact fixture alphabet fake; CONTRIBUTING.md; package.json 3.590.0; GitHub tag/release v3.590.0; PR #211 closed superseded.
+
+NEXT: do not pm2 restart without asking. Do not npm publish. Do not git add -A. Do not kill xtui without asking.

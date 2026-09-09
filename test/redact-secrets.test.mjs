@@ -14,9 +14,9 @@ import {
 describe("redactString", () => {
   it("redacts xAI and OpenAI style keys", () => {
     const s = redactString(
-      "key=xai-Oy56JMhhEmserGvJ49DL6J9eWXmUmMPBccqO2SzzaCNLC8CNtAu6r19nfz7FJgsa"
+      "key=xai-abcdefghijklmnopqrstuvwxyz0123456789"
     );
-    assert.ok(!s.includes("Oy56JMhh"));
+    assert.ok(!s.includes("abcdefghijklmnopqrstuvwxyz"));
     assert.ok(s.includes(REDACTED));
     const s2 = redactString("sk-abcdefghijklmnopqrstuvwxyz0123456789");
     assert.ok(s2.includes(REDACTED));

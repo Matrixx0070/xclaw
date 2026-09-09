@@ -245,4 +245,24 @@ describe("xclaw update", () => {
     assert.ok(npmIdx < 0 || ghIdx < npmIdx, "INSTALL.md must lead with GitHub before npm");
     assert.match(install, /unpublished/);
   });
+
+  it("README H2 headings are unique and CONTRIBUTING.md exists", () => {
+    const readme = fs.readFileSync(path.join(REPO, "README.md"), "utf8");
+    const heads = readme.split("\n").filter((l) => l.startsWith("## "));
+    const counts = new Map();
+    for (const h of heads) counts.set(h, (counts.get(h) || 0) + 1);
+    const dups = [...counts.entries()].filter(([, n]) => n > 1);
+    assert.deepEqual(dups, []);
+    assert.ok(heads.includes("## 15-minute start"));
+    assert.ok(heads.includes("## Secrets"));
+    assert.ok(heads.includes("## Profiles"));
+    assert.ok(heads.includes("## Computer server (single engine)"));
+    const contribPath = path.join(REPO, "CONTRIBUTING.md");
+    assert.equal(fs.existsSync(contribPath), true);
+    const contrib = fs.readFileSync(contribPath, "utf8");
+    assert.match(contrib, /npm test/);
+    assert.match(contrib, /git add -A/);
+    const needle = ["open", "claw"].join("");
+    assert.equal(contrib.toLowerCase().includes(needle), false, "CONTRIBUTING.md must stay vendor-clean");
+  });
 });
